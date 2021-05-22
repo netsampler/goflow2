@@ -1,0 +1,12 @@
+[Unit]
+Description=GoFlow2
+After=network.target
+
+[Service]
+Type=simple
+EnvironmentFile=/etc/default/goflow2
+WorkingDirectory=/usr/share/goflow2
+ExecStart=/usr/bin/goflow2 $GOFLOW2_ARGS
+
+[Install]
+WantedBy=multi-user.target
