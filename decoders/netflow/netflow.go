@@ -67,7 +67,10 @@ func DecodeIPFIXOptionsTemplateSet(payload *bytes.Buffer) ([]IPFIXOptionsTemplat
 		fields := make([]Field, int(optsTemplateRecord.ScopeFieldCount))
 		for i := 0; i < int(optsTemplateRecord.ScopeFieldCount); i++ {
 			field := Field{}
-			err = utils.BinaryDecoder(payload, &field)
+			if field.Type&0x8000 != 0 {
+				field.PenProvided = true
+				err = utils.BinaryDecoder(payload, &field.Pen)
+			}
 			fields[i] = field
 		}
 		optsTemplateRecord.Scopes = fields
@@ -79,7 +82,13 @@ func DecodeIPFIXOptionsTemplateSet(payload *bytes.Buffer) ([]IPFIXOptionsTemplat
 		fields = make([]Field, optionsSize)
 		for i := 0; i < optionsSize; i++ {
 			field := Field{}
-			err = utils.BinaryDecoder(payload, &field)
+			err = utils.BinaryDecoder(payload, &field.Type)
+			err = utils.BinaryDecoder(payload, &field.Length)
+
+			if field.Type&0x8000 != 0 {
+				field.PenProvided = true
+				err = utils.BinaryDecoder(payload, &field.Pen)
+			}
 			fields[i] = field
 		}
 		optsTemplateRecord.Options = fields
@@ -123,19 +132,22 @@ func DecodeTemplateSet(version uint16, payload *bytes.Buffer) ([]TemplateRecord,
 	return records, nil
 }
 
-func GetTemplateSize(template []Field) int {
+func GetTemplateSize(version uint16, template []Field) int {
 	sum := 0
 	for _, templateField := range template {
+		if version == 10 && templateField.Length == 0xffff {
+			continue
+		}
+
 		sum += int(templateField.Length)
 	}
 	return sum
 }
 
 func DecodeDataSetUsingFields(version uint16, payload *bytes.Buffer, listFields []Field) []DataField {
-	for payload.Len() >= GetTemplateSize(listFields) {
+	for payload.Len() >= GetTemplateSize(version, listFields) {
 
 		dataFields := make([]DataField, len(listFields))
-
 		for i, templateField := range listFields {
 
 			finalLength := int(templateField.Length)
@@ -149,7 +161,6 @@ func DecodeDataSetUsingFields(version uint16, payload *bytes.Buffer, listFields 
 				} else {
 					finalLength = int(variableLen8)
 				}
-
 			}
 
 			value := payload.Next(finalLength)
@@ -229,14 +240,12 @@ func (e *ErrorDecodingNetFlow) Error() string {
 func DecodeOptionsDataSet(version uint16, payload *bytes.Buffer, listFieldsScopes, listFieldsOption []Field) ([]OptionsDataRecord, error) {
 	records := make([]OptionsDataRecord, 0)
 
-	listFieldsScopesSize := GetTemplateSize(listFieldsScopes)
-	listFieldsOptionSize := GetTemplateSize(listFieldsOption)
+	listFieldsScopesSize := GetTemplateSize(version, listFieldsScopes)
+	listFieldsOptionSize := GetTemplateSize(version, listFieldsOption)
 
 	for payload.Len() >= listFieldsScopesSize+listFieldsOptionSize {
-		payloadLim := bytes.NewBuffer(payload.Next(listFieldsScopesSize))
-		scopeValues := DecodeDataSetUsingFields(version, payloadLim, listFieldsScopes)
-		payloadLim = bytes.NewBuffer(payload.Next(listFieldsOptionSize))
-		optionValues := DecodeDataSetUsingFields(version, payloadLim, listFieldsOption)
+		scopeValues := DecodeDataSetUsingFields(version, payload, listFieldsScopes)
+		optionValues := DecodeDataSetUsingFields(version, payload, listFieldsOption)
 
 		record := OptionsDataRecord{
 			ScopesValues:  scopeValues,
@@ -251,10 +260,9 @@ func DecodeOptionsDataSet(version uint16, payload *bytes.Buffer, listFieldsScope
 func DecodeDataSet(version uint16, payload *bytes.Buffer, listFields []Field) ([]DataRecord, error) {
 	records := make([]DataRecord, 0)
 
-	listFieldsSize := GetTemplateSize(listFields)
+	listFieldsSize := GetTemplateSize(version, listFields)
 	for payload.Len() >= listFieldsSize {
-		payloadLim := bytes.NewBuffer(payload.Next(listFieldsSize))
-		values := DecodeDataSetUsingFields(version, payloadLim, listFields)
+		values := DecodeDataSetUsingFields(version, payload, listFields)
 
 		record := DataRecord{
 			Values: values,
