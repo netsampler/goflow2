@@ -1,8 +1,8 @@
-# Flows and Clickhouse
+# Flows + Kafka + Clicklhouse + Grafana + Prometheus
 
 Clickhouse is a powerful data warehouse.
 
-A sample [docker-compose](../compose/docker-compose.yml) is provided.
+A sample [docker-compose](./docker-compose.yml) is provided.
 It's composed of:
 * Apache Kafka
 * Apache Zookeeper
@@ -22,6 +22,7 @@ GoFlow2 collects NetFlow v9/IPFIX and sFlow packets and sends as a protobuf into
 Zookeeper coordinates Kafka and can also be used by Clickhouse to ensure replication.
 Prometheus scrapes the metrics of the collector.
 Clickhouse consumes from Kafka, stores raw data and aggregates over specific columns
-using `MATERIALIZED TABLES` and `VIEWS` defined in a [schema file](../compose/clickhouse/create.sh).
-Youj can visualize the data in Grafana (credentials: admin/admin) with the
+using `MATERIALIZED TABLES` and `VIEWS` defined in a [schema file](./clickhouse/create.sh).
+
+You can visualize the data in Grafana at http://localhost:3000 (credentials: admin/admin) with the
 pre-made dashboards.

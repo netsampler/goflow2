@@ -2,14 +2,14 @@ version: "3"
 services:
   goflow:
     build:
-      context: ../
+      context: ../../
       dockerfile: Dockerfile
     user: root # because docker-compose mount as root
     ports:
       - '8080:8080'
       - '6343:6343/udp'
       - '2055:2055/udp'
-    command: 
+    command:
       - -transport=file
       - -transport.file=/var/log/goflow/goflow.log
       - -format=json
@@ -22,20 +22,20 @@ services:
     volumes:
       - logs:/var/log/goflow
   elasticsearch:
-    image: docker.elastic.co/elasticsearch/elasticsearch
+    image: docker.elastic.co/elasticsearch/elasticsearch:7.13.0
     environment:
       - discovery.type=single-node
     ports:
       - 9200:9200
   kibana:
-    image: docker.elastic.co/kibana/kibana
+    image: docker.elastic.co/kibana/kibana:7.13.0
     ports:
       - 5601:5601
     depends_on:
       - elasticsearch
       - logstash
   logstash:
-    image: docker.elastic.co/logstash/logstash
+    image: docker.elastic.co/logstash/logstash:7.13.0
     user: root # because docker-compose mount as root
     links:
       - elasticsearch

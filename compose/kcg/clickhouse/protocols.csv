@@ -1,4 +1,4 @@
-Proto,Name,Description
+proto,name,description
 0,HOPOPT,IPv6 Hop-by-Hop Option
 1,ICMP,Internet Control Message
 2,IGMP,Internet Group Management
