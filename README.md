@@ -192,10 +192,15 @@ $ ./goflow2 -format=pb | ./enricher -db.asn path-to/GeoLite2-ASN.mmdb -db.countr
 For a more scalable production setting, Kafka and protobuf are recommended.
 Stream operations (aggregation and filtering) can be done with stream-processor tools.
 For instance Flink, or the more recent Kafka Streams and kSQLdb.
-Direct storage can be done with [Clickhouse](/docs/clickhouse.md). This database can also create materialized tables.
+Direct storage can be done with data-warehouses like Clickhouse.
 
 In some cases, the consumer will require protobuf messages to be prefixed by
 length. To do this, use the flag `-format.protobuf.fixedlen=true`.
+
+This repository contains [examples of pipelines](./compose) with docker-compose.
+The available pipelines are:
+* [Kafka+Clickhouse+Grafana](./compose/kcg)
+* [Logstash+Elastic+Kibana](./compose/elk)
 
 ## User stories
 

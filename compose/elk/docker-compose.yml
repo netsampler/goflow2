@@ -1,0 +1,51 @@
+version: "3"
+services:
+  goflow:
+    build:
+      context: ../../
+      dockerfile: Dockerfile
+    user: root # because docker-compose mount as root
+    ports:
+      - '8080:8080'
+      - '6343:6343/udp'
+      - '2055:2055/udp'
+    command:
+      - -transport=file
+      - -transport.file=/var/log/goflow/goflow.log
+      - -format=json
+    restart: always
+    logging:
+      driver: gelf
+      options:
+        gelf-address: "udp://localhost:12201"
+        tag: "flows"
+    volumes:
+      - logs:/var/log/goflow
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:7.13.0
+    environment:
+      - discovery.type=single-node
+    ports:
+      - 9200:9200
+  kibana:
+    image: docker.elastic.co/kibana/kibana:7.13.0
+    ports:
+      - 5601:5601
+    depends_on:
+      - elasticsearch
+      - logstash
+  logstash:
+    image: docker.elastic.co/logstash/logstash:7.13.0
+    user: root # because docker-compose mount as root
+    links:
+      - elasticsearch
+    volumes:
+      - ./logstash.conf:/etc/logstash/logstash.conf
+      - logs:/var/log/goflow
+    command: logstash -f /etc/logstash/logstash.conf
+    ports:
+      - 12201:12201/udp
+    depends_on:
+      - elasticsearch
+volumes:
+  logs:
