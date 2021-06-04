@@ -24,7 +24,7 @@ This work is a fork of a previous [open-source GoFlow code](https://github.com/c
 It lives in its own GitHub organization to be maintained more easily.
 
 Among the differences with the original code:
-The serializer and transport options have been revamped to make this program more user friendly.
+The serializer and transport options have been revamped to make this program more user-friendly
 and target new use-cases like logging providers.
 Minimal changes in the decoding libraries.
 
@@ -46,17 +46,17 @@ send it to a file (or stdout).
 GoFlow2 is a wrapper of all the functions and chains thems.
 
 You can build your own collector using this base and replace parts:
-* Use different transport (eg: RabbitMQ instead of Kafka)
-* Convert to another format (eg: Cap'n Proto, Avro, instead of protobuf)
-* Decode different samples (eg: not only IP networks, add MPLS)
-* Different metrics system (eg: [OpenTelemetry](https://opentelemetry.io/))
+* Use different transport (e.g: RabbitMQ instead of Kafka)
+* Convert to another format (e.g: Cap'n Proto, Avro, instead of protobuf)
+* Decode different samples (e.g: not only IP networks, add MPLS)
+* Different metrics system (e.g: [OpenTelemetry](https://opentelemetry.io/))
 
 ### Protocol difference
 
 The sampling protocols have distinct features:
 
 **sFlow** is a stateless protocol which sends the full header of a packet with router information
-(interfaces, destination AS) while **NetFlow/IPFIX** rely on templates that contain fields (eg: source IPv6).
+(interfaces, destination AS) while **NetFlow/IPFIX** rely on templates that contain fields (e.g: source IPv6).
 
 The sampling rate in NetFlow/IPFIX is provided by **Option Data Sets**. This is why it can take a few minutes
 for the packets to be decoded until all the templates are received (**Option Template** and **Data Template**).
@@ -65,7 +65,7 @@ Both of these protocols bundle multiple samples (**Data Set** in NetFlow/IPFIX a
 in one packet.
 
 The advantages of using an abstract network flow format, such as protobuf, is it enables summing over the
-protocols (eg: per ASN or per port, rather than per (ASN, router) and (port, router)).
+protocols (e.g: per ASN or per port, rather than per (ASN, router) and (port, router)).
 
 To read more about the protocols and how they are mapped inside, check out [page](/docs/protocols.md)
 
@@ -89,7 +89,7 @@ Monitoring via Prometheus metrics
 
 To read about agents that samples network traffic, check this [page](/docs/agents.md).
 
-To setup the collector, download the latest release corresponding to your OS
+To set up the collector, download the latest release corresponding to your OS
 and run the following command (the binaries have a suffix with the version):
 
 ```bash
@@ -132,7 +132,7 @@ By default, the samples received will be printed in JSON format on the stdout.
 }
 ```
 
-If you are using a log integration (eg: Loki with Promtail, Splunk, Fluentd, Google Cloud Logs, etc.),
+If you are using a log integration (e.g: Loki with Promtail, Splunk, Fluentd, Google Cloud Logs, etc.),
 just send the output into a file.
 ```bash
 $ ./goflow2 -transport.file /var/logs/goflow2.log
@@ -162,7 +162,7 @@ $ sudo docker run -p 6343:6343/udp -p 2055:2055/udp -ti netsampler/goflow2:lates
 The JSON format is advised only when consuming a small amount of data directly.
 For bigger workloads, the protobuf output format provides a binary representation
 and is preferred.
-It can also be extended wtih enrichment as long as the user keep the same IDs.
+It can also be extended with enrichment as long as the user keep the same IDs.
 
 If you want to develop applications, build `pb/flow.proto` into the language you want:
 When adding custom fields, picking a field ID ≥ 1000 is suggested.
@@ -208,8 +208,8 @@ Are you using GoFlow2 in production at scale? Add yourself here!
 
 ### Contributions
 
-This project welcomes pull-requests, wether it's documentation,
-instrumentation (eg: docker-compose, metrics), internals (protocol libraries),
+This project welcomes pull-requests, whether it's documentation,
+instrumentation (e.g: docker-compose, metrics), internals (protocol libraries),
 integration (new CLI feature) or else!
 Just make sure to check for the use-cases via an issue.
 
