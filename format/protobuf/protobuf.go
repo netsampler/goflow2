@@ -6,13 +6,7 @@ import (
 	"fmt"
 	"github.com/golang/protobuf/proto"
 	"github.com/netsampler/goflow2/format"
-	"reflect"
-	"strings"
-)
-
-var (
-	fieldsVar string
-	fields    []string // Hashing fields
+	"github.com/netsampler/goflow2/format/common"
 )
 
 type ProtobufDriver struct {
@@ -20,18 +14,13 @@ type ProtobufDriver struct {
 }
 
 func (d *ProtobufDriver) Prepare() error {
-	flag.StringVar(&fieldsVar, "format.hash", "SamplerAddress", "List of fields to do hashing, separated by commas")
+	common.HashFlag()
 	flag.BoolVar(&d.fixedLen, "format.protobuf.fixedlen", false, "Prefix the protobuf with message length")
 	return nil
 }
 
-func ManualInit() error {
-	fields = strings.Split(fieldsVar, ",")
-	return nil
-}
-
 func (d *ProtobufDriver) Init(context.Context) error {
-	return ManualInit()
+	return common.ManualHashInit()
 }
 
 func (d *ProtobufDriver) Format(data interface{}) ([]byte, []byte, error) {
@@ -39,7 +28,7 @@ func (d *ProtobufDriver) Format(data interface{}) ([]byte, []byte, error) {
 	if !ok {
 		return nil, nil, fmt.Errorf("message is not protobuf")
 	}
-	key := HashProtoLocal(msg)
+	key := common.HashProtoLocal(msg)
 
 	if !d.fixedLen {
 		b, err := proto.Marshal(msg)
@@ -54,26 +43,4 @@ func (d *ProtobufDriver) Format(data interface{}) ([]byte, []byte, error) {
 func init() {
 	d := &ProtobufDriver{}
 	format.RegisterFormatDriver("pb", d)
-}
-
-func HashProtoLocal(msg interface{}) string {
-	return HashProto(fields, msg)
-}
-
-func HashProto(fields []string, msg interface{}) string {
-	var keyStr string
-
-	if msg != nil {
-		vfm := reflect.ValueOf(msg)
-		vfm = reflect.Indirect(vfm)
-
-		for _, kf := range fields {
-			fieldValue := vfm.FieldByName(kf)
-			if fieldValue.IsValid() {
-				keyStr += fmt.Sprintf("%v-", fieldValue)
-			}
-		}
-	}
-
-	return keyStr
 }
