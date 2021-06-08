@@ -170,6 +170,7 @@ func RenderExtraFunctionEtypeName(msg proto.Message) string {
 	num := RenderExtraFetchNumbers(msg, []string{"Etype"})
 	return EtypeName[uint32(num[0])]
 }
+
 func RenderExtraFunctionProtoName(msg proto.Message) string {
 	num := RenderExtraFetchNumbers(msg, []string{"Proto"})
 	return ProtoName[uint32(num[0])]
@@ -195,7 +196,16 @@ func RenderIP(addr []byte) string {
 
 	return net.IP(addr).String()
 }
-func FormatMessageReflect(msg proto.Message, ext string) string {
+
+func FormatMessageReflectText(msg proto.Message, ext string) string {
+	return FormatMessageReflectCustom(msg, ext, "", " ", "=", false)
+}
+
+func FormatMessageReflectJSON(msg proto.Message, ext string) string {
+	return fmt.Sprintf("{%s}", FormatMessageReflectCustom(msg, ext, "\"", ",", ":", true))
+}
+
+func FormatMessageReflectCustom(msg proto.Message, ext, quotes, sep, sign string, null bool) string {
 	fstr := make([]string, len(TextFields)+len(RenderExtras))
 
 	vfm := reflect.ValueOf(msg)
@@ -208,30 +218,34 @@ func FormatMessageReflect(msg proto.Message, ext string) string {
 			switch TextFieldsTypes[i] {
 			case FORMAT_TYPE_STRING_FUNC:
 				strMethod := fieldValue.MethodByName("String").Call([]reflect.Value{})
-				fstr[i] = fmt.Sprintf("\"%s\":\"%s\"", kf, strMethod[0].String())
+				fstr[i] = fmt.Sprintf("%s%s%s%s%s%s%s", quotes, kf, quotes, sign, quotes, strMethod[0].String(), quotes)
 			case FORMAT_TYPE_STRING:
-				fstr[i] = fmt.Sprintf("\"%s\":\"%s\"", kf, fieldValue.String())
+				fstr[i] = fmt.Sprintf("%s%s%s%s%s%s%s", quotes, kf, quotes, sign, quotes, fieldValue.String(), quotes)
 			case FORMAT_TYPE_INTEGER:
-				fstr[i] = fmt.Sprintf("\"%s\":%d", kf, fieldValue.Uint())
+				fstr[i] = fmt.Sprintf("%s%s%s%s%d", quotes, kf, quotes, sign, fieldValue.Uint())
 			case FORMAT_TYPE_IP:
 				ip := fieldValue.Bytes()
-				fstr[i] = fmt.Sprintf("\"%s\":\"%s\"", kf, RenderIP(ip))
+				fstr[i] = fmt.Sprintf("%s%s%s%s%s%s%s", quotes, kf, quotes, sign, quotes, RenderIP(ip), quotes)
 			case FORMAT_TYPE_MAC:
 				mac := make([]byte, 8)
 				binary.BigEndian.PutUint64(mac, fieldValue.Uint())
-				fstr[i] = fmt.Sprintf("\"%s\":\"%s\"", kf, net.HardwareAddr(mac[2:]).String())
+				fstr[i] = fmt.Sprintf("%s%s%s%s%s%s%s", quotes, kf, quotes, sign, quotes, net.HardwareAddr(mac[2:]).String(), quotes)
 			default:
-				fstr[i] = fmt.Sprintf("\"%s\":null", kf)
+				if null {
+					fstr[i] = fmt.Sprintf("%s%s%s:%s%s%s%snull", quotes, kf, quotes, sign)
+				}
 			}
 
 		} else {
-			fstr[i] = fmt.Sprintf("\"%s\":null", kf)
+			if null {
+				fstr[i] = fmt.Sprintf("\"%s\"%snull", kf, sign)
+			}
 		}
 	}
 
 	for i, e := range RenderExtras {
-		fstr[i+len(TextFields)] = fmt.Sprintf("\"%s\":\"%s\"", e, RenderExtraCall[i](msg))
+		fstr[i+len(TextFields)] = fmt.Sprintf("%s%s%s%s%s%s%s", quotes, e, quotes, sign, quotes, RenderExtraCall[i](msg), quotes)
 	}
 
-	return fmt.Sprintf("{%s}", strings.Join(fstr, ","))
+	return strings.Join(fstr, sep)
 }

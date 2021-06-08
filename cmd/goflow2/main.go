@@ -15,6 +15,7 @@ import (
 	"github.com/netsampler/goflow2/format"
 	_ "github.com/netsampler/goflow2/format/json"
 	_ "github.com/netsampler/goflow2/format/protobuf"
+	_ "github.com/netsampler/goflow2/format/text"
 
 	// import various transports
 	"github.com/netsampler/goflow2/transport"
@@ -40,7 +41,6 @@ var (
 
 	Format    = flag.String("format", "json", fmt.Sprintf("Choose the format (available: %s)", strings.Join(format.GetFormats(), ", ")))
 	Transport = flag.String("transport", "file", fmt.Sprintf("Choose the transport (available: %s)", strings.Join(transport.GetTransports(), ", ")))
-	//FixedLength = flag.Bool("proto.fixedlen", false, "Enable fixed length protobuf")
 
 	MetricsAddr = flag.String("metrics.addr", ":8080", "Metrics address")
 	MetricsPath = flag.String("metrics.path", "/metrics", "Metrics path")
