@@ -233,7 +233,7 @@ func FormatMessageReflectCustom(msg proto.Message, ext, quotes, sep, sign string
 				fstr[i] = fmt.Sprintf("%s%s%s%s%s%s%s", quotes, kf, quotes, sign, quotes, net.HardwareAddr(mac[2:]).String(), quotes)
 			default:
 				if null {
-					fstr[i] = fmt.Sprintf("%s%s%s:%s%s%s%snull", quotes, kf, quotes, sign)
+					fstr[i] = fmt.Sprintf("%s%s%s%snull", quotes, kf, quotes, sign)
 				}
 			}
 

@@ -19,7 +19,8 @@ import (
 
 	// import various formatters
 	"github.com/netsampler/goflow2/format"
-	"github.com/netsampler/goflow2/format/json"
+	"github.com/netsampler/goflow2/format/common"
+	_ "github.com/netsampler/goflow2/format/json"
 	_ "github.com/netsampler/goflow2/format/protobuf"
 
 	// import various transports
@@ -85,8 +86,8 @@ func MapFlow(dbAsn, dbCountry *geoip2.Reader, msg *flowmessage.FlowMessageExt) {
 }
 
 func init() {
-	json.AddJSONField("SrcCountry", json.FORMAT_TYPE_STRING)
-	json.AddJSONField("DstCountry", json.FORMAT_TYPE_STRING)
+	common.AddTextField("SrcCountry", common.FORMAT_TYPE_STRING)
+	common.AddTextField("DstCountry", common.FORMAT_TYPE_STRING)
 }
 
 func main() {
