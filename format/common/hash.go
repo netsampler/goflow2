@@ -12,18 +12,18 @@ var (
 	fieldsVar string
 	fields    []string // Hashing fields
 
-	declared     bool
-	declaredLock = &sync.Mutex{}
+	hashDeclared     bool
+	hashDeclaredLock = &sync.Mutex{}
 )
 
 func HashFlag() {
-	declaredLock.Lock()
-	defer declaredLock.Unlock()
+	hashDeclaredLock.Lock()
+	defer hashDeclaredLock.Unlock()
 
-	if declared {
+	if hashDeclared {
 		return
 	}
-	declared = true
+	hashDeclared = true
 	flag.StringVar(&fieldsVar, "format.hash", "SamplerAddress", "List of fields to do hashing, separated by commas")
 
 }
