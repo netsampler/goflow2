@@ -25,8 +25,8 @@ OUTPUT := $(DIST_DIR)goflow2-$(VERSION_PKG)-$(GOOS)-$(ARCH)$(EXTENSION)
 .PHONY: proto
 proto:
 	@echo generating protobuf
-	protoc --go_out=. pb/*.proto
-	protoc --go_out=. cmd/enricher/pb/*.proto
+	protoc --go_opt=paths=source_relative --go_out=. pb/*.proto
+	protoc --go_opt=paths=source_relative --go_out=. cmd/enricher/pb/*.proto
 
 .PHONY: vet
 vet:

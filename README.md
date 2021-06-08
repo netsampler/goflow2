@@ -167,12 +167,7 @@ It can also be extended wtih enrichment as long as the user keep the same IDs.
 If you want to develop applications, build `pb/flow.proto` into the language you want:
 When adding custom fields, picking a field ID ≥ 1000 is suggested.
 
-You can compile the protobuf using the Makefile for Go.
-```
-make proto
-```
-
-For compiling the protobuf for other languages, refer to the [official guide](https://developers.google.com/protocol-buffers).
+Check the docs for more information about [compiling protobuf](/docs/protobuf.md). 
 
 ## Flow Pipeline
 
