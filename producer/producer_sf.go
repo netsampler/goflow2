@@ -266,7 +266,7 @@ func SearchSFlowSamplesConfig(samples []interface{}, config *SFlowProducerConfig
 				flowMessage.DstNet = recordData.DstMaskLen
 			case sflow.ExtendedGateway:
 				ipNh = recordData.NextHop
-				flowMessage.NextHop = ipNh
+				flowMessage.BgpNextHop = ipNh
 				flowMessage.SrcAS = recordData.SrcAS
 				if len(recordData.ASPath) > 0 {
 					flowMessage.DstAS = recordData.ASPath[len(recordData.ASPath)-1]

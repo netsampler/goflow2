@@ -86,6 +86,9 @@ message FlowMessage {
   uint32 SrcNet = 16;
   uint32 DstNet = 17;
 
+  // BGP information
+  bytes BgpNextHop = 100;
+
   // MPLS information
   bool HasMPLS = 53;
   uint32 MPLSCount = 54;
