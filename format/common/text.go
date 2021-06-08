@@ -211,11 +211,12 @@ func FormatMessageReflectCustom(msg proto.Message, ext, quotes, sep, sign string
 	vfm := reflect.ValueOf(msg)
 	vfm = reflect.Indirect(vfm)
 
-	for i, kf := range TextFields {
+	var i int
+	for j, kf := range TextFields {
 		fieldValue := vfm.FieldByName(kf)
 		if fieldValue.IsValid() {
 
-			switch TextFieldsTypes[i] {
+			switch TextFieldsTypes[j] {
 			case FORMAT_TYPE_STRING_FUNC:
 				strMethod := fieldValue.MethodByName("String").Call([]reflect.Value{})
 				fstr[i] = fmt.Sprintf("%s%s%s%s%s%s%s", quotes, kf, quotes, sign, quotes, strMethod[0].String(), quotes)
@@ -238,13 +239,24 @@ func FormatMessageReflectCustom(msg proto.Message, ext, quotes, sep, sign string
 
 		} else {
 			if null {
-				fstr[i] = fmt.Sprintf("\"%s\"%snull", kf, sign)
+				fstr[i] = fmt.Sprintf("%s%s%s%snull", quotes, kf, quotes, sign)
 			}
+		}
+		if len(selectorMap) == 0 || selectorMap[kf] {
+			i++
+		}
+
+	}
+
+	for j, e := range RenderExtras {
+		fstr[i] = fmt.Sprintf("%s%s%s%s%s%s%s", quotes, e, quotes, sign, quotes, RenderExtraCall[j](msg), quotes)
+		if len(selectorMap) == 0 || selectorMap[e] {
+			i++
 		}
 	}
 
-	for i, e := range RenderExtras {
-		fstr[i+len(TextFields)] = fmt.Sprintf("%s%s%s%s%s%s%s", quotes, e, quotes, sign, quotes, RenderExtraCall[i](msg), quotes)
+	if len(selectorMap) > 0 {
+		fstr = fstr[0:i]
 	}
 
 	return strings.Join(fstr, sep)

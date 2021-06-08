@@ -13,11 +13,16 @@ type TextDriver struct {
 
 func (d *TextDriver) Prepare() error {
 	common.HashFlag()
+	common.SelectorFlag()
 	return nil
 }
 
 func (d *TextDriver) Init(context.Context) error {
-	return common.ManualHashInit()
+	err := common.ManualHashInit()
+	if err != nil {
+		return err
+	}
+	return common.ManualSelectorInit()
 }
 
 func (d *TextDriver) Format(data interface{}) ([]byte, []byte, error) {
