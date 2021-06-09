@@ -219,18 +219,18 @@ func FormatMessageReflectCustom(msg proto.Message, ext, quotes, sep, sign string
 			switch TextFieldsTypes[j] {
 			case FORMAT_TYPE_STRING_FUNC:
 				strMethod := fieldValue.MethodByName("String").Call([]reflect.Value{})
-				fstr[i] = fmt.Sprintf("%s%s%s%s%s%s%s", quotes, kf, quotes, sign, quotes, strMethod[0].String(), quotes)
+				fstr[i] = fmt.Sprintf("%s%s%s%s%q", quotes, kf, quotes, sign, strMethod[0].String())
 			case FORMAT_TYPE_STRING:
-				fstr[i] = fmt.Sprintf("%s%s%s%s%s%s%s", quotes, kf, quotes, sign, quotes, fieldValue.String(), quotes)
+				fstr[i] = fmt.Sprintf("%s%s%s%s%q", quotes, kf, quotes, sign, fieldValue.String())
 			case FORMAT_TYPE_INTEGER:
 				fstr[i] = fmt.Sprintf("%s%s%s%s%d", quotes, kf, quotes, sign, fieldValue.Uint())
 			case FORMAT_TYPE_IP:
 				ip := fieldValue.Bytes()
-				fstr[i] = fmt.Sprintf("%s%s%s%s%s%s%s", quotes, kf, quotes, sign, quotes, RenderIP(ip), quotes)
+				fstr[i] = fmt.Sprintf("%s%s%s%s%q", quotes, kf, quotes, sign, RenderIP(ip))
 			case FORMAT_TYPE_MAC:
 				mac := make([]byte, 8)
 				binary.BigEndian.PutUint64(mac, fieldValue.Uint())
-				fstr[i] = fmt.Sprintf("%s%s%s%s%s%s%s", quotes, kf, quotes, sign, quotes, net.HardwareAddr(mac[2:]).String(), quotes)
+				fstr[i] = fmt.Sprintf("%s%s%s%s%q", quotes, kf, quotes, sign, net.HardwareAddr(mac[2:]).String())
 			default:
 				if null {
 					fstr[i] = fmt.Sprintf("%s%s%s%snull", quotes, kf, quotes, sign)
@@ -249,7 +249,7 @@ func FormatMessageReflectCustom(msg proto.Message, ext, quotes, sep, sign string
 	}
 
 	for j, e := range RenderExtras {
-		fstr[i] = fmt.Sprintf("%s%s%s%s%s%s%s", quotes, e, quotes, sign, quotes, RenderExtraCall[j](msg), quotes)
+		fstr[i] = fmt.Sprintf("%s%s%s%s%q", quotes, e, quotes, sign, RenderExtraCall[j](msg))
 		if len(selectorMap) == 0 || selectorMap[e] {
 			i++
 		}
