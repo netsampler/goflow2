@@ -12,8 +12,7 @@ func TestDecodeFlowExpandedSFlow(t *testing.T) {
 		Payload: getExpandedSFlowDecode(),
 	}
 
-	s := &StateSFlow{
-	}
+	s := &StateSFlow{}
 
 	assert.Nil(t, s.DecodeFlow(msg))
 }
