@@ -33,6 +33,7 @@ jobs:
         GOOS=linux make build
         GOOS=darwin make build
         GOOS=windows EXTENSION=.exe make build
+        ARCH=arm64 GOARCH=arm64 GOOS=linux make build
           
     - name: Install fpm
       run: |
@@ -41,7 +42,9 @@ jobs:
         sudo gem install fpm
         
     - name: Package
-      run: make package-deb package-rpm
+      run: |
+        make package-deb package-rpm
+        ARCH=arm64 make package-deb package-rpm
 
     - name: Upload Artifact
       uses: actions/upload-artifact@v2

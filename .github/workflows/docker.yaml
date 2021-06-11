@@ -34,5 +34,6 @@ jobs:
 
     - name: Build
       run: |
-        make docker
-        make push-docker
+        DOCKER_SUFFIX=-amd64 make docker push-docker
+        DOCKER_SUFFIX=-arm64 DOCKER_CMD='buildx build --push --platform linux/arm64/v8' make docker
+        make docker-manifest
