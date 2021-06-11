@@ -254,6 +254,10 @@ func ConvertNetFlowDataSet(version uint16, baseTime uint32, uptime uint32, recor
 		// Mac
 		case netflow.NFV9_FIELD_IN_SRC_MAC:
 			DecodeUNumber(v, &(flowMessage.SrcMac))
+		case netflow.NFV9_FIELD_IN_DST_MAC:
+			DecodeUNumber(v, &(flowMessage.DstMac))
+		case netflow.NFV9_FIELD_OUT_SRC_MAC:
+			DecodeUNumber(v, &(flowMessage.SrcMac))
 		case netflow.NFV9_FIELD_OUT_DST_MAC:
 			DecodeUNumber(v, &(flowMessage.DstMac))
 
