@@ -1,4 +1,4 @@
-package json
+package text
 
 import (
 	"context"
@@ -8,16 +8,16 @@ import (
 	"github.com/netsampler/goflow2/format/common"
 )
 
-type JsonDriver struct {
+type TextDriver struct {
 }
 
-func (d *JsonDriver) Prepare() error {
+func (d *TextDriver) Prepare() error {
 	common.HashFlag()
 	common.SelectorFlag()
 	return nil
 }
 
-func (d *JsonDriver) Init(context.Context) error {
+func (d *TextDriver) Init(context.Context) error {
 	err := common.ManualHashInit()
 	if err != nil {
 		return err
@@ -25,17 +25,17 @@ func (d *JsonDriver) Init(context.Context) error {
 	return common.ManualSelectorInit()
 }
 
-func (d *JsonDriver) Format(data interface{}) ([]byte, []byte, error) {
+func (d *TextDriver) Format(data interface{}) ([]byte, []byte, error) {
 	msg, ok := data.(proto.Message)
 	if !ok {
 		return nil, nil, fmt.Errorf("message is not protobuf")
 	}
 
 	key := common.HashProtoLocal(msg)
-	return []byte(key), []byte(common.FormatMessageReflectJSON(msg, "")), nil
+	return []byte(key), []byte(common.FormatMessageReflectText(msg, "")), nil
 }
 
 func init() {
-	d := &JsonDriver{}
-	format.RegisterFormatDriver("json", d)
+	d := &TextDriver{}
+	format.RegisterFormatDriver("text", d)
 }
