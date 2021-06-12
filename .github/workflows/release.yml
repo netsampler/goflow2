@@ -14,7 +14,7 @@ jobs:
     - name: Set up Go 1.x
       uses: actions/setup-go@v2
       with:
-        go-version: ^1.14
+        go-version: ^1.16
 
     - name: Check out code into the Go module directory
       uses: actions/checkout@v1
@@ -34,6 +34,8 @@ jobs:
         GOOS=darwin make build
         GOOS=windows EXTENSION=.exe make build
         make package-deb package-rpm
+        ARCH=arm64 GOARCH=arm64 GOOS=linux make build
+        ARCH=arm64 make package-deb package-rpm
 
     - name: Create Release
       id: create_release
