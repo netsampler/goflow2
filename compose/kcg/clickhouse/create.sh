@@ -3,9 +3,9 @@ set -e
 
 clickhouse client -n <<-EOSQL
 
-    CREATE DATABASE dictionaries;
+    CREATE DATABASE IF NOT EXISTS dictionaries;
     
-    CREATE DICTIONARY dictionaries.protocols (
+    CREATE DICTIONARY IF NOT EXISTS dictionaries.protocols (
         proto UInt8,
         name String,
         description String
