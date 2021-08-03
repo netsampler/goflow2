@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"net"
 	"time"
+	"fmt"
 
 	"github.com/netsampler/goflow2/decoders/sflow"
 	"github.com/netsampler/goflow2/format"
@@ -92,6 +93,192 @@ func (s *StateSFlow) DecodeFlow(msg interface{}) error {
 					typeStr = "Expanded" + typeStr
 				}
 				countRec = len(samplesConv.Records)
+
+				for _, records := range samplesConv.Records{
+					switch dataConv := records.Data.(type) {
+						case sflow.IfCounters:
+							SFlowIfSpeed.With(
+								prometheus.Labels{
+									"router":  key,
+									"agent":   agentStr,
+									"version": "5",
+									"type":    typeStr,
+									"ifindex": fmt.Sprint(dataConv.IfIndex),
+									"iftype": fmt.Sprint(dataConv.IfType),
+								}).
+								Set(float64(dataConv.IfSpeed))
+							// bit 0 = ifAdminStatus (0 = down, 1 = up)
+							ifAdminStatus := float64(0)
+							if dataConv.IfStatus & 1 == 1  {
+								ifAdminStatus = 1
+							}
+							SFlowIfAdminStatus.With(
+								prometheus.Labels{
+									"router":  key,
+									"agent":   agentStr,
+									"version": "5",
+									"type":    typeStr,
+									"ifindex": fmt.Sprint(dataConv.IfIndex),
+									"iftype": fmt.Sprint(dataConv.IfType),
+								}).
+								Set(ifAdminStatus)
+							// bit 1 = ifOperStatus (0 = down, 1 = up)
+							ifOperStatus := float64(0)
+							if dataConv.IfStatus & 2 == 2  {
+								ifOperStatus = 1
+							}
+							SFlowIfOperStatus.With(
+								prometheus.Labels{
+									"router":  key,
+									"agent":   agentStr,
+									"version": "5",
+									"type":    typeStr,
+									"ifindex": fmt.Sprint(dataConv.IfIndex),
+									"iftype": fmt.Sprint(dataConv.IfType),
+								}).
+								Set(ifOperStatus)
+							SFlowIfDirection.With(
+								prometheus.Labels{
+									"router":  key,
+									"agent":   agentStr,
+									"version": "5",
+									"type":    typeStr,
+									"ifindex": fmt.Sprint(dataConv.IfIndex),
+									"iftype": fmt.Sprint(dataConv.IfType),
+								}).
+								Set(float64(dataConv.IfDirection))
+							SFlowIfInOctets.With(
+								prometheus.Labels{
+									"router":  key,
+									"agent":   agentStr,
+									"version": "5",
+									"type":    typeStr,
+									"ifindex": fmt.Sprint(dataConv.IfIndex),
+									"iftype": fmt.Sprint(dataConv.IfType),
+								}).
+								Set(float64(dataConv.IfInOctets))
+							SFlowIfInUcastPkts.With(
+								prometheus.Labels{
+									"router":  key,
+									"agent":   agentStr,
+									"version": "5",
+									"type":    typeStr,
+									"ifindex": fmt.Sprint(dataConv.IfIndex),
+									"iftype": fmt.Sprint(dataConv.IfType),
+								}).
+								Set(float64(dataConv.IfInUcastPkts))
+							SFlowIfInMulticastPkts.With(
+								prometheus.Labels{
+									"router":  key,
+									"agent":   agentStr,
+									"version": "5",
+									"type":    typeStr,
+									"ifindex": fmt.Sprint(dataConv.IfIndex),
+									"iftype": fmt.Sprint(dataConv.IfType),
+								}).
+								Set(float64(dataConv.IfInMulticastPkts))
+							SFlowIfInBroadcastPkts.With(
+								prometheus.Labels{
+									"router":  key,
+									"agent":   agentStr,
+									"version": "5",
+									"type":    typeStr,
+									"ifindex": fmt.Sprint(dataConv.IfIndex),
+									"iftype": fmt.Sprint(dataConv.IfType),
+								}).
+								Set(float64(dataConv.IfInBroadcastPkts))
+							SFlowIfInDiscards.With(
+								prometheus.Labels{
+									"router":  key,
+									"agent":   agentStr,
+									"version": "5",
+									"type":    typeStr,
+									"ifindex": fmt.Sprint(dataConv.IfIndex),
+									"iftype": fmt.Sprint(dataConv.IfType),
+								}).
+								Set(float64(dataConv.IfInDiscards))
+							SFlowIfInErrors.With(
+								prometheus.Labels{
+									"router":  key,
+									"agent":   agentStr,
+									"version": "5",
+									"type":    typeStr,
+									"ifindex": fmt.Sprint(dataConv.IfIndex),
+									"iftype": fmt.Sprint(dataConv.IfType),
+								}).
+								Set(float64(dataConv.IfInErrors))
+							SFlowIfInUnknownProtos.With(
+								prometheus.Labels{
+									"router":  key,
+									"agent":   agentStr,
+									"version": "5",
+									"type":    typeStr,
+									"ifindex": fmt.Sprint(dataConv.IfIndex),
+									"iftype": fmt.Sprint(dataConv.IfType),
+								}).
+								Set(float64(dataConv.IfInUnknownProtos))
+							SFlowIfOutOctets.With(
+								prometheus.Labels{
+									"router":  key,
+									"agent":   agentStr,
+									"version": "5",
+									"type":    typeStr,
+									"ifindex": fmt.Sprint(dataConv.IfIndex),
+									"iftype": fmt.Sprint(dataConv.IfType),
+								}).
+								Set(float64(dataConv.IfOutOctets))
+							SFlowIfOutUcastPkts.With(
+								prometheus.Labels{
+									"router":  key,
+									"agent":   agentStr,
+									"version": "5",
+									"type":    typeStr,
+									"ifindex": fmt.Sprint(dataConv.IfIndex),
+									"iftype": fmt.Sprint(dataConv.IfType),
+								}).
+								Set(float64(dataConv.IfOutUcastPkts))
+							SFlowIfOutMulticastPkts.With(
+								prometheus.Labels{
+									"router":  key,
+									"agent":   agentStr,
+									"version": "5",
+									"type":    typeStr,
+									"ifindex": fmt.Sprint(dataConv.IfIndex),
+									"iftype": fmt.Sprint(dataConv.IfType),
+								}).
+								Set(float64(dataConv.IfOutMulticastPkts))
+							SFlowIfOutBroadcastPkts.With(
+								prometheus.Labels{
+									"router":  key,
+									"agent":   agentStr,
+									"version": "5",
+									"type":    typeStr,
+									"ifindex": fmt.Sprint(dataConv.IfIndex),
+									"iftype": fmt.Sprint(dataConv.IfType),
+								}).
+								Set(float64(dataConv.IfOutBroadcastPkts))
+							SFlowIfOutDiscards.With(
+								prometheus.Labels{
+									"router":  key,
+									"agent":   agentStr,
+									"version": "5",
+									"type":    typeStr,
+									"ifindex": fmt.Sprint(dataConv.IfIndex),
+									"iftype": fmt.Sprint(dataConv.IfType),
+								}).
+								Set(float64(dataConv.IfOutDiscards))
+							SFlowIfOutErrors.With(
+								prometheus.Labels{
+									"router":  key,
+									"agent":   agentStr,
+									"version": "5",
+									"type":    typeStr,
+									"ifindex": fmt.Sprint(dataConv.IfIndex),
+									"iftype": fmt.Sprint(dataConv.IfType),
+								}).
+								Set(float64(dataConv.IfOutErrors))
+					}
+				}
 			case sflow.ExpandedFlowSample:
 				typeStr = "ExpandedFlowSample"
 				countRec = len(samplesConv.Records)

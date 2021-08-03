@@ -131,6 +131,125 @@ var (
 		},
 		[]string{"router", "agent", "version", "type"}, // data-template, data, opts...
 	)
+	SFlowIfSpeed = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "flow_ifinspeed",
+			Help: "SFlows IfInSpeed.",
+		},
+		[]string{"router", "agent", "version", "type", "ifindex", "iftype"},
+	)
+	SFlowIfDirection = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "flow_ifdirection",
+			Help: "SFlows IfDirection. 0 = unkown, 1=full-duplex, 2=half-duplex, 3 = in, 4=out.",
+		},
+		[]string{"router", "agent", "version", "type", "ifindex", "iftype"},
+	)
+	SFlowIfAdminStatus = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "flow_ifadminstatus",
+			Help: "SFlows IfAdminStatus.",
+		},
+		[]string{"router", "agent", "version", "type", "ifindex", "iftype"},
+	)
+	SFlowIfOperStatus = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "flow_ifoperstatus",
+			Help: "SFlows IfOperStatus.",
+		},
+		[]string{"router", "agent", "version", "type", "ifindex", "iftype"},
+	)
+	SFlowIfInOctets = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "flow_ifinoctets",
+			Help: "SFlows IfInOctets.",
+		},
+		[]string{"router", "agent", "version", "type", "ifindex", "iftype"},
+	)
+	SFlowIfInUcastPkts = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "flow_ifinucastpkts",
+			Help: "SFlows IfInUcastPkts.",
+		},
+		[]string{"router", "agent", "version", "type", "ifindex", "iftype"},
+	)
+	SFlowIfInMulticastPkts = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "flow_ifinmulticastpkts",
+			Help: "SFlows IfInMulticastPkts.",
+		},
+		[]string{"router", "agent", "version", "type", "ifindex", "iftype"},
+	)
+	SFlowIfInBroadcastPkts = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "flow_ifinbroadcastpkts",
+			Help: "SFlows IfInBroadcastPkts.",
+		},
+		[]string{"router", "agent", "version", "type", "ifindex", "iftype"},
+	)
+	SFlowIfInDiscards = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "flow_ifindiscards",
+			Help: "SFlows IfInDiscards.",
+		},
+		[]string{"router", "agent", "version", "type", "ifindex", "iftype"},
+	)
+	SFlowIfInErrors = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "flow_ifinerrors",
+			Help: "SFlows IfInErrors.",
+		},
+		[]string{"router", "agent", "version", "type", "ifindex", "iftype"},
+	)
+	SFlowIfInUnknownProtos = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "flow_ifinunknownprotos",
+			Help: "SFlows IfInUnknownProtos.",
+		},
+		[]string{"router", "agent", "version", "type", "ifindex", "iftype"},
+	)
+	SFlowIfOutOctets = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "flow_ifoutoctets",
+			Help: "SFlows IfOutOctets.",
+		},
+		[]string{"router", "agent", "version", "type", "ifindex", "iftype"},
+	)
+	SFlowIfOutUcastPkts = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "flow_ifoutucastpkts",
+			Help: "SFlows IfOutUcastPkts.",
+		},
+		[]string{"router", "agent", "version", "type", "ifindex", "iftype"},
+	)
+	SFlowIfOutMulticastPkts = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "flow_ifoutmulticastpkts",
+			Help: "SFlows IfOutMulticastPkts.",
+		},
+		[]string{"router", "agent", "version", "type", "ifindex", "iftype"},
+	)
+	SFlowIfOutBroadcastPkts = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "flow_ifoutbroadcastpkts",
+			Help: "SFlows IfOutBroadcastPkts.",
+		},
+		[]string{"router", "agent", "version", "type", "ifindex", "iftype"},
+	)
+	SFlowIfOutDiscards = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "flow_ifoutdiscards",
+			Help: "SFlows IfOutDiscards.",
+		},
+		[]string{"router", "agent", "version", "type", "ifindex", "iftype"},
+	)
+	SFlowIfOutErrors = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "flow_ifouterrors",
+			Help: "SFlows IfOutErrors.",
+		},
+		[]string{"router", "agent", "version", "type", "ifindex", "iftype"},
+	)
 )
 
 func init() {
@@ -154,6 +273,24 @@ func init() {
 	prometheus.MustRegister(SFlowErrors)
 	prometheus.MustRegister(SFlowSampleStatsSum)
 	prometheus.MustRegister(SFlowSampleRecordsStatsSum)
+
+	prometheus.MustRegister(SFlowIfSpeed)
+	prometheus.MustRegister(SFlowIfDirection)
+	prometheus.MustRegister(SFlowIfAdminStatus)
+	prometheus.MustRegister(SFlowIfOperStatus)
+	prometheus.MustRegister(SFlowIfInOctets)
+	prometheus.MustRegister(SFlowIfInUcastPkts)
+	prometheus.MustRegister(SFlowIfInMulticastPkts)
+	prometheus.MustRegister(SFlowIfInBroadcastPkts)
+	prometheus.MustRegister(SFlowIfInDiscards)
+	prometheus.MustRegister(SFlowIfInErrors)
+	prometheus.MustRegister(SFlowIfInUnknownProtos)
+	prometheus.MustRegister(SFlowIfOutOctets)
+	prometheus.MustRegister(SFlowIfOutUcastPkts)
+	prometheus.MustRegister(SFlowIfOutMulticastPkts)
+	prometheus.MustRegister(SFlowIfOutBroadcastPkts)
+	prometheus.MustRegister(SFlowIfOutDiscards)
+	prometheus.MustRegister(SFlowIfOutErrors)
 }
 
 func DefaultAccountCallback(name string, id int, start, end time.Time) {
