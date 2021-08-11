@@ -101,4 +101,12 @@ message FlowMessage {
   // Custom fields: start after ID 1000:
   // uint32 MyCustomField = 1000;
 
+
+  // Custom allocations
+  uint64 CustomInteger1 = 1001;
+  uint64 CustomInteger2 = 1002;
+
+  bytes CustomBytes1 = 1011;
+  bytes CustomBytes2 = 1012;
+
 }

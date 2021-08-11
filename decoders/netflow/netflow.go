@@ -121,6 +121,7 @@ func DecodeTemplateSet(version uint16, payload *bytes.Buffer) ([]TemplateRecord,
 
 			if version == 10 && field.Type&0x8000 != 0 {
 				field.PenProvided = true
+				field.Type = field.Type ^ 0x8000
 				err = utils.BinaryDecoder(payload, &field.Pen)
 			}
 			fields[i] = field
@@ -165,8 +166,10 @@ func DecodeDataSetUsingFields(version uint16, payload *bytes.Buffer, listFields 
 
 			value := payload.Next(finalLength)
 			nfvalue := DataField{
-				Type:  templateField.Type,
-				Value: value,
+				Type:        templateField.Type,
+				PenProvided: templateField.PenProvided,
+				Pen:         templateField.Pen,
+				Value:       value,
 			}
 			dataFields[i] = nfvalue
 		}
