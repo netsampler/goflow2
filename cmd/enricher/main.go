@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"encoding/binary"
 	"flag"
 	"fmt"
 	"io"
@@ -144,13 +145,28 @@ func main() {
 	rdr := bufio.NewReader(os.Stdin)
 
 	msg := &flowmessage.FlowMessageExt{}
+	msgLen := make([]byte, binary.MaxVarintLen64)
+	lenBufSize := len(msgLen)
 	for {
-		line, err := rdr.ReadBytes('\n')
+		n, err := rdr.Read(msgLen)
 		if err != nil && err != io.EOF {
 			log.Error(err)
 			continue
 		}
-		if len(line) == 0 {
+
+		len, vn := proto.DecodeVarint(msgLen[0:n])
+		if len == 0 {
+			continue
+		}
+
+		line := make([]byte, len)
+		if vn < lenBufSize {
+			copy(line[0:lenBufSize-vn], msgLen[vn:lenBufSize])
+		}
+
+		n, err = io.ReadFull(rdr, line[lenBufSize-vn:])
+		if err != nil && err != io.EOF {
+			log.Error(err)
 			continue
 		}
 		line = bytes.TrimSuffix(line, []byte("\n"))
