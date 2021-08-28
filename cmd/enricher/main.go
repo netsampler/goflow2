@@ -43,6 +43,8 @@ var (
 	LogLevel = flag.String("loglevel", "info", "Log level")
 	LogFmt   = flag.String("logfmt", "normal", "Log formatter")
 
+	SamplingRate = flag.Int("samplingrate", 0, "Set sampling rate (values > 0)")
+
 	Format    = flag.String("format", "json", fmt.Sprintf("Choose the format (available: %s)", strings.Join(format.GetFormats(), ", ")))
 	Transport = flag.String("transport", "file", fmt.Sprintf("Choose the transport (available: %s)", strings.Join(transport.GetTransports(), ", ")))
 
@@ -162,6 +164,10 @@ func main() {
 		}
 
 		MapFlow(dbAsn, dbCountry, msg)
+
+		if *SamplingRate > 0 {
+			msg.SamplingRate = uint64(*SamplingRate)
+		}
 
 		key, data, err := formatter.Format(msg)
 		if err != nil {
