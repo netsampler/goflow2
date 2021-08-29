@@ -181,7 +181,7 @@ with a database for Autonomous System Number and Country.
 Similar output options as GoFlow are provided.
 
 ```bash
-$ ./goflow2 -format=pb | ./enricher -db.asn path-to/GeoLite2-ASN.mmdb -db.country path-to/GeoLite2-Country.mmdb
+$ ./goflow2 -transport.file.sep= -format=pb -format.protobuf.fixedlen=true | ./enricher -db.asn path-to/GeoLite2-ASN.mmdb -db.country path-to/GeoLite2-Country.mmdb
 ```
 
 For a more scalable production setting, Kafka and protobuf are recommended.

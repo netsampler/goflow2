@@ -14,6 +14,7 @@ import (
 
 type FileDriver struct {
 	fileDestination string
+	lineSeparator   string
 	w               io.Writer
 	file            *os.File
 	lock            *sync.RWMutex
@@ -22,6 +23,7 @@ type FileDriver struct {
 
 func (d *FileDriver) Prepare() error {
 	flag.StringVar(&d.fileDestination, "transport.file", "", "File/console output (empty for stdout)")
+	flag.StringVar(&d.lineSeparator, "transport.file.sep", "\n", "Line separator")
 	// idea: add terminal coloring based on key partitioning (if any)
 	return nil
 }
@@ -76,7 +78,7 @@ func (d *FileDriver) Send(key, data []byte) error {
 	d.lock.RLock()
 	w := d.w
 	d.lock.RUnlock()
-	_, err := fmt.Fprintln(w, string(data))
+	_, err := fmt.Fprint(w, string(data)+d.lineSeparator)
 	return err
 }
 
