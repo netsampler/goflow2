@@ -4,7 +4,7 @@ GOOS          ?= linux
 ARCH          ?= $(shell uname -m)
 BUILDINFOSDET ?= 
 
-DOCKER_REPO   := netsampler/
+DOCKER_REPO   ?= netsampler/
 NAME          := goflow2
 VERSION       ?= $(shell git describe --abbrev --long HEAD)
 ABBREV        ?= $(shell git rev-parse --short HEAD)
@@ -18,6 +18,7 @@ DATE          :=  $(shell date +%FT%T%z)
 BUILDINFOS    ?=  ($(DATE)$(BUILDINFOSDET))
 LDFLAGS       ?= '-X main.version=$(VERSION) -X main.buildinfos=$(BUILDINFOS)'
 MAINTAINER    := lspgn@users.noreply.github.com
+DOCKER_BIN    ?= docker
 DOCKER_CMD    ?= build
 DOCKER_SUFFIX ?= 
 
@@ -51,7 +52,7 @@ build: prepare
 
 .PHONY: docker
 docker:
-	docker $(DOCKER_CMD) \
+	$(DOCKER_BIN) $(DOCKER_CMD) \
         --build-arg LDFLAGS=$(LDFLAGS) \
         --build-arg CREATED="$(DATE)" \
         --build-arg MAINTAINER="$(MAINTAINER)" \
@@ -65,26 +66,26 @@ docker:
 
 .PHONY: push-docker
 push-docker:
-	docker push $(DOCKER_REPO)$(NAME):$(ABBREV)$(DOCKER_SUFFIX)
+	$(DOCKER_BIN) push $(DOCKER_REPO)$(NAME):$(ABBREV)$(DOCKER_SUFFIX)
 
 .PHONY: docker-manifest
 docker-manifest:
-	docker manifest create $(DOCKER_REPO)$(NAME):$(ABBREV) \
+	$(DOCKER_BIN) manifest create $(DOCKER_REPO)$(NAME):$(ABBREV) \
 	    --amend $(DOCKER_REPO)$(NAME):$(ABBREV)-amd64 \
 	    --amend $(DOCKER_REPO)$(NAME):$(ABBREV)-arm64
-	docker manifest push $(DOCKER_REPO)$(NAME):$(ABBREV)
+	$(DOCKER_BIN) manifest push $(DOCKER_REPO)$(NAME):$(ABBREV)
 
-	docker manifest create $(DOCKER_REPO)$(NAME):latest \
+	$(DOCKER_BIN) manifest create $(DOCKER_REPO)$(NAME):latest \
 	    --amend $(DOCKER_REPO)$(NAME):$(ABBREV)-amd64 \
 	    --amend $(DOCKER_REPO)$(NAME):$(ABBREV)-arm64
-	docker manifest push $(DOCKER_REPO)$(NAME):latest
+	$(DOCKER_BIN) manifest push $(DOCKER_REPO)$(NAME):latest
 
 .PHONY: docker-manifest-release
 docker-manifest-release:
-	docker manifest create $(DOCKER_REPO)$(NAME):$(VERSION) \
+	$(DOCKER_BIN) manifest create $(DOCKER_REPO)$(NAME):$(VERSION) \
 	    --amend $(DOCKER_REPO)$(NAME):$(ABBREV)-amd64 \
 	    --amend $(DOCKER_REPO)$(NAME):$(ABBREV)-arm64
-	docker manifest push $(DOCKER_REPO)$(NAME):$(VERSION)
+	$(DOCKER_BIN) manifest push $(DOCKER_REPO)$(NAME):$(VERSION)
 
 .PHONY: package-deb
 package-deb: prepare
