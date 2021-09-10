@@ -332,6 +332,12 @@ func ConvertNetFlowDataSet(version uint16, baseTime uint32, uptime uint32, recor
 				case netflow.IPFIX_FIELD_flowEndNanoseconds:
 					DecodeUNumber(v, &time)
 					flowMessage.TimeFlowEnd = time / 1000000000
+				case netflow.IPFIX_FIELD_flowStartDeltaMicroseconds:
+					DecodeUNumber(v, &time)
+					flowMessage.TimeFlowStart = uint64(baseTime) - time/1000000
+				case netflow.IPFIX_FIELD_flowEndDeltaMicroseconds:
+					DecodeUNumber(v, &time)
+					flowMessage.TimeFlowEnd = uint64(baseTime) - time/1000000
 				}
 			}
 		}
