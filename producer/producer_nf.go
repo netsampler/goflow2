@@ -345,6 +345,9 @@ func ConvertNetFlowDataSet(version uint16, baseTime uint32, uptime uint32, recor
 				case netflow.IPFIX_FIELD_dataLinkFrameSection:
 					ParseEthernetHeader(flowMessage, v)
 					flowMessage.Packets = 1
+					if flowMessage.Bytes == 0 {
+						flowMessage.Bytes = uint64(len(v))
+					}
 				}
 			}
 		}
