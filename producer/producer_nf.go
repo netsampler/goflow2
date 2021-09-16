@@ -338,6 +338,13 @@ func ConvertNetFlowDataSet(version uint16, baseTime uint32, uptime uint32, recor
 				case netflow.IPFIX_FIELD_flowEndDeltaMicroseconds:
 					DecodeUNumber(v, &time)
 					flowMessage.TimeFlowEnd = uint64(baseTime) - time/1000000
+				// RFC7133
+				case netflow.IPFIX_FIELD_dataLinkFrameSize:
+					DecodeUNumber(v, &(flowMessage.Bytes))
+					flowMessage.Packets = 1
+				case netflow.IPFIX_FIELD_dataLinkFrameSection:
+					ParseEthernetHeader(flowMessage, v)
+					flowMessage.Packets = 1
 				}
 			}
 		}
