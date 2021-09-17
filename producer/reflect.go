@@ -21,8 +21,10 @@ func MapCustom(flowMessage *flowmessage.FlowMessage, df netflow.DataField, mappe
 			v := df.Value.([]byte)
 			if typeDest.Kind() == reflect.Slice && typeDest.Elem().Kind() == reflect.Uint8 {
 				fieldValue.SetBytes(v)
-			} else if fieldValueAddr.IsValid() {
+			} else if fieldValueAddr.IsValid() && (typeDest.Kind() == reflect.Uint8 || typeDest.Kind() == reflect.Uint16 || typeDest.Kind() == reflect.Uint32 || typeDest.Kind() == reflect.Uint64) {
 				DecodeUNumber(v, fieldValueAddr.Interface())
+			} else if fieldValueAddr.IsValid() && (typeDest.Kind() == reflect.Int8 || typeDest.Kind() == reflect.Int16 || typeDest.Kind() == reflect.Int32 || typeDest.Kind() == reflect.Int64) {
+				DecodeNumber(v, fieldValueAddr.Interface())
 			}
 		}
 	}

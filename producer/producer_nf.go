@@ -137,6 +137,44 @@ func DecodeUNumber(b []byte, out interface{}) error {
 	return nil
 }
 
+func DecodeNumber(b []byte, out interface{}) error {
+	var o int64
+	l := len(b)
+	switch l {
+	case 1:
+		o = int64(int8(b[0]))
+	case 2:
+		o = int64(int16(binary.BigEndian.Uint16(b)))
+	case 4:
+		o = int64(int32(binary.BigEndian.Uint32(b)))
+	case 8:
+		o = int64(binary.BigEndian.Uint64(b))
+	default:
+		if l < 8 {
+			var iter int
+			for i := range b {
+				o |= int64(b[i]) << int(8*(int(l)-iter-1))
+				iter++
+			}
+		} else {
+			return errors.New(fmt.Sprintf("Non-regular number of bytes for a number: %v", l))
+		}
+	}
+	switch t := out.(type) {
+	case *int8:
+		*t = int8(o)
+	case *int16:
+		*t = int16(o)
+	case *int32:
+		*t = int32(o)
+	case *int64:
+		*t = o
+	default:
+		return errors.New("The parameter is not a pointer to a int8/int16/int32/int64 structure")
+	}
+	return nil
+}
+
 func ConvertNetFlowDataSet(version uint16, baseTime uint32, uptime uint32, record []netflow.DataField, mapper *NetFlowMapper) *flowmessage.FlowMessage {
 	flowMessage := &flowmessage.FlowMessage{}
 	var time uint64
