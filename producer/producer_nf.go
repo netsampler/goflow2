@@ -175,7 +175,7 @@ func DecodeNumber(b []byte, out interface{}) error {
 	return nil
 }
 
-func ConvertNetFlowDataSet(version uint16, baseTime uint32, uptime uint32, record []netflow.DataField, mapper *NetFlowMapper) *flowmessage.FlowMessage {
+func ConvertNetFlowDataSet(version uint16, baseTime uint32, uptime uint32, record []netflow.DataField, mapperNetFlow *NetFlowMapper, mapperSFlow *SFlowMapper) *flowmessage.FlowMessage {
 	flowMessage := &flowmessage.FlowMessage{}
 	var time uint64
 
@@ -193,7 +193,7 @@ func ConvertNetFlowDataSet(version uint16, baseTime uint32, uptime uint32, recor
 			continue
 		}
 
-		MapCustom(flowMessage, df, mapper)
+		MapCustom(flowMessage, df, mapperNetFlow)
 
 		if df.PenProvided {
 			continue
@@ -387,7 +387,7 @@ func ConvertNetFlowDataSet(version uint16, baseTime uint32, uptime uint32, recor
 					DecodeUNumber(v, &(flowMessage.Bytes))
 					flowMessage.Packets = 1
 				case netflow.IPFIX_FIELD_dataLinkFrameSection:
-					ParseEthernetHeader(flowMessage, v)
+					ParseEthernetHeader(flowMessage, v, mapperSFlow)
 					flowMessage.Packets = 1
 					if flowMessage.Bytes == 0 {
 						flowMessage.Bytes = uint64(len(v))
@@ -401,10 +401,10 @@ func ConvertNetFlowDataSet(version uint16, baseTime uint32, uptime uint32, recor
 	return flowMessage
 }
 
-func SearchNetFlowDataSetsRecords(version uint16, baseTime uint32, uptime uint32, dataRecords []netflow.DataRecord, mapper *NetFlowMapper) []*flowmessage.FlowMessage {
+func SearchNetFlowDataSetsRecords(version uint16, baseTime uint32, uptime uint32, dataRecords []netflow.DataRecord, mapperNetFlow *NetFlowMapper, mapperSFlow *SFlowMapper) []*flowmessage.FlowMessage {
 	flowMessageSet := make([]*flowmessage.FlowMessage, 0)
 	for _, record := range dataRecords {
-		fmsg := ConvertNetFlowDataSet(version, baseTime, uptime, record.Values, mapper)
+		fmsg := ConvertNetFlowDataSet(version, baseTime, uptime, record.Values, mapperNetFlow, mapperSFlow)
 		if fmsg != nil {
 			flowMessageSet = append(flowMessageSet, fmsg)
 		}
@@ -412,10 +412,10 @@ func SearchNetFlowDataSetsRecords(version uint16, baseTime uint32, uptime uint32
 	return flowMessageSet
 }
 
-func SearchNetFlowDataSets(version uint16, baseTime uint32, uptime uint32, dataFlowSet []netflow.DataFlowSet, mapper *NetFlowMapper) []*flowmessage.FlowMessage {
+func SearchNetFlowDataSets(version uint16, baseTime uint32, uptime uint32, dataFlowSet []netflow.DataFlowSet, mapperNetFlow *NetFlowMapper, mapperSFlow *SFlowMapper) []*flowmessage.FlowMessage {
 	flowMessageSet := make([]*flowmessage.FlowMessage, 0)
 	for _, dataFlowSetItem := range dataFlowSet {
-		fmsg := SearchNetFlowDataSetsRecords(version, baseTime, uptime, dataFlowSetItem.Records, mapper)
+		fmsg := SearchNetFlowDataSetsRecords(version, baseTime, uptime, dataFlowSetItem.Records, mapperNetFlow, mapperSFlow)
 		if fmsg != nil {
 			flowMessageSet = append(flowMessageSet, fmsg...)
 		}
@@ -491,7 +491,7 @@ func ProcessMessageNetFlow(msgDec interface{}, samplingRateSys SamplingRateSyste
 
 // Convert a NetFlow datastructure to a FlowMessage protobuf
 // Does not put sampling rate
-func ProcessMessageNetFlowConfig(msgDec interface{}, samplingRateSys SamplingRateSystem, config *NetFlowProducerConfig) ([]*flowmessage.FlowMessage, error) {
+func ProcessMessageNetFlowConfig(msgDec interface{}, samplingRateSys SamplingRateSystem, config *ProducerConfigMapped) ([]*flowmessage.FlowMessage, error) {
 	seqnum := uint32(0)
 	var baseTime uint32
 	var uptime uint32
@@ -507,7 +507,7 @@ func ProcessMessageNetFlowConfig(msgDec interface{}, samplingRateSys SamplingRat
 		uptime = msgDecConv.SystemUptime
 		obsDomainId := msgDecConv.SourceId
 
-		flowMessageSet = SearchNetFlowDataSets(9, baseTime, uptime, dataFlowSet, MapFields(config.NetFlowV9.Mapping))
+		flowMessageSet = SearchNetFlowDataSets(9, baseTime, uptime, dataFlowSet, config.NetFlowV9, nil)
 		samplingRate, found := SearchNetFlowOptionDataSets(optionDataFlowSet)
 		if samplingRateSys != nil {
 			if found {
@@ -527,7 +527,7 @@ func ProcessMessageNetFlowConfig(msgDec interface{}, samplingRateSys SamplingRat
 		baseTime = msgDecConv.ExportTime
 		obsDomainId := msgDecConv.ObservationDomainId
 
-		flowMessageSet = SearchNetFlowDataSets(10, baseTime, uptime, dataFlowSet, MapFields(config.IPFIX.Mapping))
+		flowMessageSet = SearchNetFlowDataSets(10, baseTime, uptime, dataFlowSet, config.IPFIX, config.SFlow)
 
 		samplingRate, found := SearchNetFlowOptionDataSets(optionDataFlowSet)
 		if samplingRateSys != nil {

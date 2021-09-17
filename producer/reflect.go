@@ -35,23 +35,38 @@ type NetFlowMapField struct {
 	Type        uint16 `json:"field"`
 	Pen         uint32 `json:"pen"`
 
+	Destination string `json:"destination"`
+	//DestinationLength uint8  `json:"dlen"` // could be used if populating a slice of uint16 that aren't in protobuf
+}
+
+type IPFIXProducerConfig struct {
+	Mapping []NetFlowMapField `json:"mapping"`
+	//PacketMapping []SFlowMapField   `json:"packet-mapping"` // for embedded frames: use sFlow configuration
+}
+
+type NetFlowV9ProducerConfig struct {
+	Mapping []NetFlowMapField `json:"mapping"`
+}
+
+type SFlowMapField struct {
+	Layer  int `json:"layer"`
+	Offset int `json:"offset"`
+	Length int `json:"length"`
+
 	Destination       string `json:"destination"`
 	DestinationLength uint8  `json:"dlen"`
 }
 
-type IPFIXProducerConfig struct {
-	SkipBase bool              `json:"skip-base"`
-	Mapping  []NetFlowMapField `json:"mapping"`
+type SFlowProducerConfig struct {
+	Mapping []SFlowMapField `json:"mapping"`
 }
 
-type NetFlowV9ProducerConfig struct {
-	SkipBase bool              `json:"skip-base"`
-	Mapping  []NetFlowMapField `json:"mapping"`
-}
-
-type NetFlowProducerConfig struct {
+type ProducerConfig struct {
 	IPFIX     IPFIXProducerConfig     `json:"ipfix"`
 	NetFlowV9 NetFlowV9ProducerConfig `json:"netflowv9"`
+	SFlow     SFlowProducerConfig     `json:"sflow"` // also used for IPFIX data frames
+
+	// should do a rename map list for when printing
 }
 
 type DataMap struct {
@@ -59,7 +74,7 @@ type DataMap struct {
 }
 
 type NetFlowMapper struct {
-	data map[string]DataMap
+	data map[string]DataMap // maps field to destination
 }
 
 func (m *NetFlowMapper) Map(field netflow.DataField) (DataMap, bool) {
@@ -67,10 +82,55 @@ func (m *NetFlowMapper) Map(field netflow.DataField) (DataMap, bool) {
 	return mapped, found
 }
 
-func MapFields(fields []NetFlowMapField) *NetFlowMapper {
+func MapFieldsNetFlow(fields []NetFlowMapField) *NetFlowMapper {
 	ret := make(map[string]DataMap)
 	for _, field := range fields {
 		ret[fmt.Sprintf("%v-%d-%d", field.PenProvided, field.Pen, field.Type)] = DataMap{Destination: field.Destination}
 	}
 	return &NetFlowMapper{ret}
+}
+
+type DataMapLayer struct {
+	Offset      int
+	Length      int
+	Destination string
+}
+
+type SFlowMapper struct {
+	data map[int][]DataMapLayer // map layer to list of offsets
+}
+
+func MapFieldsSFlow(fields []SFlowMapField) *SFlowMapper {
+	ret := make(map[int][]DataMapLayer)
+	for _, field := range fields {
+		retLayerEntry := DataMapLayer{
+			Offset:      field.Offset,
+			Length:      field.Length,
+			Destination: field.Destination,
+		}
+		retLayer, ok := ret[field.Layer]
+		if !ok {
+			retLayer = make([]DataMapLayer, 0)
+		}
+		retLayer = append(retLayer, retLayerEntry)
+		ret[field.Layer] = retLayer
+
+	}
+	return &SFlowMapper{ret}
+}
+
+type ProducerConfigMapped struct {
+	IPFIX     *NetFlowMapper
+	NetFlowV9 *NetFlowMapper
+	SFlow     *SFlowMapper
+}
+
+func NewProducerConfigMapped(config *ProducerConfig) *ProducerConfigMapped {
+	newCfg := &ProducerConfigMapped{}
+	if config != nil {
+		newCfg.IPFIX = MapFieldsNetFlow(config.IPFIX.Mapping)
+		newCfg.NetFlowV9 = MapFieldsNetFlow(config.NetFlowV9.Mapping)
+		newCfg.SFlow = MapFieldsSFlow(config.SFlow.Mapping)
+	}
+	return newCfg
 }

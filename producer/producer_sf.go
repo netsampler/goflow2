@@ -22,14 +22,11 @@ func GetSFlowFlowSamples(packet *sflow.Packet) []interface{} {
 	return flowSamples
 }
 
-type SFlowProducerConfig struct {
-}
-
 func ParseSampledHeader(flowMessage *flowmessage.FlowMessage, sampledHeader *sflow.SampledHeader) error {
 	return ParseSampledHeaderConfig(flowMessage, sampledHeader, nil)
 }
 
-func ParseEthernetHeader(flowMessage *flowmessage.FlowMessage, data []byte) {
+func ParseEthernetHeader(flowMessage *flowmessage.FlowMessage, data []byte, config *SFlowMapper) {
 	var hasMPLS bool
 	var countMpls uint32
 	var firstLabelMpls uint32
@@ -196,12 +193,11 @@ func ParseEthernetHeader(flowMessage *flowmessage.FlowMessage, data []byte) {
 	(*flowMessage).FragmentOffset = uint32(fragOffset)
 }
 
-func ParseSampledHeaderConfig(flowMessage *flowmessage.FlowMessage, sampledHeader *sflow.SampledHeader, config *SFlowProducerConfig) error {
-
+func ParseSampledHeaderConfig(flowMessage *flowmessage.FlowMessage, sampledHeader *sflow.SampledHeader, config *SFlowMapper) error {
 	data := (*sampledHeader).HeaderData
 	switch (*sampledHeader).Protocol {
 	case 1: // Ethernet
-		ParseEthernetHeader(flowMessage, data)
+		ParseEthernetHeader(flowMessage, data, config)
 	}
 	return nil
 }
@@ -210,7 +206,7 @@ func SearchSFlowSamples(samples []interface{}) []*flowmessage.FlowMessage {
 	return SearchSFlowSamples(samples)
 }
 
-func SearchSFlowSamplesConfig(samples []interface{}, config *SFlowProducerConfig) []*flowmessage.FlowMessage {
+func SearchSFlowSamplesConfig(samples []interface{}, config *SFlowMapper) []*flowmessage.FlowMessage {
 	flowMessageSet := make([]*flowmessage.FlowMessage, 0)
 
 	for _, flowSample := range samples {
@@ -293,7 +289,7 @@ func ProcessMessageSFlow(msgDec interface{}) ([]*flowmessage.FlowMessage, error)
 	return ProcessMessageSFlowConfig(msgDec, nil)
 }
 
-func ProcessMessageSFlowConfig(msgDec interface{}, config *SFlowProducerConfig) ([]*flowmessage.FlowMessage, error) {
+func ProcessMessageSFlowConfig(msgDec interface{}, config *ProducerConfigMapped) ([]*flowmessage.FlowMessage, error) {
 	switch packet := msgDec.(type) {
 	case sflow.Packet:
 		seqnum := packet.SequenceNumber
@@ -301,7 +297,7 @@ func ProcessMessageSFlowConfig(msgDec interface{}, config *SFlowProducerConfig) 
 		agent = packet.AgentIP
 
 		flowSamples := GetSFlowFlowSamples(&packet)
-		flowMessageSet := SearchSFlowSamplesConfig(flowSamples, config)
+		flowMessageSet := SearchSFlowSamplesConfig(flowSamples, config.SFlow)
 		for _, fmsg := range flowMessageSet {
 			fmsg.SamplerAddress = agent
 			fmsg.SequenceNum = seqnum
