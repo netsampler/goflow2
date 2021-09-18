@@ -56,6 +56,11 @@ func ParseEthernetHeader(flowMessage *flowmessage.FlowMessage, data []byte, conf
 	var srcPort uint16
 	var dstPort uint16
 
+	for _, configLayer := range GetSFlowConfigLayer(config, 0) {
+		extracted := GetBytes(data, configLayer.Offset, configLayer.Length)
+		MapCustom(flowMessage, extracted, configLayer.Destination)
+	}
+
 	etherType := data[12:14]
 
 	dstMac = binary.BigEndian.Uint64(append([]byte{0, 0}, data[0:6]...))
@@ -114,6 +119,11 @@ func ParseEthernetHeader(flowMessage *flowmessage.FlowMessage, data []byte, conf
 			}
 		}
 
+		for _, configLayer := range GetSFlowConfigLayer(config, 3) {
+			extracted := GetBytes(data, offset+configLayer.Offset, offset+configLayer.Length)
+			MapCustom(flowMessage, extracted, configLayer.Destination)
+		}
+
 		if etherType[0] == 0x8 && etherType[1] == 0x0 { // IPv4
 			if len(data) >= offset+20 {
 				nextHeader = data[offset+9]
@@ -146,6 +156,11 @@ func ParseEthernetHeader(flowMessage *flowmessage.FlowMessage, data []byte, conf
 		} /*else {
 			return errors.New(fmt.Sprintf("Unknown EtherType: %v\n", etherType))
 		} */
+
+		for _, configLayer := range GetSFlowConfigLayer(config, 4) {
+			extracted := GetBytes(data, offset+configLayer.Offset, offset+configLayer.Length)
+			MapCustom(flowMessage, extracted, configLayer.Destination)
+		}
 
 		if len(data) >= offset+4 && (nextHeader == 17 || nextHeader == 6) {
 			srcPort = binary.BigEndian.Uint16(data[offset+0 : offset+2])
@@ -296,8 +311,13 @@ func ProcessMessageSFlowConfig(msgDec interface{}, config *ProducerConfigMapped)
 		var agent net.IP
 		agent = packet.AgentIP
 
+		var cfg *SFlowMapper
+		if config != nil {
+			cfg = config.SFlow
+		}
+
 		flowSamples := GetSFlowFlowSamples(&packet)
-		flowMessageSet := SearchSFlowSamplesConfig(flowSamples, config.SFlow)
+		flowMessageSet := SearchSFlowSamplesConfig(flowSamples, cfg)
 		for _, fmsg := range flowMessageSet {
 			fmsg.SamplerAddress = agent
 			fmsg.SequenceNum = seqnum

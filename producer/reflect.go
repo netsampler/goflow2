@@ -8,24 +8,64 @@ import (
 	flowmessage "github.com/netsampler/goflow2/pb"
 )
 
-func MapCustom(flowMessage *flowmessage.FlowMessage, df netflow.DataField, mapper *NetFlowMapper) {
+func GetBytes(d []byte, offset int, length int) []byte {
+	if length == 0 {
+		return nil
+	}
+	leftBytes := offset / 8
+	rightBytes := (offset + length) / 8
+	if (offset+length)%8 != 0 {
+		rightBytes += 1
+	}
+	if leftBytes >= len(d) {
+		return nil
+	}
+	if rightBytes > len(d) {
+		rightBytes = len(d)
+	}
+	chunk := make([]byte, rightBytes-leftBytes)
+
+	offsetMod8 := (offset % 8)
+	shiftAnd := byte(0xff >> ((8 - offsetMod8) % 8))
+
+	var shifted byte
+	for i := range chunk {
+		j := len(chunk) - 1 - i
+		cur := d[j+leftBytes]
+		chunk[j] = (cur << offsetMod8) | shifted
+		shifted = shiftAnd & cur
+	}
+	last := len(chunk) - 1
+	shiftAndLast := byte(0xff << ((8 - ((offset + length) % 8)) % 8))
+	chunk[last] = chunk[last] & shiftAndLast
+	return chunk
+}
+
+func MapCustomNetFlow(flowMessage *flowmessage.FlowMessage, df netflow.DataField, mapper *NetFlowMapper) {
+	if mapper == nil {
+		return
+	}
 	mapped, ok := mapper.Map(df)
 	if ok {
-		vfm := reflect.ValueOf(flowMessage)
-		vfm = reflect.Indirect(vfm)
+		v := df.Value.([]byte)
+		MapCustom(flowMessage, v, mapped.Destination)
+	}
+}
 
-		fieldValue := vfm.FieldByName(mapped.Destination)
-		if fieldValue.IsValid() {
-			typeDest := fieldValue.Type()
-			fieldValueAddr := fieldValue.Addr()
-			v := df.Value.([]byte)
-			if typeDest.Kind() == reflect.Slice && typeDest.Elem().Kind() == reflect.Uint8 {
-				fieldValue.SetBytes(v)
-			} else if fieldValueAddr.IsValid() && (typeDest.Kind() == reflect.Uint8 || typeDest.Kind() == reflect.Uint16 || typeDest.Kind() == reflect.Uint32 || typeDest.Kind() == reflect.Uint64) {
-				DecodeUNumber(v, fieldValueAddr.Interface())
-			} else if fieldValueAddr.IsValid() && (typeDest.Kind() == reflect.Int8 || typeDest.Kind() == reflect.Int16 || typeDest.Kind() == reflect.Int32 || typeDest.Kind() == reflect.Int64) {
-				DecodeNumber(v, fieldValueAddr.Interface())
-			}
+func MapCustom(flowMessage *flowmessage.FlowMessage, v []byte, destination string) {
+	vfm := reflect.ValueOf(flowMessage)
+	vfm = reflect.Indirect(vfm)
+
+	fieldValue := vfm.FieldByName(destination)
+	if fieldValue.IsValid() {
+		typeDest := fieldValue.Type()
+		fieldValueAddr := fieldValue.Addr()
+		if typeDest.Kind() == reflect.Slice && typeDest.Elem().Kind() == reflect.Uint8 {
+			fieldValue.SetBytes(v)
+		} else if fieldValueAddr.IsValid() && (typeDest.Kind() == reflect.Uint8 || typeDest.Kind() == reflect.Uint16 || typeDest.Kind() == reflect.Uint32 || typeDest.Kind() == reflect.Uint64) {
+			DecodeUNumber(v, fieldValueAddr.Interface())
+		} else if fieldValueAddr.IsValid() && (typeDest.Kind() == reflect.Int8 || typeDest.Kind() == reflect.Int16 || typeDest.Kind() == reflect.Int32 || typeDest.Kind() == reflect.Int64) {
+			DecodeNumber(v, fieldValueAddr.Interface())
 		}
 	}
 }
@@ -50,11 +90,11 @@ type NetFlowV9ProducerConfig struct {
 
 type SFlowMapField struct {
 	Layer  int `json:"layer"`
-	Offset int `json:"offset"`
-	Length int `json:"length"`
+	Offset int `json:"offset"` // offset in bits
+	Length int `json:"length"` // length in bits
 
-	Destination       string `json:"destination"`
-	DestinationLength uint8  `json:"dlen"`
+	Destination string `json:"destination"`
+	//DestinationLength uint8  `json:"dlen"`
 }
 
 type SFlowProducerConfig struct {
@@ -98,6 +138,13 @@ type DataMapLayer struct {
 
 type SFlowMapper struct {
 	data map[int][]DataMapLayer // map layer to list of offsets
+}
+
+func GetSFlowConfigLayer(m *SFlowMapper, layer int) []DataMapLayer {
+	if m == nil {
+		return nil
+	}
+	return m.data[layer]
 }
 
 func MapFieldsSFlow(fields []SFlowMapField) *SFlowMapper {

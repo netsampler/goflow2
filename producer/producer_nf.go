@@ -193,7 +193,7 @@ func ConvertNetFlowDataSet(version uint16, baseTime uint32, uptime uint32, recor
 			continue
 		}
 
-		MapCustom(flowMessage, df, mapperNetFlow)
+		MapCustomNetFlow(flowMessage, df, mapperNetFlow)
 
 		if df.PenProvided {
 			continue
@@ -507,7 +507,11 @@ func ProcessMessageNetFlowConfig(msgDec interface{}, samplingRateSys SamplingRat
 		uptime = msgDecConv.SystemUptime
 		obsDomainId := msgDecConv.SourceId
 
-		flowMessageSet = SearchNetFlowDataSets(9, baseTime, uptime, dataFlowSet, config.NetFlowV9, nil)
+		var cfg *NetFlowMapper
+		if config != nil {
+			cfg = config.NetFlowV9
+		}
+		flowMessageSet = SearchNetFlowDataSets(9, baseTime, uptime, dataFlowSet, cfg, nil)
 		samplingRate, found := SearchNetFlowOptionDataSets(optionDataFlowSet)
 		if samplingRateSys != nil {
 			if found {
@@ -527,7 +531,13 @@ func ProcessMessageNetFlowConfig(msgDec interface{}, samplingRateSys SamplingRat
 		baseTime = msgDecConv.ExportTime
 		obsDomainId := msgDecConv.ObservationDomainId
 
-		flowMessageSet = SearchNetFlowDataSets(10, baseTime, uptime, dataFlowSet, config.IPFIX, config.SFlow)
+		var cfgIpfix *NetFlowMapper
+		var cfgSflow *SFlowMapper
+		if config != nil {
+			cfgIpfix = config.IPFIX
+			cfgSflow = config.SFlow
+		}
+		flowMessageSet = SearchNetFlowDataSets(10, baseTime, uptime, dataFlowSet, cfgIpfix, cfgSflow)
 
 		samplingRate, found := SearchNetFlowOptionDataSets(optionDataFlowSet)
 		if samplingRateSys != nil {
