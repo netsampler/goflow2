@@ -175,7 +175,7 @@ func ParseEthernetHeader(flowMessage *flowmessage.FlowMessage, data []byte, conf
 		if len(data) >= offset+13 && nextHeader == 6 {
 			tcpflags = data[offset+13]
 
-			appOffset = data[13] >> 4 * 4
+			appOffset = int(data[13]>>4) * 4
 		}
 
 		// ICMP and ICMPv6
