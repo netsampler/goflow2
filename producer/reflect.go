@@ -26,7 +26,7 @@ func GetBytes(d []byte, offset int, length int) []byte {
 	chunk := make([]byte, rightBytes-leftBytes)
 
 	offsetMod8 := (offset % 8)
-	shiftAnd := byte(0xff >> ((8 - offsetMod8) % 8))
+	shiftAnd := byte(0xff >> (8 - offsetMod8))
 
 	var shifted byte
 	for i := range chunk {
@@ -57,9 +57,11 @@ func MapCustom(flowMessage *flowmessage.FlowMessage, v []byte, destination strin
 	vfm = reflect.Indirect(vfm)
 
 	fieldValue := vfm.FieldByName(destination)
+
 	if fieldValue.IsValid() {
 		typeDest := fieldValue.Type()
 		fieldValueAddr := fieldValue.Addr()
+
 		if typeDest.Kind() == reflect.Slice && typeDest.Elem().Kind() == reflect.Uint8 {
 			fieldValue.SetBytes(v)
 		} else if fieldValueAddr.IsValid() && (typeDest.Kind() == reflect.Uint8 || typeDest.Kind() == reflect.Uint16 || typeDest.Kind() == reflect.Uint32 || typeDest.Kind() == reflect.Uint64) {
@@ -71,7 +73,7 @@ func MapCustom(flowMessage *flowmessage.FlowMessage, v []byte, destination strin
 }
 
 type NetFlowMapField struct {
-	PenProvided bool
+	PenProvided bool   `json:"penprovided"`
 	Type        uint16 `json:"field"`
 	Pen         uint32 `json:"pen"`
 
@@ -167,9 +169,9 @@ func MapFieldsSFlow(fields []SFlowMapField) *SFlowMapper {
 }
 
 type ProducerConfigMapped struct {
-	IPFIX     *NetFlowMapper
-	NetFlowV9 *NetFlowMapper
-	SFlow     *SFlowMapper
+	IPFIX     *NetFlowMapper `json:"ipfix"`
+	NetFlowV9 *NetFlowMapper `json:"netflowv9"`
+	SFlow     *SFlowMapper   `json:"sflow"`
 }
 
 func NewProducerConfigMapped(config *ProducerConfig) *ProducerConfigMapped {

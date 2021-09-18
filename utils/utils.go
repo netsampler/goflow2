@@ -3,6 +3,7 @@ package utils
 import (
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"strconv"
 	"time"
@@ -11,8 +12,19 @@ import (
 	decoder "github.com/netsampler/goflow2/decoders"
 	"github.com/netsampler/goflow2/decoders/netflow"
 	flowmessage "github.com/netsampler/goflow2/pb"
+	"github.com/netsampler/goflow2/producer"
 	"github.com/prometheus/client_golang/prometheus"
+	"gopkg.in/yaml.v2"
 )
+
+type ProducerConfig *producer.ProducerConfig
+
+func LoadMapping(f io.Reader) (ProducerConfig, error) {
+	config := &producer.ProducerConfig{}
+	dec := yaml.NewDecoder(f)
+	err := dec.Decode(config)
+	return config, err
+}
 
 func GetServiceAddresses(srv string) (addrs []string, err error) {
 	_, srvs, err := net.LookupSRV("", "", srv)

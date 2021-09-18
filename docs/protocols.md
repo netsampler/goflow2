@@ -56,3 +56,51 @@ The mapping to the protobuf format is listed in the table below.
 |MPLSxTTL|TTL of the MPLS label||Included|||
 |MPLSxLabel|MPLS label||Included|||
 
+## Add new custom fields
+
+If you are using enterprise fields that you need decoded
+or if you are looking for specific bytes inside the packet sample.
+
+This feature is only available when sending Protobufs (no text output).
+
+The [`mapping.yaml`](../cmd/goflow2/mapping.yaml) example file
+will collect source and destination port again, use it with `-mapping=mapping.yaml` in the CLI.
+
+Data coming from the flows can be added to the protobuf either as an unsigned/signed integer a slice of bytes.
+
+The `sflow` section allow to extract data from packet samples inside sFlow and inside IPFIX (dataframe).
+The following layers are available:
+* 0: no offset
+* 3: network layer, offsets to IP/IPv6 header
+* 4: transport layer, offsets to TCP/UDP header
+* 7: application layer, offsets to the TCP/UDP payload
+
+
+```yaml
+ipfix:
+  mapping:
+    - field: 7 # NetFlow or IPFIX field ID
+      destination: CustomInteger1 # Name of the field inside the Protobuf
+      penprovided: false # Has an enterprise number (optional)
+      pen: 0 # Enterprise number (optional)
+netflowv9:
+  mapping: []
+    # ... similar to above, Enterprise number will not be supported
+sflow:
+  mapping:
+    - layer: 4 # Layer
+      offset: 0 # Source port
+      length: 16 # 2 bytes
+      destination: CustomInteger1
+```
+
+Without editing and recompiling the [protobuf](../pb/flow.proto), you can use up to 5 integers and 5 slices of bytes:
+
+```protobuf
+  // Custom allocations
+  uint64 CustomInteger1 = 1001;
+  [...]
+
+  bytes CustomBytes1 = 1011;
+  [...]
+```

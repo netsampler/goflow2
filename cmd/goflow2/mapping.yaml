@@ -1,0 +1,24 @@
+ipfix:
+  mapping:
+    - field: 7 # IPFIX_FIELD_sourceTransportPort
+      destination: CustomInteger1
+    - field: 11 # IPFIX_FIELD_destinationTransportPort
+      destination: CustomInteger2
+      # penprovided: false
+      # pen: 0
+netflowv9:
+  mapping:
+    - field: 7
+      destination: CustomInteger1
+    - field: 11
+      destination: CustomInteger2
+sflow:
+  mapping:
+    - layer: 4 # Layer 4: TCP or UDP
+      offset: 0 # Source port
+      length: 16 # 2 bytes
+      destination: CustomInteger1
+    - layer: 4
+      offset: 16 # Destination port
+      length: 16 # 2 bytes
+      destination: CustomInteger2

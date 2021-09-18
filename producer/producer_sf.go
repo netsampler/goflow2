@@ -120,7 +120,7 @@ func ParseEthernetHeader(flowMessage *flowmessage.FlowMessage, data []byte, conf
 		}
 
 		for _, configLayer := range GetSFlowConfigLayer(config, 3) {
-			extracted := GetBytes(data, offset+configLayer.Offset, offset+configLayer.Length)
+			extracted := GetBytes(data, offset*8+configLayer.Offset, configLayer.Length)
 			MapCustom(flowMessage, extracted, configLayer.Destination)
 		}
 
@@ -158,23 +158,37 @@ func ParseEthernetHeader(flowMessage *flowmessage.FlowMessage, data []byte, conf
 		} */
 
 		for _, configLayer := range GetSFlowConfigLayer(config, 4) {
-			extracted := GetBytes(data, offset+configLayer.Offset, offset+configLayer.Length)
+			extracted := GetBytes(data, offset*8+configLayer.Offset, configLayer.Length)
 			MapCustom(flowMessage, extracted, configLayer.Destination)
 		}
 
+		appOffset := 0
 		if len(data) >= offset+4 && (nextHeader == 17 || nextHeader == 6) {
 			srcPort = binary.BigEndian.Uint16(data[offset+0 : offset+2])
 			dstPort = binary.BigEndian.Uint16(data[offset+2 : offset+4])
 		}
 
+		if nextHeader == 17 {
+			appOffset = 8
+		}
+
 		if len(data) >= offset+13 && nextHeader == 6 {
 			tcpflags = data[offset+13]
+
+			appOffset = data[13] >> 4 * 4
 		}
 
 		// ICMP and ICMPv6
 		if len(data) >= offset+2 && (nextHeader == 1 || nextHeader == 58) {
 			(*flowMessage).IcmpType = uint32(data[offset+0])
 			(*flowMessage).IcmpCode = uint32(data[offset+1])
+		}
+
+		if appOffset > 0 {
+			for _, configLayer := range GetSFlowConfigLayer(config, 7) {
+				extracted := GetBytes(data, (offset+appOffset)*8+configLayer.Offset, configLayer.Length)
+				MapCustom(flowMessage, extracted, configLayer.Destination)
+			}
 		}
 
 		iterations++
