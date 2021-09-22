@@ -6,7 +6,7 @@ RUN apk --update --no-cache add git build-base gcc
 COPY . /build
 WORKDIR /build
 
-RUN go build -ldflags "${LDFLAGS}" -o goflow2 cmd/goflow2/main.go
+RUN CGO_ENABLED=0 go build -ldflags "${LDFLAGS}" -o goflow2 cmd/goflow2/main.go
 
 FROM alpine:latest
 ARG src_dir
