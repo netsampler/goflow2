@@ -57,12 +57,12 @@ func FindTransport(ctx context.Context, name string) (*Transport, error) {
 
 func GetTransports() []string {
 	lock.RLock()
+	defer lock.RUnlock()
 	t := make([]string, len(transportDrivers))
 	var i int
 	for k, _ := range transportDrivers {
 		t[i] = k
 		i++
 	}
-	lock.RUnlock()
 	return t
 }

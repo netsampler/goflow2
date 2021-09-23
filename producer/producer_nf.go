@@ -33,27 +33,25 @@ func CreateSamplingSystem() SamplingRateSystem {
 
 func (s *basicSamplingRateSystem) AddSamplingRate(version uint16, obsDomainId uint32, samplingRate uint32) {
 	s.samplinglock.Lock()
+	defer s.samplinglock.Unlock()
 	_, exists := s.sampling[version]
 	if exists != true {
 		s.sampling[version] = make(map[uint32]uint32)
 	}
 	s.sampling[version][obsDomainId] = samplingRate
-	s.samplinglock.Unlock()
 }
 
 func (s *basicSamplingRateSystem) GetSamplingRate(version uint16, obsDomainId uint32) (uint32, error) {
 	s.samplinglock.RLock()
+	defer s.samplinglock.RUnlock()
 	samplingVersion, okver := s.sampling[version]
 	if okver {
 		samplingRate, okid := samplingVersion[obsDomainId]
 		if okid {
-			s.samplinglock.RUnlock()
 			return samplingRate, nil
 		}
-		s.samplinglock.RUnlock()
 		return 0, errors.New("") // TBC
 	}
-	s.samplinglock.RUnlock()
 	return 0, errors.New("") // TBC
 }
 

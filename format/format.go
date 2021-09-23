@@ -53,12 +53,12 @@ func FindFormat(ctx context.Context, name string) (*Format, error) {
 
 func GetFormats() []string {
 	lock.RLock()
+	defer lock.RUnlock()
 	t := make([]string, len(formatDrivers))
 	var i int
 	for k, _ := range formatDrivers {
 		t[i] = k
 		i++
 	}
-	lock.RUnlock()
 	return t
 }
