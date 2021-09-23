@@ -28,9 +28,8 @@ LABEL org.opencontainers.image.description="${DESCRIPTION}"
 LABEL org.opencontainers.image.licenses="${LICENSE}"
 LABEL org.opencontainers.image.revision="${REV}"
 
-RUN apk update --no-cache && \
-    adduser -S -D -H -h / flow
-USER flow
+FROM scratch
+USER 1000
 COPY --from=builder /build/goflow2 /
 
 ENTRYPOINT ["./goflow2"]
