@@ -23,7 +23,10 @@ func (e *ErrorVersion) Error() string {
 
 func DecodeMessage(payload *bytes.Buffer) (interface{}, error) {
 	var version uint16
-	utils.BinaryDecoder(payload, &version)
+	err := utils.BinaryDecoder(payload, &version)
+	if err != nil {
+		return nil, err
+	}
 	packet := PacketNetFlowV5{}
 	if version == 5 {
 		packet.Version = version
@@ -42,7 +45,10 @@ func DecodeMessage(payload *bytes.Buffer) (interface{}, error) {
 		packet.Records = make([]RecordsNetFlowV5, int(packet.Count))
 		for i := 0; i < int(packet.Count) && payload.Len() >= 48; i++ {
 			record := RecordsNetFlowV5{}
-			utils.BinaryDecoder(payload, &record)
+			err := utils.BinaryDecoder(payload, &record)
+			if err != nil {
+				return packet, err
+			}
 			packet.Records[i] = record
 		}
 
