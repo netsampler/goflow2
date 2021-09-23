@@ -35,7 +35,10 @@ func DecodeNFv9OptionsTemplateSet(payload *bytes.Buffer) ([]NFv9OptionsTemplateR
 		fields := make([]Field, sizeScope)
 		for i := 0; i < sizeScope; i++ {
 			field := Field{}
-			err = utils.BinaryDecoder(payload, &field)
+			err := utils.BinaryDecoder(payload, &field.Type, &field.Length)
+			if err != nil {
+				return records, err
+			}
 			fields[i] = field
 		}
 		optsTemplateRecord.Scopes = fields
@@ -43,7 +46,10 @@ func DecodeNFv9OptionsTemplateSet(payload *bytes.Buffer) ([]NFv9OptionsTemplateR
 		fields = make([]Field, sizeOptions)
 		for i := 0; i < sizeOptions; i++ {
 			field := Field{}
-			err = utils.BinaryDecoder(payload, &field)
+			err := utils.BinaryDecoder(payload, &field.Type, &field.Length)
+			if err != nil {
+				return records, err
+			}
 			fields[i] = field
 		}
 		optsTemplateRecord.Options = fields
