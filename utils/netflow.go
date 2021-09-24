@@ -59,6 +59,9 @@ type StateNetFlow struct {
 
 	samplinglock *sync.RWMutex
 	sampling     map[string]producer.SamplingRateSystem
+
+	Config       *producer.ProducerConfig
+	configMapped *producer.ProducerConfigMapped
 }
 
 func (s *StateNetFlow) DecodeFlow(msg interface{}) error {
@@ -215,7 +218,7 @@ func (s *StateNetFlow) DecodeFlow(msg interface{}) error {
 					Add(float64(len(fsConv.Records)))
 			}
 		}
-		flowMessageSet, err = producer.ProcessMessageNetFlow(msgDecConv, sampling)
+		flowMessageSet, err = producer.ProcessMessageNetFlowConfig(msgDecConv, sampling, s.configMapped)
 
 		for _, fmsg := range flowMessageSet {
 			fmsg.TimeReceived = ts
@@ -308,7 +311,7 @@ func (s *StateNetFlow) DecodeFlow(msg interface{}) error {
 					Add(float64(len(fsConv.Records)))
 			}
 		}
-		flowMessageSet, err = producer.ProcessMessageNetFlow(msgDecConv, sampling)
+		flowMessageSet, err = producer.ProcessMessageNetFlowConfig(msgDecConv, sampling, s.configMapped)
 
 		for _, fmsg := range flowMessageSet {
 			fmsg.TimeReceived = ts
@@ -365,7 +368,12 @@ func (s *StateNetFlow) InitTemplates() {
 	s.samplinglock = &sync.RWMutex{}
 }
 
+func (s *StateNetFlow) initConfig() {
+	s.configMapped = producer.NewProducerConfigMapped(s.Config)
+}
+
 func (s *StateNetFlow) FlowRoutine(workers int, addr string, port int, reuseport bool) error {
 	s.InitTemplates()
+	s.initConfig()
 	return UDPRoutine("NetFlow", s.DecodeFlow, workers, addr, port, reuseport, s.Logger)
 }

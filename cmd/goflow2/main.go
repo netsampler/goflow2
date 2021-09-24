@@ -47,6 +47,8 @@ var (
 
 	TemplatePath = flag.String("templates.path", "/templates", "NetFlow/IPFIX templates list")
 
+	MappingFile = flag.String("mapping", "", "Configuration file for custom mappings")
+
 	Version = flag.Bool("v", false, "Print version")
 )
 
@@ -66,6 +68,19 @@ func main() {
 
 	lvl, _ := log.ParseLevel(*LogLevel)
 	log.SetLevel(lvl)
+
+	var config utils.ProducerConfig
+	if *MappingFile != "" {
+		f, err := os.Open(*MappingFile)
+		if err != nil {
+			log.Fatal(err)
+		}
+		config, err = utils.LoadMapping(f)
+		f.Close()
+		if err != nil {
+			log.Fatal(err)
+		}
+	}
 
 	ctx := context.Background()
 
@@ -121,6 +136,7 @@ func main() {
 					Format:    formatter,
 					Transport: transporter,
 					Logger:    log.StandardLogger(),
+					Config:    config,
 				}
 				err = sSFlow.FlowRoutine(*Workers, hostname, int(port), *ReusePort)
 			} else if listenAddrUrl.Scheme == "netflow" {
@@ -128,6 +144,7 @@ func main() {
 					Format:    formatter,
 					Transport: transporter,
 					Logger:    log.StandardLogger(),
+					Config:    config,
 				}
 				err = sNF.FlowRoutine(*Workers, hostname, int(port), *ReusePort)
 			} else if listenAddrUrl.Scheme == "nfl" {

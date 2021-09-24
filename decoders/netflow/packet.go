@@ -89,7 +89,9 @@ type Field struct {
 
 type DataField struct {
 	// A numeric value that represents the type of field.
-	Type uint16
+	PenProvided bool
+	Type        uint16
+	Pen         uint32
 
 	// The value (in bytes) of the field.
 	Value interface{}

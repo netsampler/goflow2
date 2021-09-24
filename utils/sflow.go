@@ -18,7 +18,8 @@ type StateSFlow struct {
 	Transport transport.TransportInterface
 	Logger    Logger
 
-	Config *producer.SFlowProducerConfig
+	Config       *producer.ProducerConfig
+	configMapped *producer.ProducerConfigMapped
 }
 
 func (s *StateSFlow) DecodeFlow(msg interface{}) error {
@@ -118,7 +119,7 @@ func (s *StateSFlow) DecodeFlow(msg interface{}) error {
 	}
 
 	var flowMessageSet []*flowmessage.FlowMessage
-	flowMessageSet, err = producer.ProcessMessageSFlowConfig(msgDec, s.Config)
+	flowMessageSet, err = producer.ProcessMessageSFlowConfig(msgDec, s.configMapped)
 
 	timeTrackStop := time.Now()
 	DecoderTime.With(
@@ -147,6 +148,11 @@ func (s *StateSFlow) DecodeFlow(msg interface{}) error {
 	return nil
 }
 
+func (s *StateSFlow) initConfig() {
+	s.configMapped = producer.NewProducerConfigMapped(s.Config)
+}
+
 func (s *StateSFlow) FlowRoutine(workers int, addr string, port int, reuseport bool) error {
+	s.initConfig()
 	return UDPRoutine("sFlow", s.DecodeFlow, workers, addr, port, reuseport, s.Logger)
 }

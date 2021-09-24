@@ -16,6 +16,7 @@ const (
 	FORMAT_TYPE_INTEGER
 	FORMAT_TYPE_IP
 	FORMAT_TYPE_MAC
+	FORMAT_TYPE_BYTES
 )
 
 var (
@@ -231,6 +232,8 @@ func FormatMessageReflectCustom(msg proto.Message, ext, quotes, sep, sign string
 				mac := make([]byte, 8)
 				binary.BigEndian.PutUint64(mac, fieldValue.Uint())
 				fstr[i] = fmt.Sprintf("%s%s%s%s%q", quotes, kf, quotes, sign, net.HardwareAddr(mac[2:]).String())
+			case FORMAT_TYPE_BYTES:
+				fstr[i] = fmt.Sprintf("%s%s%s%s%.2x", quotes, kf, quotes, sign, fieldValue.Bytes())
 			default:
 				if null {
 					fstr[i] = fmt.Sprintf("%s%s%s%snull", quotes, kf, quotes, sign)
