@@ -81,11 +81,17 @@ func DecodeCounterRecord(header *RecordHeader, payload *bytes.Buffer) (CounterRe
 	switch (*header).DataFormat {
 	case 1:
 		ifCounters := IfCounters{}
-		utils.BinaryDecoder(payload, &ifCounters)
+		err := utils.BinaryDecoder(payload, &ifCounters)
+		if err != nil {
+			return counterRecord, err
+		}
 		counterRecord.Data = ifCounters
 	case 2:
 		ethernetCounters := EthernetCounters{}
-		utils.BinaryDecoder(payload, &ethernetCounters)
+		err := utils.BinaryDecoder(payload, &ethernetCounters)
+		if err != nil {
+			return counterRecord, err
+		}
 		counterRecord.Data = ethernetCounters
 	default:
 		return counterRecord, NewErrorDataFormat((*header).DataFormat)
@@ -96,7 +102,10 @@ func DecodeCounterRecord(header *RecordHeader, payload *bytes.Buffer) (CounterRe
 
 func DecodeIP(payload *bytes.Buffer) (uint32, []byte, error) {
 	var ipVersion uint32
-	utils.BinaryDecoder(payload, &ipVersion)
+	err := utils.BinaryDecoder(payload, &ipVersion)
+	if err != nil {
+		return 0, nil, err
+	}
 	var ip []byte
 	if ipVersion == 1 {
 		ip = make([]byte, 4)
@@ -106,7 +115,10 @@ func DecodeIP(payload *bytes.Buffer) (uint32, []byte, error) {
 		return ipVersion, ip, NewErrorIPVersion(ipVersion)
 	}
 	if payload.Len() >= len(ip) {
-		utils.BinaryDecoder(payload, &ip)
+		err := utils.BinaryDecoder(payload, &ip)
+		if err != nil {
+			return 0, nil, err
+		}
 	} else {
 		return ipVersion, ip, NewErrorDecodingSFlow(fmt.Sprintf("Not enough data: %v, needs %v.", payload.Len(), len(ip)))
 	}
@@ -354,7 +366,10 @@ func DecodeMessage(payload *bytes.Buffer) (interface{}, error) {
 		var ip []byte
 		if packetV5.IPVersion == 1 {
 			ip = make([]byte, 4)
-			utils.BinaryDecoder(payload, ip)
+			err = utils.BinaryDecoder(payload, ip)
+			if err != nil {
+				return packetV5, err
+			}
 		} else if packetV5.IPVersion == 2 {
 			ip = make([]byte, 16)
 			err = utils.BinaryDecoder(payload, ip)
