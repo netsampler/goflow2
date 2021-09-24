@@ -285,6 +285,7 @@ func (ts *BasicTemplateSystem) GetTemplates() map[uint16]map[uint32]map[uint16]i
 
 func (ts *BasicTemplateSystem) AddTemplate(version uint16, obsDomainId uint32, template interface{}) {
 	ts.templateslock.Lock()
+	defer ts.templateslock.Unlock()
 	_, exists := ts.templates[version]
 	if exists != true {
 		ts.templates[version] = make(map[uint32]map[uint16]interface{})
@@ -303,27 +304,21 @@ func (ts *BasicTemplateSystem) AddTemplate(version uint16, obsDomainId uint32, t
 		templateId = templateIdConv.TemplateId
 	}
 	ts.templates[version][obsDomainId][templateId] = template
-	ts.templateslock.Unlock()
 }
 
 func (ts *BasicTemplateSystem) GetTemplate(version uint16, obsDomainId uint32, templateId uint16) (interface{}, error) {
 	ts.templateslock.RLock()
+	defer ts.templateslock.RUnlock()
 	templatesVersion, okver := ts.templates[version]
 	if okver {
 		templatesObsDom, okobs := templatesVersion[obsDomainId]
 		if okobs {
 			template, okid := templatesObsDom[templateId]
 			if okid {
-				ts.templateslock.RUnlock()
 				return template, nil
 			}
-			ts.templateslock.RUnlock()
-			return nil, NewErrorTemplateNotFound(version, obsDomainId, templateId, "info")
 		}
-		ts.templateslock.RUnlock()
-		return nil, NewErrorTemplateNotFound(version, obsDomainId, templateId, "info")
 	}
-	ts.templateslock.RUnlock()
 	return nil, NewErrorTemplateNotFound(version, obsDomainId, templateId, "info")
 }
 
