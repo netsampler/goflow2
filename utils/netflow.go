@@ -14,6 +14,7 @@ import (
 	"github.com/netsampler/goflow2/producer"
 	"github.com/netsampler/goflow2/transport"
 	"github.com/prometheus/client_golang/prometheus"
+	log "github.com/sirupsen/logrus"
 )
 
 type TemplateSystem struct {
@@ -341,7 +342,10 @@ func (s *StateNetFlow) DecodeFlow(msg interface{}) error {
 				s.Logger.Error(err)
 			}
 			if err == nil && s.Transport != nil {
-				s.Transport.Send(key, data)
+				sendErr := s.Transport.Send(key, data)
+				if ( sendErr != nil) {
+					log.Error("could not transport key=%s value=%s, err: %s", key, string(data), sendErr)
+				}
 			}
 		}
 	}

@@ -4,6 +4,7 @@ go 1.15
 
 require (
 	github.com/Shopify/sarama v1.19.0
+	github.com/apache/pulsar-client-go v0.6.0 // indirect
 	github.com/golang/protobuf v1.4.3
 	github.com/libp2p/go-reuseport v0.0.2
 	github.com/oschwald/geoip2-golang v1.5.0
