@@ -2,6 +2,7 @@ package utils
 
 import (
 	"bytes"
+	"context"
 	"net"
 	"time"
 
@@ -153,6 +154,12 @@ func (s *StateSFlow) initConfig() {
 }
 
 func (s *StateSFlow) FlowRoutine(workers int, addr string, port int, reuseport bool) error {
+	return s.FlowRoutineWithCtx(context.Background(), workers, addr, port, reuseport)
+}
+
+// FlowRoutineWithCtx starts the flow routine with a context that can be cancelled to stop the
+// routine execution
+func (s *StateSFlow) FlowRoutineWithCtx(ctx context.Context, workers int, addr string, port int, reuseport bool) error {
 	s.initConfig()
-	return UDPRoutine("sFlow", s.DecodeFlow, workers, addr, port, reuseport, s.Logger)
+	return UDPRoutineWithCtx(ctx, "sFlow", s.DecodeFlow, workers, addr, port, reuseport, s.Logger)
 }

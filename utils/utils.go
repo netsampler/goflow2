@@ -1,11 +1,13 @@
 package utils
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
 	"net"
 	"strconv"
+	"sync/atomic"
 	"time"
 
 	reuseport "github.com/libp2p/go-reuseport"
@@ -99,6 +101,10 @@ func (cb *DefaultErrorCallback) Callback(name string, id int, start, end time.Ti
 }
 
 func UDPRoutine(name string, decodeFunc decoder.DecoderFunc, workers int, addr string, port int, sockReuse bool, logger Logger) error {
+	return UDPRoutineWithCtx(context.Background(), name, decodeFunc, workers, addr, port, sockReuse, logger)
+}
+
+func UDPRoutineWithCtx(ctx context.Context, name string, decodeFunc decoder.DecoderFunc, workers int, addr string, port int, sockReuse bool, logger Logger) error {
 	ecb := DefaultErrorCallback{
 		Logger: logger,
 	}
@@ -146,41 +152,71 @@ func UDPRoutine(name string, decodeFunc decoder.DecoderFunc, workers int, addr s
 		localIP = ""
 	}
 
-	for {
-		size, pktAddr, _ := udpconn.ReadFromUDP(payload)
-		payloadCut := make([]byte, size)
-		copy(payloadCut, payload[0:size])
-
-		baseMessage := BaseMessage{
-			Src:     pktAddr.IP,
-			Port:    pktAddr.Port,
-			Payload: payloadCut,
-		}
-		processor.ProcessMessage(baseMessage)
-
-		MetricTrafficBytes.With(
-			prometheus.Labels{
-				"remote_ip":  pktAddr.IP.String(),
-				"local_ip":   localIP,
-				"local_port": strconv.Itoa(addrUDP.Port),
-				"type":       name,
-			}).
-			Add(float64(size))
-		MetricTrafficPackets.With(
-			prometheus.Labels{
-				"remote_ip":  pktAddr.IP.String(),
-				"local_ip":   localIP,
-				"local_port": strconv.Itoa(addrUDP.Port),
-				"type":       name,
-			}).
-			Inc()
-		MetricPacketSizeSum.With(
-			prometheus.Labels{
-				"remote_ip":  pktAddr.IP.String(),
-				"local_ip":   localIP,
-				"local_port": strconv.Itoa(addrUDP.Port),
-				"type":       name,
-			}).
-			Observe(float64(size))
+	type udpData struct {
+		size    int
+		pktAddr *net.UDPAddr
 	}
+
+	stopped := atomic.Value{}
+	stopped.Store(false)
+	udpDataCh := make(chan udpData)
+	go func() {
+		for {
+			u := udpData{}
+			u.size, u.pktAddr, _ = udpconn.ReadFromUDP(payload)
+			if stopped.Load() == false {
+				udpDataCh <- u
+			} else {
+				return
+			}
+		}
+	}()
+	for {
+		select {
+		case u := <-udpDataCh:
+			process(u.size, payload, u.pktAddr, processor, localIP, addrUDP, name)
+		case <-ctx.Done():
+			stopped.Store(true)
+			udpconn.Close()
+			close(udpDataCh)
+			return nil
+		}
+	}
+}
+
+func process(size int, payload []byte, pktAddr *net.UDPAddr, processor decoder.Processor, localIP string, addrUDP net.UDPAddr, name string) {
+	payloadCut := make([]byte, size)
+	copy(payloadCut, payload[0:size])
+
+	baseMessage := BaseMessage{
+		Src:     pktAddr.IP,
+		Port:    pktAddr.Port,
+		Payload: payloadCut,
+	}
+	processor.ProcessMessage(baseMessage)
+
+	MetricTrafficBytes.With(
+		prometheus.Labels{
+			"remote_ip":  pktAddr.IP.String(),
+			"local_ip":   localIP,
+			"local_port": strconv.Itoa(addrUDP.Port),
+			"type":       name,
+		}).
+		Add(float64(size))
+	MetricTrafficPackets.With(
+		prometheus.Labels{
+			"remote_ip":  pktAddr.IP.String(),
+			"local_ip":   localIP,
+			"local_port": strconv.Itoa(addrUDP.Port),
+			"type":       name,
+		}).
+		Inc()
+	MetricPacketSizeSum.With(
+		prometheus.Labels{
+			"remote_ip":  pktAddr.IP.String(),
+			"local_ip":   localIP,
+			"local_port": strconv.Itoa(addrUDP.Port),
+			"type":       name,
+		}).
+		Observe(float64(size))
 }

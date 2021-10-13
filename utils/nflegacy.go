@@ -2,6 +2,7 @@ package utils
 
 import (
 	"bytes"
+	"context"
 	"time"
 
 	"github.com/netsampler/goflow2/decoders/netflowlegacy"
@@ -95,5 +96,11 @@ func (s *StateNFLegacy) DecodeFlow(msg interface{}) error {
 }
 
 func (s *StateNFLegacy) FlowRoutine(workers int, addr string, port int, reuseport bool) error {
-	return UDPRoutine("NetFlowV5", s.DecodeFlow, workers, addr, port, reuseport, s.Logger)
+	return s.FlowRoutineWithCtx(context.Background(), workers, addr, port, reuseport)
+}
+
+// FlowRoutineWithCtx starts the flow routine with a context that can be cancelled to stop the
+// routine execution
+func (s *StateNFLegacy) FlowRoutineWithCtx(ctx context.Context, workers int, addr string, port int, reuseport bool) error {
+	return UDPRoutineWithCtx(ctx, "NetFlowV5", s.DecodeFlow, workers, addr, port, reuseport, s.Logger)
 }

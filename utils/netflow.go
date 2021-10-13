@@ -2,6 +2,7 @@ package utils
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"strconv"
@@ -373,7 +374,13 @@ func (s *StateNetFlow) initConfig() {
 }
 
 func (s *StateNetFlow) FlowRoutine(workers int, addr string, port int, reuseport bool) error {
+	return s.FlowRoutineWithCtx(context.Background(), workers, addr, port, reuseport)
+}
+
+// FlowRoutineWithCtx starts the flow routine with a context that can be cancelled to stop the
+// routine execution
+func (s *StateNetFlow) FlowRoutineWithCtx(ctx context.Context, workers int, addr string, port int, reuseport bool) error {
 	s.InitTemplates()
 	s.initConfig()
-	return UDPRoutine("NetFlow", s.DecodeFlow, workers, addr, port, reuseport, s.Logger)
+	return UDPRoutineWithCtx(ctx, "NetFlow", s.DecodeFlow, workers, addr, port, reuseport, s.Logger)
 }
