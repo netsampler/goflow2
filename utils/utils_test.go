@@ -1,7 +1,6 @@
 package utils
 
 import (
-	"context"
 	"fmt"
 	"net"
 	"testing"
@@ -16,13 +15,9 @@ func TestCancelUDPRoutine(t *testing.T) {
 	testTimeout := time.After(10 * time.Second)
 	port, err := getFreeUDPPort()
 	require.NoError(t, err)
-	ctx, cancelContext := context.WithCancel(context.Background())
-	receivedMessages := make(chan interface{})
+	dp := dummyFlowProcessor{}
 	go func() {
-		require.NoError(t, UDPRoutineWithCtx(ctx, "test_udp", func(msg interface{}) error {
-			receivedMessages <- msg
-			return nil
-		}, 1, "127.0.0.1", port, false, logrus.StandardLogger()))
+		require.NoError(t, dp.FlowRoutine("127.0.0.1", port))
 	}()
 
 	// wait slightly so we give time to the server to accept requests
@@ -43,7 +38,7 @@ func TestCancelUDPRoutine(t *testing.T) {
 
 	readMessage := func() string {
 		select {
-		case msg := <-receivedMessages:
+		case msg := <-dp.receivedMessages:
 			return string(msg.(BaseMessage).Payload)
 		case <-testTimeout:
 			require.Fail(t, "test timed out while waiting for message")
@@ -51,20 +46,36 @@ func TestCancelUDPRoutine(t *testing.T) {
 		}
 	}
 
-	require.Equal(t, "message 1", readMessage())
-	require.Equal(t, "message 2", readMessage())
-	require.Equal(t, "message 3", readMessage())
+	// in UDP, messages might arrive out of order or duplicate, so whe just verify they arrive
+	// to avoid flaky tests
+	require.Contains(t, []string{"message 1", "message 2", "message 3"}, readMessage())
+	require.Contains(t, []string{"message 1", "message 2", "message 3"}, readMessage())
+	require.Contains(t, []string{"message 1", "message 2", "message 3"}, readMessage())
 
-	cancelContext()
+	dp.Shutdown()
 
 	_ = sendMessage("no more messages should be processed")
 
 	select {
-	case msg := <-receivedMessages:
+	case msg := <-dp.receivedMessages:
 		assert.Fail(t, fmt.Sprint(msg))
 	default:
 		// everything is correct
 	}
+}
+
+type dummyFlowProcessor struct {
+	stopper
+	receivedMessages chan interface{}
+}
+
+func (d *dummyFlowProcessor) FlowRoutine(host string, port int) error {
+	_ = d.start()
+	d.receivedMessages = make(chan interface{})
+	return UDPStoppableRoutine(d.stopCh, "test_udp", func(msg interface{}) error {
+		d.receivedMessages <- msg
+		return nil
+	}, 3, host, port, false, logrus.StandardLogger())
 }
 
 func getFreeUDPPort() (int, error) {

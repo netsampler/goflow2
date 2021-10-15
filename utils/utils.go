@@ -1,7 +1,6 @@
 package utils
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -101,10 +100,11 @@ func (cb *DefaultErrorCallback) Callback(name string, id int, start, end time.Ti
 }
 
 func UDPRoutine(name string, decodeFunc decoder.DecoderFunc, workers int, addr string, port int, sockReuse bool, logger Logger) error {
-	return UDPRoutineWithCtx(context.Background(), name, decodeFunc, workers, addr, port, sockReuse, logger)
+	return UDPStoppableRoutine(make(chan struct{}), name, decodeFunc, workers, addr, port, sockReuse, logger)
 }
 
-func UDPRoutineWithCtx(ctx context.Context, name string, decodeFunc decoder.DecoderFunc, workers int, addr string, port int, sockReuse bool, logger Logger) error {
+// UDPStoppableRoutine runs a UDPRoutine that can be stopped by closing the stopCh passed as argument
+func UDPStoppableRoutine(stopCh <-chan struct{}, name string, decodeFunc decoder.DecoderFunc, workers int, addr string, port int, sockReuse bool, logger Logger) error {
 	ecb := DefaultErrorCallback{
 		Logger: logger,
 	}
@@ -175,7 +175,7 @@ func UDPRoutineWithCtx(ctx context.Context, name string, decodeFunc decoder.Deco
 		select {
 		case u := <-udpDataCh:
 			process(u.size, payload, u.pktAddr, processor, localIP, addrUDP, name)
-		case <-ctx.Done():
+		case <-stopCh:
 			stopped.Store(true)
 			udpconn.Close()
 			close(udpDataCh)
