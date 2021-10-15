@@ -2,6 +2,7 @@ package utils
 
 import (
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -13,6 +14,13 @@ func TestStopper(t *testing.T) {
 	require.NoError(t, r.StartRoutine())
 	assert.True(t, r.Running)
 	r.Shutdown()
+	assert.Eventually(t, func() bool {
+		return r.Running == false
+	}, time.Second, time.Millisecond)
+
+	// after shutdown, we can start it again
+	require.NoError(t, r.StartRoutine())
+	assert.True(t, r.Running)
 }
 
 func TestStopper_CannotStartTwice(t *testing.T) {
