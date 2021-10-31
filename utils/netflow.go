@@ -51,6 +51,8 @@ func (s *TemplateSystem) GetTemplate(version uint16, obsDomainId uint32, templat
 }
 
 type StateNetFlow struct {
+	stopper
+
 	Format        format.FormatInterface
 	Transport     transport.TransportInterface
 	Logger        Logger
@@ -373,7 +375,10 @@ func (s *StateNetFlow) initConfig() {
 }
 
 func (s *StateNetFlow) FlowRoutine(workers int, addr string, port int, reuseport bool) error {
+	if err := s.start(); err != nil {
+		return err
+	}
 	s.InitTemplates()
 	s.initConfig()
-	return UDPRoutine("NetFlow", s.DecodeFlow, workers, addr, port, reuseport, s.Logger)
+	return UDPStoppableRoutine(s.stopCh, "NetFlow", s.DecodeFlow, workers, addr, port, reuseport, s.Logger)
 }

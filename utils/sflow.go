@@ -14,6 +14,8 @@ import (
 )
 
 type StateSFlow struct {
+	stopper
+
 	Format    format.FormatInterface
 	Transport transport.TransportInterface
 	Logger    Logger
@@ -153,6 +155,9 @@ func (s *StateSFlow) initConfig() {
 }
 
 func (s *StateSFlow) FlowRoutine(workers int, addr string, port int, reuseport bool) error {
+	if err := s.start(); err != nil {
+		return err
+	}
 	s.initConfig()
-	return UDPRoutine("sFlow", s.DecodeFlow, workers, addr, port, reuseport, s.Logger)
+	return UDPStoppableRoutine(s.stopCh, "sFlow", s.DecodeFlow, workers, addr, port, reuseport, s.Logger)
 }

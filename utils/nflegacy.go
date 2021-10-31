@@ -13,6 +13,8 @@ import (
 )
 
 type StateNFLegacy struct {
+	stopper
+
 	Format    format.FormatInterface
 	Transport transport.TransportInterface
 	Logger    Logger
@@ -95,5 +97,8 @@ func (s *StateNFLegacy) DecodeFlow(msg interface{}) error {
 }
 
 func (s *StateNFLegacy) FlowRoutine(workers int, addr string, port int, reuseport bool) error {
-	return UDPRoutine("NetFlowV5", s.DecodeFlow, workers, addr, port, reuseport, s.Logger)
+	if err := s.start(); err != nil {
+		return err
+	}
+	return UDPStoppableRoutine(s.stopCh, "NetFlowV5", s.DecodeFlow, workers, addr, port, reuseport, s.Logger)
 }
