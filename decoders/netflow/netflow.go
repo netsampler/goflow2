@@ -2,19 +2,13 @@ package netflow
 
 import (
 	"bytes"
+	"context"
 	"encoding/binary"
 	"fmt"
-	"sync"
 
+	"github.com/netsampler/goflow2/decoders/netflow/templates"
 	"github.com/netsampler/goflow2/decoders/utils"
 )
-
-type FlowBaseTemplateSet map[uint16]map[uint32]map[uint16]interface{}
-
-type NetFlowTemplateSystem interface {
-	GetTemplate(version uint16, obsDomainId uint32, templateId uint16) (interface{}, error)
-	AddTemplate(version uint16, obsDomainId uint32, template interface{})
-}
 
 func DecodeNFv9OptionsTemplateSet(payload *bytes.Buffer) ([]NFv9OptionsTemplateRecord, error) {
 	records := make([]NFv9OptionsTemplateRecord, 0)
@@ -293,66 +287,11 @@ func DecodeDataSet(version uint16, payload *bytes.Buffer, listFields []Field) ([
 	return records, nil
 }
 
-func (ts *BasicTemplateSystem) GetTemplates() map[uint16]map[uint32]map[uint16]interface{} {
-	ts.templateslock.RLock()
-	tmp := ts.templates
-	ts.templateslock.RUnlock()
-	return tmp
+func DecodeMessage(payload *bytes.Buffer, templates templates.TemplateInterface) (interface{}, error) {
+	return DecodeMessageContext(context.Background(), payload, "", templates)
 }
 
-func (ts *BasicTemplateSystem) AddTemplate(version uint16, obsDomainId uint32, template interface{}) {
-	ts.templateslock.Lock()
-	defer ts.templateslock.Unlock()
-	_, exists := ts.templates[version]
-	if exists != true {
-		ts.templates[version] = make(map[uint32]map[uint16]interface{})
-	}
-	_, exists = ts.templates[version][obsDomainId]
-	if exists != true {
-		ts.templates[version][obsDomainId] = make(map[uint16]interface{})
-	}
-	var templateId uint16
-	switch templateIdConv := template.(type) {
-	case IPFIXOptionsTemplateRecord:
-		templateId = templateIdConv.TemplateId
-	case NFv9OptionsTemplateRecord:
-		templateId = templateIdConv.TemplateId
-	case TemplateRecord:
-		templateId = templateIdConv.TemplateId
-	}
-	ts.templates[version][obsDomainId][templateId] = template
-}
-
-func (ts *BasicTemplateSystem) GetTemplate(version uint16, obsDomainId uint32, templateId uint16) (interface{}, error) {
-	ts.templateslock.RLock()
-	defer ts.templateslock.RUnlock()
-	templatesVersion, okver := ts.templates[version]
-	if okver {
-		templatesObsDom, okobs := templatesVersion[obsDomainId]
-		if okobs {
-			template, okid := templatesObsDom[templateId]
-			if okid {
-				return template, nil
-			}
-		}
-	}
-	return nil, NewErrorTemplateNotFound(version, obsDomainId, templateId, "info")
-}
-
-type BasicTemplateSystem struct {
-	templates     FlowBaseTemplateSet
-	templateslock *sync.RWMutex
-}
-
-func CreateTemplateSystem() *BasicTemplateSystem {
-	ts := &BasicTemplateSystem{
-		templates:     make(FlowBaseTemplateSet),
-		templateslock: &sync.RWMutex{},
-	}
-	return ts
-}
-
-func DecodeMessage(payload *bytes.Buffer, templates NetFlowTemplateSystem) (interface{}, error) {
+func DecodeMessageContext(ctx context.Context, payload *bytes.Buffer, templateKey string, templates templates.TemplateInterface) (interface{}, error) {
 	var size uint16
 	packetNFv9 := NFv9Packet{}
 	packetIPFIX := IPFIXPacket{}
@@ -412,7 +351,7 @@ func DecodeMessage(payload *bytes.Buffer, templates NetFlowTemplateSystem) (inte
 
 			if templates != nil {
 				for _, record := range records {
-					templates.AddTemplate(version, obsDomainId, record)
+					templates.AddTemplate(ctx, templateKey, version, obsDomainId, record.TemplateId, record)
 				}
 			}
 
@@ -430,7 +369,7 @@ func DecodeMessage(payload *bytes.Buffer, templates NetFlowTemplateSystem) (inte
 
 			if templates != nil {
 				for _, record := range records {
-					templates.AddTemplate(version, obsDomainId, record)
+					templates.AddTemplate(ctx, templateKey, version, obsDomainId, record.TemplateId, record)
 				}
 			}
 
@@ -448,7 +387,7 @@ func DecodeMessage(payload *bytes.Buffer, templates NetFlowTemplateSystem) (inte
 
 			if templates != nil {
 				for _, record := range records {
-					templates.AddTemplate(version, obsDomainId, record)
+					templates.AddTemplate(ctx, templateKey, version, obsDomainId, record.TemplateId, record)
 				}
 			}
 
@@ -466,7 +405,7 @@ func DecodeMessage(payload *bytes.Buffer, templates NetFlowTemplateSystem) (inte
 
 			if templates != nil {
 				for _, record := range records {
-					templates.AddTemplate(version, obsDomainId, record)
+					templates.AddTemplate(ctx, templateKey, version, obsDomainId, record.TemplateId, record)
 				}
 			}
 
@@ -477,7 +416,7 @@ func DecodeMessage(payload *bytes.Buffer, templates NetFlowTemplateSystem) (inte
 				continue
 			}
 
-			template, err := templates.GetTemplate(version, obsDomainId, fsheader.Id)
+			template, err := templates.GetTemplate(ctx, templateKey, version, obsDomainId, fsheader.Id)
 
 			if err == nil {
 				switch templatec := template.(type) {

@@ -22,6 +22,10 @@ import (
 	_ "github.com/netsampler/goflow2/transport/file"
 	_ "github.com/netsampler/goflow2/transport/kafka"
 
+	// import various NetFlow/IPFIX templates
+	"github.com/netsampler/goflow2/decoders/netflow/templates"
+	_ "github.com/netsampler/goflow2/decoders/netflow/templates/memory"
+
 	"github.com/netsampler/goflow2/utils"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	log "github.com/sirupsen/logrus"
@@ -38,6 +42,8 @@ var (
 	Workers  = flag.Int("workers", 1, "Number of workers per collector")
 	LogLevel = flag.String("loglevel", "info", "Log level")
 	LogFmt   = flag.String("logfmt", "normal", "Log formatter")
+
+	NetFlowTemplates = flag.String("netflow.templates", "memory", fmt.Sprintf("Choose the format (available: %s)", strings.Join(templates.GetTemplates(), ", ")))
 
 	Format    = flag.String("format", "json", fmt.Sprintf("Choose the format (available: %s)", strings.Join(format.GetFormats(), ", ")))
 	Transport = flag.String("transport", "file", fmt.Sprintf("Choose the transport (available: %s)", strings.Join(transport.GetTransports(), ", ")))
@@ -132,27 +138,34 @@ func main() {
 			log.WithFields(logFields).Info("Starting collection")
 
 			if listenAddrUrl.Scheme == "sflow" {
-				sSFlow := &utils.StateSFlow{
-					Format:    formatter,
-					Transport: transporter,
-					Logger:    log.StandardLogger(),
-					Config:    config,
-				}
+				sSFlow := utils.NewStateSFlow()
+				sSFlow.Format = formatter
+				sSFlow.Transport = transporter
+				sSFlow.Logger = log.StandardLogger()
+				sSFlow.Config = config
+
 				err = sSFlow.FlowRoutine(*Workers, hostname, int(port), *ReusePort)
 			} else if listenAddrUrl.Scheme == "netflow" {
-				sNF := &utils.StateNetFlow{
-					Format:    formatter,
-					Transport: transporter,
-					Logger:    log.StandardLogger(),
-					Config:    config,
+				templateSystem, err := templates.FindTemplateSystem(ctx, *NetFlowTemplates)
+				if err != nil {
+					log.Fatal(err)
 				}
+				defer templateSystem.Close(ctx)
+
+				sNF := utils.NewStateNetFlow()
+				sNF.Format = formatter
+				sNF.Transport = transporter
+				sNF.Logger = log.StandardLogger()
+				sNF.Config = config
+				sNF.TemplateSystem = templateSystem
+
 				err = sNF.FlowRoutine(*Workers, hostname, int(port), *ReusePort)
 			} else if listenAddrUrl.Scheme == "nfl" {
-				sNFL := &utils.StateNFLegacy{
-					Format:    formatter,
-					Transport: transporter,
-					Logger:    log.StandardLogger(),
-				}
+				sNFL := utils.NewStateNFLegacy()
+				sNFL.Format = formatter
+				sNFL.Transport = transporter
+				sNFL.Logger = log.StandardLogger()
+
 				err = sNFL.FlowRoutine(*Workers, hostname, int(port), *ReusePort)
 			} else {
 				log.Errorf("scheme %s does not exist", listenAddrUrl.Scheme)

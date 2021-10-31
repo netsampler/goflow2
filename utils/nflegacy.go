@@ -20,6 +20,10 @@ type StateNFLegacy struct {
 	Logger    Logger
 }
 
+func NewStateNFLegacy() *StateNFLegacy {
+	return &StateNFLegacy{}
+}
+
 func (s *StateNFLegacy) DecodeFlow(msg interface{}) error {
 	pkt := msg.(BaseMessage)
 	buf := bytes.NewBuffer(pkt.Payload)
