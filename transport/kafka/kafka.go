@@ -17,14 +17,6 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-type KafkaState struct {
-	FixedLengthProto bool
-	producer         sarama.AsyncProducer
-	topic            string
-	hashing          bool
-	keying           []string
-}
-
 type KafkaDriver struct {
 	kafkaTLS   bool
 	kafkaSASL  bool
