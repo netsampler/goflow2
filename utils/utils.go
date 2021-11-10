@@ -155,6 +155,7 @@ func UDPStoppableRoutine(stopCh <-chan struct{}, name string, decodeFunc decoder
 	type udpData struct {
 		size    int
 		pktAddr *net.UDPAddr
+		payload []byte
 	}
 
 	stopped := atomic.Value{}
@@ -165,6 +166,8 @@ func UDPStoppableRoutine(stopCh <-chan struct{}, name string, decodeFunc decoder
 			u := udpData{}
 			u.size, u.pktAddr, _ = udpconn.ReadFromUDP(payload)
 			if stopped.Load() == false {
+				u.payload = make([]byte, u.size)
+				copy(u.payload, payload[0:u.size])
 				udpDataCh <- u
 			} else {
 				return
@@ -174,7 +177,7 @@ func UDPStoppableRoutine(stopCh <-chan struct{}, name string, decodeFunc decoder
 	for {
 		select {
 		case u := <-udpDataCh:
-			process(u.size, payload, u.pktAddr, processor, localIP, addrUDP, name)
+			process(u.size, u.payload, u.pktAddr, processor, localIP, addrUDP, name)
 		case <-stopCh:
 			stopped.Store(true)
 			udpconn.Close()
@@ -185,13 +188,10 @@ func UDPStoppableRoutine(stopCh <-chan struct{}, name string, decodeFunc decoder
 }
 
 func process(size int, payload []byte, pktAddr *net.UDPAddr, processor decoder.Processor, localIP string, addrUDP net.UDPAddr, name string) {
-	payloadCut := make([]byte, size)
-	copy(payloadCut, payload[0:size])
-
 	baseMessage := BaseMessage{
 		Src:     pktAddr.IP,
 		Port:    pktAddr.Port,
-		Payload: payloadCut,
+		Payload: payload,
 	}
 	processor.ProcessMessage(baseMessage)
 
