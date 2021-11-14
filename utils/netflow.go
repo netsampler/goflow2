@@ -107,20 +107,6 @@ func (s *StateNetFlow) DecodeFlow(msg interface{}) error {
 	msgDec, err := netflow.DecodeMessage(buf, templates)
 	if err != nil {
 		switch err.(type) {
-		case *netflow.ErrorVersion:
-			NetFlowErrors.With(
-				prometheus.Labels{
-					"router": key,
-					"error":  "error_version",
-				}).
-				Inc()
-		case *netflow.ErrorFlowId:
-			NetFlowErrors.With(
-				prometheus.Labels{
-					"router": key,
-					"error":  "error_flow_id",
-				}).
-				Inc()
 		case *netflow.ErrorTemplateNotFound:
 			NetFlowErrors.With(
 				prometheus.Labels{
