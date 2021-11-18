@@ -3,14 +3,14 @@ services:
   zookeeper:
     image: bitnami/zookeeper:3.6.3
     ports:
-      - 2181:2181
+      - "2181:2181"
     environment:
       - ALLOW_ANONYMOUS_LOGIN=yes
     restart: always
   kafka:
     image: bitnami/kafka:2.8.0
     ports:
-      - 9092:9092
+      - "9092:9092"
     environment:
       - KAFKA_ZOOKEEPER_CONNECT=zookeeper:2181
       - ALLOW_PLAINTEXT_LISTENER=yes
@@ -23,7 +23,7 @@ services:
     environment:
       - GF_PLUGINS_ALLOW_LOADING_UNSIGNED_PLUGINS=vertamedia-clickhouse-datasource
     ports:
-      - 3000:3000
+      - "3000:3000"
     restart: always
     volumes:
       - ./grafana/datasources-ch.yml:/etc/grafana/provisioning/datasources/datasources-ch.yml
@@ -32,7 +32,7 @@ services:
   prometheus:
     image: prom/prometheus:v2.27.0
     ports:
-      - 9090:9090
+      - "9090:9090"
     restart: always
     volumes:
       - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
@@ -43,9 +43,9 @@ services:
     depends_on:
       - kafka
     ports:
-      - 8080:8080
-      - 6343:6343/udp
-      - 2055:2055/udp
+      - "8080:8080"
+      - "6343:6343/udp"
+      - "2055:2055/udp"
     restart: always
     command: 
     - -transport.kafka.brokers=kafka:9092
@@ -56,7 +56,7 @@ services:
   db:
     image: yandex/clickhouse-server:21.5.6.6
     ports:
-      - 8123:8123
+      - "8123:8123"
     volumes:
       - ./clickhouse:/docker-entrypoint-initdb.d/
       - ../../pb/flow.proto:/var/lib/clickhouse/format_schemas/flow.proto

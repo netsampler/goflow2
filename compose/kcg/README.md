@@ -1,4 +1,4 @@
-# Flows + Kafka + Clicklhouse + Grafana + Prometheus
+# Flows + Kafka + Clickhouse + Grafana + Prometheus
 
 Clickhouse is a powerful data warehouse.
 
