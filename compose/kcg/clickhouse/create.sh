@@ -72,6 +72,7 @@ clickhouse client -n <<-EOSQL
         Packets UInt64
     ) ENGINE = MergeTree()
     PARTITION BY Date
+    TTL TimeReceived + INTERVAL 1 DAY
     ORDER BY TimeReceived;
 
     CREATE MATERIALIZED VIEW IF NOT EXISTS flows_raw_view TO flows_raw 
@@ -100,6 +101,7 @@ clickhouse client -n <<-EOSQL
         Count UInt64
     ) ENGINE = SummingMergeTree()
     PARTITION BY Date
+    TTL Timeslot + INTERVAL 1 DAY
     ORDER BY (Date, Timeslot, SrcAS, DstAS, \`ETypeMap.EType\`);
 
     CREATE MATERIALIZED VIEW IF NOT EXISTS flows_5m_view TO flows_5m 
