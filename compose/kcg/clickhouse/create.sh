@@ -39,6 +39,7 @@ clickhouse client -n <<-EOSQL
         Bytes UInt64,
         Packets UInt64
     ) ENGINE = Kafka()
+    TTL TimeReceived + INTERVAL 1 DAY
     SETTINGS
         kafka_broker_list = 'kafka:9092',
         kafka_topic_list = 'flows',
