@@ -39,14 +39,12 @@ clickhouse client -n <<-EOSQL
         Bytes UInt64,
         Packets UInt64
     ) ENGINE = Kafka()
-    TTL TimeReceived + INTERVAL 1 DAY
     SETTINGS
         kafka_broker_list = 'kafka:9092',
         kafka_topic_list = 'flows',
         kafka_group_name = 'clickhouse',
         kafka_format = 'Protobuf',
         kafka_schema = './flow.proto:FlowMessage';
-
     CREATE TABLE IF NOT EXISTS flows_raw
     (
         Date Date,
