@@ -26,10 +26,11 @@ var (
 		0x86dd: "IPv6",
 	}
 	ProtoName = map[uint32]string{
-		1:  "ICMP",
-		6:  "TCP",
-		17: "UDP",
-		58: "ICMPv6",
+		1:   "ICMP",
+		6:   "TCP",
+		17:  "UDP",
+		58:  "ICMPv6",
+		132: "SCTP",
 	}
 	IcmpTypeName = map[uint32]string{
 		0:  "EchoReply",
