@@ -24,6 +24,7 @@ import (
 
 	// import various NetFlow/IPFIX templates
 	"github.com/netsampler/goflow2/decoders/netflow/templates"
+	_ "github.com/netsampler/goflow2/decoders/netflow/templates/file"
 	_ "github.com/netsampler/goflow2/decoders/netflow/templates/memory"
 
 	"github.com/netsampler/goflow2/utils"

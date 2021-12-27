@@ -2,16 +2,17 @@ package memory
 
 import (
 	"context"
-	"fmt"
 	"github.com/netsampler/goflow2/decoders/netflow/templates"
 	"sync"
 )
 
+var (
+	Driver = &MemoryDriver{}
+)
+
 type templateData struct {
-	version     uint16
-	obsDomainId uint32
-	templateId  uint16
-	data        interface{}
+	key  *templates.TemplateKey
+	data interface{}
 }
 
 type MemoryDriver struct {
@@ -34,32 +35,39 @@ func (d *MemoryDriver) Close(context.Context) error {
 	return nil
 }
 
-func (d *MemoryDriver) key(templateKey string, version uint16, obsDomainId uint32, templateId uint16) string {
-	return fmt.Sprintf("%s-%d-%d-%d", templateKey, version, obsDomainId, templateId)
-}
-
-func (d *MemoryDriver) AddTemplate(ctx context.Context, templateKey string, version uint16, obsDomainId uint32, templateId uint16, template interface{}) error {
-	d.lock.Lock()
-	defer d.lock.Unlock()
-
-	key := d.key(templateKey, version, obsDomainId, templateId)
-	d.templates[key] = templateData{
-		version:     version,
-		obsDomainId: obsDomainId,
-		templateId:  templateId,
-		data:        template,
+func (d *MemoryDriver) ListTemplates(ctx context.Context, ch chan *templates.TemplateKey) error {
+	d.lock.RLock()
+	defer d.lock.RUnlock()
+	for _, v := range d.templates {
+		select {
+		case ch <- v.key:
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+	select {
+	case ch <- nil:
 	}
 	return nil
 }
 
-func (d *MemoryDriver) GetTemplate(ctx context.Context, templateKey string, version uint16, obsDomainId uint32, templateId uint16) (interface{}, error) {
+func (d *MemoryDriver) AddTemplate(ctx context.Context, key *templates.TemplateKey, template interface{}) error {
+	d.lock.Lock()
+	defer d.lock.Unlock()
+
+	d.templates[key.String()] = templateData{
+		key:  key,
+		data: template,
+	}
+	return nil
+}
+
+func (d *MemoryDriver) GetTemplate(ctx context.Context, key *templates.TemplateKey) (interface{}, error) {
 	d.lock.RLock()
 	defer d.lock.RUnlock()
-	key := d.key(templateKey, version, obsDomainId, templateId)
-	return d.templates[key].data, nil
+	return d.templates[key.String()].data, nil
 }
 
 func init() {
-	d := &MemoryDriver{}
-	templates.RegisterTemplateDriver("memory", d)
+	templates.RegisterTemplateDriver("memory", Driver)
 }
