@@ -247,7 +247,7 @@ func DecodeMessage(payload *bytes.Buffer, templates templates.TemplateInterface)
 	return DecodeMessageContext(context.Background(), payload, "", templates)
 }
 
-func DecodeMessageContext(ctx context.Context, payload *bytes.Buffer, templateKey string, templates templates.TemplateInterface) (interface{}, error) {
+func DecodeMessageContext(ctx context.Context, payload *bytes.Buffer, templateKey string, tpli templates.TemplateInterface) (interface{}, error) {
 	var size uint16
 	packetNFv9 := NFv9Packet{}
 	packetIPFIX := IPFIXPacket{}
@@ -307,9 +307,9 @@ func DecodeMessageContext(ctx context.Context, payload *bytes.Buffer, templateKe
 
 			flowSet = templatefs
 
-			if templates != nil {
+			if tpli != nil {
 				for _, record := range records {
-					templates.AddTemplate(ctx, templateKey, version, obsDomainId, record.TemplateId, record)
+					tpli.AddTemplate(ctx, templates.NewTemplateKey(templateKey, version, obsDomainId, record.TemplateId), record)
 				}
 			}
 
@@ -325,9 +325,9 @@ func DecodeMessageContext(ctx context.Context, payload *bytes.Buffer, templateKe
 			}
 			flowSet = optsTemplatefs
 
-			if templates != nil {
+			if tpli != nil {
 				for _, record := range records {
-					templates.AddTemplate(ctx, templateKey, version, obsDomainId, record.TemplateId, record)
+					tpli.AddTemplate(ctx, templates.NewTemplateKey(templateKey, version, obsDomainId, record.TemplateId), record)
 				}
 			}
 
@@ -343,9 +343,9 @@ func DecodeMessageContext(ctx context.Context, payload *bytes.Buffer, templateKe
 			}
 			flowSet = templatefs
 
-			if templates != nil {
+			if tpli != nil {
 				for _, record := range records {
-					templates.AddTemplate(ctx, templateKey, version, obsDomainId, record.TemplateId, record)
+					tpli.AddTemplate(ctx, templates.NewTemplateKey(templateKey, version, obsDomainId, record.TemplateId), record)
 				}
 			}
 
@@ -361,20 +361,20 @@ func DecodeMessageContext(ctx context.Context, payload *bytes.Buffer, templateKe
 			}
 			flowSet = optsTemplatefs
 
-			if templates != nil {
+			if tpli != nil {
 				for _, record := range records {
-					templates.AddTemplate(ctx, templateKey, version, obsDomainId, record.TemplateId, record)
+					tpli.AddTemplate(ctx, templates.NewTemplateKey(templateKey, version, obsDomainId, record.TemplateId), record)
 				}
 			}
 
 		} else if fsheader.Id >= 256 {
 			dataReader := bytes.NewBuffer(payload.Next(nextrelpos))
 
-			if templates == nil {
+			if tpli == nil {
 				continue
 			}
 
-			template, err := templates.GetTemplate(ctx, templateKey, version, obsDomainId, fsheader.Id)
+			template, err := tpli.GetTemplate(ctx, templates.NewTemplateKey(templateKey, version, obsDomainId, fsheader.Id))
 
 			if err == nil {
 				switch templatec := template.(type) {
