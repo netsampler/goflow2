@@ -3,7 +3,7 @@ module github.com/netsampler/goflow2
 go 1.17
 
 require (
-	github.com/Shopify/sarama v1.30.0
+	github.com/Shopify/sarama v1.30.1
 	github.com/golang/protobuf v1.5.2
 	github.com/libp2p/go-reuseport v0.1.0
 	github.com/oschwald/geoip2-golang v1.5.0
