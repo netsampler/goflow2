@@ -329,6 +329,9 @@ func ConvertNetFlowDataSet(version uint16, baseTime uint32, uptime uint32, recor
 
 		case netflow.IPFIX_FIELD_biflowDirection:
 			DecodeUNumber(v, &(flowMessage.BiFlowDirection))
+			
+		case netflow.IPFIX_FIELD_natEvent:
+			DecodeUNumber(v, &(flowMessage.NatEvent))
 
 		case netflow.NFV9_FIELD_DIRECTION:
 			DecodeUNumber(v, &(flowMessage.FlowDirection))
