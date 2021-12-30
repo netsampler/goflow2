@@ -115,4 +115,6 @@ message FlowMessage {
   bytes CustomBytes4 = 1014;
   bytes CustomBytes5 = 1015;
 
+  uint32 NatEvent = 1020;
+  
 }
