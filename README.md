@@ -1,3 +1,8 @@
+# GoFlow2 - Formatting output options
+
+This repository is not suitable to use in production or something else. Currently, I'm running on some tests to format JSON output. Please use the original repository ([netsampler/goflow2](https://github.com/netsampler/goflow2)) and follow the guidelines of it.
+
+
 # GoFlow2
 
 [![Build Status](https://github.com/netsampler/goflow2/workflows/Build/badge.svg)](https://github.com/netsampler/goflow2/actions?query=workflow%3ABuild)
