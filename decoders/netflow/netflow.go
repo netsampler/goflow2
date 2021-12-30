@@ -194,23 +194,23 @@ func DecodeDataSetUsingFields(version uint16, payload *bytes.Buffer, listFields 
 }
 
 type ErrorTemplateNotFound struct {
-	version      uint16
-	obsDomainId  uint32
-	templateId   uint16
-	typeTemplate string
+	Version      uint16
+	OBSDomainId  uint32
+	TemplateId   uint16
+	TypeTemplate string
 }
 
 func NewErrorTemplateNotFound(version uint16, obsDomainId uint32, templateId uint16, typeTemplate string) *ErrorTemplateNotFound {
 	return &ErrorTemplateNotFound{
-		version:      version,
-		obsDomainId:  obsDomainId,
-		templateId:   templateId,
-		typeTemplate: typeTemplate,
+		Version:      version,
+		OBSDomainId:  obsDomainId,
+		TemplateId:   templateId,
+		TypeTemplate: typeTemplate,
 	}
 }
 
 func (e *ErrorTemplateNotFound) Error() string {
-	return fmt.Sprintf("No %v template %v found for and domain id %v", e.typeTemplate, e.templateId, e.obsDomainId)
+	return fmt.Sprintf("No %v template %v found for and domain id %v", e.TypeTemplate, e.TemplateId, e.OBSDomainId)
 }
 
 func DecodeOptionsDataSet(version uint16, payload *bytes.Buffer, listFieldsScopes, listFieldsOption []Field) ([]OptionsDataRecord, error) {
