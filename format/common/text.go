@@ -91,6 +91,8 @@ var (
 		"NextHopAS",
 		"SrcNet",
 		"DstNet",
+		"FlowDirection",
+		"NatEvent",
 	}
 	TextFieldsTypes = []int{
 		FORMAT_TYPE_STRING_FUNC,
@@ -130,6 +132,8 @@ var (
 		FORMAT_TYPE_INTEGER,
 		FORMAT_TYPE_INTEGER,
 		FORMAT_TYPE_IP,
+		FORMAT_TYPE_INTEGER,
+		FORMAT_TYPE_INTEGER,
 		FORMAT_TYPE_INTEGER,
 		FORMAT_TYPE_INTEGER,
 		FORMAT_TYPE_INTEGER,
