@@ -172,7 +172,7 @@ func ParseEthernetHeader(flowMessage *flowmessage.FlowMessage, data []byte, conf
 			appOffset = 8
 		}
 
-		if len(data) >= offset+13 && nextHeader == 6 {
+		if len(data) > offset+13 && nextHeader == 6 {
 			tcpflags = data[offset+13]
 
 			appOffset = int(data[13]>>4) * 4
