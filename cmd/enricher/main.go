@@ -150,18 +150,19 @@ func main() {
 	msgLen := make([]byte, binary.MaxVarintLen64)
 	lenBufSize := len(msgLen)
 	for {
-		n, err := rdr.Read(msgLen)
+		n, err := io.ReadFull(rdr, msgLen)
 		if err != nil && err != io.EOF {
 			log.Error(err)
 			continue
 		}
 
-		len, vn := proto.DecodeVarint(msgLen[0:n])
-		if len == 0 {
+		l, vn := proto.DecodeVarint(msgLen[0:n])
+		if l == 0 {
 			continue
 		}
 
-		line := make([]byte, len)
+		line := make([]byte, l)
+
 		if vn < lenBufSize {
 			copy(line[0:lenBufSize-vn], msgLen[vn:lenBufSize])
 		}
