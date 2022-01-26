@@ -125,7 +125,7 @@ func (s *StateNetFlow) DecodeFlow(msg interface{}) error {
 		return err
 	}
 
-	flowMessageSet := make([]*flowmessage.FlowMessage, 0)
+	var flowMessageSet []*flowmessage.FlowMessage
 
 	switch msgDecConv := msgDec.(type) {
 	case netflow.NFv9Packet:

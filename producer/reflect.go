@@ -157,13 +157,9 @@ func MapFieldsSFlow(fields []SFlowMapField) *SFlowMapper {
 			Length:      field.Length,
 			Destination: field.Destination,
 		}
-		retLayer, ok := ret[field.Layer]
-		if !ok {
-			retLayer = make([]DataMapLayer, 0)
-		}
+		retLayer := ret[field.Layer]
 		retLayer = append(retLayer, retLayerEntry)
 		ret[field.Layer] = retLayer
-
 	}
 	return &SFlowMapper{ret}
 }

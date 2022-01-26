@@ -98,7 +98,7 @@ func (d *KafkaDriver) Init(context.Context) error {
 		}
 	}
 
-	addrs := make([]string, 0)
+	var addrs []string
 	if d.kafkaSrv != "" {
 		addrs, _ = utils.GetServiceAddresses(d.kafkaSrv)
 	} else {

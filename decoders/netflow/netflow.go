@@ -17,7 +17,7 @@ type NetFlowTemplateSystem interface {
 }
 
 func DecodeNFv9OptionsTemplateSet(payload *bytes.Buffer) ([]NFv9OptionsTemplateRecord, error) {
-	records := make([]NFv9OptionsTemplateRecord, 0)
+	var records []NFv9OptionsTemplateRecord
 	var err error
 	for payload.Len() >= 4 {
 		optsTemplateRecord := NFv9OptionsTemplateRecord{}
@@ -68,7 +68,7 @@ func DecodeField(payload *bytes.Buffer, field *Field, pen bool) error {
 }
 
 func DecodeIPFIXOptionsTemplateSet(payload *bytes.Buffer) ([]IPFIXOptionsTemplateRecord, error) {
-	records := make([]IPFIXOptionsTemplateRecord, 0)
+	var records []IPFIXOptionsTemplateRecord
 	var err error
 	for payload.Len() >= 4 {
 		optsTemplateRecord := IPFIXOptionsTemplateRecord{}
@@ -108,7 +108,7 @@ func DecodeIPFIXOptionsTemplateSet(payload *bytes.Buffer) ([]IPFIXOptionsTemplat
 }
 
 func DecodeTemplateSet(version uint16, payload *bytes.Buffer) ([]TemplateRecord, error) {
-	records := make([]TemplateRecord, 0)
+	var records []TemplateRecord
 	var err error
 	for payload.Len() >= 4 {
 		templateRecord := TemplateRecord{}
@@ -214,7 +214,7 @@ func (e *ErrorTemplateNotFound) Error() string {
 }
 
 func DecodeOptionsDataSet(version uint16, payload *bytes.Buffer, listFieldsScopes, listFieldsOption []Field) ([]OptionsDataRecord, error) {
-	records := make([]OptionsDataRecord, 0)
+	var records []OptionsDataRecord
 
 	listFieldsScopesSize := GetTemplateSize(version, listFieldsScopes)
 	listFieldsOptionSize := GetTemplateSize(version, listFieldsOption)
@@ -234,7 +234,7 @@ func DecodeOptionsDataSet(version uint16, payload *bytes.Buffer, listFieldsScope
 }
 
 func DecodeDataSet(version uint16, payload *bytes.Buffer, listFields []Field) ([]DataRecord, error) {
-	records := make([]DataRecord, 0)
+	var records []DataRecord
 
 	listFieldsSize := GetTemplateSize(version, listFields)
 	for payload.Len() >= listFieldsSize {

@@ -10,7 +10,7 @@ import (
 )
 
 func GetSFlowFlowSamples(packet *sflow.Packet) []interface{} {
-	flowSamples := make([]interface{}, 0)
+	var flowSamples []interface{}
 	for _, sample := range packet.Samples {
 		switch sample.(type) {
 		case sflow.FlowSample:
@@ -236,7 +236,7 @@ func SearchSFlowSamples(samples []interface{}) []*flowmessage.FlowMessage {
 }
 
 func SearchSFlowSamplesConfig(samples []interface{}, config *SFlowMapper) []*flowmessage.FlowMessage {
-	flowMessageSet := make([]*flowmessage.FlowMessage, 0)
+	var flowMessageSet []*flowmessage.FlowMessage
 
 	for _, flowSample := range samples {
 		var records []sflow.FlowRecord
