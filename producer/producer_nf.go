@@ -400,7 +400,7 @@ func ConvertNetFlowDataSet(version uint16, baseTime uint32, uptime uint32, recor
 }
 
 func SearchNetFlowDataSetsRecords(version uint16, baseTime uint32, uptime uint32, dataRecords []netflow.DataRecord, mapperNetFlow *NetFlowMapper, mapperSFlow *SFlowMapper) []*flowmessage.FlowMessage {
-	flowMessageSet := make([]*flowmessage.FlowMessage, 0)
+	var flowMessageSet []*flowmessage.FlowMessage
 	for _, record := range dataRecords {
 		fmsg := ConvertNetFlowDataSet(version, baseTime, uptime, record.Values, mapperNetFlow, mapperSFlow)
 		if fmsg != nil {
@@ -411,7 +411,7 @@ func SearchNetFlowDataSetsRecords(version uint16, baseTime uint32, uptime uint32
 }
 
 func SearchNetFlowDataSets(version uint16, baseTime uint32, uptime uint32, dataFlowSet []netflow.DataFlowSet, mapperNetFlow *NetFlowMapper, mapperSFlow *SFlowMapper) []*flowmessage.FlowMessage {
-	flowMessageSet := make([]*flowmessage.FlowMessage, 0)
+	var flowMessageSet []*flowmessage.FlowMessage
 	for _, dataFlowSetItem := range dataFlowSet {
 		fmsg := SearchNetFlowDataSetsRecords(version, baseTime, uptime, dataFlowSetItem.Records, mapperNetFlow, mapperSFlow)
 		if fmsg != nil {
@@ -444,40 +444,40 @@ func SearchNetFlowOptionDataSets(dataFlowSet []netflow.OptionsDataFlowSet) (uint
 }
 
 func SplitNetFlowSets(packetNFv9 netflow.NFv9Packet) ([]netflow.DataFlowSet, []netflow.TemplateFlowSet, []netflow.NFv9OptionsTemplateFlowSet, []netflow.OptionsDataFlowSet) {
-	dataFlowSet := make([]netflow.DataFlowSet, 0)
-	templatesFlowSet := make([]netflow.TemplateFlowSet, 0)
-	optionsTemplatesFlowSet := make([]netflow.NFv9OptionsTemplateFlowSet, 0)
-	optionsDataFlowSet := make([]netflow.OptionsDataFlowSet, 0)
+	var dataFlowSet []netflow.DataFlowSet
+	var templatesFlowSet []netflow.TemplateFlowSet
+	var optionsTemplatesFlowSet []netflow.NFv9OptionsTemplateFlowSet
+	var optionsDataFlowSet []netflow.OptionsDataFlowSet
 	for _, flowSet := range packetNFv9.FlowSets {
-		switch flowSet.(type) {
+		switch tFlowSet := flowSet.(type) {
 		case netflow.TemplateFlowSet:
-			templatesFlowSet = append(templatesFlowSet, flowSet.(netflow.TemplateFlowSet))
+			templatesFlowSet = append(templatesFlowSet, tFlowSet)
 		case netflow.NFv9OptionsTemplateFlowSet:
-			optionsTemplatesFlowSet = append(optionsTemplatesFlowSet, flowSet.(netflow.NFv9OptionsTemplateFlowSet))
+			optionsTemplatesFlowSet = append(optionsTemplatesFlowSet, tFlowSet)
 		case netflow.DataFlowSet:
-			dataFlowSet = append(dataFlowSet, flowSet.(netflow.DataFlowSet))
+			dataFlowSet = append(dataFlowSet, tFlowSet)
 		case netflow.OptionsDataFlowSet:
-			optionsDataFlowSet = append(optionsDataFlowSet, flowSet.(netflow.OptionsDataFlowSet))
+			optionsDataFlowSet = append(optionsDataFlowSet, tFlowSet)
 		}
 	}
 	return dataFlowSet, templatesFlowSet, optionsTemplatesFlowSet, optionsDataFlowSet
 }
 
 func SplitIPFIXSets(packetIPFIX netflow.IPFIXPacket) ([]netflow.DataFlowSet, []netflow.TemplateFlowSet, []netflow.IPFIXOptionsTemplateFlowSet, []netflow.OptionsDataFlowSet) {
-	dataFlowSet := make([]netflow.DataFlowSet, 0)
-	templatesFlowSet := make([]netflow.TemplateFlowSet, 0)
-	optionsTemplatesFlowSet := make([]netflow.IPFIXOptionsTemplateFlowSet, 0)
-	optionsDataFlowSet := make([]netflow.OptionsDataFlowSet, 0)
+	var dataFlowSet []netflow.DataFlowSet
+	var templatesFlowSet []netflow.TemplateFlowSet
+	var optionsTemplatesFlowSet []netflow.IPFIXOptionsTemplateFlowSet
+	var optionsDataFlowSet []netflow.OptionsDataFlowSet
 	for _, flowSet := range packetIPFIX.FlowSets {
-		switch flowSet.(type) {
+		switch tFlowSet := flowSet.(type) {
 		case netflow.TemplateFlowSet:
-			templatesFlowSet = append(templatesFlowSet, flowSet.(netflow.TemplateFlowSet))
+			templatesFlowSet = append(templatesFlowSet, tFlowSet)
 		case netflow.IPFIXOptionsTemplateFlowSet:
-			optionsTemplatesFlowSet = append(optionsTemplatesFlowSet, flowSet.(netflow.IPFIXOptionsTemplateFlowSet))
+			optionsTemplatesFlowSet = append(optionsTemplatesFlowSet, tFlowSet)
 		case netflow.DataFlowSet:
-			dataFlowSet = append(dataFlowSet, flowSet.(netflow.DataFlowSet))
+			dataFlowSet = append(dataFlowSet, tFlowSet)
 		case netflow.OptionsDataFlowSet:
-			optionsDataFlowSet = append(optionsDataFlowSet, flowSet.(netflow.OptionsDataFlowSet))
+			optionsDataFlowSet = append(optionsDataFlowSet, tFlowSet)
 		}
 	}
 	return dataFlowSet, templatesFlowSet, optionsTemplatesFlowSet, optionsDataFlowSet
@@ -494,7 +494,7 @@ func ProcessMessageNetFlowConfig(msgDec interface{}, samplingRateSys SamplingRat
 	var baseTime uint32
 	var uptime uint32
 
-	flowMessageSet := make([]*flowmessage.FlowMessage, 0)
+	var flowMessageSet []*flowmessage.FlowMessage
 
 	switch msgDecConv := msgDec.(type) {
 	case netflow.NFv9Packet:

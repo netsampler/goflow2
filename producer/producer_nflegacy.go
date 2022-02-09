@@ -48,7 +48,7 @@ func ConvertNetFlowLegacyRecord(baseTime uint32, uptime uint32, record netflowle
 }
 
 func SearchNetFlowLegacyRecords(baseTime uint32, uptime uint32, dataRecords []netflowlegacy.RecordsNetFlowV5) []*flowmessage.FlowMessage {
-	flowMessageSet := make([]*flowmessage.FlowMessage, 0)
+	var flowMessageSet []*flowmessage.FlowMessage
 	for _, record := range dataRecords {
 		fmsg := ConvertNetFlowLegacyRecord(baseTime, uptime, record)
 		if fmsg != nil {
