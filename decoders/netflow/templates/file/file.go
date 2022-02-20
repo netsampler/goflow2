@@ -9,6 +9,7 @@ import (
 	"github.com/netsampler/goflow2/decoders/netflow/templates"
 	"github.com/netsampler/goflow2/decoders/netflow/templates/memory"
 	"os"
+	"sync"
 )
 
 type TemplateFileObject struct {
@@ -22,7 +23,7 @@ type TemplateFileData struct {
 }
 
 func (d *TemplateFileData) UnmarshalJSON(b []byte) error {
-	var s struct{
+	var s struct {
 		Type string
 		Data interface{} `json:"-"`
 	}
@@ -32,7 +33,7 @@ func (d *TemplateFileData) UnmarshalJSON(b []byte) error {
 
 	switch s.Type {
 	case "NFv9OptionsTemplateRecord":
-		newS := new(struct{
+		newS := new(struct {
 			Type string
 			Data netflow.NFv9OptionsTemplateRecord
 		})
@@ -42,7 +43,7 @@ func (d *TemplateFileData) UnmarshalJSON(b []byte) error {
 		d.Type = newS.Type
 		d.Data = newS.Data
 	case "TemplateRecord":
-		newS := new(struct{
+		newS := new(struct {
 			Type string
 			Data netflow.TemplateRecord
 		})
@@ -52,7 +53,7 @@ func (d *TemplateFileData) UnmarshalJSON(b []byte) error {
 		d.Type = newS.Type
 		d.Data = newS.Data
 	case "IPFIXOptionsTemplateRecord":
-		newS := new(struct{
+		newS := new(struct {
 			Type string
 			Data netflow.IPFIXOptionsTemplateRecord
 		})
@@ -85,10 +86,10 @@ func (f *TemplateFile) Add(key *templates.TemplateKey, data interface{}) {
 	}
 
 	f.Templates = append(f.Templates, &TemplateFileObject{
-		Key:  key,
+		Key: key,
 		Data: &TemplateFileData{
 			Type: typeName,
-			Data:data,
+			Data: data,
 		},
 	})
 }
@@ -101,11 +102,13 @@ func NewTemplateFile() *TemplateFile {
 
 type FileDriver struct {
 	memDriver *memory.MemoryDriver
-	path string
+	path      string
+	lock      *sync.Mutex
 }
 
 func (d *FileDriver) Prepare() error {
 	d.memDriver = memory.Driver
+	d.lock = &sync.Mutex{}
 	flag.StringVar(&d.path, "netflow.templates.file.path", "./templates.json", "Path of file to store templates")
 	return nil
 }
@@ -148,6 +151,8 @@ func (d *FileDriver) ListTemplates(ctx context.Context, ch chan *templates.Templ
 }
 
 func (d *FileDriver) AddTemplate(ctx context.Context, key *templates.TemplateKey, template interface{}) error {
+	d.lock.Lock()
+	defer d.lock.Unlock()
 	if err := d.memDriver.AddTemplate(ctx, key, template); err != nil {
 		return err
 	}

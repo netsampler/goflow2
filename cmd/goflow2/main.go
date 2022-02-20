@@ -102,6 +102,13 @@ func main() {
 	}
 	defer transporter.Close(ctx)
 
+	// the following is only useful when parsing NetFlowV9/IPFIX (template-based flow)
+	templateSystem, err := templates.FindTemplateSystem(ctx, *NetFlowTemplates)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer templateSystem.Close(ctx)
+
 	switch *LogFmt {
 	case "json":
 		log.SetFormatter(&log.JSONFormatter{})
@@ -147,12 +154,6 @@ func main() {
 
 				err = sSFlow.FlowRoutine(*Workers, hostname, int(port), *ReusePort)
 			} else if listenAddrUrl.Scheme == "netflow" {
-				templateSystem, err := templates.FindTemplateSystem(ctx, *NetFlowTemplates)
-				if err != nil {
-					log.Fatal(err)
-				}
-				defer templateSystem.Close(ctx)
-
 				sNF := utils.NewStateNetFlow()
 				sNF.Format = formatter
 				sNF.Transport = transporter
