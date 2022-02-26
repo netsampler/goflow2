@@ -290,7 +290,7 @@ func (p NFv9Packet) String() string {
 
 	unixSeconds := time.Unix(int64(p.UnixSeconds), 0)
 	str += fmt.Sprintf("  SystemUptime: %v\n", p.SystemUptime)
-	str += fmt.Sprintf("  UnixSeconds: %v\n", unixSeconds.String())
+	str += fmt.Sprintf("  UnixSeconds: %v\n", unixSeconds.UTC().String())
 	str += fmt.Sprintf("  SequenceNumber: %v\n", p.SequenceNumber)
 	str += fmt.Sprintf("  SourceId: %v\n", p.SourceId)
 	str += fmt.Sprintf("  FlowSets (%v):\n", len(p.FlowSets))
