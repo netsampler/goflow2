@@ -333,6 +333,9 @@ func ConvertNetFlowDataSet(version uint16, baseTime uint32, uptime uint32, recor
 		case netflow.NFV9_FIELD_DIRECTION:
 			DecodeUNumber(v, &(flowMessage.FlowDirection))
 
+		case netflow.NFV9_FIELD_FLOWS:
+			DecodeUNumber(v, &(flowMessage.Flows))
+
 		default:
 			if version == 9 {
 				// NetFlow v9 time works with a differential based on router's uptime

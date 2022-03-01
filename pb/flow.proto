@@ -18,6 +18,7 @@ message FlowMessage {
   uint64 SamplingRate = 3;
 
   uint32 FlowDirection = 42;
+  uint32 Flows = 43;
 
   // Sampler information
   bytes SamplerAddress = 11;
