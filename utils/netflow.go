@@ -151,7 +151,7 @@ func (s *StateNetFlow) DecodeFlow(msg interface{}) error {
 					prometheus.Labels{
 						"router":  key,
 						"version": "9",
-						"type":    "OptionsTemplateFlowSet",
+						"type":    "TemplateFlowSet",
 					}).
 					Add(float64(len(fsConv.Records)))
 
