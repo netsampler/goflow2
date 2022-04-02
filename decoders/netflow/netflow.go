@@ -145,7 +145,7 @@ func DecodeTemplateSet(version uint16, payload *bytes.Buffer) ([]TemplateRecord,
 func GetTemplateSize(version uint16, template []Field) int {
 	sum := 0
 	for _, templateField := range template {
-		if version == 10 && templateField.Length == 0xffff {
+		if templateField.Length == 0xffff {
 			continue
 		}
 
@@ -161,7 +161,7 @@ func DecodeDataSetUsingFields(version uint16, payload *bytes.Buffer, listFields 
 		for i, templateField := range listFields {
 
 			finalLength := int(templateField.Length)
-			if version == 10 && templateField.Length == 0xffff {
+			if templateField.Length == 0xffff {
 				var variableLen8 byte
 				var variableLen16 uint16
 				err := utils.BinaryDecoder(payload, &variableLen8)
