@@ -3,10 +3,10 @@ package common
 import (
 	"encoding/binary"
 	"fmt"
+	"github.com/golang/protobuf/proto"
 	"net"
 	"reflect"
 	"strings"
-	"github.com/golang/protobuf/proto"
 )
 
 const (
