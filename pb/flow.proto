@@ -100,6 +100,7 @@ message FlowMessage {
   uint32 MPLSLastTTL = 61; // Last TTL
   uint32 MPLSLastLabel = 62; // Last Label
 
+  bytes Payload = 70;
   // Custom fields: start after ID 1000:
   // uint32 MyCustomField = 1000;
 

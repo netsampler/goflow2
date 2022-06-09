@@ -150,6 +150,8 @@ type FlowMessage struct {
 	MPLS3Label    uint32 `protobuf:"varint,60,opt,name=MPLS3Label,proto3" json:"MPLS3Label,omitempty"`       // Third Label
 	MPLSLastTTL   uint32 `protobuf:"varint,61,opt,name=MPLSLastTTL,proto3" json:"MPLSLastTTL,omitempty"`     // Last TTL
 	MPLSLastLabel uint32 `protobuf:"varint,62,opt,name=MPLSLastLabel,proto3" json:"MPLSLastLabel,omitempty"` // Last Label
+
+	RawPayload []byte `protobuf:"bytes,70,opt,name=RawPayload,proto3" json:"RawPayload,omitempty"`
 	// Custom allocations
 	CustomInteger1 uint64 `protobuf:"varint,1001,opt,name=CustomInteger1,proto3" json:"CustomInteger1,omitempty"`
 	CustomInteger2 uint64 `protobuf:"varint,1002,opt,name=CustomInteger2,proto3" json:"CustomInteger2,omitempty"`
@@ -564,6 +566,13 @@ func (x *FlowMessage) GetMPLSLastLabel() uint32 {
 		return x.MPLSLastLabel
 	}
 	return 0
+}
+
+func (x *FlowMessage) GeRawtPayload() []byte {
+	if x != nil {
+		return x.RawPayload
+	}
+	return nil
 }
 
 func (x *FlowMessage) GetCustomInteger1() uint64 {
