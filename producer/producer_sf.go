@@ -3,7 +3,6 @@ package producer
 import (
 	"encoding/binary"
 	"errors"
-	"fmt"
 	"net"
 
 	"github.com/netsampler/goflow2/decoders/sflow"
@@ -268,7 +267,6 @@ func SearchSFlowSamplesConfig(samples []interface{}, config *SFlowMapper) []*flo
 				flowMessage.Bytes = uint64(recordData.FrameLength)
 				ParseSampledHeaderConfig(flowMessage, &recordData, config)
 				flowMessage.RawPayload = recordData.HeaderData
-				fmt.Print(flowMessage.RawPayload)
 			case sflow.SampledIPv4:
 				ipSrc = recordData.Base.SrcIP
 				ipDst = recordData.Base.DstIP

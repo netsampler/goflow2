@@ -6,7 +6,6 @@ import (
 	"net"
 	"reflect"
 	"strings"
-
 	"github.com/golang/protobuf/proto"
 )
 
