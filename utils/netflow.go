@@ -329,7 +329,10 @@ func (s *StateNetFlow) DecodeFlow(msg interface{}) error {
 				s.Logger.Error(err)
 			}
 			if err == nil && s.Transport != nil {
-				s.Transport.Send(key, data)
+				err = s.Transport.Send(key, data)
+				if err != nil {
+					s.Logger.Error(err)
+				}
 			}
 		}
 	}
