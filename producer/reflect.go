@@ -73,11 +73,11 @@ func MapCustom(flowMessage *flowmessage.FlowMessage, v []byte, destination strin
 }
 
 type NetFlowMapField struct {
-	PenProvided bool   `json:"penprovided"`
-	Type        uint16 `json:"field"`
-	Pen         uint32 `json:"pen"`
+	PenProvided bool   `json:"penprovided" yaml:"penprovided"`
+	Type        uint16 `json:"field" yaml:"field"`
+	Pen         uint32 `json:"pen" yaml:"pen"`
 
-	Destination string `json:"destination"`
+	Destination string `json:"destination" yaml:"destination"`
 	//DestinationLength uint8  `json:"dlen"` // could be used if populating a slice of uint16 that aren't in protobuf
 }
 
