@@ -32,6 +32,7 @@ type KafkaDriver struct {
 
 	kafkaHashing bool
 	kafkaVersion string
+	kafkaCompressionType string
 
 	producer sarama.AsyncProducer
 
@@ -54,6 +55,7 @@ func (d *KafkaDriver) Prepare() error {
 
 	//flag.StringVar(&d.kafkaKeying, "transport.kafka.key", "SamplerAddress,DstAS", "Kafka list of fields to do hashing on (partition) separated by commas")
 	flag.StringVar(&d.kafkaVersion, "transport.kafka.version", "2.8.0", "Kafka version")
+	flag.StringVar(&d.kafkaCompressionType, "transport.kafka.compression.type", "LZ4", "Kafka default compression type")
 
 	return nil
 }
@@ -71,6 +73,9 @@ func (d *KafkaDriver) Init(context.Context) error {
 	kafkaConfig.Producer.MaxMessageBytes = d.kafkaMaxMsgBytes
 	kafkaConfig.Producer.Flush.Bytes = d.kafkaFlushBytes
 	kafkaConfig.Producer.Flush.Frequency = d.kafkaFlushFrequency
+	kafkaConfig.Producer.Flush.Frequency = d.kafkaFlushFrequency
+	kafkaConfig.Producer.Compression = d.kafkaCompressionType
+	
 	if d.kafkaTLS {
 		rootCAs, err := x509.SystemCertPool()
 		if err != nil {
