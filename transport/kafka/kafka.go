@@ -73,7 +73,6 @@ func (d *KafkaDriver) Init(context.Context) error {
 	kafkaConfig.Producer.MaxMessageBytes = d.kafkaMaxMsgBytes
 	kafkaConfig.Producer.Flush.Bytes = d.kafkaFlushBytes
 	kafkaConfig.Producer.Flush.Frequency = d.kafkaFlushFrequency
-	kafkaConfig.Producer.Flush.Frequency = d.kafkaFlushFrequency
 	kafkaConfig.Producer.Compression = sarama.CompressionCodec(d.kafkaCompressionType)
 	
 	if d.kafkaTLS {
