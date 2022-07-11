@@ -55,7 +55,7 @@ func (d *KafkaDriver) Prepare() error {
 
 	//flag.StringVar(&d.kafkaKeying, "transport.kafka.key", "SamplerAddress,DstAS", "Kafka list of fields to do hashing on (partition) separated by commas")
 	flag.StringVar(&d.kafkaVersion, "transport.kafka.version", "2.8.0", "Kafka version")
-	flag.StringVar(&d.kafkaCompressionType, "transport.kafka.compression.type", "lz4", "Kafka default compression type")
+	flag.StringVar(&d.kafkaCompressionType, "transport.kafka.compression.type", "none", "Kafka default compression type")
 
 	return nil
 }
