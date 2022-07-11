@@ -150,6 +150,16 @@ To partition the feed (any field of the protobuf is available), the following op
 -format.hash=SamplerAddress,DstAS
 ```
 
+By default, Lz4 compression will be enabled when sending data to kafka
+To change the kafka compression type of the producer side configure the following options
+```
+transport.kafka.compression.type=lz4
+```
+Optionally to disable compression on the producer end configure the below parameter
+```
+transport.kafka.compression.type=none
+```
+
 ### Docker
 
 You can also run directly with a container:
