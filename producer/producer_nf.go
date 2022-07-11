@@ -348,7 +348,9 @@ func ConvertNetFlowDataSet(version uint16, baseTime uint32, uptime uint32, recor
 			DecodeUNumber(v, &mplsLabel)
 			flowMessage.MPLS3Label = uint32(mplsLabel >> 4)
 		case netflow.IPFIX_FIELD_mplsTopLabelIPv4Address:
-			flowMessage.MPLSTopLabelIpv4Addr = v
+			flowMessage.MPLSLabelIP = v
+		case netflow.IPFIX_FIELD_mplsTopLabelIPv6Address:
+			flowMessage.MPLSLabelIP = v	
 			
 		default:
 			if version == 9 {
