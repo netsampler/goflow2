@@ -74,7 +74,7 @@ func (d *KafkaDriver) Init(context.Context) error {
 	kafkaConfig.Producer.Flush.Bytes = d.kafkaFlushBytes
 	kafkaConfig.Producer.Flush.Frequency = d.kafkaFlushFrequency
 	kafkaConfig.Producer.Flush.Frequency = d.kafkaFlushFrequency
-	kafkaConfig.Producer.Compression = d.kafkaCompressionType
+	kafkaConfig.Producer.Compression = sarama.CompressionCodec(d.kafkaCompressionType)
 	
 	if d.kafkaTLS {
 		rootCAs, err := x509.SystemCertPool()
