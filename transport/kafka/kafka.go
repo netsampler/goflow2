@@ -32,7 +32,7 @@ type KafkaDriver struct {
 
 	kafkaHashing bool
 	kafkaVersion string
-	kafkaCompressionType string
+	kafkaCompressionType int
 
 	producer sarama.AsyncProducer
 
