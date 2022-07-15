@@ -99,7 +99,7 @@ message FlowMessage {
   uint32 MPLS3Label = 60; // Third Label
   uint32 MPLSLastTTL = 61; // Last TTL
   uint32 MPLSLastLabel = 62; // Last Label
-  bytes MPLSLabelIP = 63; // MPLS TOP Label IP 
+  bytes MPLSLabelIP = 65; // MPLS TOP Label IP 
 
   // Custom fields: start after ID 1000:
   // uint32 MyCustomField = 1000;
