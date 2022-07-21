@@ -336,6 +336,25 @@ func ConvertNetFlowDataSet(version uint16, baseTime uint32, uptime uint32, recor
 		case netflow.NFV9_FIELD_DIRECTION:
 			DecodeUNumber(v, &(flowMessage.FlowDirection))
 
+		//MPLS
+		case netflow.IPFIX_FIELD_mplsTopLabelStackSection:
+			var mplsLabel uint32
+			DecodeUNumber(v, &mplsLabel)
+			flowMessage.MPLS1Label = uint32(mplsLabel >> 4)
+			flowMessage.HasMPLS = true
+		case netflow.IPFIX_FIELD_mplsLabelStackSection2:
+			var mplsLabel uint32
+			DecodeUNumber(v, &mplsLabel)
+			flowMessage.MPLS2Label = uint32(mplsLabel >> 4)
+		case netflow.IPFIX_FIELD_mplsLabelStackSection3:
+			var mplsLabel uint32
+			DecodeUNumber(v, &mplsLabel)
+			flowMessage.MPLS3Label = uint32(mplsLabel >> 4)
+		case netflow.IPFIX_FIELD_mplsTopLabelIPv4Address:
+			flowMessage.MPLSLabelIP = v
+		case netflow.IPFIX_FIELD_mplsTopLabelIPv6Address:
+			flowMessage.MPLSLabelIP = v
+
 		default:
 			if version == 9 {
 				// NetFlow v9 time works with a differential based on router's uptime

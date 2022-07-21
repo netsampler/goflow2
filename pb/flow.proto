@@ -99,6 +99,7 @@ message FlowMessage {
   uint32 MPLS3Label = 60; // Third Label
   uint32 MPLSLastTTL = 61; // Last TTL
   uint32 MPLSLastLabel = 62; // Last Label
+  bytes MPLSLabelIP = 65; // MPLS TOP Label IP 
 
   uint32 ObservationDomainID = 70;
   uint32 ObservationPointID = 71;
