@@ -199,6 +199,9 @@ func ConvertNetFlowDataSet(version uint16, baseTime uint32, uptime uint32, recor
 
 		switch df.Type {
 
+		case netflow.IPFIX_FIELD_observationPointId:
+			DecodeUNumber(v, &(flowMessage.ObservationPointID))
+
 		// Statistics
 		case netflow.NFV9_FIELD_IN_BYTES:
 			DecodeUNumber(v, &(flowMessage.Bytes))
@@ -560,6 +563,7 @@ func ProcessMessageNetFlowConfig(msgDec interface{}, samplingRateSys SamplingRat
 		for _, fmsg := range flowMessageSet {
 			fmsg.SequenceNum = seqnum
 			fmsg.SamplingRate = uint64(samplingRate)
+			fmsg.ObservationDomainID = obsDomainId
 		}
 	default:
 		return flowMessageSet, errors.New("Bad NetFlow/IPFIX version")
