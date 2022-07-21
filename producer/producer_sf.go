@@ -297,6 +297,8 @@ func SearchSFlowSamplesConfig(samples []interface{}, config *SFlowMapper) []*flo
 				ipNh = recordData.NextHop
 				flowMessage.BgpNextHop = ipNh
 				flowMessage.SrcAS = recordData.SrcAS
+				flowMessage.BgpCommunities = recordData.Communities
+				flowMessage.AsPath = recordData.ASPath
 				if len(recordData.ASPath) > 0 {
 					flowMessage.DstAS = recordData.ASPath[len(recordData.ASPath)-1]
 					flowMessage.NextHopAS = recordData.ASPath[0]
