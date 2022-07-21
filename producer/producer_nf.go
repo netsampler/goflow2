@@ -224,12 +224,12 @@ func ConvertNetFlowDataSet(version uint16, baseTime uint32, uptime uint32, recor
 		case netflow.NFV9_FIELD_IPV4_NEXT_HOP:
 			flowMessage.NextHop = v
 		case netflow.NFV9_FIELD_BGP_IPV4_NEXT_HOP:
-			flowMessage.NextHop = v
+			flowMessage.BgpNextHop = v
 
 		case netflow.NFV9_FIELD_IPV6_NEXT_HOP:
 			flowMessage.NextHop = v
 		case netflow.NFV9_FIELD_BGP_IPV6_NEXT_HOP:
-			flowMessage.NextHop = v
+			flowMessage.BgpNextHop = v
 
 		// ICMP
 		case netflow.NFV9_FIELD_ICMP_TYPE:
