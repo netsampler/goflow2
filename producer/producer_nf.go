@@ -242,12 +242,26 @@ func ConvertNetFlowDataSet(version uint16, baseTime uint32, uptime uint32, recor
 			DecodeUNumber(v, &(flowMessage.IPTTL))
 
 		// IP
+		case netflow.NFV9_FIELD_IP_PROTOCOL_VERSION:
+			if len(v) > 0 {
+				if v[0] == 4 {
+					flowMessage.Etype = 0x800
+				} else if v[0] == 6 {
+					flowMessage.Etype = 0x86dd
+				}
+			}
+
 		case netflow.NFV9_FIELD_IPV4_SRC_ADDR:
-			flowMessage.SrcAddr = v
-			flowMessage.Etype = 0x800
+			if len(v) > 0 {
+				flowMessage.SrcAddr = v
+				flowMessage.Etype = 0x800
+			}
+
 		case netflow.NFV9_FIELD_IPV4_DST_ADDR:
-			flowMessage.DstAddr = v
-			flowMessage.Etype = 0x800
+			if len(v) > 0 {
+				flowMessage.DstAddr = v
+				flowMessage.Etype = 0x800
+			}
 
 		case netflow.NFV9_FIELD_SRC_MASK:
 			DecodeUNumber(v, &(flowMessage.SrcNet))
@@ -255,11 +269,16 @@ func ConvertNetFlowDataSet(version uint16, baseTime uint32, uptime uint32, recor
 			DecodeUNumber(v, &(flowMessage.DstNet))
 
 		case netflow.NFV9_FIELD_IPV6_SRC_ADDR:
-			flowMessage.SrcAddr = v
-			flowMessage.Etype = 0x86dd
+			if len(v) > 0 {
+				flowMessage.SrcAddr = v
+				flowMessage.Etype = 0x86dd
+			}
+
 		case netflow.NFV9_FIELD_IPV6_DST_ADDR:
-			flowMessage.DstAddr = v
-			flowMessage.Etype = 0x86dd
+			if len(v) > 0 {
+				flowMessage.DstAddr = v
+				flowMessage.Etype = 0x86dd
+			}
 
 		case netflow.NFV9_FIELD_IPV6_SRC_MASK:
 			DecodeUNumber(v, &(flowMessage.SrcNet))
