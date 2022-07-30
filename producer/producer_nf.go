@@ -173,6 +173,29 @@ func DecodeNumber(b []byte, out interface{}) error {
 	return nil
 }
 
+func allZeroes(v []byte) bool {
+	for _, b := range v {
+		if b != 0 {
+			return false
+		}
+	}
+	return true
+}
+
+func addrReplaceCheck(dstAddr *[]byte, v []byte, eType *uint32, ipv6 bool) {
+	if (len(*dstAddr) == 0 && len(v) > 0) ||
+		(len(*dstAddr) != 0 && len(v) > 0 && !allZeroes(v)) {
+		*dstAddr = v
+
+		if ipv6 {
+			*eType = 0x86dd
+		} else {
+			*eType = 0x800
+		}
+
+	}
+}
+
 func ConvertNetFlowDataSet(version uint16, baseTime uint32, uptime uint32, record []netflow.DataField, mapperNetFlow *NetFlowMapper, mapperSFlow *SFlowMapper) *flowmessage.FlowMessage {
 	flowMessage := &flowmessage.FlowMessage{}
 	var time uint64
@@ -252,16 +275,10 @@ func ConvertNetFlowDataSet(version uint16, baseTime uint32, uptime uint32, recor
 			}
 
 		case netflow.NFV9_FIELD_IPV4_SRC_ADDR:
-			if len(v) > 0 {
-				flowMessage.SrcAddr = v
-				flowMessage.Etype = 0x800
-			}
+			addrReplaceCheck(&(flowMessage.SrcAddr), v, &(flowMessage.Etype), false)
 
 		case netflow.NFV9_FIELD_IPV4_DST_ADDR:
-			if len(v) > 0 {
-				flowMessage.DstAddr = v
-				flowMessage.Etype = 0x800
-			}
+			addrReplaceCheck(&(flowMessage.DstAddr), v, &(flowMessage.Etype), false)
 
 		case netflow.NFV9_FIELD_SRC_MASK:
 			DecodeUNumber(v, &(flowMessage.SrcNet))
@@ -269,16 +286,10 @@ func ConvertNetFlowDataSet(version uint16, baseTime uint32, uptime uint32, recor
 			DecodeUNumber(v, &(flowMessage.DstNet))
 
 		case netflow.NFV9_FIELD_IPV6_SRC_ADDR:
-			if len(v) > 0 {
-				flowMessage.SrcAddr = v
-				flowMessage.Etype = 0x86dd
-			}
+			addrReplaceCheck(&(flowMessage.SrcAddr), v, &(flowMessage.Etype), true)
 
 		case netflow.NFV9_FIELD_IPV6_DST_ADDR:
-			if len(v) > 0 {
-				flowMessage.DstAddr = v
-				flowMessage.Etype = 0x86dd
-			}
+			addrReplaceCheck(&(flowMessage.DstAddr), v, &(flowMessage.Etype), true)
 
 		case netflow.NFV9_FIELD_IPV6_SRC_MASK:
 			DecodeUNumber(v, &(flowMessage.SrcNet))
