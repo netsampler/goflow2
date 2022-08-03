@@ -57,6 +57,7 @@ var (
 		"SrcMac":         FORMAT_TYPE_MAC,
 		"DstMac":         FORMAT_TYPE_MAC,
 		"NextHop":        FORMAT_TYPE_IP,
+		"MPLSLabelIP":    FORMAT_TYPE_IP,
 	}
 
 	RenderExtras = map[string]RenderExtraFunction{
@@ -215,6 +216,7 @@ func FormatMessageReflectCustom(msg interface{}, ext, quotes, sep, sign string, 
 			} else if renderer, ok := RenderExtras[fieldName]; ok {
 				fstr[i] = fmt.Sprintf("%s%s%s%s%q", quotes, s, quotes, sign, renderer(msg))
 			} else {
+				// handle specific types here
 				fstr[i] = fmt.Sprintf("%s%s%s%s%v", quotes, s, quotes, sign, fieldValue.Interface())
 
 			}
