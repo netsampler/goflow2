@@ -6,8 +6,6 @@ import (
 	"net"
 	"reflect"
 	"strings"
-
-	"github.com/golang/protobuf/proto"
 )
 
 const (
@@ -74,9 +72,9 @@ func AddTextField(name string, jtype int) {
 	TextFieldsTypes = append(TextFieldsTypes, jtype)
 }*/
 
-type RenderExtraFunction func(proto.Message) string
+type RenderExtraFunction func(interface{}) string
 
-func RenderExtraFetchNumbers(msg proto.Message, fields []string) []uint64 {
+func RenderExtraFetchNumbers(msg interface{}, fields []string) []uint64 {
 	vfm := reflect.ValueOf(msg)
 	vfm = reflect.Indirect(vfm)
 
@@ -91,16 +89,16 @@ func RenderExtraFetchNumbers(msg proto.Message, fields []string) []uint64 {
 	return values
 }
 
-func RenderExtraFunctionEtypeName(msg proto.Message) string {
+func RenderExtraFunctionEtypeName(msg interface{}) string {
 	num := RenderExtraFetchNumbers(msg, []string{"Etype"})
 	return EtypeName[uint32(num[0])]
 }
 
-func RenderExtraFunctionProtoName(msg proto.Message) string {
+func RenderExtraFunctionProtoName(msg interface{}) string {
 	num := RenderExtraFetchNumbers(msg, []string{"Proto"})
 	return ProtoName[uint32(num[0])]
 }
-func RenderExtraFunctionIcmpName(msg proto.Message) string {
+func RenderExtraFunctionIcmpName(msg interface{}) string {
 	num := RenderExtraFetchNumbers(msg, []string{"Proto", "IcmpCode", "IcmpType"})
 	return IcmpCodeType(uint32(num[0]), uint32(num[1]), uint32(num[2]))
 }
@@ -122,22 +120,32 @@ func RenderIP(addr []byte) string {
 	return net.IP(addr).String()
 }
 
-func FormatMessageReflectText(msg proto.Message, ext string) string {
+func FormatMessageReflectText(msg interface{}, ext string) string {
 	return FormatMessageReflectCustom(msg, ext, "", " ", "=", false)
 }
 
-func FormatMessageReflectJSON(msg proto.Message, ext string) string {
+func FormatMessageReflectJSON(msg interface{}, ext string) string {
 	return fmt.Sprintf("{%s}", FormatMessageReflectCustom(msg, ext, "\"", ",", ":", true))
 }
 
-func FormatMessageReflectCustom(msg proto.Message, ext, quotes, sep, sign string, null bool) string {
+func ExtractTag(name, original string, tag reflect.StructTag) string {
+	lookup, ok := tag.Lookup(name)
+	if !ok {
+		return original
+	}
+	before, _, _ := strings.Cut(lookup, ",")
+	return before
+}
+
+func FormatMessageReflectCustom(msg interface{}, ext, quotes, sep, sign string, null bool) string {
 	customSelector := selector
+	reMap := make(map[string]string)
 
 	vfm := reflect.ValueOf(msg)
 	vfm = reflect.Indirect(vfm)
 	vft := vfm.Type()
 
-	if len(customSelector) == 0 {
+	if len(customSelector) == 0 || selectorTag != "" {
 		/*
 			// we would need proto v2
 			msgR := msg.ProtoReflect()
@@ -146,13 +154,23 @@ func FormatMessageReflectCustom(msg proto.Message, ext, quotes, sep, sign string
 				customSelector[i] = msgR.Fields().Get(i).TextName()
 			}*/
 
-		customSelector = make([]string, vft.NumField())
-		for i := 0; i < len(customSelector); i++ {
+		customSelectorTmp := make([]string, vft.NumField())
+		for i := 0; i < len(customSelectorTmp); i++ {
 			field := vft.Field(i)
 			if !field.IsExported() {
 				continue
 			}
-			customSelector[i] = field.Name
+			fieldName := field.Name
+			if selectorTag != "" {
+				fieldName = ExtractTag(selectorTag, field.Name, field.Tag)
+				reMap[fieldName] = field.Name
+			}
+			customSelectorTmp[i] = fieldName
+
+		}
+
+		if len(customSelector) == 0 {
+			customSelector = customSelectorTmp
 		}
 	}
 
@@ -161,11 +179,15 @@ func FormatMessageReflectCustom(msg proto.Message, ext, quotes, sep, sign string
 	var i int
 
 	for _, s := range customSelector {
-		fieldValue := vfm.FieldByName(s)
+		fieldName := s
+		if fieldNameMap, ok := reMap[fieldName]; ok {
+			fieldName = fieldNameMap
+		}
+		fieldValue := vfm.FieldByName(fieldName)
 		// todo: replace s by json mapping of protobuf
 		if fieldValue.IsValid() {
 
-			if fieldType, ok := TextFields[s]; ok {
+			if fieldType, ok := TextFields[fieldName]; ok {
 				switch fieldType {
 				case FORMAT_TYPE_STRING_FUNC:
 					strMethod := fieldValue.MethodByName("String").Call([]reflect.Value{})
@@ -190,7 +212,7 @@ func FormatMessageReflectCustom(msg proto.Message, ext, quotes, sep, sign string
 
 					}
 				}
-			} else if renderer, ok := RenderExtras[s]; ok {
+			} else if renderer, ok := RenderExtras[fieldName]; ok {
 				fstr[i] = fmt.Sprintf("%s%s%s%s%q", quotes, s, quotes, sign, renderer(msg))
 			} else {
 				fstr[i] = fmt.Sprintf("%s%s%s%s%v", quotes, s, quotes, sign, fieldValue.Interface())
