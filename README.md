@@ -157,6 +157,25 @@ You can also run directly with a container:
 $ sudo docker run -p 6343:6343/udp -p 2055:2055/udp -ti netsampler/goflow2:latest
 ```
 
+### Mapping extra fields
+
+In the case of exotic template fields or extra payload not supported by GoFlow2
+of out the box, it is possible to pass a mapping file using `-mapping mapping.yaml`.
+A [sample file](cmd/goflow2/mapping.yaml) is available in the `cmd/goflow2` directory.
+
+For instance, certain devices producing IPFIX use `ingressPhysicalInterface` (id: 252)
+and do not use `ingressInterface` (id: 10). Using the following you can have the interface mapped
+in the InIf protobuf field without changing the code.
+
+```yaml
+ipfix:
+  mapping:
+    - field: 252
+      destination: InIf
+    - field: 253
+      destination: OutIf
+```
+
 ### Output format considerations
 
 The JSON format is advised only when consuming a small amount of data directly.
