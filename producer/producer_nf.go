@@ -223,7 +223,7 @@ func ConvertNetFlowDataSet(version uint16, baseTime uint32, uptime uint32, recor
 		switch df.Type {
 
 		case netflow.IPFIX_FIELD_observationPointId:
-			DecodeUNumber(v, &(flowMessage.ObservationPointID))
+			DecodeUNumber(v, &(flowMessage.ObservationPointId))
 
 		// Statistics
 		case netflow.NFV9_FIELD_IN_BYTES:
@@ -245,9 +245,9 @@ func ConvertNetFlowDataSet(version uint16, baseTime uint32, uptime uint32, recor
 
 		// Network
 		case netflow.NFV9_FIELD_SRC_AS:
-			DecodeUNumber(v, &(flowMessage.SrcAS))
+			DecodeUNumber(v, &(flowMessage.SrcAs))
 		case netflow.NFV9_FIELD_DST_AS:
-			DecodeUNumber(v, &(flowMessage.DstAS))
+			DecodeUNumber(v, &(flowMessage.DstAs))
 
 		// Interfaces
 		case netflow.NFV9_FIELD_INPUT_SNMP:
@@ -258,11 +258,11 @@ func ConvertNetFlowDataSet(version uint16, baseTime uint32, uptime uint32, recor
 		case netflow.NFV9_FIELD_FORWARDING_STATUS:
 			DecodeUNumber(v, &(flowMessage.ForwardingStatus))
 		case netflow.NFV9_FIELD_SRC_TOS:
-			DecodeUNumber(v, &(flowMessage.IPTos))
+			DecodeUNumber(v, &(flowMessage.IpTos))
 		case netflow.NFV9_FIELD_TCP_FLAGS:
-			DecodeUNumber(v, &(flowMessage.TCPFlags))
+			DecodeUNumber(v, &(flowMessage.TcpFlags))
 		case netflow.NFV9_FIELD_MIN_TTL:
-			DecodeUNumber(v, &(flowMessage.IPTTL))
+			DecodeUNumber(v, &(flowMessage.IpTtl))
 
 		// IP
 		case netflow.NFV9_FIELD_IP_PROTOCOL_VERSION:
@@ -343,9 +343,9 @@ func ConvertNetFlowDataSet(version uint16, baseTime uint32, uptime uint32, recor
 			DecodeUNumber(v, &(flowMessage.DstVlan))
 
 		case netflow.IPFIX_FIELD_ingressVRFID:
-			DecodeUNumber(v, &(flowMessage.IngressVrfID))
+			DecodeUNumber(v, &(flowMessage.IngressVrfId))
 		case netflow.IPFIX_FIELD_egressVRFID:
-			DecodeUNumber(v, &(flowMessage.EgressVrfID))
+			DecodeUNumber(v, &(flowMessage.EgressVrfId))
 
 		case netflow.NFV9_FIELD_IPV4_IDENT:
 			DecodeUNumber(v, &(flowMessage.FragmentId))
@@ -358,7 +358,7 @@ func ConvertNetFlowDataSet(version uint16, baseTime uint32, uptime uint32, recor
 			DecodeUNumber(v, &ipFlags)
 			flowMessage.FragmentOffset |= ipFlags
 		case netflow.NFV9_FIELD_IPV6_FLOW_LABEL:
-			DecodeUNumber(v, &(flowMessage.IPv6FlowLabel))
+			DecodeUNumber(v, &(flowMessage.Ipv6FlowLabel))
 
 		case netflow.IPFIX_FIELD_biflowDirection:
 			DecodeUNumber(v, &(flowMessage.BiFlowDirection))
@@ -366,24 +366,24 @@ func ConvertNetFlowDataSet(version uint16, baseTime uint32, uptime uint32, recor
 		case netflow.NFV9_FIELD_DIRECTION:
 			DecodeUNumber(v, &(flowMessage.FlowDirection))
 
-		//MPLS
+		// MPLS
 		case netflow.IPFIX_FIELD_mplsTopLabelStackSection:
 			var mplsLabel uint32
 			DecodeUNumber(v, &mplsLabel)
-			flowMessage.MPLS1Label = uint32(mplsLabel >> 4)
-			flowMessage.HasMPLS = true
+			flowMessage.Mpls_1Label = uint32(mplsLabel >> 4)
+			flowMessage.HasMpls = true
 		case netflow.IPFIX_FIELD_mplsLabelStackSection2:
 			var mplsLabel uint32
 			DecodeUNumber(v, &mplsLabel)
-			flowMessage.MPLS2Label = uint32(mplsLabel >> 4)
+			flowMessage.Mpls_2Label = uint32(mplsLabel >> 4)
 		case netflow.IPFIX_FIELD_mplsLabelStackSection3:
 			var mplsLabel uint32
 			DecodeUNumber(v, &mplsLabel)
-			flowMessage.MPLS3Label = uint32(mplsLabel >> 4)
+			flowMessage.Mpls_3Label = uint32(mplsLabel >> 4)
 		case netflow.IPFIX_FIELD_mplsTopLabelIPv4Address:
-			flowMessage.MPLSLabelIP = v
+			flowMessage.MplsLabelIp = v
 		case netflow.IPFIX_FIELD_mplsTopLabelIPv6Address:
-			flowMessage.MPLSLabelIP = v
+			flowMessage.MplsLabelIp = v
 
 		default:
 			if version == 9 {
@@ -612,7 +612,7 @@ func ProcessMessageNetFlowConfig(msgDec interface{}, samplingRateSys SamplingRat
 		for _, fmsg := range flowMessageSet {
 			fmsg.SequenceNum = seqnum
 			fmsg.SamplingRate = uint64(samplingRate)
-			fmsg.ObservationDomainID = obsDomainId
+			fmsg.ObservationDomainId = obsDomainId
 		}
 	default:
 		return flowMessageSet, errors.New("Bad NetFlow/IPFIX version")
