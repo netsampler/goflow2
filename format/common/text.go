@@ -131,14 +131,36 @@ func FormatMessageReflectJSON(msg proto.Message, ext string) string {
 }
 
 func FormatMessageReflectCustom(msg proto.Message, ext, quotes, sep, sign string, null bool) string {
-	fstr := make([]string, len(selector))
+	customSelector := selector
 
 	vfm := reflect.ValueOf(msg)
 	vfm = reflect.Indirect(vfm)
+	vft := vfm.Type()
+
+	if len(customSelector) == 0 {
+		/*
+			// we would need proto v2
+			msgR := msg.ProtoReflect()
+			customSelector = make([]string, msgR.Fields().Len())
+			for i := 0; i<len(customSelector);i++ {
+				customSelector[i] = msgR.Fields().Get(i).TextName()
+			}*/
+
+		customSelector = make([]string, vft.NumField())
+		for i := 0; i < len(customSelector); i++ {
+			field := vft.Field(i)
+			if !field.IsExported() {
+				continue
+			}
+			customSelector[i] = field.Name
+		}
+	}
+
+	fstr := make([]string, len(customSelector))
 
 	var i int
 
-	for _, s := range selector {
+	for _, s := range customSelector {
 		fieldValue := vfm.FieldByName(s)
 		// todo: replace s by json mapping of protobuf
 		if fieldValue.IsValid() {
@@ -171,7 +193,7 @@ func FormatMessageReflectCustom(msg proto.Message, ext, quotes, sep, sign string
 			} else if renderer, ok := RenderExtras[s]; ok {
 				fstr[i] = fmt.Sprintf("%s%s%s%s%q", quotes, s, quotes, sign, renderer(msg))
 			} else {
-				fstr[i] = fmt.Sprintf("%s%s%s%s%q", quotes, s, quotes, sign, fieldValue.String())
+				fstr[i] = fmt.Sprintf("%s%s%s%s%v", quotes, s, quotes, sign, fieldValue.Interface())
 
 			}
 			i++
