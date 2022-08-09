@@ -166,6 +166,9 @@ func UDPStoppableRoutine(stopCh <-chan struct{}, name string, decodeFunc decoder
 			u := udpData{}
 			u.size, u.pktAddr, _ = udpconn.ReadFromUDP(payload)
 			if stopped.Load() == false {
+				if u.size == 0 { // Ignore 0 byte packets.
+					continue
+				}
 				u.payload = make([]byte, u.size)
 				copy(u.payload, payload[0:u.size])
 				udpDataCh <- u
