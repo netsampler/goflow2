@@ -6,7 +6,7 @@ import (
 	"io"
 	"net"
 	"strconv"
-	"sync/atomic"
+	"sync"
 	"time"
 
 	reuseport "github.com/libp2p/go-reuseport"
@@ -158,20 +158,21 @@ func UDPStoppableRoutine(stopCh <-chan struct{}, name string, decodeFunc decoder
 		payload []byte
 	}
 
-	stopped := atomic.Value{}
-	stopped.Store(false)
+	var stopped bool
+	stoppedMu := sync.RWMutex{}
 	udpDataCh := make(chan udpData)
 	go func() {
 		for {
 			u := udpData{}
 			u.size, u.pktAddr, _ = udpconn.ReadFromUDP(payload)
-			if stopped.Load() == false {
-				u.payload = make([]byte, u.size)
-				copy(u.payload, payload[0:u.size])
-				udpDataCh <- u
-			} else {
+			u.payload = make([]byte, u.size)
+			copy(u.payload, payload[0:u.size])
+			stoppedMu.Lock()
+			if stopped == true {
 				return
 			}
+			udpDataCh <- u
+			stoppedMu.Unlock()
 		}
 	}()
 	for {
@@ -179,9 +180,11 @@ func UDPStoppableRoutine(stopCh <-chan struct{}, name string, decodeFunc decoder
 		case u := <-udpDataCh:
 			process(u.size, u.payload, u.pktAddr, processor, localIP, addrUDP, name)
 		case <-stopCh:
-			stopped.Store(true)
+			stoppedMu.Lock()
+			stopped = true
 			udpconn.Close()
 			close(udpDataCh)
+			stoppedMu.Unlock()
 			return nil
 		}
 	}
