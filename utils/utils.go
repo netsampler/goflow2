@@ -168,6 +168,7 @@ func UDPStoppableRoutine(stopCh <-chan struct{}, name string, decodeFunc decoder
 			stoppedMu.Lock()
 			if stopped == false {
 				if u.size == 0 { // Ignore 0 byte packets.
+					stoppedMu.Unlock()
 					continue
 				}
 				u.payload = make([]byte, u.size)
