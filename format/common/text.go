@@ -3,10 +3,11 @@ package common
 import (
 	"encoding/binary"
 	"fmt"
-	"github.com/golang/protobuf/proto"
 	"net"
 	"reflect"
 	"strings"
+
+	"github.com/golang/protobuf/proto"
 )
 
 const (
@@ -52,12 +53,16 @@ var (
 
 	TextFields = []string{
 		"Type",
+		"ObservationPointID",
+		"ObservationDomainID",
 		"TimeReceived",
 		"SequenceNum",
 		"SamplingRate",
 		"SamplerAddress",
 		"TimeFlowStart",
 		"TimeFlowEnd",
+		"TimeFlowStartMs",
+		"TimeFlowEndMs",
 		"Bytes",
 		"Packets",
 		"SrcAddr",
@@ -97,7 +102,11 @@ var (
 		FORMAT_TYPE_INTEGER,
 		FORMAT_TYPE_INTEGER,
 		FORMAT_TYPE_INTEGER,
+		FORMAT_TYPE_INTEGER,
+		FORMAT_TYPE_INTEGER,
 		FORMAT_TYPE_IP,
+		FORMAT_TYPE_INTEGER,
+		FORMAT_TYPE_INTEGER,
 		FORMAT_TYPE_INTEGER,
 		FORMAT_TYPE_INTEGER,
 		FORMAT_TYPE_INTEGER,
