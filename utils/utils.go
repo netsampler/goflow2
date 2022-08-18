@@ -183,9 +183,9 @@ func UDPStoppableRoutine(stopCh <-chan struct{}, name string, decodeFunc decoder
 		case u := <-udpDataCh:
 			process(u.size, u.payload, u.pktAddr, processor, localIP, addrUDP, name)
 		case <-stopCh:
+			udpconn.Close()
 			stoppedMu.Lock()
 			stopped = true
-			udpconn.Close()
 			close(udpDataCh)
 			stoppedMu.Unlock()
 			return nil
