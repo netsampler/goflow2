@@ -191,6 +191,10 @@ func UDPStoppableRoutine(stopCh <-chan struct{}, name string, decodeFunc decoder
 			}
 		}
 	}()
+
+	for _ = range udpDataCh {
+		// drain
+	}
 	wg.Wait()
 	return nil
 }
