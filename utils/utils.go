@@ -6,7 +6,7 @@ import (
 	"io"
 	"net"
 	"strconv"
-	"sync/atomic"
+	"sync"
 	"time"
 
 	reuseport "github.com/libp2p/go-reuseport"
@@ -158,36 +158,45 @@ func UDPStoppableRoutine(stopCh <-chan struct{}, name string, decodeFunc decoder
 		payload []byte
 	}
 
-	stopped := atomic.Value{}
-	stopped.Store(false)
 	udpDataCh := make(chan udpData)
+	defer close(udpDataCh)
+
+	wg := &sync.WaitGroup{}
+	wg.Add(1)
 	go func() {
+		defer wg.Done()
 		for {
 			u := udpData{}
 			u.size, u.pktAddr, _ = udpconn.ReadFromUDP(payload)
-			if stopped.Load() == false {
-				if u.size == 0 { // Ignore 0 byte packets.
-					continue
-				}
-				u.payload = make([]byte, u.size)
-				copy(u.payload, payload[0:u.size])
+			if u.size == 0 { // Ignore 0 byte packets.
+				continue
+			}
+			u.payload = make([]byte, u.size)
+			copy(u.payload, payload[0:u.size])
+			select {
+			case <-stopCh:
+				return
+			default:
 				udpDataCh <- u
-			} else {
+			}
+		}
+	}()
+	func() {
+		for {
+			select {
+			case u := <-udpDataCh:
+				process(u.size, u.payload, u.pktAddr, processor, localIP, addrUDP, name)
+			case <-stopCh:
 				return
 			}
 		}
 	}()
-	for {
-		select {
-		case u := <-udpDataCh:
-			process(u.size, u.payload, u.pktAddr, processor, localIP, addrUDP, name)
-		case <-stopCh:
-			stopped.Store(true)
-			udpconn.Close()
-			close(udpDataCh)
-			return nil
-		}
+
+	for _ = range udpDataCh {
+		// drain
 	}
+	wg.Wait()
+	return nil
 }
 
 func process(size int, payload []byte, pktAddr *net.UDPAddr, processor decoder.Processor, localIP string, addrUDP net.UDPAddr, name string) {
