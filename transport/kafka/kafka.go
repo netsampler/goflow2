@@ -21,6 +21,7 @@ import (
 type KafkaDriver struct {
 	kafkaTLS            bool
 	kafkaSASL           bool
+	kafkaSCRAM          string
 	kafkaTopic          string
 	kafkaSrv            string
 	kafkaBrk            string
@@ -42,6 +43,8 @@ func (d *KafkaDriver) Prepare() error {
 	flag.BoolVar(&d.kafkaTLS, "transport.kafka.tls", false, "Use TLS to connect to Kafka")
 
 	flag.BoolVar(&d.kafkaSASL, "transport.kafka.sasl", false, "Use SASL/PLAIN data to connect to Kafka (TLS is recommended and the environment variables KAFKA_SASL_USER and KAFKA_SASL_PASS need to be set)")
+	flag.StringVar(&d.kafkaSCRAM, "transport.kafka.scram", "", "Use SASL/SCRAM with this SHA algorithm sha256 or sha512")
+
 	flag.StringVar(&d.kafkaTopic, "transport.kafka.topic", "flow-messages", "Kafka topic to produce to")
 	flag.StringVar(&d.kafkaSrv, "transport.kafka.srv", "", "SRV record containing a list of Kafka brokers (or use brokers)")
 	flag.StringVar(&d.kafkaBrk, "transport.kafka.brokers", "127.0.0.1:9092,[::1]:9092", "Kafka brokers list separated by commas")
@@ -95,6 +98,28 @@ func (d *KafkaDriver) Init(context.Context) error {
 			return errors.New("Kafka SASL config from environment was unsuccessful. KAFKA_SASL_USER and KAFKA_SASL_PASS need to be set.")
 		} else /*if log != nil*/ {
 			log.Infof("Authenticating as user '%s'...", kafkaConfig.Net.SASL.User)
+		}
+	}
+
+	if d.kafkaSCRAM != "" {
+		if !d.kafkaSASL {
+			return errors.New("option -transport.kafka.scram requires -transport.kafka.sasl")
+		}
+		kafkaConfig.Net.SASL.Handshake = true
+
+		if d.kafkaSCRAM == "sha512" {
+			kafkaConfig.Net.SASL.SCRAMClientGeneratorFunc = func() sarama.SCRAMClient {
+				return &XDGSCRAMClient{HashGeneratorFcn: SHA512}
+			}
+			kafkaConfig.Net.SASL.Mechanism = sarama.SASLTypeSCRAMSHA512
+		} else if d.kafkaSCRAM == "sha256" {
+			kafkaConfig.Net.SASL.SCRAMClientGeneratorFunc = func() sarama.SCRAMClient {
+				return &XDGSCRAMClient{HashGeneratorFcn: SHA256}
+			}
+			kafkaConfig.Net.SASL.Mechanism = sarama.SASLTypeSCRAMSHA256
+
+		} else {
+			log.Fatalf("invalid SHA algorithm \"%s\": can be either \"sha256\" or \"sha512\"", d.kafkaSCRAM)
 		}
 	}
 
