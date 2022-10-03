@@ -19,6 +19,7 @@ import (
 
 	// import various transports
 	"github.com/netsampler/goflow2/transport"
+	_ "github.com/netsampler/goflow2/transport/bigquery"
 	_ "github.com/netsampler/goflow2/transport/file"
 	_ "github.com/netsampler/goflow2/transport/kafka"
 
