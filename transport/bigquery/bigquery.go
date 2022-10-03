@@ -23,7 +23,6 @@ func (d *BigQueryDriver) Prepare() error {
 	flag.StringVar(&d.bigQueryProjectID, "transport.bigquery.project", "", "BigQuery project ID")
 	flag.StringVar(&d.bigQueryDatasetID, "transport.bigquery.dataset", "", "BigQuery dataset ID")
 	flag.StringVar(&d.bigQueryTableID, "transport.bigquery.table", "", "BigQuery table ID")
-	flag.StringVar(&d.bigQueryJsonKey, "transport.bigquery.jsonkey", "", "BigQuery JSON key file path")
 	return nil
 }
 
@@ -136,7 +135,7 @@ func (i *Item) Save() (map[string]bigquery.Value, string, error) {
 		"DstNet":              i.DstNet,
 		"EtypeName":           i.EtypeName,
 		"ProtoName":           i.ProtoName,
-		"IcmpName":            i.IcmpName,	
+		"IcmpName":            i.IcmpName,
 	}, bigquery.NoDedupeID, nil
 }
 
