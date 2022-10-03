@@ -296,15 +296,18 @@ func SearchSFlowSamplesConfig(samples []interface{}, config *SFlowMapper) []*flo
 			case sflow.ExtendedGateway:
 				ipNh = recordData.NextHop
 				flowMessage.BgpNextHop = ipNh
-				flowMessage.SrcAS = recordData.SrcAS
 				flowMessage.BgpCommunities = recordData.Communities
 				flowMessage.AsPath = recordData.ASPath
 				if len(recordData.ASPath) > 0 {
 					flowMessage.DstAS = recordData.ASPath[len(recordData.ASPath)-1]
 					flowMessage.NextHopAS = recordData.ASPath[0]
-					flowMessage.SrcAS = recordData.AS
 				} else {
 					flowMessage.DstAS = recordData.AS
+				}
+				if recordData.SrcAS > 0 {
+					flowMessage.SrcAS = recordData.SrcAS
+				} else {
+					flowMessage.SrcAS = recordData.AS
 				}
 			case sflow.ExtendedSwitch:
 				flowMessage.SrcVlan = recordData.SrcVlan
