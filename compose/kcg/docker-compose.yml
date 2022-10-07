@@ -19,8 +19,9 @@ services:
     depends_on:
       - zookeeper
   grafana:
-    build: grafana
+    image: grafana/grafana:9.1.7
     environment:
+      - GF_INSTALL_PLUGINS=grafana-clickhouse-datasource
       - GF_PLUGINS_ALLOW_LOADING_UNSIGNED_PLUGINS=vertamedia-clickhouse-datasource
     ports:
       - 3000:3000
@@ -36,7 +37,7 @@ services:
     restart: always
     volumes:
       - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
-  goflow:
+  goflow2:
     build:
       context: ../../
       dockerfile: Dockerfile
@@ -54,7 +55,7 @@ services:
     - -format=pb
     - -format.protobuf.fixedlen=true
   db:
-    image: yandex/clickhouse-server:21.5.6.6
+    image: clickhouse/clickhouse-server:22.6.9.11-alpine
     ports:
       - 8123:8123
     volumes:
