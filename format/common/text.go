@@ -164,7 +164,6 @@ func FormatMessageReflectCustom(msg interface{}, ext, quotes, sep, sign string, 
 			fieldName := field.Name
 			if selectorTag != "" {
 				fieldName = ExtractTag(selectorTag, field.Name, field.Tag)
-				fmt.Println(fieldName, selectorTag, field.Tag)
 				reMap[fieldName] = field.Name
 			}
 			customSelectorTmp[i] = fieldName
