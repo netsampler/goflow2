@@ -199,6 +199,9 @@ func ConvertNetFlowDataSet(version uint16, baseTime uint32, uptime uint32, recor
 
 		switch df.Type {
 
+		case netflow.IPFIX_FIELD_observationPointId:
+			DecodeUNumber(v, &(flowMessage.ObservationPointID))
+
 		// Statistics
 		case netflow.NFV9_FIELD_IN_BYTES:
 			DecodeUNumber(v, &(flowMessage.Bytes))
@@ -266,12 +269,12 @@ func ConvertNetFlowDataSet(version uint16, baseTime uint32, uptime uint32, recor
 		case netflow.NFV9_FIELD_IPV4_NEXT_HOP:
 			flowMessage.NextHop = v
 		case netflow.NFV9_FIELD_BGP_IPV4_NEXT_HOP:
-			flowMessage.NextHop = v
+			flowMessage.BgpNextHop = v
 
 		case netflow.NFV9_FIELD_IPV6_NEXT_HOP:
 			flowMessage.NextHop = v
 		case netflow.NFV9_FIELD_BGP_IPV6_NEXT_HOP:
-			flowMessage.NextHop = v
+			flowMessage.BgpNextHop = v
 
 		// ICMP
 		case netflow.NFV9_FIELD_ICMP_TYPE:
@@ -332,6 +335,25 @@ func ConvertNetFlowDataSet(version uint16, baseTime uint32, uptime uint32, recor
 
 		case netflow.NFV9_FIELD_DIRECTION:
 			DecodeUNumber(v, &(flowMessage.FlowDirection))
+
+		//MPLS
+		case netflow.IPFIX_FIELD_mplsTopLabelStackSection:
+			var mplsLabel uint32
+			DecodeUNumber(v, &mplsLabel)
+			flowMessage.MPLS1Label = uint32(mplsLabel >> 4)
+			flowMessage.HasMPLS = true
+		case netflow.IPFIX_FIELD_mplsLabelStackSection2:
+			var mplsLabel uint32
+			DecodeUNumber(v, &mplsLabel)
+			flowMessage.MPLS2Label = uint32(mplsLabel >> 4)
+		case netflow.IPFIX_FIELD_mplsLabelStackSection3:
+			var mplsLabel uint32
+			DecodeUNumber(v, &mplsLabel)
+			flowMessage.MPLS3Label = uint32(mplsLabel >> 4)
+		case netflow.IPFIX_FIELD_mplsTopLabelIPv4Address:
+			flowMessage.MPLSLabelIP = v
+		case netflow.IPFIX_FIELD_mplsTopLabelIPv6Address:
+			flowMessage.MPLSLabelIP = v
 
 		default:
 			if version == 9 {
@@ -560,6 +582,7 @@ func ProcessMessageNetFlowConfig(msgDec interface{}, samplingRateSys SamplingRat
 		for _, fmsg := range flowMessageSet {
 			fmsg.SequenceNum = seqnum
 			fmsg.SamplingRate = uint64(samplingRate)
+			fmsg.ObservationDomainID = obsDomainId
 		}
 	default:
 		return flowMessageSet, errors.New("Bad NetFlow/IPFIX version")

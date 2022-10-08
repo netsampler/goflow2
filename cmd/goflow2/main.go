@@ -115,6 +115,17 @@ func main() {
 			if err != nil {
 				log.Fatal(err)
 			}
+			numSockets := 1
+			if listenAddrUrl.Query().Has("count") {
+				if numSocketsTmp, err := strconv.ParseUint(listenAddrUrl.Query().Get("count"), 10, 64); err != nil {
+					log.Fatal(err)
+				} else {
+					numSockets = int(numSocketsTmp)
+				}
+			}
+			if numSockets == 0 {
+				numSockets = 1
+			}
 
 			hostname := listenAddrUrl.Hostname()
 			port, err := strconv.ParseUint(listenAddrUrl.Port(), 10, 64)
@@ -127,40 +138,43 @@ func main() {
 				"scheme":   listenAddrUrl.Scheme,
 				"hostname": hostname,
 				"port":     port,
+				"count":    numSockets,
 			}
 
 			log.WithFields(logFields).Info("Starting collection")
 
-			if listenAddrUrl.Scheme == "sflow" {
-				sSFlow := &utils.StateSFlow{
-					Format:    formatter,
-					Transport: transporter,
-					Logger:    log.StandardLogger(),
-					Config:    config,
+			for i := 0; i < numSockets; i++ {
+				if listenAddrUrl.Scheme == "sflow" {
+					sSFlow := &utils.StateSFlow{
+						Format:    formatter,
+						Transport: transporter,
+						Logger:    log.StandardLogger(),
+						Config:    config,
+					}
+					err = sSFlow.FlowRoutine(*Workers, hostname, int(port), *ReusePort)
+				} else if listenAddrUrl.Scheme == "netflow" {
+					sNF := &utils.StateNetFlow{
+						Format:    formatter,
+						Transport: transporter,
+						Logger:    log.StandardLogger(),
+						Config:    config,
+					}
+					err = sNF.FlowRoutine(*Workers, hostname, int(port), *ReusePort)
+				} else if listenAddrUrl.Scheme == "nfl" {
+					sNFL := &utils.StateNFLegacy{
+						Format:    formatter,
+						Transport: transporter,
+						Logger:    log.StandardLogger(),
+					}
+					err = sNFL.FlowRoutine(*Workers, hostname, int(port), *ReusePort)
+				} else {
+					log.Errorf("scheme %s does not exist", listenAddrUrl.Scheme)
+					return
 				}
-				err = sSFlow.FlowRoutine(*Workers, hostname, int(port), *ReusePort)
-			} else if listenAddrUrl.Scheme == "netflow" {
-				sNF := &utils.StateNetFlow{
-					Format:    formatter,
-					Transport: transporter,
-					Logger:    log.StandardLogger(),
-					Config:    config,
-				}
-				err = sNF.FlowRoutine(*Workers, hostname, int(port), *ReusePort)
-			} else if listenAddrUrl.Scheme == "nfl" {
-				sNFL := &utils.StateNFLegacy{
-					Format:    formatter,
-					Transport: transporter,
-					Logger:    log.StandardLogger(),
-				}
-				err = sNFL.FlowRoutine(*Workers, hostname, int(port), *ReusePort)
-			} else {
-				log.Errorf("scheme %s does not exist", listenAddrUrl.Scheme)
-				return
-			}
 
-			if err != nil {
-				log.WithFields(logFields).Fatal(err)
+				if err != nil {
+					log.WithFields(logFields).Fatal(err)
+				}
 			}
 
 		}(listenAddress)
