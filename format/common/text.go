@@ -164,6 +164,7 @@ func FormatMessageReflectCustom(msg interface{}, ext, quotes, sep, sign string, 
 			fieldName := field.Name
 			if selectorTag != "" {
 				fieldName = ExtractTag(selectorTag, field.Name, field.Tag)
+				fmt.Println(fieldName, selectorTag, field.Tag)
 				reMap[fieldName] = field.Name
 			}
 			customSelectorTmp[i] = fieldName
@@ -217,7 +218,12 @@ func FormatMessageReflectCustom(msg interface{}, ext, quotes, sep, sign string, 
 				fstr[i] = fmt.Sprintf("%s%s%s%s%q", quotes, s, quotes, sign, renderer(msg))
 			} else {
 				// handle specific types here
-				fstr[i] = fmt.Sprintf("%s%s%s%s%v", quotes, s, quotes, sign, fieldValue.Interface())
+				switch fieldValue.Kind() {
+				case reflect.String:
+					fstr[i] = fmt.Sprintf("%s%s%s%s%q", quotes, s, quotes, sign, fieldValue.Interface())
+				default:
+					fstr[i] = fmt.Sprintf("%s%s%s%s%v", quotes, s, quotes, sign, fieldValue.Interface())
+				}
 
 			}
 			i++
