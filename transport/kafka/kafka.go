@@ -20,7 +20,7 @@ import (
 
 type KafkaDriver struct {
 	kafkaTLS            bool
-	kafkaSASL           bool
+	kafkaSASL           string
 	kafkaSCRAM          string
 	kafkaTopic          string
 	kafkaSrv            string
@@ -31,8 +31,8 @@ type KafkaDriver struct {
 
 	kafkaLogErrors bool
 
-	kafkaHashing bool
-	kafkaVersion string
+	kafkaHashing          bool
+	kafkaVersion          string
 	kafkaCompressionCodec string
 
 	producer sarama.AsyncProducer
@@ -40,21 +40,43 @@ type KafkaDriver struct {
 	q chan bool
 }
 
+type KafkaSASLAlgorithm string
+
+const (
+	KAFKA_SASL_NONE         KafkaSASLAlgorithm = "none"
+	KAFKA_SASL_PLAIN        KafkaSASLAlgorithm = "plain"
+	KAFKA_SASL_SCRAM_SHA256 KafkaSASLAlgorithm = "scram-sha256"
+	KAFKA_SASL_SCRAM_SHA512 KafkaSASLAlgorithm = "scram-sha512"
+)
+
 var (
 	compressionCodecs = map[string]sarama.CompressionCodec{
-		strings.ToLower(sarama.CompressionNone.String()): sarama.CompressionNone,
-		strings.ToLower(sarama.CompressionGZIP.String()): sarama.CompressionGZIP,
+		strings.ToLower(sarama.CompressionNone.String()):   sarama.CompressionNone,
+		strings.ToLower(sarama.CompressionGZIP.String()):   sarama.CompressionGZIP,
 		strings.ToLower(sarama.CompressionSnappy.String()): sarama.CompressionSnappy,
-		strings.ToLower(sarama.CompressionLZ4.String()): sarama.CompressionLZ4,
-		strings.ToLower(sarama.CompressionZSTD.String()): sarama.CompressionZSTD,
+		strings.ToLower(sarama.CompressionLZ4.String()):    sarama.CompressionLZ4,
+		strings.ToLower(sarama.CompressionZSTD.String()):   sarama.CompressionZSTD,
+	}
+
+	saslAlgorithms = map[KafkaSASLAlgorithm]bool{
+		KAFKA_SASL_PLAIN:        true,
+		KAFKA_SASL_SCRAM_SHA256: true,
+		KAFKA_SASL_SCRAM_SHA512: true,
+	}
+	saslAlgorithmsList = []string{
+		string(KAFKA_SASL_NONE),
+		string(KAFKA_SASL_PLAIN),
+		string(KAFKA_SASL_SCRAM_SHA256),
+		string(KAFKA_SASL_SCRAM_SHA512),
 	}
 )
 
 func (d *KafkaDriver) Prepare() error {
 	flag.BoolVar(&d.kafkaTLS, "transport.kafka.tls", false, "Use TLS to connect to Kafka")
-
-	flag.BoolVar(&d.kafkaSASL, "transport.kafka.sasl", false, "Use SASL/PLAIN data to connect to Kafka (TLS is recommended and the environment variables KAFKA_SASL_USER and KAFKA_SASL_PASS need to be set)")
-	flag.StringVar(&d.kafkaSCRAM, "transport.kafka.scram", "", "Use SASL/SCRAM with this SHA algorithm sha256 or sha512")
+	flag.StringVar(&d.kafkaSASL, "transport.kafka.sasl", "none",
+		fmt.Sprintf(
+			"Use SASL to connect to Kafka, available settings: %s (TLS is recommended and the environment variables KAFKA_SASL_USER and KAFKA_SASL_PASS need to be set)",
+			strings.Join(saslAlgorithmsList, ", ")))
 
 	flag.StringVar(&d.kafkaTopic, "transport.kafka.topic", "flow-messages", "Kafka topic to produce to")
 	flag.StringVar(&d.kafkaSrv, "transport.kafka.srv", "", "SRV record containing a list of Kafka brokers (or use brokers)")
@@ -89,14 +111,14 @@ func (d *KafkaDriver) Init(context.Context) error {
 
 	if d.kafkaCompressionCodec != "" {
 		/*
-		// when upgrading sarama, replace with:
-		// note: if the library adds more codecs, they will be supported natively
-		var cc *sarama.CompressionCodec
+			// when upgrading sarama, replace with:
+			// note: if the library adds more codecs, they will be supported natively
+			var cc *sarama.CompressionCodec
 
-		if err := cc.UnmarshalText([]byte(d.kafkaCompressionCodec)); err != nil {
-			return err
-		}
-		kafkaConfig.Producer.Compression = *cc
+			if err := cc.UnmarshalText([]byte(d.kafkaCompressionCodec)); err != nil {
+				return err
+			}
+			kafkaConfig.Producer.Compression = *cc
 		*/
 
 		if cc, ok := compressionCodecs[strings.ToLower(d.kafkaCompressionCodec)]; !ok {
@@ -105,7 +127,7 @@ func (d *KafkaDriver) Init(context.Context) error {
 			kafkaConfig.Producer.Compression = cc
 		}
 	}
-	
+
 	if d.kafkaTLS {
 		rootCAs, err := x509.SystemCertPool()
 		if err != nil {
@@ -119,39 +141,34 @@ func (d *KafkaDriver) Init(context.Context) error {
 		kafkaConfig.Producer.Partitioner = sarama.NewHashPartitioner
 	}
 
-	if d.kafkaSASL {
-		if !d.kafkaTLS /*&& log != nil*/ {
-			log.Warn("Using SASL without TLS will transmit the authentication in plaintext!")
+	kafkaSASL := KafkaSASLAlgorithm(d.kafkaSASL)
+	if d.kafkaSASL != "" && kafkaSASL != KAFKA_SASL_NONE {
+		_, ok := saslAlgorithms[KafkaSASLAlgorithm(strings.ToLower(d.kafkaSASL))]
+		if !ok {
+			return errors.New("SASL algorithm does not exist")
 		}
+
 		kafkaConfig.Net.SASL.Enable = true
 		kafkaConfig.Net.SASL.User = os.Getenv("KAFKA_SASL_USER")
 		kafkaConfig.Net.SASL.Password = os.Getenv("KAFKA_SASL_PASS")
 		if kafkaConfig.Net.SASL.User == "" && kafkaConfig.Net.SASL.Password == "" {
 			return errors.New("Kafka SASL config from environment was unsuccessful. KAFKA_SASL_USER and KAFKA_SASL_PASS need to be set.")
-		} else /*if log != nil*/ {
-			log.Infof("Authenticating as user '%s'...", kafkaConfig.Net.SASL.User)
 		}
-	}
 
-	if d.kafkaSCRAM != "" {
-		if !d.kafkaSASL {
-			return errors.New("option -transport.kafka.scram requires -transport.kafka.sasl")
-		}
-		kafkaConfig.Net.SASL.Handshake = true
+		if kafkaSASL == KAFKA_SASL_SCRAM_SHA256 || kafkaSASL == KAFKA_SASL_SCRAM_SHA512 {
+			kafkaConfig.Net.SASL.Handshake = true
 
-		if d.kafkaSCRAM == "sha512" {
-			kafkaConfig.Net.SASL.SCRAMClientGeneratorFunc = func() sarama.SCRAMClient {
-				return &XDGSCRAMClient{HashGeneratorFcn: SHA512}
+			if kafkaSASL == KAFKA_SASL_SCRAM_SHA512 {
+				kafkaConfig.Net.SASL.SCRAMClientGeneratorFunc = func() sarama.SCRAMClient {
+					return &XDGSCRAMClient{HashGeneratorFcn: SHA512}
+				}
+				kafkaConfig.Net.SASL.Mechanism = sarama.SASLTypeSCRAMSHA512
+			} else if kafkaSASL == KAFKA_SASL_SCRAM_SHA256 {
+				kafkaConfig.Net.SASL.SCRAMClientGeneratorFunc = func() sarama.SCRAMClient {
+					return &XDGSCRAMClient{HashGeneratorFcn: SHA256}
+				}
+				kafkaConfig.Net.SASL.Mechanism = sarama.SASLTypeSCRAMSHA256
 			}
-			kafkaConfig.Net.SASL.Mechanism = sarama.SASLTypeSCRAMSHA512
-		} else if d.kafkaSCRAM == "sha256" {
-			kafkaConfig.Net.SASL.SCRAMClientGeneratorFunc = func() sarama.SCRAMClient {
-				return &XDGSCRAMClient{HashGeneratorFcn: SHA256}
-			}
-			kafkaConfig.Net.SASL.Mechanism = sarama.SASLTypeSCRAMSHA256
-
-		} else {
-			log.Fatalf("invalid SHA algorithm \"%s\": can be either \"sha256\" or \"sha512\"", d.kafkaSCRAM)
 		}
 	}
 
