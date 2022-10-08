@@ -32,12 +32,22 @@ type KafkaDriver struct {
 
 	kafkaHashing bool
 	kafkaVersion string
-	kafkaCompressionType int
+	kafkaCompressionCodec string
 
 	producer sarama.AsyncProducer
 
 	q chan bool
 }
+
+var (
+	compressionCodecs = map[string]sarama.CompressionCodec{
+		strings.ToLower(sarama.CompressionNone.String()): sarama.CompressionNone,
+		strings.ToLower(sarama.CompressionGZIP.String()): sarama.CompressionGZIP,
+		strings.ToLower(sarama.CompressionSnappy.String()): sarama.CompressionSnappy,
+		strings.ToLower(sarama.CompressionLZ4.String()): sarama.CompressionLZ4,
+		strings.ToLower(sarama.CompressionZSTD.String()): sarama.CompressionZSTD,
+	}
+)
 
 func (d *KafkaDriver) Prepare() error {
 	flag.BoolVar(&d.kafkaTLS, "transport.kafka.tls", false, "Use TLS to connect to Kafka")
@@ -55,7 +65,7 @@ func (d *KafkaDriver) Prepare() error {
 
 	//flag.StringVar(&d.kafkaKeying, "transport.kafka.key", "SamplerAddress,DstAS", "Kafka list of fields to do hashing on (partition) separated by commas")
 	flag.StringVar(&d.kafkaVersion, "transport.kafka.version", "2.8.0", "Kafka version")
-	flag.IntVar(&d.kafkaCompressionType, "transport.kafka.compression.type", 0, "Kafka default compression type")
+	flag.StringVar(&d.kafkaCompressionCodec, "transport.kafka.compression", "", "Kafka default compression")
 
 	return nil
 }
@@ -73,7 +83,25 @@ func (d *KafkaDriver) Init(context.Context) error {
 	kafkaConfig.Producer.MaxMessageBytes = d.kafkaMaxMsgBytes
 	kafkaConfig.Producer.Flush.Bytes = d.kafkaFlushBytes
 	kafkaConfig.Producer.Flush.Frequency = d.kafkaFlushFrequency
-	kafkaConfig.Producer.Compression = sarama.CompressionCodec(d.kafkaCompressionType)
+
+	if d.kafkaCompressionCodec != "" {
+		/*
+		// when upgrading sarama, replace with:
+		// note: if the library adds more codecs, they will be supported natively
+		var cc *sarama.CompressionCodec
+
+		if err := cc.UnmarshalText([]byte(d.kafkaCompressionCodec)); err != nil {
+			return err
+		}
+		kafkaConfig.Producer.Compression = *cc
+		*/
+
+		if cc, ok := compressionCodecs[strings.ToLower(d.kafkaCompressionCodec)]; !ok {
+			return errors.New("compression codec does not exist")
+		} else {
+			kafkaConfig.Producer.Compression = cc
+		}
+	}
 	
 	if d.kafkaTLS {
 		rootCAs, err := x509.SystemCertPool()

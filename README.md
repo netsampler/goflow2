@@ -150,24 +150,12 @@ To partition the feed (any field of the protobuf is available), the following op
 -format.hash=SamplerAddress,DstAS
 ```
 
-By default, no compression will be enabled when sending data to kafka
-To change the kafka compression type of the producer side configure the following options
+By default, compression is disabled when sending data to Kafka.
+To change the kafka compression type of the producer side configure the following option:
 ```
-transport.kafka.compression.type=3
+-transport.kafka.compression.type=gzip
 ```
-Optionally to disable compression on the producer end configure the below parameter
-```
-transport.kafka.compression.type=0
-```
-
-List of all compression types:
-```
-CompressionNone   CompressionCodec = 0
-CompressionGZIP   CompressionCodec = 1
-CompressionSnappy CompressionCodec = 2
-CompressionLZ4    CompressionCodec = 3
-CompressionZSTD   CompressionCodec = 4
-```
+The list of codecs is available in the [Sarama documentation](https://pkg.go.dev/github.com/Shopify/sarama#CompressionCodec).
 
 ### Docker
 
