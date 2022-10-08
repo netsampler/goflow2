@@ -6,8 +6,6 @@ import (
 	"net"
 	"reflect"
 	"strings"
-
-	"github.com/golang/protobuf/proto"
 )
 
 const (
@@ -51,118 +49,33 @@ var (
 		134: "RouterAdvertisement",
 	}
 
-	TextFields = []string{
-		"Type",
-		"ObservationPointID",
-		"ObservationDomainID",
-		"TimeReceived",
-		"SequenceNum",
-		"SamplingRate",
-		"SamplerAddress",
-		"TimeFlowStart",
-		"TimeFlowEnd",
-		"TimeFlowStartMs",
-		"TimeFlowEndMs",
-		"Bytes",
-		"Packets",
-		"SrcAddr",
-		"DstAddr",
-		"Etype",
-		"Proto",
-		"SrcPort",
-		"DstPort",
-		"InIf",
-		"OutIf",
-		"SrcMac",
-		"DstMac",
-		"SrcVlan",
-		"DstVlan",
-		"VlanId",
-		"IngressVrfID",
-		"EgressVrfID",
-		"IPTos",
-		"ForwardingStatus",
-		"IPTTL",
-		"TCPFlags",
-		"IcmpType",
-		"IcmpCode",
-		"IPv6FlowLabel",
-		"FragmentId",
-		"FragmentOffset",
-		"BiFlowDirection",
-		"SrcAS",
-		"DstAS",
-		"NextHop",
-		"NextHopAS",
-		"SrcNet",
-		"DstNet",
+	TextFields = map[string]int{
+		"Type":           FORMAT_TYPE_STRING_FUNC,
+		"SamplerAddress": FORMAT_TYPE_IP,
+		"SrcAddr":        FORMAT_TYPE_IP,
+		"DstAddr":        FORMAT_TYPE_IP,
+		"SrcMac":         FORMAT_TYPE_MAC,
+		"DstMac":         FORMAT_TYPE_MAC,
+		"NextHop":        FORMAT_TYPE_IP,
+		"MPLSLabelIP":    FORMAT_TYPE_IP,
 	}
-	TextFieldsTypes = []int{
-		FORMAT_TYPE_STRING_FUNC,
-		FORMAT_TYPE_INTEGER,
-		FORMAT_TYPE_INTEGER,
-		FORMAT_TYPE_INTEGER,
-		FORMAT_TYPE_INTEGER,
-		FORMAT_TYPE_INTEGER,
-		FORMAT_TYPE_IP,
-		FORMAT_TYPE_INTEGER,
-		FORMAT_TYPE_INTEGER,
-		FORMAT_TYPE_INTEGER,
-		FORMAT_TYPE_INTEGER,
-		FORMAT_TYPE_INTEGER,
-		FORMAT_TYPE_INTEGER,
-		FORMAT_TYPE_IP,
-		FORMAT_TYPE_IP,
-		FORMAT_TYPE_INTEGER,
-		FORMAT_TYPE_INTEGER,
-		FORMAT_TYPE_INTEGER,
-		FORMAT_TYPE_INTEGER,
-		FORMAT_TYPE_INTEGER,
-		FORMAT_TYPE_INTEGER,
-		FORMAT_TYPE_MAC,
-		FORMAT_TYPE_MAC,
-		FORMAT_TYPE_INTEGER,
-		FORMAT_TYPE_INTEGER,
-		FORMAT_TYPE_INTEGER,
-		FORMAT_TYPE_INTEGER,
-		FORMAT_TYPE_INTEGER,
-		FORMAT_TYPE_INTEGER,
-		FORMAT_TYPE_INTEGER,
-		FORMAT_TYPE_INTEGER,
-		FORMAT_TYPE_INTEGER,
-		FORMAT_TYPE_INTEGER,
-		FORMAT_TYPE_INTEGER,
-		FORMAT_TYPE_INTEGER,
-		FORMAT_TYPE_INTEGER,
-		FORMAT_TYPE_INTEGER,
-		FORMAT_TYPE_INTEGER,
-		FORMAT_TYPE_INTEGER,
-		FORMAT_TYPE_INTEGER,
-		FORMAT_TYPE_IP,
-		FORMAT_TYPE_INTEGER,
-		FORMAT_TYPE_INTEGER,
-		FORMAT_TYPE_INTEGER,
-	}
-	RenderExtras = []string{
-		"EtypeName",
-		"ProtoName",
-		"IcmpName",
-	}
-	RenderExtraCall = []RenderExtraFunction{
-		RenderExtraFunctionEtypeName,
-		RenderExtraFunctionProtoName,
-		RenderExtraFunctionIcmpName,
+
+	RenderExtras = map[string]RenderExtraFunction{
+		"EtypeName": RenderExtraFunctionEtypeName,
+		"ProtoName": RenderExtraFunctionProtoName,
+		"IcmpName":  RenderExtraFunctionIcmpName,
 	}
 )
 
+/*
 func AddTextField(name string, jtype int) {
 	TextFields = append(TextFields, name)
 	TextFieldsTypes = append(TextFieldsTypes, jtype)
-}
+}*/
 
-type RenderExtraFunction func(proto.Message) string
+type RenderExtraFunction func(interface{}) string
 
-func RenderExtraFetchNumbers(msg proto.Message, fields []string) []uint64 {
+func RenderExtraFetchNumbers(msg interface{}, fields []string) []uint64 {
 	vfm := reflect.ValueOf(msg)
 	vfm = reflect.Indirect(vfm)
 
@@ -177,16 +90,16 @@ func RenderExtraFetchNumbers(msg proto.Message, fields []string) []uint64 {
 	return values
 }
 
-func RenderExtraFunctionEtypeName(msg proto.Message) string {
+func RenderExtraFunctionEtypeName(msg interface{}) string {
 	num := RenderExtraFetchNumbers(msg, []string{"Etype"})
 	return EtypeName[uint32(num[0])]
 }
 
-func RenderExtraFunctionProtoName(msg proto.Message) string {
+func RenderExtraFunctionProtoName(msg interface{}) string {
 	num := RenderExtraFetchNumbers(msg, []string{"Proto"})
 	return ProtoName[uint32(num[0])]
 }
-func RenderExtraFunctionIcmpName(msg proto.Message) string {
+func RenderExtraFunctionIcmpName(msg interface{}) string {
 	num := RenderExtraFetchNumbers(msg, []string{"Proto", "IcmpCode", "IcmpType"})
 	return IcmpCodeType(uint32(num[0]), uint32(num[1]), uint32(num[2]))
 }
@@ -208,69 +121,116 @@ func RenderIP(addr []byte) string {
 	return net.IP(addr).String()
 }
 
-func FormatMessageReflectText(msg proto.Message, ext string) string {
+func FormatMessageReflectText(msg interface{}, ext string) string {
 	return FormatMessageReflectCustom(msg, ext, "", " ", "=", false)
 }
 
-func FormatMessageReflectJSON(msg proto.Message, ext string) string {
+func FormatMessageReflectJSON(msg interface{}, ext string) string {
 	return fmt.Sprintf("{%s}", FormatMessageReflectCustom(msg, ext, "\"", ",", ":", true))
 }
 
-func FormatMessageReflectCustom(msg proto.Message, ext, quotes, sep, sign string, null bool) string {
-	fstr := make([]string, len(TextFields)+len(RenderExtras))
+func ExtractTag(name, original string, tag reflect.StructTag) string {
+	lookup, ok := tag.Lookup(name)
+	if !ok {
+		return original
+	}
+	before, _, _ := strings.Cut(lookup, ",")
+	return before
+}
+
+func FormatMessageReflectCustom(msg interface{}, ext, quotes, sep, sign string, null bool) string {
+	customSelector := selector
+	reMap := make(map[string]string)
 
 	vfm := reflect.ValueOf(msg)
 	vfm = reflect.Indirect(vfm)
+	vft := vfm.Type()
+
+	if len(customSelector) == 0 || selectorTag != "" {
+		/*
+			// we would need proto v2
+			msgR := msg.ProtoReflect()
+			customSelector = make([]string, msgR.Fields().Len())
+			for i := 0; i<len(customSelector);i++ {
+				customSelector[i] = msgR.Fields().Get(i).TextName()
+			}*/
+
+		customSelectorTmp := make([]string, vft.NumField())
+		for i := 0; i < len(customSelectorTmp); i++ {
+			field := vft.Field(i)
+			if !field.IsExported() {
+				continue
+			}
+			fieldName := field.Name
+			if selectorTag != "" {
+				fieldName = ExtractTag(selectorTag, field.Name, field.Tag)
+				fmt.Println(fieldName, selectorTag, field.Tag)
+				reMap[fieldName] = field.Name
+			}
+			customSelectorTmp[i] = fieldName
+
+		}
+
+		if len(customSelector) == 0 {
+			customSelector = customSelectorTmp
+		}
+	}
+
+	fstr := make([]string, len(customSelector))
 
 	var i int
-	for j, kf := range TextFields {
-		fieldValue := vfm.FieldByName(kf)
+
+	for _, s := range customSelector {
+		fieldName := s
+		if fieldNameMap, ok := reMap[fieldName]; ok {
+			fieldName = fieldNameMap
+		}
+		fieldValue := vfm.FieldByName(fieldName)
+		// todo: replace s by json mapping of protobuf
 		if fieldValue.IsValid() {
 
-			switch TextFieldsTypes[j] {
-			case FORMAT_TYPE_STRING_FUNC:
-				strMethod := fieldValue.MethodByName("String").Call([]reflect.Value{})
-				fstr[i] = fmt.Sprintf("%s%s%s%s%q", quotes, kf, quotes, sign, strMethod[0].String())
-			case FORMAT_TYPE_STRING:
-				fstr[i] = fmt.Sprintf("%s%s%s%s%q", quotes, kf, quotes, sign, fieldValue.String())
-			case FORMAT_TYPE_INTEGER:
-				fstr[i] = fmt.Sprintf("%s%s%s%s%d", quotes, kf, quotes, sign, fieldValue.Uint())
-			case FORMAT_TYPE_IP:
-				ip := fieldValue.Bytes()
-				fstr[i] = fmt.Sprintf("%s%s%s%s%q", quotes, kf, quotes, sign, RenderIP(ip))
-			case FORMAT_TYPE_MAC:
-				mac := make([]byte, 8)
-				binary.BigEndian.PutUint64(mac, fieldValue.Uint())
-				fstr[i] = fmt.Sprintf("%s%s%s%s%q", quotes, kf, quotes, sign, net.HardwareAddr(mac[2:]).String())
-			case FORMAT_TYPE_BYTES:
-				fstr[i] = fmt.Sprintf("%s%s%s%s%.2x", quotes, kf, quotes, sign, fieldValue.Bytes())
-			default:
-				if null {
-					fstr[i] = fmt.Sprintf("%s%s%s%snull", quotes, kf, quotes, sign)
+			if fieldType, ok := TextFields[fieldName]; ok {
+				switch fieldType {
+				case FORMAT_TYPE_STRING_FUNC:
+					strMethod := fieldValue.MethodByName("String").Call([]reflect.Value{})
+					fstr[i] = fmt.Sprintf("%s%s%s%s%q", quotes, s, quotes, sign, strMethod[0].String())
+				case FORMAT_TYPE_STRING:
+					fstr[i] = fmt.Sprintf("%s%s%s%s%q", quotes, s, quotes, sign, fieldValue.String())
+				case FORMAT_TYPE_INTEGER:
+					fstr[i] = fmt.Sprintf("%s%s%s%s%d", quotes, s, quotes, sign, fieldValue.Uint())
+				case FORMAT_TYPE_IP:
+					ip := fieldValue.Bytes()
+					fstr[i] = fmt.Sprintf("%s%s%s%s%q", quotes, s, quotes, sign, RenderIP(ip))
+				case FORMAT_TYPE_MAC:
+					mac := make([]byte, 8)
+					binary.BigEndian.PutUint64(mac, fieldValue.Uint())
+					fstr[i] = fmt.Sprintf("%s%s%s%s%q", quotes, s, quotes, sign, net.HardwareAddr(mac[2:]).String())
+				case FORMAT_TYPE_BYTES:
+					fstr[i] = fmt.Sprintf("%s%s%s%s%.2x", quotes, s, quotes, sign, fieldValue.Bytes())
+				default:
+					if null {
+						fstr[i] = fmt.Sprintf("%s%s%s%snull", quotes, s, quotes, sign)
+					} else {
+
+					}
 				}
-			}
+			} else if renderer, ok := RenderExtras[fieldName]; ok {
+				fstr[i] = fmt.Sprintf("%s%s%s%s%q", quotes, s, quotes, sign, renderer(msg))
+			} else {
+				// handle specific types here
+				switch fieldValue.Kind() {
+				case reflect.String:
+					fstr[i] = fmt.Sprintf("%s%s%s%s%q", quotes, s, quotes, sign, fieldValue.Interface())
+				default:
+					fstr[i] = fmt.Sprintf("%s%s%s%s%v", quotes, s, quotes, sign, fieldValue.Interface())
+				}
 
-		} else {
-			if null {
-				fstr[i] = fmt.Sprintf("%s%s%s%snull", quotes, kf, quotes, sign)
 			}
-		}
-		if len(selectorMap) == 0 || selectorMap[kf] {
 			i++
 		}
 
 	}
-
-	for j, e := range RenderExtras {
-		fstr[i] = fmt.Sprintf("%s%s%s%s%q", quotes, e, quotes, sign, RenderExtraCall[j](msg))
-		if len(selectorMap) == 0 || selectorMap[e] {
-			i++
-		}
-	}
-
-	if len(selectorMap) > 0 {
-		fstr = fstr[0:i]
-	}
+	fstr = fstr[0:i]
 
 	return strings.Join(fstr, sep)
 }
