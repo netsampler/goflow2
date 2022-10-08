@@ -79,8 +79,8 @@ func MapCountry(db *geoip2.Reader, addr []byte, dest *string) {
 
 func MapFlow(dbAsn, dbCountry *geoip2.Reader, msg *flowmessage.FlowMessageExt) {
 	if dbAsn != nil {
-		MapAsn(dbAsn, msg.SrcAddr, &(msg.SrcAS))
-		MapAsn(dbAsn, msg.DstAddr, &(msg.DstAS))
+		MapAsn(dbAsn, msg.SrcAddr, &(msg.SrcAs))
+		MapAsn(dbAsn, msg.DstAddr, &(msg.DstAs))
 	}
 	if dbCountry != nil {
 		MapCountry(dbCountry, msg.SrcAddr, &(msg.SrcCountry))

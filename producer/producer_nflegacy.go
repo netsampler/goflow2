@@ -32,13 +32,13 @@ func ConvertNetFlowLegacyRecord(baseTime uint32, uptime uint32, record netflowle
 	flowMessage.DstAddr = v
 
 	flowMessage.Etype = 0x800
-	flowMessage.SrcAS = uint32(record.SrcAS)
-	flowMessage.DstAS = uint32(record.DstAS)
+	flowMessage.SrcAs = uint32(record.SrcAS)
+	flowMessage.DstAs = uint32(record.DstAS)
 	flowMessage.SrcNet = uint32(record.SrcMask)
 	flowMessage.DstNet = uint32(record.DstMask)
 	flowMessage.Proto = uint32(record.Proto)
-	flowMessage.TCPFlags = uint32(record.TCPFlags)
-	flowMessage.IPTos = uint32(record.Tos)
+	flowMessage.TcpFlags = uint32(record.TCPFlags)
+	flowMessage.IpTos = uint32(record.Tos)
 	flowMessage.InIf = uint32(record.Input)
 	flowMessage.OutIf = uint32(record.Output)
 	flowMessage.SrcPort = uint32(record.SrcPort)
