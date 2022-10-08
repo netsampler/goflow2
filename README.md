@@ -150,6 +150,14 @@ To partition the feed (any field of the protobuf is available), the following op
 -format.hash=SamplerAddress,DstAS
 ```
 
+By default, compression is disabled when sending data to Kafka.
+To change the kafka compression type of the producer side configure the following option:
+```
+-transport.kafka.compression.type=gzip
+```
+The list of codecs is available in the [Sarama documentation](https://pkg.go.dev/github.com/Shopify/sarama#CompressionCodec).
+
+
 By default, the collector will listen for IPFIX/NetFlow V9 on port 2055
 and sFlow on port 6343.
 To change the sockets binding, you can set the `-listen` argument and a URI
