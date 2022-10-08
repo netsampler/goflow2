@@ -44,7 +44,7 @@ clickhouse client -n <<-EOSQL
         kafka_topic_list = 'flows',
         kafka_group_name = 'clickhouse',
         kafka_format = 'Protobuf',
-        kafka_schema = './flow.proto:FlowMessage';
+        kafka_schema = 'flow.proto:FlowMessage';
 
     CREATE TABLE IF NOT EXISTS flows_raw
     (

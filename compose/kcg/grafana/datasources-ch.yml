@@ -21,7 +21,26 @@ datasources:
    basicAuthPassword: ''
    withCredentials: false
    isDefault: true
-   jsonData: {}
+   secureJsonFields: {}
+   version: 3
+   readOnly: false
+ - name: ClickHouse-new
+   type: grafana-clickhouse-datasource
+   typeLogoUrl: ''
+   access: proxy
+   url: http://db:8123
+   password: ''
+   user: ''
+   database: ''
+   basicAuth: false
+   basicAuthUser: ''
+   basicAuthPassword: ''
+   withCredentials: false
+   isDefault: true
+   jsonData:
+     port: 8123
+     protocol: http
+     server: db
    secureJsonFields: {}
    version: 3
    readOnly: false

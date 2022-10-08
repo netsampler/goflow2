@@ -128,10 +128,10 @@ func UDPStoppableRoutine(stopCh <-chan struct{}, name string, decodeFunc decoder
 
 	if sockReuse {
 		pconn, err := reuseport.ListenPacket("udp", addrUDP.String())
-		defer pconn.Close()
 		if err != nil {
 			return err
 		}
+		defer pconn.Close()
 		var ok bool
 		udpconn, ok = pconn.(*net.UDPConn)
 		if !ok {
