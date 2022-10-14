@@ -16,6 +16,9 @@ netflowv9:
       destination: CustomInteger1
     - field: 11
       destination: CustomInteger2
+    - field: 34 # samplingInterval
+      destination: SamplingRate
+      endian: little
 sflow:
   mapping:
     - layer: 4 # Layer 4: TCP or UDP

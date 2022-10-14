@@ -97,6 +97,38 @@ func NetFlowPopulate(dataFields []netflow.DataField, typeId uint16, addr interfa
 	return exists
 }
 
+func WriteUDecoded(o uint64, out interface{}) error {
+	switch t := out.(type) {
+	case *byte:
+		*t = byte(o)
+	case *uint16:
+		*t = uint16(o)
+	case *uint32:
+		*t = uint32(o)
+	case *uint64:
+		*t = o
+	default:
+		return errors.New("The parameter is not a pointer to a byte/uint16/uint32/uint64 structure")
+	}
+	return nil
+}
+
+func WriteDecoded(o int64, out interface{}) error {
+	switch t := out.(type) {
+	case *int8:
+		*t = int8(o)
+	case *int16:
+		*t = int16(o)
+	case *int32:
+		*t = int32(o)
+	case *int64:
+		*t = o
+	default:
+		return errors.New("The parameter is not a pointer to a int8/int16/int32/int64 structure")
+	}
+	return nil
+}
+
 func DecodeUNumber(b []byte, out interface{}) error {
 	var o uint64
 	l := len(b)
@@ -120,19 +152,33 @@ func DecodeUNumber(b []byte, out interface{}) error {
 			return errors.New(fmt.Sprintf("Non-regular number of bytes for a number: %v", l))
 		}
 	}
-	switch t := out.(type) {
-	case *byte:
-		*t = byte(o)
-	case *uint16:
-		*t = uint16(o)
-	case *uint32:
-		*t = uint32(o)
-	case *uint64:
-		*t = o
+	return WriteUDecoded(o, out)
+}
+
+func DecodeUNumberLE(b []byte, out interface{}) error {
+	var o uint64
+	l := len(b)
+	switch l {
+	case 1:
+		o = uint64(b[0])
+	case 2:
+		o = uint64(binary.LittleEndian.Uint16(b))
+	case 4:
+		o = uint64(binary.LittleEndian.Uint32(b))
+	case 8:
+		o = binary.LittleEndian.Uint64(b)
 	default:
-		return errors.New("The parameter is not a pointer to a byte/uint16/uint32/uint64 structure")
+		if l < 8 {
+			var iter uint
+			for i := range b {
+				o |= uint64(b[i]) << uint(8*(iter))
+				iter++
+			}
+		} else {
+			return errors.New(fmt.Sprintf("Non-regular number of bytes for a number: %v", l))
+		}
 	}
-	return nil
+	return WriteUDecoded(o, out)
 }
 
 func DecodeNumber(b []byte, out interface{}) error {
@@ -158,19 +204,33 @@ func DecodeNumber(b []byte, out interface{}) error {
 			return errors.New(fmt.Sprintf("Non-regular number of bytes for a number: %v", l))
 		}
 	}
-	switch t := out.(type) {
-	case *int8:
-		*t = int8(o)
-	case *int16:
-		*t = int16(o)
-	case *int32:
-		*t = int32(o)
-	case *int64:
-		*t = o
+	return WriteDecoded(o, out)
+}
+
+func DecodeNumberLE(b []byte, out interface{}) error {
+	var o int64
+	l := len(b)
+	switch l {
+	case 1:
+		o = int64(int8(b[0]))
+	case 2:
+		o = int64(int16(binary.LittleEndian.Uint16(b)))
+	case 4:
+		o = int64(int32(binary.LittleEndian.Uint32(b)))
+	case 8:
+		o = int64(binary.LittleEndian.Uint64(b))
 	default:
-		return errors.New("The parameter is not a pointer to a int8/int16/int32/int64 structure")
+		if l < 8 {
+			var iter int
+			for i := range b {
+				o |= int64(b[i]) << int(8*(iter))
+				iter++
+			}
+		} else {
+			return errors.New(fmt.Sprintf("Non-regular number of bytes for a number: %v", l))
+		}
 	}
-	return nil
+	return WriteDecoded(o, out)
 }
 
 func allZeroes(v []byte) bool {

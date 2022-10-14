@@ -58,7 +58,7 @@ func ParseEthernetHeader(flowMessage *flowmessage.FlowMessage, data []byte, conf
 
 	for _, configLayer := range GetSFlowConfigLayer(config, 0) {
 		extracted := GetBytes(data, configLayer.Offset, configLayer.Length)
-		MapCustom(flowMessage, extracted, configLayer.Destination)
+		MapCustom(flowMessage, extracted, configLayer.Destination, configLayer.Endian)
 	}
 
 	etherType := data[12:14]
@@ -121,7 +121,7 @@ func ParseEthernetHeader(flowMessage *flowmessage.FlowMessage, data []byte, conf
 
 		for _, configLayer := range GetSFlowConfigLayer(config, 3) {
 			extracted := GetBytes(data, offset*8+configLayer.Offset, configLayer.Length)
-			MapCustom(flowMessage, extracted, configLayer.Destination)
+			MapCustom(flowMessage, extracted, configLayer.Destination, configLayer.Endian)
 		}
 
 		if etherType[0] == 0x8 && etherType[1] == 0x0 { // IPv4
@@ -159,7 +159,7 @@ func ParseEthernetHeader(flowMessage *flowmessage.FlowMessage, data []byte, conf
 
 		for _, configLayer := range GetSFlowConfigLayer(config, 4) {
 			extracted := GetBytes(data, offset*8+configLayer.Offset, configLayer.Length)
-			MapCustom(flowMessage, extracted, configLayer.Destination)
+			MapCustom(flowMessage, extracted, configLayer.Destination, configLayer.Endian)
 		}
 
 		appOffset := 0
@@ -187,7 +187,7 @@ func ParseEthernetHeader(flowMessage *flowmessage.FlowMessage, data []byte, conf
 		if appOffset > 0 {
 			for _, configLayer := range GetSFlowConfigLayer(config, 7) {
 				extracted := GetBytes(data, (offset+appOffset)*8+configLayer.Offset, configLayer.Length)
-				MapCustom(flowMessage, extracted, configLayer.Destination)
+				MapCustom(flowMessage, extracted, configLayer.Destination, configLayer.Endian)
 			}
 		}
 
