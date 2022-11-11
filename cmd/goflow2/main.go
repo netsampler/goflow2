@@ -21,6 +21,7 @@ import (
 	"github.com/netsampler/goflow2/transport"
 	_ "github.com/netsampler/goflow2/transport/file"
 	_ "github.com/netsampler/goflow2/transport/kafka"
+	_ "github.com/netsampler/goflow2/transport/nats"
 
 	"github.com/netsampler/goflow2/utils"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
