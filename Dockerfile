@@ -7,6 +7,7 @@ COPY . /build
 WORKDIR /build
 
 RUN go build -ldflags "${LDFLAGS}" -o goflow2 cmd/goflow2/main.go
+RUN go build -ldflags "${LDFLAGS}" -o enricher cmd/enricher/main.go
 
 FROM alpine:latest
 ARG src_dir
