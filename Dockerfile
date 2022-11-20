@@ -32,6 +32,6 @@ LABEL org.opencontainers.image.revision="${REV}"
 RUN apk update --no-cache && \
     adduser -S -D -H -h / flow
 USER flow
-COPY --from=builder /build/goflow2 /
+COPY --from=builder /build/goflow2 /build/enricher /
 
 ENTRYPOINT ["./goflow2"]
