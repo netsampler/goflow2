@@ -1,10 +1,13 @@
 package producer
 
 import (
+	"encoding/binary"
+	"net"
 	"testing"
 
 	"github.com/netsampler/goflow2/decoders/netflow"
 	"github.com/netsampler/goflow2/decoders/sflow"
+	flowmessage "github.com/netsampler/goflow2/pb"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -73,8 +76,26 @@ func TestProcessMessageSFlow(t *testing.T) {
 			},
 		},
 	}
-	_, err := ProcessMessageSFlow(pkt)
+	flowMessages, err := ProcessMessageSFlow(pkt)
 	assert.Nil(t, err)
+	assert.Equal(t, flowMessages[0], &flowmessage.FlowMessage{
+		Type:          flowmessage.FlowMessage_SFLOW_5,
+		SamplingRate:  1,
+		Bytes:         10,
+		Packets:       1,
+		SrcAddr:       net.ParseIP("fd01::ff01:8210:cdff:ff1c:0:150"),
+		DstAddr:       net.ParseIP("fd01::ff01:1:2ff:ff93:0:246"),
+		Etype:         0x86dd,
+		Proto:         6,
+		SrcPort:       53194,
+		DstPort:       80,
+		SrcMac:        binary.BigEndian.Uint64([]byte{0, 0, 0xff, 0xab, 0xcd, 0xef, 0xab, 0xbc}),
+		DstMac:        binary.BigEndian.Uint64([]byte{0, 0, 0xff, 0xab, 0xcd, 0xef, 0xab, 0xcd}),
+		IpTos:         2,
+		IpTtl:         64,
+		TcpFlags:      24,
+		Ipv6FlowLabel: 967916,
+	})
 }
 
 func TestExpandedSFlowDecode(t *testing.T) {

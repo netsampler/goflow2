@@ -61,6 +61,9 @@ func ParseEthernetHeader(flowMessage *flowmessage.FlowMessage, data []byte, conf
 		MapCustom(flowMessage, extracted, configLayer.Destination)
 	}
 
+	if len(data) < offset {
+		return
+	}
 	etherType := data[12:14]
 
 	dstMac = binary.BigEndian.Uint64(append([]byte{0, 0}, data[0:6]...))
@@ -68,130 +71,121 @@ func ParseEthernetHeader(flowMessage *flowmessage.FlowMessage, data []byte, conf
 	(*flowMessage).SrcMac = srcMac
 	(*flowMessage).DstMac = dstMac
 
-	encap := true
-	iterations := 0
-	for encap && iterations <= 1 {
-		encap = false
-
-		if etherType[0] == 0x81 && etherType[1] == 0x0 { // VLAN 802.1Q
+	if etherType[0] == 0x81 && etherType[1] == 0x0 { // VLAN 802.1Q
+		offset += 4
+		if len(data) >= offset {
 			(*flowMessage).VlanId = uint32(binary.BigEndian.Uint16(data[14:16]))
-			offset += 4
 			etherType = data[16:18]
 		}
+	}
 
-		if etherType[0] == 0x88 && etherType[1] == 0x47 { // MPLS
-			iterateMpls := true
-			hasMpls = true
-			for iterateMpls {
-				if len(data) < offset+5 {
-					iterateMpls = false
-					break
-				}
-				label := binary.BigEndian.Uint32(append([]byte{0}, data[offset:offset+3]...)) >> 4
-				//exp := data[offset+2] > 1
-				bottom := data[offset+2] & 1
-				mplsTtl := data[offset+3]
+	if etherType[0] == 0x88 && etherType[1] == 0x47 { // MPLS
+		hasMpls = true
+		for {
+			if len(data) < offset+5 {
 				offset += 4
+				break
+			}
+			label := binary.BigEndian.Uint32(append([]byte{0}, data[offset:offset+3]...)) >> 4
+			//exp := data[offset+2] > 1
+			bottom := data[offset+2] & 1
+			mplsTtl := data[offset+3]
+			offset += 4
 
-				if bottom == 1 || label <= 15 || offset > len(data) {
-					if data[offset]&0xf0>>4 == 4 {
-						etherType = []byte{0x8, 0x0}
-					} else if data[offset]&0xf0>>4 == 6 {
-						etherType = []byte{0x86, 0xdd}
-					}
-					iterateMpls = false
-				}
+			if countMpls == 0 {
+				firstLabelMpls = label
+				firstTtlMpls = mplsTtl
+			} else if countMpls == 1 {
+				secondLabelMpls = label
+				secondTtlMpls = mplsTtl
+			} else if countMpls == 2 {
+				thirdLabelMpls = label
+				thirdTtlMpls = mplsTtl
+			} else {
+				lastLabelMpls = label
+				lastTtlMpls = mplsTtl
+			}
+			countMpls++
 
-				if countMpls == 0 {
-					firstLabelMpls = label
-					firstTtlMpls = mplsTtl
-				} else if countMpls == 1 {
-					secondLabelMpls = label
-					secondTtlMpls = mplsTtl
-				} else if countMpls == 2 {
-					thirdLabelMpls = label
-					thirdTtlMpls = mplsTtl
-				} else {
-					lastLabelMpls = label
-					lastTtlMpls = mplsTtl
+			if bottom == 1 || label <= 15 || offset > len(data) {
+				if data[offset]&0xf0>>4 == 4 {
+					etherType = []byte{0x8, 0x0}
+				} else if data[offset]&0xf0>>4 == 6 {
+					etherType = []byte{0x86, 0xdd}
 				}
-				countMpls++
+				break
 			}
 		}
+	}
 
-		for _, configLayer := range GetSFlowConfigLayer(config, 3) {
-			extracted := GetBytes(data, offset*8+configLayer.Offset, configLayer.Length)
+	for _, configLayer := range GetSFlowConfigLayer(config, 3) {
+		extracted := GetBytes(data, offset*8+configLayer.Offset, configLayer.Length)
+		MapCustom(flowMessage, extracted, configLayer.Destination)
+	}
+
+	if etherType[0] == 0x8 && etherType[1] == 0x0 { // IPv4
+		if len(data) >= offset+20 {
+			nextHeader = data[offset+9]
+			srcIP = data[offset+12 : offset+16]
+			dstIP = data[offset+16 : offset+20]
+			tos = data[offset+1]
+			ttl = data[offset+8]
+
+			identification = binary.BigEndian.Uint16(data[offset+4 : offset+6])
+			fragOffset = binary.BigEndian.Uint16(data[offset+6 : offset+8])
+
+			ihl := int((data[0] & 0xf) * 4)
+			offset += ihl
+		} else {
+			offset += 20
+		}
+	} else if etherType[0] == 0x86 && etherType[1] == 0xdd { // IPv6
+		if len(data) >= offset+40 {
+			nextHeader = data[offset+6]
+			srcIP = data[offset+8 : offset+24]
+			dstIP = data[offset+24 : offset+40]
+
+			tostmp := uint32(binary.BigEndian.Uint16(data[offset : offset+2]))
+			tos = uint8(tostmp & 0x0ff0 >> 4)
+			ttl = data[offset+7]
+
+			flowLabel = binary.BigEndian.Uint32(data[offset : offset+4])
+		}
+		offset += 40
+	}
+
+	for _, configLayer := range GetSFlowConfigLayer(config, 4) {
+		extracted := GetBytes(data, offset*8+configLayer.Offset, configLayer.Length)
+		MapCustom(flowMessage, extracted, configLayer.Destination)
+	}
+
+	appOffset := 0
+	if len(data) >= offset+4 && (nextHeader == 17 || nextHeader == 6) {
+		srcPort = binary.BigEndian.Uint16(data[offset+0 : offset+2])
+		dstPort = binary.BigEndian.Uint16(data[offset+2 : offset+4])
+	}
+
+	if nextHeader == 17 {
+		appOffset = 8
+	}
+
+	if len(data) > offset+13 && nextHeader == 6 {
+		tcpflags = data[offset+13]
+
+		appOffset = int(data[offset+12]>>4) * 4
+	}
+
+	// ICMP and ICMPv6
+	if len(data) >= offset+2 && (nextHeader == 1 || nextHeader == 58) {
+		(*flowMessage).IcmpType = uint32(data[offset+0])
+		(*flowMessage).IcmpCode = uint32(data[offset+1])
+	}
+
+	if appOffset > 0 {
+		for _, configLayer := range GetSFlowConfigLayer(config, 7) {
+			extracted := GetBytes(data, (offset+appOffset)*8+configLayer.Offset, configLayer.Length)
 			MapCustom(flowMessage, extracted, configLayer.Destination)
 		}
-
-		if etherType[0] == 0x8 && etherType[1] == 0x0 { // IPv4
-			if len(data) >= offset+20 {
-				nextHeader = data[offset+9]
-				srcIP = data[offset+12 : offset+16]
-				dstIP = data[offset+16 : offset+20]
-				tos = data[offset+1]
-				ttl = data[offset+8]
-
-				identification = binary.BigEndian.Uint16(data[offset+4 : offset+6])
-				fragOffset = binary.BigEndian.Uint16(data[offset+6 : offset+8])
-
-				offset += 20
-			}
-		} else if etherType[0] == 0x86 && etherType[1] == 0xdd { // IPv6
-			if len(data) >= offset+40 {
-				nextHeader = data[offset+6]
-				srcIP = data[offset+8 : offset+24]
-				dstIP = data[offset+24 : offset+40]
-
-				tostmp := uint32(binary.BigEndian.Uint16(data[offset : offset+2]))
-				tos = uint8(tostmp & 0x0ff0 >> 4)
-				ttl = data[offset+7]
-
-				flowLabel = binary.BigEndian.Uint32(data[offset : offset+4])
-
-				offset += 40
-
-			}
-		} else if etherType[0] == 0x8 && etherType[1] == 0x6 { // ARP
-		} /*else {
-			return errors.New(fmt.Sprintf("Unknown EtherType: %v\n", etherType))
-		} */
-
-		for _, configLayer := range GetSFlowConfigLayer(config, 4) {
-			extracted := GetBytes(data, offset*8+configLayer.Offset, configLayer.Length)
-			MapCustom(flowMessage, extracted, configLayer.Destination)
-		}
-
-		appOffset := 0
-		if len(data) >= offset+4 && (nextHeader == 17 || nextHeader == 6) {
-			srcPort = binary.BigEndian.Uint16(data[offset+0 : offset+2])
-			dstPort = binary.BigEndian.Uint16(data[offset+2 : offset+4])
-		}
-
-		if nextHeader == 17 {
-			appOffset = 8
-		}
-
-		if len(data) > offset+13 && nextHeader == 6 {
-			tcpflags = data[offset+13]
-
-			appOffset = int(data[13]>>4) * 4
-		}
-
-		// ICMP and ICMPv6
-		if len(data) >= offset+2 && (nextHeader == 1 || nextHeader == 58) {
-			(*flowMessage).IcmpType = uint32(data[offset+0])
-			(*flowMessage).IcmpCode = uint32(data[offset+1])
-		}
-
-		if appOffset > 0 {
-			for _, configLayer := range GetSFlowConfigLayer(config, 7) {
-				extracted := GetBytes(data, (offset+appOffset)*8+configLayer.Offset, configLayer.Length)
-				MapCustom(flowMessage, extracted, configLayer.Destination)
-			}
-		}
-
-		iterations++
 	}
 
 	(*flowMessage).HasMpls = hasMpls
