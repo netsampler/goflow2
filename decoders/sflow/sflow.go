@@ -81,14 +81,48 @@ func DecodeCounterRecord(header *RecordHeader, payload *bytes.Buffer) (CounterRe
 	switch (*header).DataFormat {
 	case 1:
 		ifCounters := IfCounters{}
-		err := utils.BinaryDecoder(payload, &ifCounters)
+		err := utils.BinaryDecoder(payload,
+			&ifCounters.IfIndex,
+			&ifCounters.IfType,
+			&ifCounters.IfSpeed,
+			&ifCounters.IfDirection,
+			&ifCounters.IfStatus,
+			&ifCounters.IfInOctets,
+			&ifCounters.IfInUcastPkts,
+			&ifCounters.IfInMulticastPkts,
+			&ifCounters.IfInBroadcastPkts,
+			&ifCounters.IfInDiscards,
+			&ifCounters.IfInErrors,
+			&ifCounters.IfInUnknownProtos,
+			&ifCounters.IfOutOctets,
+			&ifCounters.IfOutUcastPkts,
+			&ifCounters.IfOutMulticastPkts,
+			&ifCounters.IfOutBroadcastPkts,
+			&ifCounters.IfOutDiscards,
+			&ifCounters.IfOutErrors,
+			&ifCounters.IfPromiscuousMode,
+		)
 		if err != nil {
 			return counterRecord, err
 		}
 		counterRecord.Data = ifCounters
 	case 2:
 		ethernetCounters := EthernetCounters{}
-		err := utils.BinaryDecoder(payload, &ethernetCounters)
+		err := utils.BinaryDecoder(payload,
+			&ethernetCounters.Dot3StatsAlignmentErrors,
+			&ethernetCounters.Dot3StatsFCSErrors,
+			&ethernetCounters.Dot3StatsSingleCollisionFrames,
+			&ethernetCounters.Dot3StatsMultipleCollisionFrames,
+			&ethernetCounters.Dot3StatsSQETestErrors,
+			&ethernetCounters.Dot3StatsDeferredTransmissions,
+			&ethernetCounters.Dot3StatsLateCollisions,
+			&ethernetCounters.Dot3StatsExcessiveCollisions,
+			&ethernetCounters.Dot3StatsInternalMacTransmitErrors,
+			&ethernetCounters.Dot3StatsCarrierSenseErrors,
+			&ethernetCounters.Dot3StatsFrameTooLongs,
+			&ethernetCounters.Dot3StatsInternalMacReceiveErrors,
+			&ethernetCounters.Dot3StatsSymbolErrors,
+		)
 		if err != nil {
 			return counterRecord, err
 		}
@@ -115,7 +149,7 @@ func DecodeIP(payload *bytes.Buffer) (uint32, []byte, error) {
 		return ipVersion, ip, NewErrorIPVersion(ipVersion)
 	}
 	if payload.Len() >= len(ip) {
-		err := utils.BinaryDecoder(payload, &ip)
+		err := utils.BinaryDecoder(payload, ip)
 		if err != nil {
 			return 0, nil, err
 		}
@@ -132,7 +166,7 @@ func DecodeFlowRecord(header *RecordHeader, payload *bytes.Buffer) (FlowRecord, 
 	switch (*header).DataFormat {
 	case FORMAT_EXT_SWITCH:
 		extendedSwitch := ExtendedSwitch{}
-		err := utils.BinaryDecoder(payload, &extendedSwitch)
+		err := utils.BinaryDecoder(payload, &(extendedSwitch.SrcVlan), &(extendedSwitch.SrcPriority), &(extendedSwitch.DstVlan), &(extendedSwitch.DstPriority))
 		if err != nil {
 			return flowRecord, err
 		}
@@ -150,7 +184,7 @@ func DecodeFlowRecord(header *RecordHeader, payload *bytes.Buffer) (FlowRecord, 
 			SrcIP: make([]byte, 4),
 			DstIP: make([]byte, 4),
 		}
-		err := utils.BinaryDecoder(payload, &sampledIPBase)
+		err := utils.BinaryDecoder(payload, &sampledIPBase.Length, &sampledIPBase.Protocol, sampledIPBase.SrcIP, sampledIPBase.DstIP, &sampledIPBase.SrcPort, &sampledIPBase.DstPort, &sampledIPBase.TcpFlags)
 		if err != nil {
 			return flowRecord, err
 		}
@@ -167,7 +201,7 @@ func DecodeFlowRecord(header *RecordHeader, payload *bytes.Buffer) (FlowRecord, 
 			SrcIP: make([]byte, 16),
 			DstIP: make([]byte, 16),
 		}
-		err := utils.BinaryDecoder(payload, &sampledIPBase)
+		err := utils.BinaryDecoder(payload, &sampledIPBase.Length, &sampledIPBase.Protocol, sampledIPBase.SrcIP, sampledIPBase.DstIP, &sampledIPBase.SrcPort, &sampledIPBase.DstPort, &sampledIPBase.TcpFlags)
 		if err != nil {
 			return flowRecord, err
 		}
