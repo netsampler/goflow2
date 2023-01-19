@@ -1,13 +1,14 @@
 package utils
 
 import (
+	"bytes"
 	"encoding/binary"
 	"errors"
 	"io"
 	"reflect"
 )
 
-func BinaryDecoder(payload io.Reader, dests ...interface{}) error {
+func BinaryDecoder(payload *bytes.Buffer, dests ...interface{}) error {
 	for _, dest := range dests {
 		err := BinaryRead(payload, binary.BigEndian, dest)
 		if err != nil {
@@ -17,12 +18,12 @@ func BinaryDecoder(payload io.Reader, dests ...interface{}) error {
 	return nil
 }
 
-func BinaryRead(r io.Reader, order binary.ByteOrder, data any) error {
+func BinaryRead(payload *bytes.Buffer, order binary.ByteOrder, data any) error {
 	// Fast path for basic types and slices.
 	if n := intDataSize(data); n != 0 {
-		bs := make([]byte, n)
-		if _, err := io.ReadFull(r, bs); err != nil {
-			return err
+		bs := payload.Next(n)
+		if len(bs) < n {
+			return io.ErrUnexpectedEOF
 		}
 		switch data := data.(type) {
 		case *bool:

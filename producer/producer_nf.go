@@ -80,7 +80,7 @@ func NetFlowPopulate(dataFields []netflow.DataField, typeId uint16, addr interfa
 	exists, value := NetFlowLookFor(dataFields, typeId)
 	if exists && value != nil {
 		valueBytes, ok := value.([]byte)
-		valueReader := bytes.NewReader(valueBytes)
+		valueReader := bytes.NewBuffer(valueBytes)
 		if ok {
 			switch addrt := addr.(type) {
 			case *(net.IP):
