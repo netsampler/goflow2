@@ -80,12 +80,26 @@ docker-manifest:
 	    --amend $(DOCKER_REPO)$(NAME):$(ABBREV)-arm64
 	$(DOCKER_BIN) manifest push $(DOCKER_REPO)$(NAME):latest
 
+.PHONY: docker-manifest-buildx
+docker-manifest-buildx:
+	$(DOCKER_BIN) buildx imagetools create \
+	    -t $(DOCKER_REPO)$(NAME):$(ABBREV) \
+	    $(DOCKER_REPO)$(NAME):$(ABBREV)-amd64 \
+	    $(DOCKER_REPO)$(NAME):$(ABBREV)-arm64
+
 .PHONY: docker-manifest-release
 docker-manifest-release:
 	$(DOCKER_BIN) manifest create $(DOCKER_REPO)$(NAME):$(VERSION) \
 	    --amend $(DOCKER_REPO)$(NAME):$(ABBREV)-amd64 \
 	    --amend $(DOCKER_REPO)$(NAME):$(ABBREV)-arm64
 	$(DOCKER_BIN) manifest push $(DOCKER_REPO)$(NAME):$(VERSION)
+
+.PHONY: docker-manifest-release-buildx
+docker-manifest-buildx:
+	$(DOCKER_BIN) buildx imagetools create \
+	    -t $(DOCKER_REPO)$(NAME):$(VERSION) \
+	    $(DOCKER_REPO)$(NAME):$(ABBREV)-amd64 \
+	    $(DOCKER_REPO)$(NAME):$(ABBREV)-arm64
 
 .PHONY: package-deb
 package-deb: prepare
