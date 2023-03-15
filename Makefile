@@ -95,7 +95,7 @@ docker-manifest-release:
 	$(DOCKER_BIN) manifest push $(DOCKER_REPO)$(NAME):$(VERSION)
 
 .PHONY: docker-manifest-release-buildx
-docker-manifest-buildx:
+docker-manifest-release-buildx:
 	$(DOCKER_BIN) buildx imagetools create \
 	    -t $(DOCKER_REPO)$(NAME):$(VERSION) \
 	    $(DOCKER_REPO)$(NAME):$(ABBREV)-amd64 \
