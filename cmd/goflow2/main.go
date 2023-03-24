@@ -140,8 +140,9 @@ func main() {
 				"port":     port,
 				"count":    numSockets,
 			}
+			l := log.WithFields(logFields)
 
-			log.WithFields(logFields).Info("Starting collection")
+			l.Info("Starting collection")
 
 			for i := 0; i < numSockets; i++ {
 				if listenAddrUrl.Scheme == "sflow" {
@@ -168,12 +169,12 @@ func main() {
 					}
 					err = sNFL.FlowRoutine(*Workers, hostname, int(port), *ReusePort)
 				} else {
-					log.Errorf("scheme %s does not exist", listenAddrUrl.Scheme)
+					l.Errorf("scheme %s does not exist", listenAddrUrl.Scheme)
 					return
 				}
 
 				if err != nil {
-					log.WithFields(logFields).Fatal(err)
+					l.Fatal(err)
 				}
 			}
 
