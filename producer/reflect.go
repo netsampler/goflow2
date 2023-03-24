@@ -41,6 +41,14 @@ func GetBytes(d []byte, offset int, length int) []byte {
 	return chunk
 }
 
+func IsUInt(k reflect.Kind) bool {
+	return k == reflect.Uint8 || k == reflect.Uint16 || k == reflect.Uint32 || k == reflect.Uint64
+}
+
+func IsInt(k reflect.Kind) bool {
+	return k == reflect.Int8 || k == reflect.Int16 || k == reflect.Int32 || k == reflect.Int64
+}
+
 func MapCustomNetFlow(flowMessage *flowmessage.FlowMessage, df netflow.DataField, mapper *NetFlowMapper) {
 	if mapper == nil {
 		return
@@ -62,11 +70,27 @@ func MapCustom(flowMessage *flowmessage.FlowMessage, v []byte, destination strin
 		typeDest := fieldValue.Type()
 		fieldValueAddr := fieldValue.Addr()
 
-		if typeDest.Kind() == reflect.Slice && typeDest.Elem().Kind() == reflect.Uint8 {
-			fieldValue.SetBytes(v)
-		} else if fieldValueAddr.IsValid() && (typeDest.Kind() == reflect.Uint8 || typeDest.Kind() == reflect.Uint16 || typeDest.Kind() == reflect.Uint32 || typeDest.Kind() == reflect.Uint64) {
+		if typeDest.Kind() == reflect.Slice {
+
+			if typeDest.Elem().Kind() == reflect.Uint8 {
+				fieldValue.SetBytes(v)
+			} else {
+				item := reflect.New(typeDest.Elem())
+
+				if IsUInt(typeDest.Elem().Kind()) {
+					DecodeUNumber(v, item.Interface())
+				} else if IsUInt(typeDest.Elem().Kind()) {
+					DecodeUNumber(v, item.Interface())
+				}
+
+				itemi := reflect.Indirect(item)
+				tmpFieldValue := reflect.Append(fieldValue, itemi)
+				fieldValue.Set(tmpFieldValue)
+			}
+
+		} else if fieldValueAddr.IsValid() && IsUInt(typeDest.Kind()) {
 			DecodeUNumber(v, fieldValueAddr.Interface())
-		} else if fieldValueAddr.IsValid() && (typeDest.Kind() == reflect.Int8 || typeDest.Kind() == reflect.Int16 || typeDest.Kind() == reflect.Int32 || typeDest.Kind() == reflect.Int64) {
+		} else if fieldValueAddr.IsValid() && IsInt(typeDest.Kind()) {
 			DecodeNumber(v, fieldValueAddr.Interface())
 		}
 	}
