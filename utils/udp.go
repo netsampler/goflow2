@@ -30,6 +30,8 @@ type UDPReceiver struct {
 	decodeFunc decoder.DecoderFunc
 	dispatch   chan *udpPacket
 
+	decoders int
+
 	Logger Logger
 }
 
@@ -42,8 +44,9 @@ func NewUDPReceiver() *UDPReceiver {
 	}
 }
 
-func (r *UDPReceiver) routine(addr string, port int) error {
+func (r *UDPReceiver) receive(addr string, port int, started chan bool) error {
 	pconn, err := reuseport.ListenPacket("udp", fmt.Sprintf("%s:%d", addr, port))
+	close(started)
 	if err != nil {
 		return err
 	}
@@ -70,12 +73,15 @@ func (r *UDPReceiver) routine(addr string, port int) error {
 		pkt.size, pkt.src, err = udpconn.ReadFromUDP(pkt.payload)
 		if err != nil {
 			// log
-			continue
+			fmt.Println(err)
+			return err
 		}
 		if pkt.size == 0 {
 			// error
 			continue
 		}
+
+		// add counters
 
 		select {
 		case r.dispatch <- pkt:
@@ -87,19 +93,25 @@ func (r *UDPReceiver) routine(addr string, port int) error {
 
 }
 
-func (r *UDPReceiver) StartDecoders(workers int) error {
-
+func (r *UDPReceiver) Decoders(workers int) error {
 	for i := 0; i < workers; i++ {
 		r.wg.Add(1)
+		r.decoders += 1
 		go func() {
 			defer r.wg.Done()
 			for {
 
 				select {
 				case pkt := <-r.dispatch:
-					err := r.decodeFunc(pkt)
+					fmt.Println(pkt)
+					if pkt == nil {
+						return
+					}
+					if r.decodeFunc != nil {
+						err := r.decodeFunc(pkt)
+						fmt.Println(err)
+					}
 					packetPool.Put(pkt)
-					fmt.Println("debug", err)
 				}
 			}
 		}()
@@ -108,13 +120,15 @@ func (r *UDPReceiver) StartDecoders(workers int) error {
 	return nil
 }
 
-func (r *UDPReceiver) Start(sockets int, addr string, port int) error {
+func (r *UDPReceiver) Receivers(sockets int, addr string, port int) error {
 	for i := 0; i < sockets; i++ {
 		r.wg.Add(1)
+		started := make(chan bool)
 		go func() {
 			defer r.wg.Done()
-			r.routine(addr, port) // log error
+			r.receive(addr, port, started) // log error
 		}()
+		<-started
 	}
 
 	return nil
@@ -126,4 +140,10 @@ func (r *UDPReceiver) Stop() {
 	default:
 		close(r.q)
 	}
+
+	for i := 0; i < r.decoders; i++ {
+		r.dispatch <- nil
+	}
+	// close error chanel
+	r.wg.Wait()
 }
