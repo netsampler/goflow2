@@ -7,9 +7,13 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"os/signal"
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
+
+	_ "net/http/pprof"
 
 	// import various formatters
 	"github.com/netsampler/goflow2/format"
@@ -32,10 +36,8 @@ var (
 	buildinfos = ""
 	AppVersion = "GoFlow2 " + version + " " + buildinfos
 
-	ReusePort       = flag.Bool("reuseport", false, "Enable so_reuseport")
 	ListenAddresses = flag.String("listen", "sflow://:6343,netflow://:2055", "listen addresses")
 
-	Workers  = flag.Int("workers", 1, "Number of workers per collector")
 	LogLevel = flag.String("loglevel", "info", "Log level")
 	LogFmt   = flag.String("logfmt", "normal", "Log formatter")
 
@@ -101,86 +103,111 @@ func main() {
 	}
 
 	log.Info("Starting GoFlow2")
-
 	go httpServer()
-	//go httpServer(sNF)
+
+	c := make(chan os.Signal, 1)
+	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
+
+	var receivers []*utils.UDPReceiver
 
 	wg := &sync.WaitGroup{}
-
+	q := make(chan bool)
 	for _, listenAddress := range strings.Split(*ListenAddresses, ",") {
-		wg.Add(1)
-		go func(listenAddress string) {
-			defer wg.Done()
-			listenAddrUrl, err := url.Parse(listenAddress)
-			if err != nil {
+		listenAddrUrl, err := url.Parse(listenAddress)
+		if err != nil {
+			log.Fatal(err)
+		}
+		numSockets := 1
+		if listenAddrUrl.Query().Has("count") {
+			if numSocketsTmp, err := strconv.ParseUint(listenAddrUrl.Query().Get("count"), 10, 64); err != nil {
 				log.Fatal(err)
+			} else {
+				numSockets = int(numSocketsTmp)
 			}
-			numSockets := 1
-			if listenAddrUrl.Query().Has("count") {
-				if numSocketsTmp, err := strconv.ParseUint(listenAddrUrl.Query().Get("count"), 10, 64); err != nil {
-					log.Fatal(err)
-				} else {
-					numSockets = int(numSocketsTmp)
-				}
-			}
-			if numSockets == 0 {
-				numSockets = 1
-			}
+		}
+		if numSockets == 0 {
+			numSockets = 1
+		}
 
-			hostname := listenAddrUrl.Hostname()
-			port, err := strconv.ParseUint(listenAddrUrl.Port(), 10, 64)
-			if err != nil {
-				log.Errorf("Port %s could not be converted to integer", listenAddrUrl.Port())
-				return
+		hostname := listenAddrUrl.Hostname()
+		port, err := strconv.ParseUint(listenAddrUrl.Port(), 10, 64)
+		if err != nil {
+			log.Errorf("Port %s could not be converted to integer", listenAddrUrl.Port())
+			return
+		}
+
+		logFields := log.Fields{
+			"scheme":   listenAddrUrl.Scheme,
+			"hostname": hostname,
+			"port":     port,
+			"count":    numSockets,
+		}
+		l := log.WithFields(logFields)
+
+		l.Info("Starting collection")
+
+		cfg := &utils.UDPReceiverConfig{
+			Sockets: numSockets,
+		}
+		recv := utils.NewUDPReceiver(cfg)
+
+		var decodeFunc utils.DecoderFunc
+		if listenAddrUrl.Scheme == "sflow" {
+			state := &utils.StateSFlow{
+				Format:    formatter,
+				Transport: transporter,
+				Logger:    log.StandardLogger(),
+				Config:    config,
 			}
-
-			logFields := log.Fields{
-				"scheme":   listenAddrUrl.Scheme,
-				"hostname": hostname,
-				"port":     port,
-				"count":    numSockets,
+			decodeFunc = state.DecodeFlow
+			//err = sSFlow.FlowRoutine(*Workers, hostname, int(port), *ReusePort)
+		} else if listenAddrUrl.Scheme == "netflow" {
+			state := &utils.StateNetFlow{
+				Format:    formatter,
+				Transport: transporter,
+				Logger:    log.StandardLogger(),
+				Config:    config,
 			}
-			l := log.WithFields(logFields)
+			decodeFunc = state.DecodeFlow
+			//err = sNF.FlowRoutine(*Workers, hostname, int(port), *ReusePort)
+		} else if listenAddrUrl.Scheme == "nfl" {
+			state := &utils.StateNFLegacy{
+				Format:    formatter,
+				Transport: transporter,
+				Logger:    log.StandardLogger(),
+			}
+			decodeFunc = state.DecodeFlow
+			//err = sNFL.FlowRoutine(*Workers, hostname, int(port), *ReusePort)
+		} else {
+			l.Errorf("scheme %s does not exist", listenAddrUrl.Scheme)
+			return
+		}
 
-			l.Info("Starting collection")
-
-			for i := 0; i < numSockets; i++ {
-				if listenAddrUrl.Scheme == "sflow" {
-					sSFlow := &utils.StateSFlow{
-						Format:    formatter,
-						Transport: transporter,
-						Logger:    log.StandardLogger(),
-						Config:    config,
+		if err := recv.Start(hostname, int(port), decodeFunc); err != nil {
+			l.Fatal(err)
+		} else {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				for {
+					select {
+					case <-q:
+						return
+					case err := <-recv.Errors():
+						l.WithError(err).Error("error")
 					}
-					err = sSFlow.FlowRoutine(*Workers, hostname, int(port), *ReusePort)
-				} else if listenAddrUrl.Scheme == "netflow" {
-					sNF := &utils.StateNetFlow{
-						Format:    formatter,
-						Transport: transporter,
-						Logger:    log.StandardLogger(),
-						Config:    config,
-					}
-					err = sNF.FlowRoutine(*Workers, hostname, int(port), *ReusePort)
-				} else if listenAddrUrl.Scheme == "nfl" {
-					sNFL := &utils.StateNFLegacy{
-						Format:    formatter,
-						Transport: transporter,
-						Logger:    log.StandardLogger(),
-					}
-					err = sNFL.FlowRoutine(*Workers, hostname, int(port), *ReusePort)
-				} else {
-					l.Errorf("scheme %s does not exist", listenAddrUrl.Scheme)
-					return
 				}
-
-				if err != nil {
-					l.Fatal(err)
-				}
-			}
-
-		}(listenAddress)
-
+			}()
+			receivers = append(receivers, recv)
+		}
 	}
 
+	<-c
+
+	for _, recv := range receivers {
+		recv.Stop()
+	}
+	close(q)
 	wg.Wait()
+
 }
