@@ -6,15 +6,13 @@ import (
 )
 
 func TestDecodeFlowExpandedSFlow(t *testing.T) {
-	msg := BaseMessage{
-		Src:     []byte{},
-		Port:    1,
+	msg := Message{
 		Payload: getExpandedSFlowDecode(),
 	}
 
 	s := &StateSFlow{}
 
-	assert.Nil(t, s.DecodeFlow(msg))
+	assert.Nil(t, s.DecodeFlow(&msg))
 }
 
 func getExpandedSFlowDecode() []byte {
