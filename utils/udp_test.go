@@ -45,5 +45,4 @@ func TestUDPClose(t *testing.T) {
 	require.Error(t, r.Start(addr, port))
 	require.NoError(t, r.Stop())
 	require.Error(t, r.Stop())
-
 }

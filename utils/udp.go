@@ -98,6 +98,13 @@ func (r *UDPReceiver) init() error {
 	return nil
 }
 
+func (r *UDPReceiver) logError(err error) {
+	select {
+	case r.errCh <- err:
+	default:
+	}
+}
+
 func (r *UDPReceiver) Errors() <-chan error {
 	return r.errCh
 }
@@ -131,7 +138,6 @@ func (r *UDPReceiver) receive(addr string, port int, started chan bool) error {
 		pkt.size, pkt.src, err = udpconn.ReadFromUDP(pkt.payload)
 		if err != nil {
 			// log
-			fmt.Println(err)
 			return err
 		}
 		if pkt.size == 0 {
@@ -179,10 +185,7 @@ func (r *UDPReceiver) decoders(workers int) error {
 					}
 					if r.decodeFunc != nil {
 						if err := r.decodeFunc(pkt); err != nil {
-							select {
-							case r.errCh <- err:
-							default:
-							}
+							r.logError(fmt.Errorf("error decoding: [%w]", err))
 						}
 					}
 					packetPool.Put(pkt)
@@ -202,10 +205,7 @@ func (r *UDPReceiver) receivers(sockets int, addr string, port int) error {
 		go func() {
 			defer r.wg.Done()
 			if err := r.receive(addr, port, started); err != nil {
-				select {
-				case r.errCh <- err:
-				default:
-				}
+				r.logError(fmt.Errorf("error receiving: [%w]", err))
 			} // log error
 		}()
 		<-started
