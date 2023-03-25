@@ -16,9 +16,8 @@ func TestUDPReceiver(t *testing.T) {
 	require.NoError(t, err)
 	t.Logf("starting UDP receiver on %s:%d\n", addr, port)
 
-	r := NewUDPReceiver()
-	r.Decoders(1)
-	r.Receivers(1, addr, port)
+	r := NewUDPReceiver(nil)
+	r.Start(1, addr, port)
 
 	sendMessage := func(msg string) error {
 		conn, err := net.Dial("udp", fmt.Sprintf("%s:%d", addr, port))

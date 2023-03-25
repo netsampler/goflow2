@@ -31,17 +31,28 @@ type UDPReceiver struct {
 	dispatch   chan *udpPacket
 
 	decoders int
+	blocking bool
 
 	Logger Logger
 }
 
-func NewUDPReceiver() *UDPReceiver {
-	return &UDPReceiver{
+type UDPReceiverConfig struct {
+}
+
+func NewUDPReceiver(cfg *UDPReceiverConfig) *UDPReceiver {
+	r := &UDPReceiver{
 		q:  make(chan bool),
 		wg: &sync.WaitGroup{},
-
-		dispatch: make(chan *udpPacket, 1000000), // make it configurable
 	}
+
+	dispatchSize := 1000000
+	if cfg != nil {
+
+	}
+
+	r.dispatch = make(chan *udpPacket, dispatchSize)
+
+	return r
 }
 
 func (r *UDPReceiver) receive(addr string, port int, started chan bool) error {
@@ -83,16 +94,28 @@ func (r *UDPReceiver) receive(addr string, port int, started chan bool) error {
 
 		// add counters
 
-		select {
-		case r.dispatch <- pkt:
-		default:
-			packetPool.Put(pkt)
-			// increase counter
+		if r.blocking {
+			select {
+			case r.dispatch <- pkt:
+			case <-r.q:
+				return nil
+			}
+		} else {
+			select {
+			case r.dispatch <- pkt:
+			case <-r.q:
+				return nil
+			default:
+				packetPool.Put(pkt)
+				// increase counter
+			}
 		}
+
 	}
 
 }
 
+// Start the processing routines
 func (r *UDPReceiver) Decoders(workers int) error {
 	for i := 0; i < workers; i++ {
 		r.wg.Add(1)
@@ -120,6 +143,7 @@ func (r *UDPReceiver) Decoders(workers int) error {
 	return nil
 }
 
+// Starts the UDP receiving workers
 func (r *UDPReceiver) Receivers(sockets int, addr string, port int) error {
 	for i := 0; i < sockets; i++ {
 		r.wg.Add(1)
@@ -134,6 +158,19 @@ func (r *UDPReceiver) Receivers(sockets int, addr string, port int) error {
 	return nil
 }
 
+// Start UDP receivers and the processing routines
+// Use this instead of starting Receivers and Decoders separately
+// Creates the same amount of decoders as receivers
+func (r *UDPReceiver) Start(workers int, addr string, port int) error {
+	if err := r.Decoders(workers); err != nil {
+		return err
+	}
+	if err := r.Receivers(workers, addr, port); err != nil {
+		return err
+	}
+	return nil
+}
+
 func (r *UDPReceiver) Stop() {
 	select {
 	case <-r.q:
@@ -144,6 +181,8 @@ func (r *UDPReceiver) Stop() {
 	for i := 0; i < r.decoders; i++ {
 		r.dispatch <- nil
 	}
+
 	// close error chanel
 	r.wg.Wait()
+	r.q = make(chan bool)
 }
