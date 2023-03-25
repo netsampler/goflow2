@@ -2,6 +2,7 @@ package utils
 
 import (
 	"bytes"
+	"fmt"
 	"time"
 
 	"github.com/netsampler/goflow2/decoders/netflowlegacy"
@@ -21,18 +22,16 @@ type StateNFLegacy struct {
 }
 
 func (s *StateNFLegacy) DecodeFlow(msg interface{}) error {
-	pkt := msg.(BaseMessage)
+	pkt, ok := msg.(*Message)
+	if !ok {
+		return fmt.Errorf("flow is not *Message")
+	}
 	buf := bytes.NewBuffer(pkt.Payload)
 	key := pkt.Src.String()
-	samplerAddress := pkt.Src
-	if samplerAddress.To4() != nil {
-		samplerAddress = samplerAddress.To4()
-	}
+	addr := pkt.Src.Addr().As16()
+	samplerAddress := addr[:]
 
-	ts := uint64(time.Now().UTC().Unix())
-	if pkt.SetTime {
-		ts = uint64(pkt.RecvTime.UTC().Unix())
-	}
+	ts := uint64(pkt.Received.Unix())
 
 	timeTrackStart := time.Now()
 	msgDec, err := netflowlegacy.DecodeMessage(buf)

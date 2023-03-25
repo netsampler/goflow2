@@ -3,6 +3,7 @@ package utils
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strconv"
 	"sync"
@@ -67,14 +68,15 @@ type StateNetFlow struct {
 }
 
 func (s *StateNetFlow) DecodeFlow(msg interface{}) error {
-	pkt := msg.(BaseMessage)
+	pkt, ok := msg.(*Message)
+	if !ok {
+		return fmt.Errorf("flow is not *Message")
+	}
 	buf := bytes.NewBuffer(pkt.Payload)
 
 	key := pkt.Src.String()
-	samplerAddress := pkt.Src
-	if samplerAddress.To4() != nil {
-		samplerAddress = samplerAddress.To4()
-	}
+	addr := pkt.Src.Addr().As16()
+	samplerAddress := addr[:]
 
 	s.templateslock.RLock()
 	templates, ok := s.templates[key]
@@ -98,10 +100,7 @@ func (s *StateNetFlow) DecodeFlow(msg interface{}) error {
 		s.samplinglock.Unlock()
 	}
 
-	ts := uint64(time.Now().UTC().Unix())
-	if pkt.SetTime {
-		ts = uint64(pkt.RecvTime.UTC().Unix())
-	}
+	ts := uint64(pkt.Received.Unix())
 
 	timeTrackStart := time.Now()
 	msgDec, err := netflow.DecodeMessage(buf, templates)

@@ -3,17 +3,27 @@ package utils
 import (
 	"fmt"
 	"net"
+	"net/netip"
 	"sync"
+	"time"
 
 	reuseport "github.com/libp2p/go-reuseport"
-
-	decoder "github.com/netsampler/goflow2/decoders"
 )
 
+// Callback used to decode a UDP message
+type DecoderFunc func(msg interface{}) error
+
 type udpPacket struct {
-	src     *net.UDPAddr
-	size    int
-	payload []byte
+	src      *net.UDPAddr
+	size     int
+	payload  []byte
+	received time.Time
+}
+
+type Message struct {
+	Src      netip.AddrPort
+	Payload  []byte
+	Received time.Time
 }
 
 var packetPool = sync.Pool{
@@ -25,12 +35,11 @@ var packetPool = sync.Pool{
 }
 
 type UDPReceiver struct {
-	ready      chan bool
-	q          chan bool
-	wg         *sync.WaitGroup
-	decodeFunc decoder.DecoderFunc
-	dispatch   chan *udpPacket
-	errCh      chan error
+	ready    chan bool
+	q        chan bool
+	wg       *sync.WaitGroup
+	dispatch chan *udpPacket
+	errCh    chan error // linked to receiver, never closed
 
 	decodersCnt int
 	blocking    bool
@@ -54,6 +63,7 @@ func NewUDPReceiver(cfg *UDPReceiverConfig) *UDPReceiver {
 		sockets: 2,
 		workers: 2,
 		ready:   make(chan bool),
+		errCh:   make(chan error),
 	}
 
 	dispatchSize := 1000000
@@ -86,12 +96,12 @@ func NewUDPReceiver(cfg *UDPReceiverConfig) *UDPReceiver {
 // Initialize channels that are related to a session
 // Once the user calls Stop, they can restart the capture
 func (r *UDPReceiver) init() error {
-	r.errCh = make(chan error)
+
 	r.q = make(chan bool)
 	r.decodersCnt = 0
 	select {
 	case <-r.ready:
-		return fmt.Errorf("Receiver is already stopped")
+		return fmt.Errorf("receiver is already stopped")
 	default:
 		close(r.ready)
 	}
@@ -137,9 +147,9 @@ func (r *UDPReceiver) receive(addr string, port int, started chan bool) error {
 		pkt := packetPool.Get().(*udpPacket)
 		pkt.size, pkt.src, err = udpconn.ReadFromUDP(pkt.payload)
 		if err != nil {
-			// log
 			return err
 		}
+		pkt.received = time.Now().UTC()
 		if pkt.size == 0 {
 			// error
 			continue
@@ -169,7 +179,7 @@ func (r *UDPReceiver) receive(addr string, port int, started chan bool) error {
 }
 
 // Start the processing routines
-func (r *UDPReceiver) decoders(workers int) error {
+func (r *UDPReceiver) decoders(workers int, decodeFunc DecoderFunc) error {
 	for i := 0; i < workers; i++ {
 		r.wg.Add(1)
 		r.decodersCnt += 1
@@ -179,12 +189,17 @@ func (r *UDPReceiver) decoders(workers int) error {
 
 				select {
 				case pkt := <-r.dispatch:
-					fmt.Println(pkt)
 					if pkt == nil {
 						return
 					}
-					if r.decodeFunc != nil {
-						if err := r.decodeFunc(pkt); err != nil {
+					if decodeFunc != nil {
+						msg := Message{
+							Src:      pkt.src.AddrPort(),
+							Payload:  pkt.payload[0:pkt.size],
+							Received: pkt.received,
+						}
+
+						if err := decodeFunc(&msg); err != nil {
 							r.logError(fmt.Errorf("error decoding: [%w]", err))
 						}
 					}
@@ -205,8 +220,8 @@ func (r *UDPReceiver) receivers(sockets int, addr string, port int) error {
 		go func() {
 			defer r.wg.Done()
 			if err := r.receive(addr, port, started); err != nil {
-				r.logError(fmt.Errorf("error receiving: [%w]", err))
-			} // log error
+				r.logError(fmt.Errorf("error receiver: [%w]", err))
+			}
 		}()
 		<-started
 	}
@@ -215,14 +230,15 @@ func (r *UDPReceiver) receivers(sockets int, addr string, port int) error {
 }
 
 // Start UDP receivers and the processing routines
-func (r *UDPReceiver) Start(addr string, port int) error {
+func (r *UDPReceiver) Start(addr string, port int, decodeFunc DecoderFunc) error {
 	select {
 	case <-r.ready:
 		r.ready = make(chan bool)
 	default:
-		return fmt.Errorf("Receiver is already started")
+		return fmt.Errorf("receiver is already started")
 	}
-	if err := r.decoders(r.workers); err != nil {
+
+	if err := r.decoders(r.workers, decodeFunc); err != nil {
 		return err
 	}
 	if err := r.receivers(r.workers, addr, port); err != nil {
@@ -243,8 +259,7 @@ func (r *UDPReceiver) Stop() error {
 		r.dispatch <- nil
 	}
 
-	// close error chanel
 	r.wg.Wait()
-	close(r.errCh)
+
 	return r.init() // recreates the closed channels
 }

@@ -2,6 +2,7 @@ package utils
 
 import (
 	"bytes"
+	"fmt"
 	"net"
 	"time"
 
@@ -25,14 +26,14 @@ type StateSFlow struct {
 }
 
 func (s *StateSFlow) DecodeFlow(msg interface{}) error {
-	pkt := msg.(BaseMessage)
+	pkt, ok := msg.(*Message)
+	if !ok {
+		return fmt.Errorf("flow is not *Message")
+	}
 	buf := bytes.NewBuffer(pkt.Payload)
 	key := pkt.Src.String()
 
-	ts := uint64(time.Now().UTC().Unix())
-	if pkt.SetTime {
-		ts = uint64(pkt.RecvTime.UTC().Unix())
-	}
+	ts := uint64(pkt.Received.Unix())
 
 	timeTrackStart := time.Now()
 	msgDec, err := sflow.DecodeMessage(buf)
