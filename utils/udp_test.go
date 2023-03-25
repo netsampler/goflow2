@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"net"
 	"testing"
-	"time"
 
 	//"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -17,7 +16,7 @@ func TestUDPReceiver(t *testing.T) {
 	t.Logf("starting UDP receiver on %s:%d\n", addr, port)
 
 	r := NewUDPReceiver(nil)
-	r.Start(1, addr, port)
+	r.Start(addr, port)
 
 	sendMessage := func(msg string) error {
 		conn, err := net.Dial("udp", fmt.Sprintf("%s:%d", addr, port))
@@ -28,8 +27,21 @@ func TestUDPReceiver(t *testing.T) {
 		_, err = conn.Write([]byte(msg))
 		return err
 	}
-	require.NoError(t, sendMessage("message 1"))
+	require.NoError(t, sendMessage("message"))
 	t.Log("sending message\n")
-	<-time.After(time.Second)
+	r.Stop()
+}
+
+func TestUDPClose(t *testing.T) {
+	addr := "[::1]"
+	port, err := getFreeUDPPort()
+	require.NoError(t, err)
+	t.Logf("starting UDP receiver on %s:%d\n", addr, port)
+
+	r := NewUDPReceiver(nil)
+	r.Start(addr, port)
+	r.Stop()
+	r.Start(addr, port)
+	r.Start(addr, port)
 	r.Stop()
 }

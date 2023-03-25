@@ -25,34 +25,75 @@ var packetPool = sync.Pool{
 }
 
 type UDPReceiver struct {
+	ready      chan bool
 	q          chan bool
 	wg         *sync.WaitGroup
 	decodeFunc decoder.DecoderFunc
 	dispatch   chan *udpPacket
+	errCh      chan error
 
-	decoders int
-	blocking bool
+	decodersCnt int
+	blocking    bool
+
+	workers int
+	sockets int
 
 	Logger Logger
 }
 
 type UDPReceiverConfig struct {
+	Workers   int
+	Sockets   int
+	Blocking  bool
+	QueueSize int
 }
 
 func NewUDPReceiver(cfg *UDPReceiverConfig) *UDPReceiver {
 	r := &UDPReceiver{
-		q:  make(chan bool),
-		wg: &sync.WaitGroup{},
+		wg:      &sync.WaitGroup{},
+		sockets: 2,
+		workers: 2,
+		ready:   make(chan bool),
 	}
 
 	dispatchSize := 1000000
 	if cfg != nil {
+		if cfg.Sockets <= 0 {
+			cfg.Sockets = 1
+		}
 
+		if cfg.Workers <= 0 {
+			cfg.Workers = cfg.Sockets
+		}
+
+		r.sockets = cfg.Sockets
+		r.workers = cfg.Workers
+		dispatchSize = cfg.QueueSize
+		r.blocking = cfg.Blocking
 	}
 
-	r.dispatch = make(chan *udpPacket, dispatchSize)
+	if dispatchSize == 0 {
+		r.dispatch = make(chan *udpPacket) // synchronous mode
+	} else {
+		r.dispatch = make(chan *udpPacket, dispatchSize)
+	}
+
+	r.init()
 
 	return r
+}
+
+// Initialize channels that are related to a session
+// Once the user calls Stop, they can restart the capture
+func (r *UDPReceiver) init() {
+	r.errCh = make(chan error)
+	r.q = make(chan bool)
+	r.decodersCnt = 0
+	close(r.ready)
+}
+
+func (r *UDPReceiver) Errors() <-chan error {
+	return r.errCh
 }
 
 func (r *UDPReceiver) receive(addr string, port int, started chan bool) error {
@@ -92,9 +133,9 @@ func (r *UDPReceiver) receive(addr string, port int, started chan bool) error {
 			continue
 		}
 
-		// add counters
-
 		if r.blocking {
+			// does not drop
+			// if combined with synchronous mode
 			select {
 			case r.dispatch <- pkt:
 			case <-r.q:
@@ -116,10 +157,10 @@ func (r *UDPReceiver) receive(addr string, port int, started chan bool) error {
 }
 
 // Start the processing routines
-func (r *UDPReceiver) Decoders(workers int) error {
+func (r *UDPReceiver) decoders(workers int) error {
 	for i := 0; i < workers; i++ {
 		r.wg.Add(1)
-		r.decoders += 1
+		r.decodersCnt += 1
 		go func() {
 			defer r.wg.Done()
 			for {
@@ -131,8 +172,12 @@ func (r *UDPReceiver) Decoders(workers int) error {
 						return
 					}
 					if r.decodeFunc != nil {
-						err := r.decodeFunc(pkt)
-						fmt.Println(err)
+						if err := r.decodeFunc(pkt); err != nil {
+							select {
+							case r.errCh <- err:
+							default:
+							}
+						}
 					}
 					packetPool.Put(pkt)
 				}
@@ -144,13 +189,18 @@ func (r *UDPReceiver) Decoders(workers int) error {
 }
 
 // Starts the UDP receiving workers
-func (r *UDPReceiver) Receivers(sockets int, addr string, port int) error {
+func (r *UDPReceiver) receivers(sockets int, addr string, port int) error {
 	for i := 0; i < sockets; i++ {
 		r.wg.Add(1)
 		started := make(chan bool)
 		go func() {
 			defer r.wg.Done()
-			r.receive(addr, port, started) // log error
+			if err := r.receive(addr, port, started); err != nil {
+				select {
+				case r.errCh <- err:
+				default:
+				}
+			} // log error
 		}()
 		<-started
 	}
@@ -159,18 +209,23 @@ func (r *UDPReceiver) Receivers(sockets int, addr string, port int) error {
 }
 
 // Start UDP receivers and the processing routines
-// Use this instead of starting Receivers and Decoders separately
-// Creates the same amount of decoders as receivers
-func (r *UDPReceiver) Start(workers int, addr string, port int) error {
-	if err := r.Decoders(workers); err != nil {
+func (r *UDPReceiver) Start(addr string, port int) error {
+	select {
+	case <-r.ready:
+		r.ready = make(chan bool)
+	default:
+		return fmt.Errorf("Receiver is already started")
+	}
+	if err := r.decoders(r.workers); err != nil {
 		return err
 	}
-	if err := r.Receivers(workers, addr, port); err != nil {
+	if err := r.receivers(r.workers, addr, port); err != nil {
 		return err
 	}
 	return nil
 }
 
+// Stops the routines
 func (r *UDPReceiver) Stop() {
 	select {
 	case <-r.q:
@@ -178,11 +233,12 @@ func (r *UDPReceiver) Stop() {
 		close(r.q)
 	}
 
-	for i := 0; i < r.decoders; i++ {
+	for i := 0; i < r.decodersCnt; i++ {
 		r.dispatch <- nil
 	}
 
 	// close error chanel
 	r.wg.Wait()
-	r.q = make(chan bool)
+	close(r.errCh)
+	r.init() // recreates the closed channels
 }
