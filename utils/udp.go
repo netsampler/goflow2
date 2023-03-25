@@ -85,11 +85,17 @@ func NewUDPReceiver(cfg *UDPReceiverConfig) *UDPReceiver {
 
 // Initialize channels that are related to a session
 // Once the user calls Stop, they can restart the capture
-func (r *UDPReceiver) init() {
+func (r *UDPReceiver) init() error {
 	r.errCh = make(chan error)
 	r.q = make(chan bool)
 	r.decodersCnt = 0
-	close(r.ready)
+	select {
+	case <-r.ready:
+		return fmt.Errorf("Receiver is already stopped")
+	default:
+		close(r.ready)
+	}
+	return nil
 }
 
 func (r *UDPReceiver) Errors() <-chan error {
@@ -226,7 +232,7 @@ func (r *UDPReceiver) Start(addr string, port int) error {
 }
 
 // Stops the routines
-func (r *UDPReceiver) Stop() {
+func (r *UDPReceiver) Stop() error {
 	select {
 	case <-r.q:
 	default:
@@ -240,5 +246,5 @@ func (r *UDPReceiver) Stop() {
 	// close error chanel
 	r.wg.Wait()
 	close(r.errCh)
-	r.init() // recreates the closed channels
+	return r.init() // recreates the closed channels
 }

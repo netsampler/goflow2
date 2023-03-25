@@ -41,7 +41,9 @@ func TestUDPClose(t *testing.T) {
 	r := NewUDPReceiver(nil)
 	r.Start(addr, port)
 	r.Stop()
-	r.Start(addr, port)
-	r.Start(addr, port)
-	r.Stop()
+	require.NoError(t, r.Start(addr, port))
+	require.Error(t, r.Start(addr, port))
+	require.NoError(t, r.Stop())
+	require.Error(t, r.Stop())
+
 }
