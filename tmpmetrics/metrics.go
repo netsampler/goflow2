@@ -134,9 +134,9 @@ var (
 )
 
 func init() {
-	prometheus.MustRegister(MetricTrafficBytes)
+	/*prometheus.MustRegister(MetricTrafficBytes)
 	prometheus.MustRegister(MetricTrafficPackets)
-	prometheus.MustRegister(MetricPacketSizeSum)
+	prometheus.MustRegister(MetricPacketSizeSum)*/
 
 	prometheus.MustRegister(DecoderStats)
 	prometheus.MustRegister(DecoderTime)

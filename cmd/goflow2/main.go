@@ -48,7 +48,6 @@ var (
 	Transport = flag.String("transport", "file", fmt.Sprintf("Choose the transport (available: %s)", strings.Join(transport.GetTransports(), ", ")))
 
 	MetricsAddr = flag.String("metrics.addr", ":8080", "Metrics address")
-	MetricsPath = flag.String("metrics.path", "/metrics", "Metrics path")
 
 	TemplatePath = flag.String("templates.path", "/templates", "NetFlow/IPFIX templates list")
 
@@ -58,7 +57,7 @@ var (
 )
 
 func httpServer( /*state *utils.StateNetFlow*/ ) {
-	http.Handle(*MetricsPath, promhttp.Handler())
+	http.Handle("/metrics", promhttp.Handler())
 	//http.HandleFunc(*TemplatePath, state.ServeHTTPTemplates)
 	log.Fatal(http.ListenAndServe(*MetricsAddr, nil))
 }
@@ -162,7 +161,7 @@ func main() {
 				Logger:    log.StandardLogger(),
 				Config:    config,
 			}
-			decodeFunc = metrics.PromDecoderWrapper(state.DecodeFlow)
+			decodeFunc = metrics.PromDecoderWrapper(state.DecodeFlow, listenAddrUrl.Scheme)
 			//err = sSFlow.FlowRoutine(*Workers, hostname, int(port), *ReusePort)
 		} else if listenAddrUrl.Scheme == "netflow" {
 			state := &utils.StateNetFlow{
@@ -171,7 +170,7 @@ func main() {
 				Logger:    log.StandardLogger(),
 				Config:    config,
 			}
-			decodeFunc = metrics.PromDecoderWrapper(state.DecodeFlow)
+			decodeFunc = metrics.PromDecoderWrapper(state.DecodeFlow, listenAddrUrl.Scheme)
 			//err = sNF.FlowRoutine(*Workers, hostname, int(port), *ReusePort)
 		} else if listenAddrUrl.Scheme == "nfl" {
 			state := &utils.StateNFLegacy{
@@ -179,7 +178,7 @@ func main() {
 				Transport: transporter,
 				Logger:    log.StandardLogger(),
 			}
-			decodeFunc = metrics.PromDecoderWrapper(state.DecodeFlow)
+			decodeFunc = metrics.PromDecoderWrapper(state.DecodeFlow, listenAddrUrl.Scheme)
 			//err = sNFL.FlowRoutine(*Workers, hostname, int(port), *ReusePort)
 		} else {
 			l.Errorf("scheme %s does not exist", listenAddrUrl.Scheme)
