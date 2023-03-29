@@ -32,10 +32,8 @@ func TestDecodeNetFlowV5(t *testing.T) {
 	}
 	buf := bytes.NewBuffer(data)
 
-	dec, err := DecodeMessage(buf)
-	assert.Nil(t, err)
-	assert.NotNil(t, dec)
-	decNfv5 := dec.(PacketNetFlowV5)
+	var decNfv5 PacketNetFlowV5
+	assert.Nil(t, DecodeMessage(buf, &decNfv5))
 	assert.Equal(t, uint16(5), decNfv5.Version)
 	assert.Equal(t, uint16(9), decNfv5.Records[0].Input)
 }

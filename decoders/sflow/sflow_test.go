@@ -23,8 +23,7 @@ func TestSFlowDecode(t *testing.T) {
 	}
 	buf := bytes.NewBuffer(data)
 	var packet Packet
-	_, err := DecodeMessage(buf, &packet)
-	assert.Nil(t, err)
+	assert.Nil(t, DecodeMessage(buf, &packet))
 }
 
 func TestExpandedSFlowDecode(t *testing.T) {
@@ -32,8 +31,7 @@ func TestExpandedSFlowDecode(t *testing.T) {
 
 	buf := bytes.NewBuffer(data)
 	var packet Packet
-	_, err := DecodeMessage(buf, &packet)
-	assert.Nil(t, err)
+	assert.Nil(t, DecodeMessage(buf, &packet))
 }
 
 func getExpandedSFlowDecode() []byte {
