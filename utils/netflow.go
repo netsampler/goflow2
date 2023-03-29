@@ -12,6 +12,8 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/netsampler/goflow2/decoders/netflow"
+	"github.com/netsampler/goflow2/decoders/netflowlegacy"
+	"github.com/netsampler/goflow2/decoders/utils"
 	"github.com/netsampler/goflow2/format"
 	flowmessage "github.com/netsampler/goflow2/pb"
 	"github.com/netsampler/goflow2/producer"
@@ -104,16 +106,59 @@ func (s *StateNetFlow) DecodeFlow(msg interface{}) error {
 
 	ts := uint64(pkt.Received.Unix())
 
+	var packetV5 netflowlegacy.PacketNetFlowV5
+	var packetNFv9 netflow.NFv9Packet
+	var packetIPFIX netflow.IPFIXPacket
+
 	timeTrackStart := time.Now()
-	msgDec, err := netflow.DecodeMessage(buf, templates)
-	if err != nil {
+
+	// decode the version
+	var version uint16
+	if err := utils.BinaryDecoder(buf, &version); err != nil {
 		return err
+	}
+	switch version {
+	case 5:
+		if err := netflowlegacy.DecodeMessage(buf, &packetV5); err != nil {
+			return err
+		}
+	case 9:
+		if err := netflow.DecodeMessageNetFlow(buf, templates, &packetNFv9); err != nil {
+			return err
+		}
+	case 10:
+		if err := netflow.DecodeMessageIPFIX(buf, templates, &packetIPFIX); err != nil {
+			return err
+		}
+	default:
+		return fmt.Errorf("Not a NetFlow packet")
 	}
 
 	var flowMessageSet []*flowmessage.FlowMessage
+	var err error
 
-	switch msgDecConv := msgDec.(type) {
-	case netflow.NFv9Packet:
+	switch version {
+	case 5:
+		metrics.NetFlowStats.With(
+			prometheus.Labels{
+				"router":  key,
+				"version": "5",
+			}).
+			Inc()
+		metrics.NetFlowSetStatsSum.With(
+			prometheus.Labels{
+				"router":  key,
+				"version": "5",
+				"type":    "DataFlowSet",
+			}).
+			Add(float64(packetV5.Count))
+
+		flowMessageSet, err = producer.ProcessMessageNetFlowLegacy(packetV5)
+		if err != nil {
+			return err
+		}
+
+	case 9:
 		metrics.NetFlowStats.With(
 			prometheus.Labels{
 				"router":  key,
@@ -121,7 +166,7 @@ func (s *StateNetFlow) DecodeFlow(msg interface{}) error {
 			}).
 			Inc()
 
-		for _, fs := range msgDecConv.FlowSets {
+		for _, fs := range packetNFv9.FlowSets {
 			switch fsConv := fs.(type) {
 			case netflow.TemplateFlowSet:
 				metrics.NetFlowSetStatsSum.With(
@@ -191,7 +236,10 @@ func (s *StateNetFlow) DecodeFlow(msg interface{}) error {
 					Add(float64(len(fsConv.Records)))
 			}
 		}
-		flowMessageSet, err = producer.ProcessMessageNetFlowConfig(msgDecConv, sampling, s.configMapped)
+		flowMessageSet, err = producer.ProcessMessageNetFlowConfig(packetNFv9, sampling, s.configMapped)
+		if err != nil {
+			return err
+		}
 
 		for _, fmsg := range flowMessageSet {
 			fmsg.TimeReceived = ts
@@ -204,7 +252,7 @@ func (s *StateNetFlow) DecodeFlow(msg interface{}) error {
 				}).
 				Observe(float64(timeDiff))
 		}
-	case netflow.IPFIXPacket:
+	case 10:
 		metrics.NetFlowStats.With(
 			prometheus.Labels{
 				"router":  key,
@@ -212,7 +260,7 @@ func (s *StateNetFlow) DecodeFlow(msg interface{}) error {
 			}).
 			Inc()
 
-		for _, fs := range msgDecConv.FlowSets {
+		for _, fs := range packetIPFIX.FlowSets {
 			switch fsConv := fs.(type) {
 			case netflow.TemplateFlowSet:
 				metrics.NetFlowSetStatsSum.With(
@@ -284,7 +332,10 @@ func (s *StateNetFlow) DecodeFlow(msg interface{}) error {
 					Add(float64(len(fsConv.Records)))
 			}
 		}
-		flowMessageSet, err = producer.ProcessMessageNetFlowConfig(msgDecConv, sampling, s.configMapped)
+		flowMessageSet, err = producer.ProcessMessageNetFlowConfig(packetIPFIX, sampling, s.configMapped)
+		if err != nil {
+			return err
+		}
 
 		for _, fmsg := range flowMessageSet {
 			fmsg.TimeReceived = ts
