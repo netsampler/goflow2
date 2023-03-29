@@ -10,12 +10,14 @@ import (
 	"time"
 
 	reuseport "github.com/libp2p/go-reuseport"
+	"github.com/prometheus/client_golang/prometheus"
+	"gopkg.in/yaml.v2"
+
 	decoder "github.com/netsampler/goflow2/decoders"
 	"github.com/netsampler/goflow2/decoders/netflow"
 	flowmessage "github.com/netsampler/goflow2/pb"
 	"github.com/netsampler/goflow2/producer"
-	"github.com/prometheus/client_golang/prometheus"
-	"gopkg.in/yaml.v2"
+	"github.com/netsampler/goflow2/tmpmetrics" // temporary
 )
 
 type ProducerConfig *producer.ProducerConfig
@@ -111,7 +113,7 @@ func UDPStoppableRoutine(stopCh <-chan struct{}, name string, decodeFunc decoder
 
 	decoderParams := decoder.DecoderParams{
 		DecoderFunc:   decodeFunc,
-		DoneCallback:  DefaultAccountCallback,
+		DoneCallback:  metrics.DefaultAccountCallback,
 		ErrorCallback: ecb.Callback,
 	}
 
@@ -207,7 +209,7 @@ func process(size int, payload []byte, pktAddr *net.UDPAddr, processor decoder.P
 	}
 	processor.ProcessMessage(baseMessage)
 
-	MetricTrafficBytes.With(
+	metrics.MetricTrafficBytes.With(
 		prometheus.Labels{
 			"remote_ip":  pktAddr.IP.String(),
 			"local_ip":   localIP,
@@ -215,7 +217,7 @@ func process(size int, payload []byte, pktAddr *net.UDPAddr, processor decoder.P
 			"type":       name,
 		}).
 		Add(float64(size))
-	MetricTrafficPackets.With(
+	metrics.MetricTrafficPackets.With(
 		prometheus.Labels{
 			"remote_ip":  pktAddr.IP.String(),
 			"local_ip":   localIP,
@@ -223,7 +225,7 @@ func process(size int, payload []byte, pktAddr *net.UDPAddr, processor decoder.P
 			"type":       name,
 		}).
 		Inc()
-	MetricPacketSizeSum.With(
+	metrics.MetricPacketSizeSum.With(
 		prometheus.Labels{
 			"remote_ip":  pktAddr.IP.String(),
 			"local_ip":   localIP,

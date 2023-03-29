@@ -6,12 +6,14 @@ import (
 	"net"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
+
 	"github.com/netsampler/goflow2/decoders/sflow"
 	"github.com/netsampler/goflow2/format"
 	flowmessage "github.com/netsampler/goflow2/pb"
 	"github.com/netsampler/goflow2/producer"
+	"github.com/netsampler/goflow2/tmpmetrics" // temporary
 	"github.com/netsampler/goflow2/transport"
-	"github.com/prometheus/client_golang/prometheus"
 )
 
 type StateSFlow struct {
@@ -39,43 +41,13 @@ func (s *StateSFlow) DecodeFlow(msg interface{}) error {
 	msgDec, err := sflow.DecodeMessage(buf)
 
 	if err != nil {
-		switch err.(type) {
-		case *sflow.ErrorVersion:
-			SFlowErrors.With(
-				prometheus.Labels{
-					"router": key,
-					"error":  "error_version",
-				}).
-				Inc()
-		case *sflow.ErrorIPVersion:
-			SFlowErrors.With(
-				prometheus.Labels{
-					"router": key,
-					"error":  "error_ip_version",
-				}).
-				Inc()
-		case *sflow.ErrorDataFormat:
-			SFlowErrors.With(
-				prometheus.Labels{
-					"router": key,
-					"error":  "error_data_format",
-				}).
-				Inc()
-		default:
-			SFlowErrors.With(
-				prometheus.Labels{
-					"router": key,
-					"error":  "error_decoding",
-				}).
-				Inc()
-		}
 		return err
 	}
 
 	switch msgDecConv := msgDec.(type) {
 	case sflow.Packet:
 		agentStr := net.IP(msgDecConv.AgentIP).String()
-		SFlowStats.With(
+		metrics.SFlowStats.With(
 			prometheus.Labels{
 				"router":  key,
 				"agent":   agentStr,
@@ -100,7 +72,7 @@ func (s *StateSFlow) DecodeFlow(msg interface{}) error {
 				typeStr = "ExpandedFlowSample"
 				countRec = len(samplesConv.Records)
 			}
-			SFlowSampleStatsSum.With(
+			metrics.SFlowSampleStatsSum.With(
 				prometheus.Labels{
 					"router":  key,
 					"agent":   agentStr,
@@ -109,7 +81,7 @@ func (s *StateSFlow) DecodeFlow(msg interface{}) error {
 				}).
 				Inc()
 
-			SFlowSampleRecordsStatsSum.With(
+			metrics.SFlowSampleRecordsStatsSum.With(
 				prometheus.Labels{
 					"router":  key,
 					"agent":   agentStr,
@@ -125,7 +97,7 @@ func (s *StateSFlow) DecodeFlow(msg interface{}) error {
 	flowMessageSet, err = producer.ProcessMessageSFlowConfig(msgDec, s.configMapped)
 
 	timeTrackStop := time.Now()
-	DecoderTime.With(
+	metrics.DecoderTime.With(
 		prometheus.Labels{
 			"name": "sFlow",
 		}).

@@ -1,8 +1,14 @@
-package utils
+package metrics
 
 import (
-	"strconv"
-	"time"
+	//"strconv"
+	//"time"
+	"fmt"
+
+	"github.com/netsampler/goflow2/decoders/netflow"
+	"github.com/netsampler/goflow2/decoders/netflowlegacy"
+	"github.com/netsampler/goflow2/decoders/sflow"
+	"github.com/netsampler/goflow2/utils"
 
 	"github.com/prometheus/client_golang/prometheus"
 )
@@ -134,38 +140,90 @@ var (
 )
 
 func init() {
-	prometheus.MustRegister(MetricTrafficBytes)
+	/*prometheus.MustRegister(MetricTrafficBytes)
 	prometheus.MustRegister(MetricTrafficPackets)
-	prometheus.MustRegister(MetricPacketSizeSum)
+	prometheus.MustRegister(MetricPacketSizeSum)*/
 
-	prometheus.MustRegister(DecoderStats)
+	//prometheus.MustRegister(DecoderStats)
 	prometheus.MustRegister(DecoderErrors)
-	prometheus.MustRegister(DecoderTime)
-	prometheus.MustRegister(DecoderProcessTime)
+	//prometheus.MustRegister(DecoderTime)
+	//prometheus.MustRegister(DecoderProcessTime)
 
-	prometheus.MustRegister(NetFlowStats)
+	//prometheus.MustRegister(NetFlowStats)
 	prometheus.MustRegister(NetFlowErrors)
-	prometheus.MustRegister(NetFlowSetRecordsStatsSum)
+	/*prometheus.MustRegister(NetFlowSetRecordsStatsSum)
 	prometheus.MustRegister(NetFlowSetStatsSum)
 	prometheus.MustRegister(NetFlowTimeStatsSum)
 	prometheus.MustRegister(NetFlowTemplatesStats)
 
-	prometheus.MustRegister(SFlowStats)
+	prometheus.MustRegister(SFlowStats)*/
 	prometheus.MustRegister(SFlowErrors)
-	prometheus.MustRegister(SFlowSampleStatsSum)
-	prometheus.MustRegister(SFlowSampleRecordsStatsSum)
+	//prometheus.MustRegister(SFlowSampleStatsSum)
+	//prometheus.MustRegister(SFlowSampleRecordsStatsSum)
 }
 
-func DefaultAccountCallback(name string, id int, start, end time.Time) {
-	DecoderProcessTime.With(
-		prometheus.Labels{
-			"name": name,
-		}).
-		Observe(float64((end.Sub(start)).Nanoseconds()) / 1000)
-	DecoderStats.With(
-		prometheus.Labels{
-			"worker": strconv.Itoa(id),
-			"name":   name,
-		}).
-		Inc()
+func PromDecoderWrapper(wrapped utils.DecoderFunc) utils.DecoderFunc {
+	return func(msg interface{}) error {
+		pkt, ok := msg.(*utils.Message)
+		if !ok {
+			return fmt.Errorf("flow is not *Message")
+		}
+		key := pkt.Src.String()
+
+		err := wrapped(msg)
+		if err != nil {
+			switch err.(type) {
+			case *netflowlegacy.ErrorVersion:
+				NetFlowErrors.With(
+					prometheus.Labels{
+						"router": key,
+						"error":  "error_version",
+					}).
+					Inc()
+			case *netflow.ErrorTemplateNotFound:
+				NetFlowErrors.With(
+					prometheus.Labels{
+						"router": key,
+						"error":  "template_not_found",
+					}).
+					Inc()
+			case *sflow.ErrorVersion:
+				SFlowErrors.With(
+					prometheus.Labels{
+						"router": key,
+						"error":  "error_version",
+					}).
+					Inc()
+			case *sflow.ErrorIPVersion:
+				SFlowErrors.With(
+					prometheus.Labels{
+						"router": key,
+						"error":  "error_ip_version",
+					}).
+					Inc()
+			case *sflow.ErrorDataFormat:
+				SFlowErrors.With(
+					prometheus.Labels{
+						"router": key,
+						"error":  "error_data_format",
+					}).
+					Inc()
+			default:
+				// FIXME
+				NetFlowErrors.With(
+					prometheus.Labels{
+						"router": key,
+						"error":  "error_decoding",
+					}).
+					Inc()
+				SFlowErrors.With(
+					prometheus.Labels{
+						"router": key,
+						"error":  "error_decoding",
+					}).
+					Inc()
+			}
+		}
+		return err
+	}
 }

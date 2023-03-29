@@ -5,12 +5,14 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
+
 	"github.com/netsampler/goflow2/decoders/netflowlegacy"
 	"github.com/netsampler/goflow2/format"
 	flowmessage "github.com/netsampler/goflow2/pb"
 	"github.com/netsampler/goflow2/producer"
+	"github.com/netsampler/goflow2/tmpmetrics" // temporary
 	"github.com/netsampler/goflow2/transport"
-	"github.com/prometheus/client_golang/prometheus"
 )
 
 type StateNFLegacy struct {
@@ -39,7 +41,7 @@ func (s *StateNFLegacy) DecodeFlow(msg interface{}) error {
 	if err != nil {
 		switch err.(type) {
 		case *netflowlegacy.ErrorVersion:
-			NetFlowErrors.With(
+			metrics.NetFlowErrors.With(
 				prometheus.Labels{
 					"router": key,
 					"error":  "error_version",
@@ -51,13 +53,13 @@ func (s *StateNFLegacy) DecodeFlow(msg interface{}) error {
 
 	switch msgDecConv := msgDec.(type) {
 	case netflowlegacy.PacketNetFlowV5:
-		NetFlowStats.With(
+		metrics.NetFlowStats.With(
 			prometheus.Labels{
 				"router":  key,
 				"version": "5",
 			}).
 			Inc()
-		NetFlowSetStatsSum.With(
+		metrics.NetFlowSetStatsSum.With(
 			prometheus.Labels{
 				"router":  key,
 				"version": "5",
@@ -70,7 +72,7 @@ func (s *StateNFLegacy) DecodeFlow(msg interface{}) error {
 	flowMessageSet, err = producer.ProcessMessageNetFlowLegacy(msgDec)
 
 	timeTrackStop := time.Now()
-	DecoderTime.With(
+	metrics.DecoderTime.With(
 		prometheus.Labels{
 			"name": "NetFlowV5",
 		}).

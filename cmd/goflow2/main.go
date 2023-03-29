@@ -26,7 +26,10 @@ import (
 	_ "github.com/netsampler/goflow2/transport/file"
 	_ "github.com/netsampler/goflow2/transport/kafka"
 
+	// core libraries
+	"github.com/netsampler/goflow2/metrics"
 	"github.com/netsampler/goflow2/utils"
+
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	log "github.com/sirupsen/logrus"
 )
@@ -159,7 +162,7 @@ func main() {
 				Logger:    log.StandardLogger(),
 				Config:    config,
 			}
-			decodeFunc = state.DecodeFlow
+			decodeFunc = metrics.PromDecoderWrapper(state.DecodeFlow)
 			//err = sSFlow.FlowRoutine(*Workers, hostname, int(port), *ReusePort)
 		} else if listenAddrUrl.Scheme == "netflow" {
 			state := &utils.StateNetFlow{
@@ -168,7 +171,7 @@ func main() {
 				Logger:    log.StandardLogger(),
 				Config:    config,
 			}
-			decodeFunc = state.DecodeFlow
+			decodeFunc = metrics.PromDecoderWrapper(state.DecodeFlow)
 			//err = sNF.FlowRoutine(*Workers, hostname, int(port), *ReusePort)
 		} else if listenAddrUrl.Scheme == "nfl" {
 			state := &utils.StateNFLegacy{
@@ -176,7 +179,7 @@ func main() {
 				Transport: transporter,
 				Logger:    log.StandardLogger(),
 			}
-			decodeFunc = state.DecodeFlow
+			decodeFunc = metrics.PromDecoderWrapper(state.DecodeFlow)
 			//err = sNFL.FlowRoutine(*Workers, hostname, int(port), *ReusePort)
 		} else {
 			l.Errorf("scheme %s does not exist", listenAddrUrl.Scheme)
