@@ -172,14 +172,6 @@ func main() {
 			}
 			decodeFunc = metrics.PromDecoderWrapper(state.DecodeFlow, listenAddrUrl.Scheme)
 			//err = sNF.FlowRoutine(*Workers, hostname, int(port), *ReusePort)
-		} else if listenAddrUrl.Scheme == "nfl" {
-			state := &utils.StateNFLegacy{
-				Format:    formatter,
-				Transport: transporter,
-				Logger:    log.StandardLogger(),
-			}
-			decodeFunc = metrics.PromDecoderWrapper(state.DecodeFlow, listenAddrUrl.Scheme)
-			//err = sNFL.FlowRoutine(*Workers, hostname, int(port), *ReusePort)
 		} else {
 			l.Errorf("scheme %s does not exist", listenAddrUrl.Scheme)
 			return
