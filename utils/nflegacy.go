@@ -36,7 +36,9 @@ func (s *StateNFLegacy) DecodeFlow(msg interface{}) error {
 	ts := uint64(pkt.Received.Unix())
 
 	timeTrackStart := time.Now()
-	msgDec, err := netflowlegacy.DecodeMessage(buf)
+
+	var packet netflowlegacy.PacketNetFlowV5
+	err := netflowlegacy.DecodeMessage(buf, &packet)
 
 	if err != nil {
 		switch err.(type) {
@@ -51,25 +53,22 @@ func (s *StateNFLegacy) DecodeFlow(msg interface{}) error {
 		return err
 	}
 
-	switch msgDecConv := msgDec.(type) {
-	case netflowlegacy.PacketNetFlowV5:
-		metrics.NetFlowStats.With(
-			prometheus.Labels{
-				"router":  key,
-				"version": "5",
-			}).
-			Inc()
-		metrics.NetFlowSetStatsSum.With(
-			prometheus.Labels{
-				"router":  key,
-				"version": "5",
-				"type":    "DataFlowSet",
-			}).
-			Add(float64(msgDecConv.Count))
-	}
+	metrics.NetFlowStats.With(
+		prometheus.Labels{
+			"router":  key,
+			"version": "5",
+		}).
+		Inc()
+	metrics.NetFlowSetStatsSum.With(
+		prometheus.Labels{
+			"router":  key,
+			"version": "5",
+			"type":    "DataFlowSet",
+		}).
+		Add(float64(packet.Count))
 
 	var flowMessageSet []*flowmessage.FlowMessage
-	flowMessageSet, err = producer.ProcessMessageNetFlowLegacy(msgDec)
+	flowMessageSet, err = producer.ProcessMessageNetFlowLegacy(packet)
 
 	timeTrackStop := time.Now()
 	metrics.DecoderTime.With(
