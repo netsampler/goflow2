@@ -22,7 +22,8 @@ func TestSFlowDecode(t *testing.T) {
 		0x77, 0x61, 0x62, 0x63, 0x64, 0x65, 0x66, 0x67, 0x68, 0x69, 0x00, 0x00,
 	}
 	buf := bytes.NewBuffer(data)
-	_, err := DecodeMessage(buf)
+	var packet Packet
+	_, err := DecodeMessage(buf, &packet)
 	assert.Nil(t, err)
 }
 
@@ -30,7 +31,8 @@ func TestExpandedSFlowDecode(t *testing.T) {
 	data := getExpandedSFlowDecode()
 
 	buf := bytes.NewBuffer(data)
-	_, err := DecodeMessage(buf)
+	var packet Packet
+	_, err := DecodeMessage(buf, &packet)
 	assert.Nil(t, err)
 }
 
