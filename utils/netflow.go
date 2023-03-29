@@ -153,7 +153,7 @@ func (s *StateNetFlow) DecodeFlow(msg interface{}) error {
 			}).
 			Add(float64(packetV5.Count))
 
-		flowMessageSet, err = producer.ProcessMessageNetFlowLegacy(packetV5)
+		flowMessageSet, err = producer.ProcessMessage(packetV5, nil, nil)
 		if err != nil {
 			return err
 		}
@@ -236,7 +236,7 @@ func (s *StateNetFlow) DecodeFlow(msg interface{}) error {
 					Add(float64(len(fsConv.Records)))
 			}
 		}
-		flowMessageSet, err = producer.ProcessMessageNetFlowConfig(packetNFv9, sampling, s.configMapped)
+		flowMessageSet, err = producer.ProcessMessage(&packetNFv9, sampling, s.configMapped)
 		if err != nil {
 			return err
 		}
@@ -332,7 +332,7 @@ func (s *StateNetFlow) DecodeFlow(msg interface{}) error {
 					Add(float64(len(fsConv.Records)))
 			}
 		}
-		flowMessageSet, err = producer.ProcessMessageNetFlowConfig(packetIPFIX, sampling, s.configMapped)
+		flowMessageSet, err = producer.ProcessMessage(&packetIPFIX, sampling, s.configMapped)
 		if err != nil {
 			return err
 		}

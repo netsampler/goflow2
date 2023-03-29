@@ -21,6 +21,7 @@ type StateSFlow struct {
 	Format    format.FormatInterface
 	Transport transport.TransportInterface
 	Logger    Logger
+	Producer  interface{}
 
 	Config       *producer.ProducerConfig
 	configMapped *producer.ProducerConfigMapped
@@ -89,7 +90,7 @@ func (s *StateSFlow) DecodeFlow(msg interface{}) error {
 
 	}
 
-	flowMessageSet, err := producer.ProcessMessageSFlowConfig(packet, s.configMapped)
+	flowMessageSet, err := producer.ProcessMessage(&packet, nil, s.configMapped)
 	if err != nil {
 		return err
 	}
