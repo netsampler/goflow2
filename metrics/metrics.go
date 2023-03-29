@@ -260,3 +260,5 @@ func PromDecoderWrapper(wrapped utils.DecoderFunc, name string) utils.DecoderFun
 		return err
 	}
 }
+
+// make processor wrapper for metrics
