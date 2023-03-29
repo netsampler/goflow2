@@ -38,7 +38,7 @@ func (s *StateNFLegacy) DecodeFlow(msg interface{}) error {
 	timeTrackStart := time.Now()
 
 	var packet netflowlegacy.PacketNetFlowV5
-	err := netflowlegacy.DecodeMessage(buf, &packet)
+	err := netflowlegacy.DecodeMessageVersion(buf, &packet)
 
 	if err != nil {
 		switch err.(type) {

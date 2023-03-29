@@ -10,7 +10,6 @@ import (
 
 	"github.com/netsampler/goflow2/decoders/sflow"
 	"github.com/netsampler/goflow2/format"
-	flowmessage "github.com/netsampler/goflow2/pb"
 	"github.com/netsampler/goflow2/producer"
 	"github.com/netsampler/goflow2/tmpmetrics" // temporary
 	"github.com/netsampler/goflow2/transport"
@@ -38,63 +37,62 @@ func (s *StateSFlow) DecodeFlow(msg interface{}) error {
 	ts := uint64(pkt.Received.Unix())
 
 	timeTrackStart := time.Now()
-	msgDec, err := sflow.DecodeMessage(buf)
 
-	if err != nil {
+	var packet sflow.Packet
+	if err := sflow.DecodeMessageVersion(buf, &packet); err != nil {
 		return err
 	}
 
-	switch msgDecConv := msgDec.(type) {
-	case sflow.Packet:
-		agentStr := net.IP(msgDecConv.AgentIP).String()
-		metrics.SFlowStats.With(
+	agentStr := net.IP(packet.AgentIP).String()
+	metrics.SFlowStats.With(
+		prometheus.Labels{
+			"router":  key,
+			"agent":   agentStr,
+			"version": "5",
+		}).
+		Inc()
+
+	for _, samples := range packet.Samples {
+		typeStr := "unknown"
+		countRec := 0
+		switch samplesConv := samples.(type) {
+		case sflow.FlowSample:
+			typeStr = "FlowSample"
+			countRec = len(samplesConv.Records)
+		case sflow.CounterSample:
+			typeStr = "CounterSample"
+			if samplesConv.Header.Format == 4 {
+				typeStr = "Expanded" + typeStr
+			}
+			countRec = len(samplesConv.Records)
+		case sflow.ExpandedFlowSample:
+			typeStr = "ExpandedFlowSample"
+			countRec = len(samplesConv.Records)
+		}
+		metrics.SFlowSampleStatsSum.With(
 			prometheus.Labels{
 				"router":  key,
 				"agent":   agentStr,
 				"version": "5",
+				"type":    typeStr,
 			}).
 			Inc()
 
-		for _, samples := range msgDecConv.Samples {
-			typeStr := "unknown"
-			countRec := 0
-			switch samplesConv := samples.(type) {
-			case sflow.FlowSample:
-				typeStr = "FlowSample"
-				countRec = len(samplesConv.Records)
-			case sflow.CounterSample:
-				typeStr = "CounterSample"
-				if samplesConv.Header.Format == 4 {
-					typeStr = "Expanded" + typeStr
-				}
-				countRec = len(samplesConv.Records)
-			case sflow.ExpandedFlowSample:
-				typeStr = "ExpandedFlowSample"
-				countRec = len(samplesConv.Records)
-			}
-			metrics.SFlowSampleStatsSum.With(
-				prometheus.Labels{
-					"router":  key,
-					"agent":   agentStr,
-					"version": "5",
-					"type":    typeStr,
-				}).
-				Inc()
-
-			metrics.SFlowSampleRecordsStatsSum.With(
-				prometheus.Labels{
-					"router":  key,
-					"agent":   agentStr,
-					"version": "5",
-					"type":    typeStr,
-				}).
-				Add(float64(countRec))
-		}
+		metrics.SFlowSampleRecordsStatsSum.With(
+			prometheus.Labels{
+				"router":  key,
+				"agent":   agentStr,
+				"version": "5",
+				"type":    typeStr,
+			}).
+			Add(float64(countRec))
 
 	}
 
-	var flowMessageSet []*flowmessage.FlowMessage
-	flowMessageSet, err = producer.ProcessMessageSFlowConfig(msgDec, s.configMapped)
+	flowMessageSet, err := producer.ProcessMessageSFlowConfig(packet, s.configMapped)
+	if err != nil {
+		return err
+	}
 
 	timeTrackStop := time.Now()
 	metrics.DecoderTime.With(

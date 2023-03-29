@@ -27,6 +27,9 @@ func DecodeMessageVersion(payload *bytes.Buffer, packet *PacketNetFlowV5) error 
 		return err
 	}
 	packet.Version = version
+	if packet.Version != 5 {
+		return NewErrorVersion(version)
+	}
 	return DecodeMessage(payload, packet)
 }
 

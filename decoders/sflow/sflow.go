@@ -350,63 +350,70 @@ func DecodeSample(header *SampleHeader, payload *bytes.Buffer) (interface{}, err
 	return sample, nil
 }
 
-func DecodeMessage(payload *bytes.Buffer) (interface{}, error) {
+func DecodeMessageVersion(payload *bytes.Buffer, packetV5 *Packet) error {
 	var version uint32
-	err := utils.BinaryDecoder(payload, &version)
-	if err != nil {
-		return nil, err
+	if err := utils.BinaryDecoder(payload, &version); err != nil {
+		return err
 	}
-	packetV5 := Packet{}
-	if version == 5 {
-		packetV5.Version = version
-		err = utils.BinaryDecoder(payload, &(packetV5.IPVersion))
-		if err != nil {
-			return packetV5, err
-		}
-		var ip []byte
-		if packetV5.IPVersion == 1 {
-			ip = make([]byte, 4)
-			err = utils.BinaryDecoder(payload, ip)
-			if err != nil {
-				return packetV5, err
-			}
-		} else if packetV5.IPVersion == 2 {
-			ip = make([]byte, 16)
-			err = utils.BinaryDecoder(payload, ip)
-			if err != nil {
-				return packetV5, err
-			}
-		} else {
-			return nil, NewErrorIPVersion(packetV5.IPVersion)
-		}
+	packetV5.Version = version
 
-		packetV5.AgentIP = ip
-		err = utils.BinaryDecoder(payload, &(packetV5.SubAgentId), &(packetV5.SequenceNumber), &(packetV5.Uptime), &(packetV5.SamplesCount))
-		if err != nil {
-			return packetV5, err
-		}
-		packetV5.Samples = make([]interface{}, int(packetV5.SamplesCount))
-		for i := 0; i < int(packetV5.SamplesCount) && payload.Len() >= 8; i++ {
-			header := SampleHeader{}
-			err = utils.BinaryDecoder(payload, &(header.Format), &(header.Length))
-			if err != nil {
-				return packetV5, err
-			}
-			if int(header.Length) > payload.Len() {
-				break
-			}
-			sampleReader := bytes.NewBuffer(payload.Next(int(header.Length)))
+	if version != 5 {
+		return NewErrorVersion(version)
+	}
+	return DecodeMessage(payload, packetV5)
+}
 
-			sample, err := DecodeSample(&header, sampleReader)
-			if err != nil {
-				continue
-			} else {
-				packetV5.Samples[i] = sample
-			}
-		}
+func DecodeMessage(payload *bytes.Buffer, packetV5 *Packet) error {
 
-		return packetV5, nil
+	//if version == 5 {
+	if err := utils.BinaryDecoder(payload, &(packetV5.IPVersion)); err != nil {
+		return err
+	}
+	var ip []byte
+	if packetV5.IPVersion == 1 {
+		ip = make([]byte, 4)
+		if err := utils.BinaryDecoder(payload, ip); err != nil {
+			return err
+		}
+	} else if packetV5.IPVersion == 2 {
+		ip = make([]byte, 16)
+		if err := utils.BinaryDecoder(payload, ip); err != nil {
+			return err
+		}
 	} else {
-		return nil, NewErrorVersion(version)
+		return NewErrorIPVersion(packetV5.IPVersion)
 	}
+
+	packetV5.AgentIP = ip
+	if err := utils.BinaryDecoder(payload,
+		&(packetV5.SubAgentId),
+		&(packetV5.SequenceNumber),
+		&(packetV5.Uptime),
+		&(packetV5.SamplesCount)); err != nil {
+		return err
+	}
+	packetV5.Samples = make([]interface{}, int(packetV5.SamplesCount))
+	for i := 0; i < int(packetV5.SamplesCount) && payload.Len() >= 8; i++ {
+		header := SampleHeader{}
+		if err := utils.BinaryDecoder(payload, &(header.Format), &(header.Length)); err != nil {
+			return err
+		}
+		if int(header.Length) > payload.Len() {
+			break
+		}
+		sampleReader := bytes.NewBuffer(payload.Next(int(header.Length)))
+
+		sample, err := DecodeSample(&header, sampleReader)
+		if err != nil {
+			// todo log
+			continue
+		} else {
+			packetV5.Samples[i] = sample
+		}
+	}
+
+	return nil
+	/*} else {
+		return nil, NewErrorVersion(version)
+	}*/
 }
