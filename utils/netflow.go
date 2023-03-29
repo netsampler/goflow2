@@ -57,9 +57,12 @@ func (s *TemplateSystem) GetTemplate(version uint16, obsDomainId uint32, templat
 type StateNetFlow struct {
 	stopper
 
-	Format        format.FormatInterface
-	Transport     transport.TransportInterface
-	Logger        Logger
+	Format    format.FormatInterface
+	Transport transport.TransportInterface
+	Producer  producer.ProducerInterface
+
+	Logger Logger
+
 	templateslock *sync.RWMutex
 	templates     map[string]*TemplateSystem
 
@@ -139,16 +142,19 @@ func (s *StateNetFlow) DecodeFlow(msg interface{}) error {
 		SamplingRateSystem: sampling,
 	}
 
+	if s.Producer == nil {
+		return nil
+	}
+
 	switch version {
 	case 5:
-		flowMessageSet, err = producer.ProcessMessage(packetV5, &args)
+		flowMessageSet, err = s.Producer(packetV5, &args)
 		if err != nil {
 			return err
 		}
 
 	case 9:
-
-		flowMessageSet, err = producer.ProcessMessage(&packetNFv9, &args)
+		flowMessageSet, err = s.Producer(&packetNFv9, &args)
 		if err != nil {
 			return err
 		}
@@ -158,7 +164,7 @@ func (s *StateNetFlow) DecodeFlow(msg interface{}) error {
 			fmsg.SamplerAddress = samplerAddress
 		}
 	case 10:
-		flowMessageSet, err = producer.ProcessMessage(&packetIPFIX, &args)
+		flowMessageSet, err = s.Producer(&packetIPFIX, &args)
 		if err != nil {
 			return err
 		}

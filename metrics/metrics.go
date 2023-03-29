@@ -370,7 +370,11 @@ func recordCommonNetFlowMetrics(version uint16, key string, flowSets []interface
 	}
 }
 
-func PromProcessorWrapper(wrapped producer.ProcessFunc) producer.ProcessFunc {
+func PromProcessorDefaultWrapper() producer.ProducerInterface {
+	return PromProcessorWrapper(producer.ProduceMessage)
+}
+
+func PromProcessorWrapper(wrapped producer.ProducerInterface) producer.ProducerInterface {
 	return func(msg interface{}, args *producer.ProcessArgs) ([]*flowmessage.FlowMessage, error) {
 		flowMessageSet, err := wrapped(msg, args)
 		if err != nil {
