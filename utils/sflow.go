@@ -89,8 +89,10 @@ func (s *StateSFlow) DecodeFlow(msg interface{}) error {
 			Add(float64(countRec))
 
 	}
-
-	flowMessageSet, err := producer.ProcessMessage(&packet, nil, s.configMapped)
+	args := producer.ProcessArgs{
+		Config: s.configMapped,
+	}
+	flowMessageSet, err := producer.ProcessMessage(&packet, &args)
 	if err != nil {
 		return err
 	}

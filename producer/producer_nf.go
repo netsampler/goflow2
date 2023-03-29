@@ -680,3 +680,66 @@ func ProcessMessageNetFlowConfig(msgDec interface{}, samplingRateSys SamplingRat
 
 	return flowMessageSet, nil
 }
+
+// Convert a NetFlow datastructure to a FlowMessage protobuf
+// Does not put sampling rate
+func ProcessMessageIPFIXConfig(packet *netflow.IPFIXPacket, samplingRateSys SamplingRateSystem, config *ProducerConfigMapped) (flowMessageSet []*flowmessage.FlowMessage, err error) {
+	dataFlowSet, _, _, optionDataFlowSet := SplitIPFIXSets(*packet)
+
+	seqnum := packet.SequenceNumber
+	baseTime := packet.ExportTime
+	obsDomainId := packet.ObservationDomainId
+
+	var cfgIpfix *NetFlowMapper
+	var cfgSflow *SFlowMapper
+	if config != nil {
+		cfgIpfix = config.IPFIX
+		cfgSflow = config.SFlow
+	}
+	flowMessageSet = SearchNetFlowDataSets(10, baseTime, 0, dataFlowSet, cfgIpfix, cfgSflow)
+
+	samplingRate, found := SearchNetFlowOptionDataSets(optionDataFlowSet)
+	if samplingRateSys != nil {
+		if found {
+			samplingRateSys.AddSamplingRate(10, obsDomainId, samplingRate)
+		} else {
+			samplingRate, _ = samplingRateSys.GetSamplingRate(10, obsDomainId)
+		}
+	}
+	for _, fmsg := range flowMessageSet {
+		fmsg.SequenceNum = seqnum
+		fmsg.SamplingRate = uint64(samplingRate)
+		fmsg.ObservationDomainId = obsDomainId
+	}
+	return flowMessageSet, nil
+}
+
+// Convert a NetFlow datastructure to a FlowMessage protobuf
+// Does not put sampling rate
+func ProcessMessageNetFlowV9Config(packet *netflow.NFv9Packet, samplingRateSys SamplingRateSystem, config *ProducerConfigMapped) (flowMessageSet []*flowmessage.FlowMessage, err error) {
+	dataFlowSet, _, _, optionDataFlowSet := SplitNetFlowSets(*packet)
+
+	seqnum := packet.SequenceNumber
+	baseTime := packet.UnixSeconds
+	uptime := packet.SystemUptime
+	obsDomainId := packet.SourceId
+
+	var cfg *NetFlowMapper
+	if config != nil {
+		cfg = config.NetFlowV9
+	}
+	flowMessageSet = SearchNetFlowDataSets(9, baseTime, uptime, dataFlowSet, cfg, nil)
+	samplingRate, found := SearchNetFlowOptionDataSets(optionDataFlowSet)
+	if samplingRateSys != nil {
+		if found {
+			samplingRateSys.AddSamplingRate(9, obsDomainId, samplingRate)
+		} else {
+			samplingRate, _ = samplingRateSys.GetSamplingRate(9, obsDomainId)
+		}
+	}
+	for _, fmsg := range flowMessageSet {
+		fmsg.SequenceNum = seqnum
+		fmsg.SamplingRate = uint64(samplingRate)
+	}
+	return flowMessageSet, nil
+}

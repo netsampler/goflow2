@@ -347,3 +347,22 @@ func ProcessMessageSFlowConfig(msgDec interface{}, config *ProducerConfigMapped)
 		return []*flowmessage.FlowMessage{}, errors.New("Bad sFlow version")
 	}
 }
+
+func ProcessMessageSFlowConfig2(packet *sflow.Packet, config *ProducerConfigMapped) (flowMessageSet []*flowmessage.FlowMessage, err error) {
+	seqnum := packet.SequenceNumber
+	agent := packet.AgentIP
+
+	var cfg *SFlowMapper
+	if config != nil {
+		cfg = config.SFlow
+	}
+
+	flowSamples := GetSFlowFlowSamples(packet)
+	flowMessageSet = SearchSFlowSamplesConfig(flowSamples, cfg)
+	for _, fmsg := range flowMessageSet {
+		fmsg.SamplerAddress = agent
+		fmsg.SequenceNum = seqnum
+	}
+
+	return flowMessageSet, nil
+}
