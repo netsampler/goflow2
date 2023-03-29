@@ -16,6 +16,7 @@ type ProcessArgs struct {
 	SamplingRateSystem SamplingRateSystem
 }
 
+// Converts various types of flow into a single sample format
 func ProduceMessage(msg interface{}, args *ProcessArgs) ([]*flowmessage.FlowMessage, error) {
 	switch msgConv := msg.(type) {
 	case *netflowlegacy.PacketNetFlowV5: //todo: rename PacketNetFlowV5

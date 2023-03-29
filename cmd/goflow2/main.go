@@ -158,7 +158,7 @@ func main() {
 			state := &utils.StateSFlow{
 				Format:    formatter,
 				Transport: transporter,
-				Producer:  metrics.PromProcessorDefaultWrapper(),
+				Producer:  metrics.PromProducerDefaultWrapper(),
 				Logger:    log.StandardLogger(),
 				Config:    config,
 			}
@@ -168,7 +168,7 @@ func main() {
 			state := &utils.StateNetFlow{
 				Format:    formatter,
 				Transport: transporter,
-				Producer:  metrics.PromProcessorDefaultWrapper(),
+				Producer:  metrics.PromProducerDefaultWrapper(),
 				Logger:    log.StandardLogger(),
 				Config:    config,
 			}

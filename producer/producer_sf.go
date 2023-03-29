@@ -348,6 +348,7 @@ func ProcessMessageSFlowConfig(msgDec interface{}, config *ProducerConfigMapped)
 	}
 }
 
+// Converts an sFlow message
 func ProcessMessageSFlowConfig2(packet *sflow.Packet, config *ProducerConfigMapped) (flowMessageSet []*flowmessage.FlowMessage, err error) {
 	seqnum := packet.SequenceNumber
 	agent := packet.AgentIP
