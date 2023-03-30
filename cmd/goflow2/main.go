@@ -155,23 +155,23 @@ func main() {
 
 		var decodeFunc utils.DecoderFunc
 		if listenAddrUrl.Scheme == "sflow" {
-			state := &utils.StateSFlow{
-				Format:    formatter,
-				Transport: transporter,
-				Producer:  metrics.PromProducerDefaultWrapper(),
-				Logger:    log.StandardLogger(),
-				Config:    config,
-			}
+			state := utils.NewSFlowDecoder()
+			state.Format = formatter
+			state.Transport = transporter
+			state.Producer = metrics.PromProducerDefaultWrapper()
+			state.Logger = log.StandardLogger()
+			state.InitConfig(config)
+
 			decodeFunc = metrics.PromDecoderWrapper(state.DecodeFlow, listenAddrUrl.Scheme)
 			//err = sSFlow.FlowRoutine(*Workers, hostname, int(port), *ReusePort)
 		} else if listenAddrUrl.Scheme == "netflow" {
-			state := &utils.StateNetFlow{
-				Format:    formatter,
-				Transport: transporter,
-				Producer:  metrics.PromProducerDefaultWrapper(),
-				Logger:    log.StandardLogger(),
-				Config:    config,
-			}
+			state := utils.NewNetFlowDecoder()
+			state.Format = formatter
+			state.Transport = transporter
+			state.Producer = metrics.PromProducerDefaultWrapper()
+			state.Logger = log.StandardLogger()
+			state.InitConfig(config)
+
 			decodeFunc = metrics.PromDecoderWrapper(state.DecodeFlow, listenAddrUrl.Scheme)
 			//err = sNF.FlowRoutine(*Workers, hostname, int(port), *ReusePort)
 		} else {

@@ -73,6 +73,12 @@ type StateNetFlow struct {
 	configMapped *producer.ProducerConfigMapped
 }
 
+func NewNetFlowDecoder() *StateNetFlow {
+	s := &StateNetFlow{}
+	s.InitTemplates()
+	return s
+}
+
 func (s *StateNetFlow) DecodeFlow(msg interface{}) error {
 	pkt, ok := msg.(*Message)
 	if !ok {
@@ -215,6 +221,10 @@ func (s *StateNetFlow) InitTemplates() {
 
 func (s *StateNetFlow) initConfig() {
 	s.configMapped = producer.NewProducerConfigMapped(s.Config)
+}
+
+func (s *StateNetFlow) InitConfig(config *producer.ProducerConfig) {
+	s.configMapped = producer.NewProducerConfigMapped(config)
 }
 
 func (s *StateNetFlow) FlowRoutine(workers int, addr string, port int, reuseport bool) error {
