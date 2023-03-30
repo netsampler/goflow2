@@ -154,11 +154,11 @@ func main() {
 		recv := utils.NewUDPReceiver(cfg)
 
 		cfgPipe := &utils.PipeConfig{
-			Format:         formatter,
-			Transport:      transporter,
-			Producer:       metrics.PromProducerDefaultWrapper(),
-			Logger:         log.StandardLogger(),
-			ProducerConfig: cfgProducer,
+			Format:           formatter,
+			Transport:        transporter,
+			Producer:         metrics.PromProducerDefaultWrapper(),
+			ProducerConfig:   cfgProducer,
+			NetFlowTemplater: metrics.NewDefaultPromTemplateSystem,
 		}
 
 		var decodeFunc utils.DecoderFunc

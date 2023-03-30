@@ -300,7 +300,7 @@ type BasicTemplateSystem struct {
 	templateslock *sync.RWMutex
 }
 
-func CreateTemplateSystem() *BasicTemplateSystem {
+func CreateTemplateSystem() NetFlowTemplateSystem {
 	ts := &BasicTemplateSystem{
 		templates:     make(FlowBaseTemplateSet),
 		templateslock: &sync.RWMutex{},

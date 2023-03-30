@@ -1,0 +1,213 @@
+package metrics
+
+import (
+	"fmt"
+	"time"
+
+	"github.com/netsampler/goflow2/decoders/netflow"
+	"github.com/netsampler/goflow2/decoders/netflowlegacy"
+	"github.com/netsampler/goflow2/decoders/sflow"
+	"github.com/netsampler/goflow2/utils"
+
+	"github.com/prometheus/client_golang/prometheus"
+)
+
+func PromDecoderWrapper(wrapped utils.DecoderFunc, name string) utils.DecoderFunc {
+	return func(msg interface{}) error {
+		pkt, ok := msg.(*utils.Message)
+		if !ok {
+			return fmt.Errorf("flow is not *Message")
+		}
+		remote := pkt.Src.Addr().String()
+		localIP := "unk" // temporary
+		port := "0"      //strconv.Itoa(addrUDP.Port) // temporary
+		size := len(pkt.Payload)
+
+		MetricTrafficBytes.With(
+			prometheus.Labels{
+				"remote_ip":  remote,
+				"local_ip":   localIP,
+				"local_port": port,
+				"type":       name,
+			}).
+			Add(float64(size))
+		MetricTrafficPackets.With(
+			prometheus.Labels{
+				"remote_ip":  remote,
+				"local_ip":   localIP,
+				"local_port": port,
+				"type":       name,
+			}).
+			Inc()
+		MetricPacketSizeSum.With(
+			prometheus.Labels{
+				"remote_ip":  remote,
+				"local_ip":   localIP,
+				"local_port": port,
+				"type":       name,
+			}).
+			Observe(float64(size))
+
+		timeTrackStart := time.Now().UTC()
+
+		err := wrapped(msg)
+
+		timeTrackStop := time.Now().UTC()
+
+		DecoderTime.With(
+			prometheus.Labels{
+				"name": name,
+			}).
+			Observe(float64((timeTrackStop.Sub(timeTrackStart)).Nanoseconds()) / 1000)
+
+		if err != nil {
+			switch err.(type) {
+			case *netflowlegacy.ErrorVersion:
+				NetFlowErrors.With(
+					prometheus.Labels{
+						"router": remote,
+						"error":  "error_version",
+					}).
+					Inc()
+			case *netflow.ErrorTemplateNotFound:
+				NetFlowErrors.With(
+					prometheus.Labels{
+						"router": remote,
+						"error":  "template_not_found",
+					}).
+					Inc()
+			case *sflow.ErrorVersion:
+				SFlowErrors.With(
+					prometheus.Labels{
+						"router": remote,
+						"error":  "error_version",
+					}).
+					Inc()
+			case *sflow.ErrorIPVersion:
+				SFlowErrors.With(
+					prometheus.Labels{
+						"router": remote,
+						"error":  "error_ip_version",
+					}).
+					Inc()
+			case *sflow.ErrorDataFormat:
+				SFlowErrors.With(
+					prometheus.Labels{
+						"router": remote,
+						"error":  "error_data_format",
+					}).
+					Inc()
+			default:
+				// FIXME
+				NetFlowErrors.With(
+					prometheus.Labels{
+						"router": remote,
+						"error":  "error_decoding",
+					}).
+					Inc()
+				SFlowErrors.With(
+					prometheus.Labels{
+						"router": remote,
+						"error":  "error_decoding",
+					}).
+					Inc()
+			}
+		}
+		return err
+	}
+}
+
+func recordCommonNetFlowMetrics(version uint16, key string, flowSets []interface{}) {
+	versionStr := fmt.Sprintf("%d", version)
+	NetFlowStats.With(
+		prometheus.Labels{
+			"router":  key,
+			"version": versionStr,
+		}).
+		Inc()
+
+	for _, fs := range flowSets {
+		switch fsConv := fs.(type) {
+		case netflow.TemplateFlowSet:
+			NetFlowSetStatsSum.With(
+				prometheus.Labels{
+					"router":  key,
+					"version": versionStr,
+					"type":    "TemplateFlowSet",
+				}).
+				Inc()
+
+			NetFlowSetRecordsStatsSum.With(
+				prometheus.Labels{
+					"router":  key,
+					"version": versionStr,
+					"type":    "TemplateFlowSet",
+				}).
+				Add(float64(len(fsConv.Records)))
+		case netflow.NFv9OptionsTemplateFlowSet:
+			NetFlowSetStatsSum.With(
+				prometheus.Labels{
+					"router":  key,
+					"version": versionStr,
+					"type":    "OptionsTemplateFlowSet",
+				}).
+				Inc()
+
+			NetFlowSetRecordsStatsSum.With(
+				prometheus.Labels{
+					"router":  key,
+					"version": versionStr,
+					"type":    "OptionsTemplateFlowSet",
+				}).
+				Add(float64(len(fsConv.Records)))
+		case netflow.IPFIXOptionsTemplateFlowSet:
+			NetFlowSetStatsSum.With(
+				prometheus.Labels{
+					"router":  key,
+					"version": versionStr,
+					"type":    "OptionsTemplateFlowSet",
+				}).
+				Inc()
+
+			NetFlowSetRecordsStatsSum.With(
+				prometheus.Labels{
+					"router":  key,
+					"version": versionStr,
+					"type":    "OptionsTemplateFlowSet",
+				}).
+				Add(float64(len(fsConv.Records)))
+		case netflow.OptionsDataFlowSet:
+			NetFlowSetStatsSum.With(
+				prometheus.Labels{
+					"router":  key,
+					"version": versionStr,
+					"type":    "OptionsDataFlowSet",
+				}).
+				Inc()
+
+			NetFlowSetRecordsStatsSum.With(
+				prometheus.Labels{
+					"router":  key,
+					"version": versionStr,
+					"type":    "OptionsDataFlowSet",
+				}).
+				Add(float64(len(fsConv.Records)))
+		case netflow.DataFlowSet:
+			NetFlowSetStatsSum.With(
+				prometheus.Labels{
+					"router":  key,
+					"version": versionStr,
+					"type":    "DataFlowSet",
+				}).
+				Inc()
+
+			NetFlowSetRecordsStatsSum.With(
+				prometheus.Labels{
+					"router":  key,
+					"version": versionStr,
+					"type":    "DataFlowSet",
+				}).
+				Add(float64(len(fsConv.Records)))
+		}
+	}
+}
