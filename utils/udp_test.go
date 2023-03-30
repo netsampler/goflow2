@@ -46,3 +46,17 @@ func TestUDPClose(t *testing.T) {
 	require.NoError(t, r.Stop())
 	require.Error(t, r.Stop())
 }
+
+func getFreeUDPPort() (int, error) {
+	a, err := net.ResolveUDPAddr("udp", "127.0.0.1:0")
+	if err != nil {
+		return 0, err
+	}
+	l, err := net.ListenUDP("udp", a)
+	if err != nil {
+		return 0, err
+	}
+	defer l.Close()
+	return l.LocalAddr().(*net.UDPAddr).Port, nil
+}
+
