@@ -59,4 +59,3 @@ func getFreeUDPPort() (int, error) {
 	defer l.Close()
 	return l.LocalAddr().(*net.UDPAddr).Port, nil
 }
-

@@ -17,6 +17,13 @@ func NewDefaultPromTemplateSystem() netflow.NetFlowTemplateSystem {
 	return NewPromTemplateSystem(netflow.CreateTemplateSystem())
 }
 
+// todo improve naming
+func NewPromTemplateWrapper(wrapped netflow.NetFlowTemplateSystem) func() netflow.NetFlowTemplateSystem {
+	return func() netflow.NetFlowTemplateSystem {
+		return NewPromTemplateSystem(wrapped)
+	}
+}
+
 func NewPromTemplateSystem(wrapped netflow.NetFlowTemplateSystem) netflow.NetFlowTemplateSystem {
 	return &PromTemplateSystem{
 		key:     "test",
