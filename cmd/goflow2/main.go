@@ -73,13 +73,13 @@ func main() {
 	lvl, _ := log.ParseLevel(*LogLevel)
 	log.SetLevel(lvl)
 
-	var config utils.ProducerConfig
+	var cfgProducer utils.ProducerConfig
 	if *MappingFile != "" {
 		f, err := os.Open(*MappingFile)
 		if err != nil {
 			log.Fatal(err)
 		}
-		config, err = utils.LoadMapping(f)
+		cfgProducer, err = utils.LoadMapping(f)
 		f.Close()
 		if err != nil {
 			log.Fatal(err)
@@ -153,26 +153,22 @@ func main() {
 		}
 		recv := utils.NewUDPReceiver(cfg)
 
+		cfgPipe := &utils.PipeConfig{
+			Format:         formatter,
+			Transport:      transporter,
+			Producer:       metrics.PromProducerDefaultWrapper(),
+			Logger:         log.StandardLogger(),
+			ProducerConfig: cfgProducer,
+		}
+
 		var decodeFunc utils.DecoderFunc
 		if listenAddrUrl.Scheme == "sflow" {
-			state := utils.NewSFlowDecoder()
-			state.Format = formatter
-			state.Transport = transporter
-			state.Producer = metrics.PromProducerDefaultWrapper()
-			state.Logger = log.StandardLogger()
-			state.InitConfig(config)
-
-			decodeFunc = metrics.PromDecoderWrapper(state.DecodeFlow, listenAddrUrl.Scheme)
+			p := utils.NewSFlowPipe(cfgPipe)
+			decodeFunc = metrics.PromDecoderWrapper(p.DecodeFlow, listenAddrUrl.Scheme)
 			//err = sSFlow.FlowRoutine(*Workers, hostname, int(port), *ReusePort)
 		} else if listenAddrUrl.Scheme == "netflow" {
-			state := utils.NewNetFlowDecoder()
-			state.Format = formatter
-			state.Transport = transporter
-			state.Producer = metrics.PromProducerDefaultWrapper()
-			state.Logger = log.StandardLogger()
-			state.InitConfig(config)
-
-			decodeFunc = metrics.PromDecoderWrapper(state.DecodeFlow, listenAddrUrl.Scheme)
+			p := utils.NewNetFlowPipe(cfgPipe)
+			decodeFunc = metrics.PromDecoderWrapper(p.DecodeFlow, listenAddrUrl.Scheme)
 			//err = sNF.FlowRoutine(*Workers, hostname, int(port), *ReusePort)
 		} else {
 			l.Errorf("scheme %s does not exist", listenAddrUrl.Scheme)
