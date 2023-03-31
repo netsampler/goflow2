@@ -105,6 +105,9 @@ func (p *SFlowPipe) DecodeFlow(msg interface{}) error {
 
 	args := producer.ProcessArgs{
 		Config: p.configMapped,
+
+		Src: pkt.Src,
+		Dst: pkt.Dst,
 	}
 	if p.producer == nil {
 		return nil
@@ -198,6 +201,9 @@ func (p *NetFlowPipe) DecodeFlow(msg interface{}) error {
 	args := producer.ProcessArgs{
 		Config:             p.configMapped,
 		SamplingRateSystem: sampling,
+
+		Src: pkt.Src,
+		Dst: pkt.Dst,
 	}
 
 	if p.producer == nil {

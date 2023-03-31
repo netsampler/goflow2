@@ -2,6 +2,7 @@ package producer
 
 import (
 	"fmt"
+	"net/netip"
 
 	"github.com/netsampler/goflow2/decoders/netflow"
 	"github.com/netsampler/goflow2/decoders/netflowlegacy"
@@ -14,6 +15,9 @@ type ProducerInterface func(msg interface{}, args *ProcessArgs) ([]*flowmessage.
 type ProcessArgs struct {
 	Config             *ProducerConfigMapped
 	SamplingRateSystem SamplingRateSystem
+
+	Src netip.AddrPort
+	Dst netip.AddrPort
 }
 
 // Converts various types of flow into a single sample format

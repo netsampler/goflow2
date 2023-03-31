@@ -1,7 +1,7 @@
 package metrics
 
 import (
-	"net"
+	"net/netip"
 
 	"github.com/netsampler/goflow2/decoders/netflow"
 	"github.com/netsampler/goflow2/decoders/netflowlegacy"
@@ -23,12 +23,16 @@ func PromProducerWrapper(wrapped producer.ProducerInterface) producer.ProducerIn
 		if err != nil {
 			return flowMessageSet, err
 		}
-		key := "unk" // todo: fix this
+		key := args.Src.Addr().String()
 		var nfvariant bool
 		var versionStr string
 		switch packet := msg.(type) {
 		case *sflow.Packet:
-			agentStr := net.IP(packet.AgentIP).String()
+			agentStr := "unk"
+			agentIp, ok := netip.AddrFromSlice(packet.AgentIP)
+			if ok {
+				agentStr = agentIp.String()
+			}
 
 			SFlowStats.With(
 				prometheus.Labels{
@@ -73,6 +77,7 @@ func PromProducerWrapper(wrapped producer.ProducerInterface) producer.ProducerIn
 					}).
 					Add(float64(countRec))
 			}
+
 		case *netflowlegacy.PacketNetFlowV5:
 			NetFlowStats.With(
 				prometheus.Labels{
@@ -98,6 +103,7 @@ func PromProducerWrapper(wrapped producer.ProducerInterface) producer.ProducerIn
 			recordCommonNetFlowMetrics(9, key, packet.FlowSets)
 			nfvariant = true
 			versionStr = "9"
+
 		case *netflow.IPFIXPacket:
 			NetFlowStats.With(
 				prometheus.Labels{

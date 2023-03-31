@@ -15,6 +15,7 @@ type DecoderFunc func(msg interface{}) error
 
 type udpPacket struct {
 	src      *net.UDPAddr
+	dst      *net.UDPAddr
 	size     int
 	payload  []byte
 	received time.Time
@@ -22,6 +23,7 @@ type udpPacket struct {
 
 type Message struct {
 	Src      netip.AddrPort
+	Dst      netip.AddrPort
 	Payload  []byte
 	Received time.Time
 }
@@ -142,13 +144,16 @@ func (r *UDPReceiver) receive(addr string, port int, started chan bool) error {
 	if !ok {
 		return err
 	}
+	localAddr, _ := udpconn.LocalAddr().(*net.UDPAddr)
 
 	for {
 		pkt := packetPool.Get().(*udpPacket)
 		pkt.size, pkt.src, err = udpconn.ReadFromUDP(pkt.payload)
 		if err != nil {
+			packetPool.Put(pkt)
 			return err
 		}
+		pkt.dst = localAddr
 		pkt.received = time.Now().UTC()
 		if pkt.size == 0 {
 			// error
@@ -195,6 +200,7 @@ func (r *UDPReceiver) decoders(workers int, decodeFunc DecoderFunc) error {
 					if decodeFunc != nil {
 						msg := Message{
 							Src:      pkt.src.AddrPort(),
+							Dst:      pkt.dst.AddrPort(),
 							Payload:  pkt.payload[0:pkt.size],
 							Received: pkt.received,
 						}
