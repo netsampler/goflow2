@@ -73,7 +73,7 @@ func TestProcessMessageSFlow(t *testing.T) {
 			},
 		},
 	}
-	_, err := ProcessMessageSFlow(pkt)
+	_, err := ProcessMessageSFlowConfig(pkt, nil)
 	assert.Nil(t, err)
 }
 
