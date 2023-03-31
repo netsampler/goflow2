@@ -20,8 +20,6 @@ type flowpipe struct {
 	transport transport.TransportInterface
 	producer  producer.ProducerInterface
 
-	configMapped *producer.ProducerConfigMapped
-
 	netFlowTemplater func() netflow.NetFlowTemplateSystem
 }
 
@@ -29,9 +27,6 @@ type PipeConfig struct {
 	Format    format.FormatInterface
 	Transport transport.TransportInterface
 	Producer  producer.ProducerInterface
-
-	// Producer configuration to map additional fields
-	ProducerConfig *producer.ProducerConfig
 
 	// Function that create Template Systems
 	NetFlowTemplater func() netflow.NetFlowTemplateSystem
@@ -59,7 +54,6 @@ func (p *flowpipe) parseConfig(cfg *PipeConfig) {
 	p.format = cfg.Format
 	p.transport = cfg.Transport
 	p.producer = cfg.Producer
-	p.configMapped = producer.NewProducerConfigMapped(cfg.ProducerConfig)
 	if cfg.NetFlowTemplater != nil {
 		p.netFlowTemplater = cfg.NetFlowTemplater
 	} else {
@@ -104,8 +98,6 @@ func (p *SFlowPipe) DecodeFlow(msg interface{}) error {
 	}
 
 	args := producer.ProcessArgs{
-		Config: p.configMapped,
-
 		Src: pkt.Src,
 		Dst: pkt.Dst,
 	}
@@ -199,7 +191,6 @@ func (p *NetFlowPipe) DecodeFlow(msg interface{}) error {
 	var err error
 
 	args := producer.ProcessArgs{
-		Config:             p.configMapped,
 		SamplingRateSystem: sampling,
 
 		Src: pkt.Src,

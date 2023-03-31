@@ -13,25 +13,28 @@ import (
 type ProducerInterface func(msg interface{}, args *ProcessArgs) ([]*flowmessage.FlowMessage, error)
 
 type ProcessArgs struct {
-	Config             *ProducerConfigMapped
 	SamplingRateSystem SamplingRateSystem
 
 	Src netip.AddrPort
 	Dst netip.AddrPort
 }
 
-// Converts various types of flow into a single sample format
-func ProduceMessage(msg interface{}, args *ProcessArgs) ([]*flowmessage.FlowMessage, error) {
-	switch msgConv := msg.(type) {
-	case *netflowlegacy.PacketNetFlowV5: //todo: rename PacketNetFlowV5
-		return ProcessMessageNetFlowLegacy2(msgConv)
-	case *netflow.NFv9Packet:
-		return ProcessMessageNetFlowV9Config(msgConv, args.SamplingRateSystem, args.Config)
-	case *netflow.IPFIXPacket:
-		return ProcessMessageIPFIXConfig(msgConv, args.SamplingRateSystem, args.Config)
-	case *sflow.Packet:
-		return ProcessMessageSFlowConfig2(msgConv, args.Config)
-	default:
-		return nil, fmt.Errorf("flow not recognized")
+func CreateProducerWithConfig(cfg *ProducerConfig) ProducerInterface {
+	cfgMapped := mapConfig(cfg)
+
+	return func(msg interface{}, args *ProcessArgs) ([]*flowmessage.FlowMessage, error) {
+		switch msgConv := msg.(type) {
+		case *netflowlegacy.PacketNetFlowV5: //todo: rename PacketNetFlowV5
+			return ProcessMessageNetFlowLegacy(msgConv)
+		case *netflow.NFv9Packet:
+			return ProcessMessageNetFlowV9Config(msgConv, args.SamplingRateSystem, cfgMapped)
+		case *netflow.IPFIXPacket:
+			return ProcessMessageIPFIXConfig(msgConv, args.SamplingRateSystem, cfgMapped)
+		case *sflow.Packet:
+			return ProcessMessageSFlowConfig(msgConv, cfgMapped)
+		default:
+			return nil, fmt.Errorf("flow not recognized")
+		}
 	}
+
 }

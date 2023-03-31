@@ -2,7 +2,6 @@ package producer
 
 import (
 	"encoding/binary"
-	"errors"
 	"net"
 
 	"github.com/netsampler/goflow2/decoders/sflow"
@@ -319,37 +318,8 @@ func SearchSFlowSamplesConfig(samples []interface{}, config *SFlowMapper) []*flo
 	return flowMessageSet
 }
 
-func ProcessMessageSFlow(msgDec interface{}) ([]*flowmessage.FlowMessage, error) {
-	return ProcessMessageSFlowConfig(msgDec, nil)
-}
-
-func ProcessMessageSFlowConfig(msgDec interface{}, config *ProducerConfigMapped) ([]*flowmessage.FlowMessage, error) {
-	switch packet := msgDec.(type) {
-	case sflow.Packet:
-		seqnum := packet.SequenceNumber
-		var agent net.IP
-		agent = packet.AgentIP
-
-		var cfg *SFlowMapper
-		if config != nil {
-			cfg = config.SFlow
-		}
-
-		flowSamples := GetSFlowFlowSamples(&packet)
-		flowMessageSet := SearchSFlowSamplesConfig(flowSamples, cfg)
-		for _, fmsg := range flowMessageSet {
-			fmsg.SamplerAddress = agent
-			fmsg.SequenceNum = seqnum
-		}
-
-		return flowMessageSet, nil
-	default:
-		return []*flowmessage.FlowMessage{}, errors.New("Bad sFlow version")
-	}
-}
-
 // Converts an sFlow message
-func ProcessMessageSFlowConfig2(packet *sflow.Packet, config *ProducerConfigMapped) (flowMessageSet []*flowmessage.FlowMessage, err error) {
+func ProcessMessageSFlowConfig(packet *sflow.Packet, config *producerConfigMapped) (flowMessageSet []*flowmessage.FlowMessage, err error) {
 	seqnum := packet.SequenceNumber
 	agent := packet.AgentIP
 

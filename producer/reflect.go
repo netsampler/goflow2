@@ -216,14 +216,14 @@ func MapFieldsSFlow(fields []SFlowMapField) *SFlowMapper {
 	return &SFlowMapper{ret}
 }
 
-type ProducerConfigMapped struct {
+type producerConfigMapped struct {
 	IPFIX     *NetFlowMapper `json:"ipfix"`
 	NetFlowV9 *NetFlowMapper `json:"netflowv9"`
 	SFlow     *SFlowMapper   `json:"sflow"`
 }
 
-func NewProducerConfigMapped(config *ProducerConfig) *ProducerConfigMapped {
-	newCfg := &ProducerConfigMapped{}
+func mapConfig(config *ProducerConfig) *producerConfigMapped {
+	newCfg := &producerConfigMapped{}
 	if config != nil {
 		newCfg.IPFIX = MapFieldsNetFlow(config.IPFIX.Mapping)
 		newCfg.NetFlowV9 = MapFieldsNetFlow(config.NetFlowV9.Mapping)

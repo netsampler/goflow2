@@ -607,83 +607,9 @@ func SplitIPFIXSets(packetIPFIX netflow.IPFIXPacket) ([]netflow.DataFlowSet, []n
 	return dataFlowSet, templatesFlowSet, optionsTemplatesFlowSet, optionsDataFlowSet
 }
 
-func ProcessMessageNetFlow(msgDec interface{}, samplingRateSys SamplingRateSystem) ([]*flowmessage.FlowMessage, error) {
-	return ProcessMessageNetFlowConfig(msgDec, samplingRateSys, nil)
-}
-
 // Convert a NetFlow datastructure to a FlowMessage protobuf
 // Does not put sampling rate
-func ProcessMessageNetFlowConfig(msgDec interface{}, samplingRateSys SamplingRateSystem, config *ProducerConfigMapped) ([]*flowmessage.FlowMessage, error) {
-	seqnum := uint32(0)
-	var baseTime uint32
-	var uptime uint32
-
-	var flowMessageSet []*flowmessage.FlowMessage
-
-	switch msgDecConv := msgDec.(type) {
-	case netflow.NFv9Packet:
-		dataFlowSet, _, _, optionDataFlowSet := SplitNetFlowSets(msgDecConv)
-
-		seqnum = msgDecConv.SequenceNumber
-		baseTime = msgDecConv.UnixSeconds
-		uptime = msgDecConv.SystemUptime
-		obsDomainId := msgDecConv.SourceId
-
-		var cfg *NetFlowMapper
-		if config != nil {
-			cfg = config.NetFlowV9
-		}
-		flowMessageSet = SearchNetFlowDataSets(9, baseTime, uptime, dataFlowSet, cfg, nil)
-		samplingRate, found := SearchNetFlowOptionDataSets(optionDataFlowSet)
-		if samplingRateSys != nil {
-			if found {
-				samplingRateSys.AddSamplingRate(9, obsDomainId, samplingRate)
-			} else {
-				samplingRate, _ = samplingRateSys.GetSamplingRate(9, obsDomainId)
-			}
-		}
-		for _, fmsg := range flowMessageSet {
-			fmsg.SequenceNum = seqnum
-			fmsg.SamplingRate = uint64(samplingRate)
-		}
-	case netflow.IPFIXPacket:
-		dataFlowSet, _, _, optionDataFlowSet := SplitIPFIXSets(msgDecConv)
-
-		seqnum = msgDecConv.SequenceNumber
-		baseTime = msgDecConv.ExportTime
-		obsDomainId := msgDecConv.ObservationDomainId
-
-		var cfgIpfix *NetFlowMapper
-		var cfgSflow *SFlowMapper
-		if config != nil {
-			cfgIpfix = config.IPFIX
-			cfgSflow = config.SFlow
-		}
-		flowMessageSet = SearchNetFlowDataSets(10, baseTime, uptime, dataFlowSet, cfgIpfix, cfgSflow)
-
-		samplingRate, found := SearchNetFlowOptionDataSets(optionDataFlowSet)
-		if samplingRateSys != nil {
-			if found {
-				samplingRateSys.AddSamplingRate(10, obsDomainId, samplingRate)
-			} else {
-				samplingRate, _ = samplingRateSys.GetSamplingRate(10, obsDomainId)
-			}
-		}
-		for _, fmsg := range flowMessageSet {
-			fmsg.SequenceNum = seqnum
-			fmsg.SamplingRate = uint64(samplingRate)
-			fmsg.ObservationDomainId = obsDomainId
-		}
-	default:
-		return flowMessageSet, errors.New("Bad NetFlow/IPFIX version")
-	}
-
-	return flowMessageSet, nil
-}
-
-// Convert a NetFlow datastructure to a FlowMessage protobuf
-// Does not put sampling rate
-func ProcessMessageIPFIXConfig(packet *netflow.IPFIXPacket, samplingRateSys SamplingRateSystem, config *ProducerConfigMapped) (flowMessageSet []*flowmessage.FlowMessage, err error) {
+func ProcessMessageIPFIXConfig(packet *netflow.IPFIXPacket, samplingRateSys SamplingRateSystem, config *producerConfigMapped) (flowMessageSet []*flowmessage.FlowMessage, err error) {
 	dataFlowSet, _, _, optionDataFlowSet := SplitIPFIXSets(*packet)
 
 	seqnum := packet.SequenceNumber
@@ -716,7 +642,7 @@ func ProcessMessageIPFIXConfig(packet *netflow.IPFIXPacket, samplingRateSys Samp
 
 // Convert a NetFlow datastructure to a FlowMessage protobuf
 // Does not put sampling rate
-func ProcessMessageNetFlowV9Config(packet *netflow.NFv9Packet, samplingRateSys SamplingRateSystem, config *ProducerConfigMapped) (flowMessageSet []*flowmessage.FlowMessage, err error) {
+func ProcessMessageNetFlowV9Config(packet *netflow.NFv9Packet, samplingRateSys SamplingRateSystem, config *producerConfigMapped) (flowMessageSet []*flowmessage.FlowMessage, err error) {
 	dataFlowSet, _, _, optionDataFlowSet := SplitNetFlowSets(*packet)
 
 	seqnum := packet.SequenceNumber

@@ -2,7 +2,6 @@ package producer
 
 import (
 	"encoding/binary"
-	"errors"
 	"net"
 
 	"github.com/netsampler/goflow2/decoders/netflowlegacy"
@@ -60,7 +59,7 @@ func SearchNetFlowLegacyRecords(baseTime uint32, uptime uint32, dataRecords []ne
 	return flowMessageSet
 }
 
-func ProcessMessageNetFlowLegacy2(packet *netflowlegacy.PacketNetFlowV5) ([]*flowmessage.FlowMessage, error) {
+func ProcessMessageNetFlowLegacy(packet *netflowlegacy.PacketNetFlowV5) ([]*flowmessage.FlowMessage, error) {
 	seqnum := packet.FlowSequence
 	samplingRate := packet.SamplingInterval
 	baseTime := packet.UnixSecs
@@ -73,24 +72,4 @@ func ProcessMessageNetFlowLegacy2(packet *netflowlegacy.PacketNetFlowV5) ([]*flo
 	}
 
 	return flowMessageSet, nil
-}
-
-func ProcessMessageNetFlowLegacy(msgDec interface{}) ([]*flowmessage.FlowMessage, error) {
-	switch packet := msgDec.(type) {
-	case netflowlegacy.PacketNetFlowV5:
-		seqnum := packet.FlowSequence
-		samplingRate := packet.SamplingInterval
-		baseTime := packet.UnixSecs
-		uptime := packet.SysUptime
-
-		flowMessageSet := SearchNetFlowLegacyRecords(baseTime, uptime, packet.Records)
-		for _, fmsg := range flowMessageSet {
-			fmsg.SequenceNum = seqnum
-			fmsg.SamplingRate = uint64(samplingRate)
-		}
-
-		return flowMessageSet, nil
-	default:
-		return []*flowmessage.FlowMessage{}, errors.New("Bad NetFlow v5 version")
-	}
 }

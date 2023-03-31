@@ -12,8 +12,8 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 )
 
-func PromProducerDefaultWrapper() producer.ProducerInterface {
-	return PromProducerWrapper(producer.ProduceMessage)
+func PromProducerDefaultWrapper(cfg *producer.ProducerConfig) producer.ProducerInterface {
+	return PromProducerWrapper(producer.CreateProducerWithConfig(cfg))
 }
 
 // Wraps a producer with metrics
