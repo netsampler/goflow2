@@ -29,13 +29,13 @@ func TestProcessMessageNetFlow(t *testing.T) {
 		FlowSets: dfs,
 	}
 	testsr := &SingleSamplingRateSystem{1}
-	_, err := ProcessMessageNetFlow(pktnf9, testsr)
+	_, err := ProcessMessageNetFlowV9Config(&pktnf9, testsr, nil)
 	assert.Nil(t, err)
 
 	pktipfix := netflow.IPFIXPacket{
 		FlowSets: dfs,
 	}
-	_, err = ProcessMessageNetFlow(pktipfix, testsr)
+	_, err = ProcessMessageIPFIXConfig(&pktipfix, testsr, nil)
 	assert.Nil(t, err)
 }
 
@@ -78,7 +78,7 @@ func TestProcessMessageSFlow(t *testing.T) {
 }
 
 func TestExpandedSFlowDecode(t *testing.T) {
-	flowMessages, err := ProcessMessageSFlow(getSflowPacket())
+	flowMessages, err := ProcessMessageSFlowConfig(getSflowPacket(), nil)
 	flowMessage := flowMessages[0]
 
 	assert.Nil(t, err)
@@ -89,8 +89,8 @@ func TestExpandedSFlowDecode(t *testing.T) {
 	assert.Equal(t, []byte{0x09, 0x09, 0x09, 0x09}, flowMessage.NextHop)
 }
 
-func getSflowPacket() sflow.Packet {
-	return sflow.Packet{
+func getSflowPacket() *sflow.Packet {
+	pkt := sflow.Packet{
 		Version:        5,
 		IPVersion:      1,
 		AgentIP:        []uint8{1, 2, 3, 4},
@@ -188,4 +188,5 @@ func getSflowPacket() sflow.Packet {
 			},
 		},
 	}
+	return &pkt
 }
