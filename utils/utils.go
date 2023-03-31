@@ -34,18 +34,6 @@ func GetServiceAddresses(srv string) (addrs []string, err error) {
 	return addrs, nil
 }
 
-type Logger interface {
-	Printf(string, ...interface{})
-	Errorf(string, ...interface{})
-	Warnf(string, ...interface{})
-	Warn(...interface{})
-	Error(...interface{})
-	Debug(...interface{})
-	Debugf(string, ...interface{})
-	Infof(string, ...interface{})
-	Fatalf(string, ...interface{})
-}
-
 type BaseMessage struct {
 	Src     net.IP
 	Port    int

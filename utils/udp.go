@@ -48,8 +48,6 @@ type UDPReceiver struct {
 
 	workers int
 	sockets int
-
-	Logger Logger
 }
 
 type UDPReceiverConfig struct {
