@@ -10,15 +10,20 @@ import (
 	flowmessage "github.com/netsampler/goflow2/pb"
 )
 
-type ProtoProducerMessage flowmessage.FlowMessage
+type ProtoProducerMessage struct {
+	flowmessage.FlowMessage
+
+	customSelector []string
+	selectorTag    string
+}
 
 func (m *ProtoProducerMessage) String() string {
-	return fmt.Sprintf("test")
+	m.customSelector = []string{"Type", "SrcAddr"}
+	return FormatMessageReflectText(m, "")
 }
 
 func (m *ProtoProducerMessage) MarshalJSON() ([]byte, error) {
-	// todo: embed the marshalling of format (previously)
-	return []byte(fmt.Sprintf("test")), nil
+	return []byte(FormatMessageReflectJSON(m, "")), nil
 }
 
 // -----
@@ -157,6 +162,13 @@ func FormatMessageReflectCustom(msg interface{}, ext, quotes, sep, sign string, 
 	//customSelector := selector
 	var customSelector []string
 	var selectorTag string
+
+	fmsg, ok := msg.(*ProtoProducerMessage)
+	if ok {
+		customSelector = fmsg.customSelector
+		selectorTag = fmsg.selectorTag
+	}
+	//msg, _ := (*flowmessage.FlowMessage)(fmsg)
 
 	reMap := make(map[string]string)
 

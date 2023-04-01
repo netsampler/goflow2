@@ -75,7 +75,7 @@ func NetFlowLookFor(dataFields []netflow.DataField, typeId uint16) (bool, interf
 	return false, nil
 }
 
-func NetFlowPopulate(dataFields []netflow.DataField, typeId uint16, addr interface{}) bool {
+func NetFlowPopulate(dataFields []netflow.DataField, typeId uint16, addr interface{}) (bool, error) {
 	exists, value := NetFlowLookFor(dataFields, typeId)
 	if exists && value != nil {
 		valueBytes, ok := value.([]byte)
@@ -94,7 +94,7 @@ func NetFlowPopulate(dataFields []netflow.DataField, typeId uint16, addr interfa
 			}
 		}
 	}
-	return exists
+	return exists, nil
 }
 
 func WriteUDecoded(o uint64, out interface{}) error {
@@ -256,8 +256,7 @@ func addrReplaceCheck(dstAddr *[]byte, v []byte, eType *uint32, ipv6 bool) {
 	}
 }
 
-func ConvertNetFlowDataSet(version uint16, baseTime uint32, uptime uint32, record []netflow.DataField, mapperNetFlow *NetFlowMapper, mapperSFlow *SFlowMapper) *flowmessage.FlowMessage {
-	flowMessage := &flowmessage.FlowMessage{}
+func ConvertNetFlowDataSet(flowMessage *ProtoProducerMessage, version uint16, baseTime uint32, uptime uint32, record []netflow.DataField, mapperNetFlow *NetFlowMapper, mapperSFlow *SFlowMapper) error {
 	var time uint64
 
 	if version == 9 {
@@ -519,52 +518,52 @@ func ConvertNetFlowDataSet(version uint16, baseTime uint32, uptime uint32, recor
 		}
 
 	}
-
-	return flowMessage
+	return nil
 }
 
-func SearchNetFlowDataSetsRecords(version uint16, baseTime uint32, uptime uint32, dataRecords []netflow.DataRecord, mapperNetFlow *NetFlowMapper, mapperSFlow *SFlowMapper) []ProducerMessage {
+func SearchNetFlowDataSetsRecords(version uint16, baseTime uint32, uptime uint32, dataRecords []netflow.DataRecord, mapperNetFlow *NetFlowMapper, mapperSFlow *SFlowMapper) ([]ProducerMessage, error) {
 	var flowMessageSet []ProducerMessage
 	for _, record := range dataRecords {
-		fmsg := ConvertNetFlowDataSet(version, baseTime, uptime, record.Values, mapperNetFlow, mapperSFlow)
+		fmsg := &ProtoProducerMessage{}
+		if err := ConvertNetFlowDataSet(fmsg, version, baseTime, uptime, record.Values, mapperNetFlow, mapperSFlow); err != nil {
+			return flowMessageSet, err
+		}
 		if fmsg != nil {
 			flowMessageSet = append(flowMessageSet, fmsg)
 		}
 	}
-	return flowMessageSet
+	return flowMessageSet, nil
 }
 
-func SearchNetFlowDataSets(version uint16, baseTime uint32, uptime uint32, dataFlowSet []netflow.DataFlowSet, mapperNetFlow *NetFlowMapper, mapperSFlow *SFlowMapper) []ProducerMessage {
+func SearchNetFlowDataSets(version uint16, baseTime uint32, uptime uint32, dataFlowSet []netflow.DataFlowSet, mapperNetFlow *NetFlowMapper, mapperSFlow *SFlowMapper) ([]ProducerMessage, error) {
 	var flowMessageSet []ProducerMessage
 	for _, dataFlowSetItem := range dataFlowSet {
-		fmsg := SearchNetFlowDataSetsRecords(version, baseTime, uptime, dataFlowSetItem.Records, mapperNetFlow, mapperSFlow)
+		fmsg, err := SearchNetFlowDataSetsRecords(version, baseTime, uptime, dataFlowSetItem.Records, mapperNetFlow, mapperSFlow)
+		if err != nil {
+			return flowMessageSet, err
+		}
 		if fmsg != nil {
 			flowMessageSet = append(flowMessageSet, fmsg...)
 		}
 	}
-	return flowMessageSet
+	return flowMessageSet, nil
 }
 
-func SearchNetFlowOptionDataSets(dataFlowSet []netflow.OptionsDataFlowSet) (uint32, bool) {
-	var samplingRate uint32
-	var found bool
+func SearchNetFlowOptionDataSets(dataFlowSet []netflow.OptionsDataFlowSet) (samplingRate uint32, found bool, err error) {
 	for _, dataFlowSetItem := range dataFlowSet {
 		for _, record := range dataFlowSetItem.Records {
-			b := NetFlowPopulate(record.OptionsValues, 305, &samplingRate)
-			if b {
-				return samplingRate, b
+			if found, err := NetFlowPopulate(record.OptionsValues, 305, &samplingRate); err != nil || found {
+				return samplingRate, found, err
 			}
-			b = NetFlowPopulate(record.OptionsValues, 50, &samplingRate)
-			if b {
-				return samplingRate, b
+			if found, err := NetFlowPopulate(record.OptionsValues, 50, &samplingRate); err != nil || found {
+				return samplingRate, found, err
 			}
-			b = NetFlowPopulate(record.OptionsValues, 34, &samplingRate)
-			if b {
-				return samplingRate, b
+			if found, err := NetFlowPopulate(record.OptionsValues, 34, &samplingRate); err != nil || found {
+				return samplingRate, found, err
 			}
 		}
 	}
-	return samplingRate, found
+	return samplingRate, found, err
 }
 
 func SplitNetFlowSets(packetNFv9 netflow.NFv9Packet) ([]netflow.DataFlowSet, []netflow.TemplateFlowSet, []netflow.NFv9OptionsTemplateFlowSet, []netflow.OptionsDataFlowSet) {
@@ -622,9 +621,15 @@ func ProcessMessageIPFIXConfig(packet *netflow.IPFIXPacket, samplingRateSys Samp
 		cfgIpfix = config.IPFIX
 		cfgSflow = config.SFlow
 	}
-	flowMessageSet = SearchNetFlowDataSets(10, baseTime, 0, dataFlowSet, cfgIpfix, cfgSflow)
+	flowMessageSet, err = SearchNetFlowDataSets(10, baseTime, 0, dataFlowSet, cfgIpfix, cfgSflow)
+	if err != nil {
+		return flowMessageSet, err
+	}
 
-	samplingRate, found := SearchNetFlowOptionDataSets(optionDataFlowSet)
+	samplingRate, found, err := SearchNetFlowOptionDataSets(optionDataFlowSet)
+	if err != nil {
+		return flowMessageSet, err
+	}
 	if samplingRateSys != nil {
 		if found {
 			samplingRateSys.AddSamplingRate(10, obsDomainId, samplingRate)
@@ -633,7 +638,7 @@ func ProcessMessageIPFIXConfig(packet *netflow.IPFIXPacket, samplingRateSys Samp
 		}
 	}
 	for _, msg := range flowMessageSet {
-		fmsg, ok := msg.(*flowmessage.FlowMessage)
+		fmsg, ok := msg.(*ProtoProducerMessage)
 		if !ok {
 			continue
 		}
@@ -658,8 +663,14 @@ func ProcessMessageNetFlowV9Config(packet *netflow.NFv9Packet, samplingRateSys S
 	if config != nil {
 		cfg = config.NetFlowV9
 	}
-	flowMessageSet = SearchNetFlowDataSets(9, baseTime, uptime, dataFlowSet, cfg, nil)
-	samplingRate, found := SearchNetFlowOptionDataSets(optionDataFlowSet)
+	flowMessageSet, err = SearchNetFlowDataSets(9, baseTime, uptime, dataFlowSet, cfg, nil)
+	if err != nil {
+		return flowMessageSet, err
+	}
+	samplingRate, found, err := SearchNetFlowOptionDataSets(optionDataFlowSet)
+	if err != nil {
+		return flowMessageSet, err
+	}
 	if samplingRateSys != nil {
 		if found {
 			samplingRateSys.AddSamplingRate(9, obsDomainId, samplingRate)

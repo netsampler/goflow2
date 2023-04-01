@@ -8,9 +8,7 @@ import (
 	flowmessage "github.com/netsampler/goflow2/pb"
 )
 
-func ConvertNetFlowLegacyRecord(baseTime uint32, uptime uint32, record netflowlegacy.RecordsNetFlowV5) *flowmessage.FlowMessage {
-	flowMessage := &flowmessage.FlowMessage{}
-
+func ConvertNetFlowLegacyRecord(flowMessage *ProtoProducerMessage, baseTime uint32, uptime uint32, record netflowlegacy.RecordsNetFlowV5) {
 	flowMessage.Type = flowmessage.FlowMessage_NETFLOW_V5
 
 	timeDiffFirst := (uptime - record.First)
@@ -44,17 +42,14 @@ func ConvertNetFlowLegacyRecord(baseTime uint32, uptime uint32, record netflowle
 	flowMessage.DstPort = uint32(record.DstPort)
 	flowMessage.Packets = uint64(record.DPkts)
 	flowMessage.Bytes = uint64(record.DOctets)
-
-	return flowMessage
 }
 
 func SearchNetFlowLegacyRecords(baseTime uint32, uptime uint32, dataRecords []netflowlegacy.RecordsNetFlowV5) []ProducerMessage {
 	var flowMessageSet []ProducerMessage
 	for _, record := range dataRecords {
-		fmsg := ConvertNetFlowLegacyRecord(baseTime, uptime, record)
-		if fmsg != nil {
-			flowMessageSet = append(flowMessageSet, fmsg)
-		}
+		fmsg := &ProtoProducerMessage{}
+		ConvertNetFlowLegacyRecord(fmsg, baseTime, uptime, record)
+		flowMessageSet = append(flowMessageSet, fmsg)
 	}
 	return flowMessageSet
 }

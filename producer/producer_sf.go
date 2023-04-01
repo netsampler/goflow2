@@ -21,11 +21,11 @@ func GetSFlowFlowSamples(packet *sflow.Packet) []interface{} {
 	return flowSamples
 }
 
-func ParseSampledHeader(flowMessage *flowmessage.FlowMessage, sampledHeader *sflow.SampledHeader) error {
+func ParseSampledHeader(flowMessage *ProtoProducerMessage, sampledHeader *sflow.SampledHeader) error {
 	return ParseSampledHeaderConfig(flowMessage, sampledHeader, nil)
 }
 
-func ParseEthernetHeader(flowMessage *flowmessage.FlowMessage, data []byte, config *SFlowMapper) {
+func ParseEthernetHeader(flowMessage *ProtoProducerMessage, data []byte, config *SFlowMapper) {
 	var hasMpls bool
 	var countMpls uint32
 	var firstLabelMpls uint32
@@ -221,7 +221,7 @@ func ParseEthernetHeader(flowMessage *flowmessage.FlowMessage, data []byte, conf
 	(*flowMessage).FragmentOffset = uint32(fragOffset)
 }
 
-func ParseSampledHeaderConfig(flowMessage *flowmessage.FlowMessage, sampledHeader *sflow.SampledHeader, config *SFlowMapper) error {
+func ParseSampledHeaderConfig(flowMessage *ProtoProducerMessage, sampledHeader *sflow.SampledHeader, config *SFlowMapper) error {
 	data := (*sampledHeader).HeaderData
 	switch (*sampledHeader).Protocol {
 	case 1: // Ethernet
@@ -234,86 +234,90 @@ func SearchSFlowSamples(samples []interface{}) []ProducerMessage {
 	return SearchSFlowSamples(samples)
 }
 
+func SearchSFlowSampleConfig(flowMessage *ProtoProducerMessage, flowSample interface{}, config *SFlowMapper) {
+	var records []sflow.FlowRecord
+	flowMessage.Type = flowmessage.FlowMessage_SFLOW_5
+
+	switch flowSample := flowSample.(type) {
+	case sflow.FlowSample:
+		records = flowSample.Records
+		flowMessage.SamplingRate = uint64(flowSample.SamplingRate)
+		flowMessage.InIf = flowSample.Input
+		flowMessage.OutIf = flowSample.Output
+	case sflow.ExpandedFlowSample:
+		records = flowSample.Records
+		flowMessage.SamplingRate = uint64(flowSample.SamplingRate)
+		flowMessage.InIf = flowSample.InputIfValue
+		flowMessage.OutIf = flowSample.OutputIfValue
+	}
+
+	ipNh := net.IP{}
+	ipSrc := net.IP{}
+	ipDst := net.IP{}
+	flowMessage.Packets = 1
+	for _, record := range records {
+		switch recordData := record.Data.(type) {
+		case sflow.SampledHeader:
+			flowMessage.Bytes = uint64(recordData.FrameLength)
+			ParseSampledHeaderConfig(flowMessage, &recordData, config)
+		case sflow.SampledIPv4:
+			ipSrc = recordData.Base.SrcIP
+			ipDst = recordData.Base.DstIP
+			flowMessage.SrcAddr = ipSrc
+			flowMessage.DstAddr = ipDst
+			flowMessage.Bytes = uint64(recordData.Base.Length)
+			flowMessage.Proto = recordData.Base.Protocol
+			flowMessage.SrcPort = recordData.Base.SrcPort
+			flowMessage.DstPort = recordData.Base.DstPort
+			flowMessage.IpTos = recordData.Tos
+			flowMessage.Etype = 0x800
+		case sflow.SampledIPv6:
+			ipSrc = recordData.Base.SrcIP
+			ipDst = recordData.Base.DstIP
+			flowMessage.SrcAddr = ipSrc
+			flowMessage.DstAddr = ipDst
+			flowMessage.Bytes = uint64(recordData.Base.Length)
+			flowMessage.Proto = recordData.Base.Protocol
+			flowMessage.SrcPort = recordData.Base.SrcPort
+			flowMessage.DstPort = recordData.Base.DstPort
+			flowMessage.IpTos = recordData.Priority
+			flowMessage.Etype = 0x86dd
+		case sflow.ExtendedRouter:
+			ipNh = recordData.NextHop
+			flowMessage.NextHop = ipNh
+			flowMessage.SrcNet = recordData.SrcMaskLen
+			flowMessage.DstNet = recordData.DstMaskLen
+		case sflow.ExtendedGateway:
+			ipNh = recordData.NextHop
+			flowMessage.BgpNextHop = ipNh
+			flowMessage.BgpCommunities = recordData.Communities
+			flowMessage.AsPath = recordData.ASPath
+			if len(recordData.ASPath) > 0 {
+				flowMessage.DstAs = recordData.ASPath[len(recordData.ASPath)-1]
+				flowMessage.NextHopAs = recordData.ASPath[0]
+			} else {
+				flowMessage.DstAs = recordData.AS
+			}
+			if recordData.SrcAS > 0 {
+				flowMessage.SrcAs = recordData.SrcAS
+			} else {
+				flowMessage.SrcAs = recordData.AS
+			}
+		case sflow.ExtendedSwitch:
+			flowMessage.SrcVlan = recordData.SrcVlan
+			flowMessage.DstVlan = recordData.DstVlan
+		}
+	}
+
+}
+
 func SearchSFlowSamplesConfig(samples []interface{}, config *SFlowMapper) []ProducerMessage {
 	var flowMessageSet []ProducerMessage
 
 	for _, flowSample := range samples {
-		var records []sflow.FlowRecord
-
-		flowMessage := &flowmessage.FlowMessage{}
-		flowMessage.Type = flowmessage.FlowMessage_SFLOW_5
-
-		switch flowSample := flowSample.(type) {
-		case sflow.FlowSample:
-			records = flowSample.Records
-			flowMessage.SamplingRate = uint64(flowSample.SamplingRate)
-			flowMessage.InIf = flowSample.Input
-			flowMessage.OutIf = flowSample.Output
-		case sflow.ExpandedFlowSample:
-			records = flowSample.Records
-			flowMessage.SamplingRate = uint64(flowSample.SamplingRate)
-			flowMessage.InIf = flowSample.InputIfValue
-			flowMessage.OutIf = flowSample.OutputIfValue
-		}
-
-		ipNh := net.IP{}
-		ipSrc := net.IP{}
-		ipDst := net.IP{}
-		flowMessage.Packets = 1
-		for _, record := range records {
-			switch recordData := record.Data.(type) {
-			case sflow.SampledHeader:
-				flowMessage.Bytes = uint64(recordData.FrameLength)
-				ParseSampledHeaderConfig(flowMessage, &recordData, config)
-			case sflow.SampledIPv4:
-				ipSrc = recordData.Base.SrcIP
-				ipDst = recordData.Base.DstIP
-				flowMessage.SrcAddr = ipSrc
-				flowMessage.DstAddr = ipDst
-				flowMessage.Bytes = uint64(recordData.Base.Length)
-				flowMessage.Proto = recordData.Base.Protocol
-				flowMessage.SrcPort = recordData.Base.SrcPort
-				flowMessage.DstPort = recordData.Base.DstPort
-				flowMessage.IpTos = recordData.Tos
-				flowMessage.Etype = 0x800
-			case sflow.SampledIPv6:
-				ipSrc = recordData.Base.SrcIP
-				ipDst = recordData.Base.DstIP
-				flowMessage.SrcAddr = ipSrc
-				flowMessage.DstAddr = ipDst
-				flowMessage.Bytes = uint64(recordData.Base.Length)
-				flowMessage.Proto = recordData.Base.Protocol
-				flowMessage.SrcPort = recordData.Base.SrcPort
-				flowMessage.DstPort = recordData.Base.DstPort
-				flowMessage.IpTos = recordData.Priority
-				flowMessage.Etype = 0x86dd
-			case sflow.ExtendedRouter:
-				ipNh = recordData.NextHop
-				flowMessage.NextHop = ipNh
-				flowMessage.SrcNet = recordData.SrcMaskLen
-				flowMessage.DstNet = recordData.DstMaskLen
-			case sflow.ExtendedGateway:
-				ipNh = recordData.NextHop
-				flowMessage.BgpNextHop = ipNh
-				flowMessage.BgpCommunities = recordData.Communities
-				flowMessage.AsPath = recordData.ASPath
-				if len(recordData.ASPath) > 0 {
-					flowMessage.DstAs = recordData.ASPath[len(recordData.ASPath)-1]
-					flowMessage.NextHopAs = recordData.ASPath[0]
-				} else {
-					flowMessage.DstAs = recordData.AS
-				}
-				if recordData.SrcAS > 0 {
-					flowMessage.SrcAs = recordData.SrcAS
-				} else {
-					flowMessage.SrcAs = recordData.AS
-				}
-			case sflow.ExtendedSwitch:
-				flowMessage.SrcVlan = recordData.SrcVlan
-				flowMessage.DstVlan = recordData.DstVlan
-			}
-		}
-		flowMessageSet = append(flowMessageSet, flowMessage)
+		fmsg := &ProtoProducerMessage{}
+		SearchSFlowSampleConfig(fmsg, flowSample, config)
+		flowMessageSet = append(flowMessageSet, fmsg)
 	}
 	return flowMessageSet
 }

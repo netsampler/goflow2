@@ -19,6 +19,7 @@ type ProducerMessage interface {
 type ProducerInterface interface {
 	Produce(msg interface{}, args *ProduceArgs) ([]ProducerMessage, error)
 	// add commit where the data can be sent to a sync pool
+	// Commit([]ProducerMessage) error
 	Close()
 }
 
@@ -34,6 +35,20 @@ type ProduceArgs struct {
 
 type ProtoProducer struct {
 	cfgMapped *producerConfigMapped
+
+	// temporary
+	customSelector []string
+	selectorTag    string
+}
+
+func enrich(flowMessageSet []ProducerMessage, cb func(msg *ProtoProducerMessage)) {
+	for _, msg := range flowMessageSet {
+		fmsg, ok := msg.(*ProtoProducerMessage)
+		if !ok {
+			continue
+		}
+		cb(fmsg)
+	}
 }
 
 func (p *ProtoProducer) Produce(msg interface{}, args *ProduceArgs) (flowMessageSet []ProducerMessage, err error) {
@@ -41,48 +56,31 @@ func (p *ProtoProducer) Produce(msg interface{}, args *ProduceArgs) (flowMessage
 	case *netflowlegacy.PacketNetFlowV5: //todo: rename PacketNetFlowV5
 		flowMessageSet, err = ProcessMessageNetFlowLegacy(msgConv)
 
-		for _, msg := range flowMessageSet {
-			fmsg, ok := msg.(ProtoProducerMessage)
-			if !ok {
-				continue
-			}
+		enrich(flowMessageSet, func(fmsg *ProtoProducerMessage) {
 			fmsg.SamplerAddress, _ = args.SamplerAddress.MarshalBinary()
-		}
+		})
 	case *netflow.NFv9Packet:
 		flowMessageSet, err = ProcessMessageNetFlowV9Config(msgConv, args.SamplingRateSystem, p.cfgMapped)
 
-		for _, msg := range flowMessageSet {
-			fmsg, ok := msg.(ProtoProducerMessage)
-			if !ok {
-				continue
-			}
+		enrich(flowMessageSet, func(fmsg *ProtoProducerMessage) {
 			fmsg.TimeReceived = uint64(args.TimeReceived.Unix())
 			fmsg.SamplerAddress, _ = args.SamplerAddress.MarshalBinary()
-		}
+		})
 	case *netflow.IPFIXPacket:
 		flowMessageSet, err = ProcessMessageIPFIXConfig(msgConv, args.SamplingRateSystem, p.cfgMapped)
 
-		for _, msg := range flowMessageSet {
-			fmsg, ok := msg.(ProtoProducerMessage)
-			if !ok {
-				continue
-			}
+		enrich(flowMessageSet, func(fmsg *ProtoProducerMessage) {
 			fmsg.TimeReceived = uint64(args.TimeReceived.Unix())
 			fmsg.SamplerAddress, _ = args.SamplerAddress.MarshalBinary()
-		}
+		})
 	case *sflow.Packet:
 		flowMessageSet, err = ProcessMessageSFlowConfig(msgConv, p.cfgMapped)
 
-		for _, msg := range flowMessageSet {
-			fmsg, ok := msg.(ProtoProducerMessage)
-			if !ok {
-				continue
-			}
+		enrich(flowMessageSet, func(fmsg *ProtoProducerMessage) {
 			fmsg.TimeReceived = uint64(args.TimeReceived.Unix())
 			fmsg.TimeFlowStart = uint64(args.TimeReceived.Unix())
 			fmsg.TimeFlowEnd = uint64(args.TimeReceived.Unix())
-		}
-
+		})
 	default:
 		return flowMessageSet, fmt.Errorf("flow not recognized")
 	}

@@ -5,7 +5,6 @@ import (
 	"reflect"
 
 	"github.com/netsampler/goflow2/decoders/netflow"
-	flowmessage "github.com/netsampler/goflow2/pb"
 )
 
 type EndianType string
@@ -56,7 +55,7 @@ func IsInt(k reflect.Kind) bool {
 	return k == reflect.Int8 || k == reflect.Int16 || k == reflect.Int32 || k == reflect.Int64
 }
 
-func MapCustomNetFlow(flowMessage *flowmessage.FlowMessage, df netflow.DataField, mapper *NetFlowMapper) {
+func MapCustomNetFlow(flowMessage *ProtoProducerMessage, df netflow.DataField, mapper *NetFlowMapper) {
 	if mapper == nil {
 		return
 	}
@@ -67,7 +66,7 @@ func MapCustomNetFlow(flowMessage *flowmessage.FlowMessage, df netflow.DataField
 	}
 }
 
-func MapCustom(flowMessage *flowmessage.FlowMessage, v []byte, destination string, endianness EndianType) {
+func MapCustom(flowMessage *ProtoProducerMessage, v []byte, destination string, endianness EndianType) {
 	vfm := reflect.ValueOf(flowMessage)
 	vfm = reflect.Indirect(vfm)
 
