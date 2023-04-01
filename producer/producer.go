@@ -10,6 +10,12 @@ import (
 	flowmessage "github.com/netsampler/goflow2/pb"
 )
 
+// Interface of the messages
+// Passed to the Formatter
+// Can be protobuf
+type ProducerMessage interface {
+}
+
 type ProducerInterface interface {
 	Produce(msg interface{}, args *ProduceArgs) ([]*flowmessage.FlowMessage, error)
 	Close()
@@ -49,3 +55,17 @@ func CreateProducerWithConfig(cfg *ProducerConfig) ProducerInterface {
 		cfgMapped: mapConfig(cfg),
 	}
 }
+
+// Producer that keeps the same format
+// as the original flow samples.
+// This can be used for debugging (eg: getting NetFlow Option Templates)
+type RawProducer struct {
+}
+
+func (p *RawProducer) Produce(msg interface{}, args *ProduceArgs) ([]*flowmessage.FlowMessage, error) {
+	// should return msg wrapped
+	// []*interface{msg,}
+	return nil, nil
+}
+
+func (p *RawProducer) Close() {}

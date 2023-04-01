@@ -164,11 +164,9 @@ func main() {
 		if listenAddrUrl.Scheme == "sflow" {
 			p := utils.NewSFlowPipe(cfgPipe)
 			decodeFunc = metrics.PromDecoderWrapper(p.DecodeFlow, listenAddrUrl.Scheme)
-			//err = sSFlow.FlowRoutine(*Workers, hostname, int(port), *ReusePort)
 		} else if listenAddrUrl.Scheme == "netflow" {
 			p := utils.NewNetFlowPipe(cfgPipe)
 			decodeFunc = metrics.PromDecoderWrapper(p.DecodeFlow, listenAddrUrl.Scheme)
-			//err = sNF.FlowRoutine(*Workers, hostname, int(port), *ReusePort)
 		} else {
 			l.Errorf("scheme %s does not exist", listenAddrUrl.Scheme)
 			return
