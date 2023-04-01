@@ -28,16 +28,16 @@ var protoMessagePool = sync.Pool{
 
 func (m *ProtoProducerMessage) String() string {
 	m.customSelector = []string{"Type", "SrcAddr"}
-	return FormatMessageReflectText(m, "")
+	return m.FormatMessageReflectText(m, "")
 }
 
 func (m *ProtoProducerMessage) Key() []byte {
 	m.customSelector = []string{"Type", "SrcAddr"}
-	return []byte(FormatMessageReflectText(m, ""))
+	return []byte(m.FormatMessageReflectText(m, ""))
 }
 
 func (m *ProtoProducerMessage) MarshalJSON() ([]byte, error) {
-	return []byte(FormatMessageReflectJSON(m, "")), nil
+	return []byte(m.FormatMessageReflectJSON(m, "")), nil
 }
 
 // -----
@@ -84,20 +84,20 @@ var (
 	}
 
 	TextFields = map[string]int{
-		"Type":           FORMAT_TYPE_STRING_FUNC,
-		"SamplerAddress": FORMAT_TYPE_IP,
-		"SrcAddr":        FORMAT_TYPE_IP,
-		"DstAddr":        FORMAT_TYPE_IP,
-		"SrcMac":         FORMAT_TYPE_MAC,
-		"DstMac":         FORMAT_TYPE_MAC,
-		"NextHop":        FORMAT_TYPE_IP,
-		"MPLSLabelIP":    FORMAT_TYPE_IP,
+		"type":            FORMAT_TYPE_STRING_FUNC,
+		"sampler_address": FORMAT_TYPE_IP,
+		"src_addr":        FORMAT_TYPE_IP,
+		"dst_addr":        FORMAT_TYPE_IP,
+		"src_mac":         FORMAT_TYPE_MAC,
+		"dst_mac":         FORMAT_TYPE_MAC,
+		"next_hop":        FORMAT_TYPE_IP,
+		"mpls_label_ip":   FORMAT_TYPE_IP,
 	}
 
 	RenderExtras = map[string]RenderExtraFunction{
-		"EtypeName": RenderExtraFunctionEtypeName,
-		"ProtoName": RenderExtraFunctionProtoName,
-		"IcmpName":  RenderExtraFunctionIcmpName,
+		"etype_name": RenderExtraFunctionEtypeName,
+		"proto_name": RenderExtraFunctionProtoName,
+		"icmp_name":  RenderExtraFunctionIcmpName,
 	}
 )
 
@@ -155,12 +155,12 @@ func RenderIP(addr []byte) string {
 	return net.IP(addr).String()
 }
 
-func FormatMessageReflectText(msg interface{}, ext string) string {
-	return FormatMessageReflectCustom(msg, ext, "", " ", "=", false)
+func (m *ProtoProducerMessage) FormatMessageReflectText(msg interface{}, ext string) string {
+	return m.FormatMessageReflectCustom(msg, ext, "", " ", "=", false)
 }
 
-func FormatMessageReflectJSON(msg interface{}, ext string) string {
-	return fmt.Sprintf("{%s}", FormatMessageReflectCustom(msg, ext, "\"", ",", ":", true))
+func (m *ProtoProducerMessage) FormatMessageReflectJSON(msg interface{}, ext string) string {
+	return fmt.Sprintf("{%s}", m.FormatMessageReflectCustom(msg, ext, "\"", ",", ":", true))
 }
 
 func ExtractTag(name, original string, tag reflect.StructTag) string {
@@ -172,59 +172,20 @@ func ExtractTag(name, original string, tag reflect.StructTag) string {
 	return before
 }
 
-func FormatMessageReflectCustom(msg interface{}, ext, quotes, sep, sign string, null bool) string {
+func (m *ProtoProducerMessage) FormatMessageReflectCustom(msg interface{}, ext, quotes, sep, sign string, null bool) string {
 	//customSelector := selector
-	var customSelector []string
-	var selectorTag string
-
-	fmsg, ok := msg.(*ProtoProducerMessage)
-	if ok {
-		customSelector = fmsg.customSelector
-		selectorTag = fmsg.selectorTag
-	}
-	//msg, _ := (*flowmessage.FlowMessage)(fmsg)
 
 	reMap := make(map[string]string)
 
 	vfm := reflect.ValueOf(msg)
 	vfm = reflect.Indirect(vfm)
-	vft := vfm.Type()
-
-	if len(customSelector) == 0 || selectorTag != "" {
-		/*
-			// we would need proto v2
-			msgR := msg.ProtoReflect()
-			customSelector = make([]string, msgR.Fields().Len())
-			for i := 0; i<len(customSelector);i++ {
-				customSelector[i] = msgR.Fields().Get(i).TextName()
-			}*/
-
-		customSelectorTmp := make([]string, vft.NumField())
-		for i := 0; i < len(customSelectorTmp); i++ {
-			field := vft.Field(i)
-			if !field.IsExported() {
-				continue
-			}
-			fieldName := field.Name
-			if selectorTag != "" {
-				fieldName = ExtractTag(selectorTag, field.Name, field.Tag)
-				reMap[fieldName] = field.Name
-			}
-			customSelectorTmp[i] = fieldName
-
-		}
-
-		if len(customSelector) == 0 {
-			customSelector = customSelectorTmp
-		}
-	}
-
-	fstr := make([]string, len(customSelector))
 
 	var i int
+	fstr := make([]string, len(m.formatter.fields))
 
-	for _, s := range customSelector {
-		fieldName := s
+	for _, s := range m.formatter.fields {
+		fieldName := m.formatter.reMap[s]
+
 		if fieldNameMap, ok := reMap[fieldName]; ok {
 			fieldName = fieldNameMap
 		}
@@ -232,7 +193,7 @@ func FormatMessageReflectCustom(msg interface{}, ext, quotes, sep, sign string, 
 		// todo: replace s by json mapping of protobuf
 		if fieldValue.IsValid() {
 
-			if fieldType, ok := TextFields[fieldName]; ok {
+			if fieldType, ok := TextFields[s]; ok {
 				switch fieldType {
 				case FORMAT_TYPE_STRING_FUNC:
 					strMethod := fieldValue.MethodByName("String").Call([]reflect.Value{})
@@ -257,7 +218,7 @@ func FormatMessageReflectCustom(msg interface{}, ext, quotes, sep, sign string, 
 
 					}
 				}
-			} else if renderer, ok := RenderExtras[fieldName]; ok {
+			} else if renderer, ok := RenderExtras[s]; ok {
 				fstr[i] = fmt.Sprintf("%s%s%s%s%q", quotes, s, quotes, sign, renderer(msg))
 			} else {
 				// handle specific types here

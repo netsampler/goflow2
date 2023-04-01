@@ -26,7 +26,7 @@ formatter:
     - custom_integer_1
   key:
     - sampler_address
-  render: # only for JSON
+  render: # only for JSON/text and specific additional fields
     - name: src_mac
       render: mac
     - name: dst_mac
@@ -37,7 +37,7 @@ formatter:
     - name: custom_integer_1
       index: 555
       type: uint32
-# Mappings
+# Decoder mappings
 ipfix:
   mapping:
     - field: 7 # IPFIX_FIELD_sourceTransportPort

@@ -152,15 +152,15 @@ type SFlowProducerConfig struct {
 }
 
 type ProtobufFormatterConfig struct {
-	Name string
+	Name  string
 	Index int
-	Type string
+	Type  string
 }
 
 type FormatterConfig struct {
-	Fields []string
-	Key []string
-	Rename map[string]string
+	Fields   []string
+	Key      []string
+	Rename   map[string]string
 	Protobuf []ProtobufFormatterConfig
 }
 
@@ -181,7 +181,8 @@ type DataMap struct {
 
 type FormatterConfigMapper struct {
 	fields []string
-	proto  map[string]int //
+	reMap  map[string]string
+	proto  map[string]int
 }
 
 type NetFlowMapper struct {
@@ -251,10 +252,9 @@ func mapFormat(cfg *ProducerConfig) (*FormatterConfigMapper, error) {
 	msgT := reflect.TypeOf(msg.FlowMessage)
 	reMap := make(map[string]string)
 	var fields []string
-	
+
 	for i := 0; i < msgT.NumField(); i++ {
 		field := msgT.Field(i)
-		fmt.Println(field)
 		if !field.IsExported() {
 			continue
 		}
@@ -267,18 +267,20 @@ func mapFormat(cfg *ProducerConfig) (*FormatterConfigMapper, error) {
 		//customSelectorTmp[i] = fieldName
 
 	}
-
+	formatterMapped.reMap = reMap
 
 	fmt.Println(reMap)
 	fmt.Println(fields)
 
 	pbMap := make(map[string]int)
+	pbTypes := make(map[string]string)
 
 	if cfg != nil {
 		cfgFormatter := cfg.Formatter
 		for _, pbField := range cfgFormatter.Protobuf {
-			reMap[pbField.Name] = "PROTOBUF"
+			reMap[pbField.Name] = "" // special dynamic protobuf
 			pbMap[pbField.Name] = pbField.Index
+			pbTypes[pbField.Name] = pbField.Type // todo: check if type is valid
 		}
 		if len(cfgFormatter.Fields) == 0 {
 			formatterMapped.fields = fields
@@ -293,7 +295,6 @@ func mapFormat(cfg *ProducerConfig) (*FormatterConfigMapper, error) {
 
 	}
 	fmt.Println(pbMap)
-
 
 	return formatterMapped, nil
 }
