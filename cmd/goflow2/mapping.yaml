@@ -1,3 +1,6 @@
+formatter:
+  fields: []
+  hash: []
 ipfix:
   mapping:
     - field: 7 # IPFIX_FIELD_sourceTransportPort

@@ -4,41 +4,28 @@ import (
 	"context"
 	"fmt"
 	"github.com/netsampler/goflow2/format"
-	"github.com/netsampler/goflow2/format/common"
 )
 
 type TextDriver struct {
 }
 
 func (d *TextDriver) Prepare() error {
-	common.HashFlag()
-	common.SelectorFlag()
 	return nil
 }
 
 func (d *TextDriver) Init(context.Context) error {
-	err := common.ManualHashInit()
-	if err != nil {
-		return err
-	}
-	return common.ManualSelectorInit()
+	return nil
 }
 
 func (d *TextDriver) Format(data interface{}) ([]byte, []byte, error) {
-	if dataIf, ok := data.(interface{ String() string }); ok {
-		return []byte("sth"), []byte(dataIf.String()), nil
+	var key []byte
+	if dataIf, ok := data.(interface{ Key() []byte }); ok {
+		key = dataIf.Key()
 	}
-	return nil, nil, fmt.Errorf("message is not serializable in text")
-	/*
-	   msg, ok := data.(proto.Message)
-
-	   	if !ok {
-	   		return nil, nil, fmt.Errorf("message is not protobuf")
-	   	}
-
-	   key := common.HashProtoLocal(msg)
-	   return []byte(key), []byte(common.FormatMessageReflectText(msg, "")), nil
-	*/
+	if dataIf, ok := data.(interface{ String() string }); ok {
+		return key, []byte(dataIf.String()), nil
+	}
+	return nil, nil, fmt.Errorf("message is not serializable as string")
 }
 
 func init() {

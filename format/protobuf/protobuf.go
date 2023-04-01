@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"github.com/golang/protobuf/proto"
 	"github.com/netsampler/goflow2/format"
-	"github.com/netsampler/goflow2/format/common"
 )
 
 type ProtobufDriver struct {
@@ -14,13 +13,12 @@ type ProtobufDriver struct {
 }
 
 func (d *ProtobufDriver) Prepare() error {
-	common.HashFlag()
 	flag.BoolVar(&d.fixedLen, "format.protobuf.fixedlen", false, "Prefix the protobuf with message length")
 	return nil
 }
 
 func (d *ProtobufDriver) Init(context.Context) error {
-	return common.ManualHashInit()
+	return nil
 }
 
 func (d *ProtobufDriver) Format(data interface{}) ([]byte, []byte, error) {
@@ -28,15 +26,18 @@ func (d *ProtobufDriver) Format(data interface{}) ([]byte, []byte, error) {
 	if !ok {
 		return nil, nil, fmt.Errorf("message is not protobuf")
 	}
-	key := common.HashProtoLocal(msg)
+	var key []byte
+	if dataIf, ok := data.(interface{ Key() []byte }); ok {
+		key = dataIf.Key()
+	}
 
 	if !d.fixedLen {
 		b, err := proto.Marshal(msg)
-		return []byte(key), b, err
+		return key, b, err
 	} else {
 		buf := proto.NewBuffer([]byte{})
 		err := buf.EncodeMessage(msg)
-		return []byte(key), buf.Bytes(), err
+		return key, buf.Bytes(), err
 	}
 }
 

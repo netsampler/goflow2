@@ -151,7 +151,12 @@ type SFlowProducerConfig struct {
 	Mapping []SFlowMapField `json:"mapping"`
 }
 
+type FormatterConfig struct {
+}
+
 type ProducerConfig struct {
+	Formatter FormatterConfig `json:"formatter"`
+
 	IPFIX     IPFIXProducerConfig     `json:"ipfix"`
 	NetFlowV9 NetFlowV9ProducerConfig `json:"netflowv9"`
 	SFlow     SFlowProducerConfig     `json:"sflow"` // also used for IPFIX data frames
@@ -162,6 +167,11 @@ type ProducerConfig struct {
 type DataMap struct {
 	Destination string
 	Endian      EndianType
+}
+
+type FormatterConfigMapper struct {
+	fields []string
+	proto  map[string]int //
 }
 
 type NetFlowMapper struct {
@@ -216,6 +226,8 @@ func MapFieldsSFlow(fields []SFlowMapField) *SFlowMapper {
 }
 
 type producerConfigMapped struct {
+	Formatter *FormatterConfigMapper
+
 	IPFIX     *NetFlowMapper `json:"ipfix"`
 	NetFlowV9 *NetFlowMapper `json:"netflowv9"`
 	SFlow     *SFlowMapper   `json:"sflow"`
