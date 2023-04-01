@@ -62,7 +62,7 @@ func ProcessMessageNetFlowLegacy(packet *netflowlegacy.PacketNetFlowV5) ([]Produ
 
 	flowMessageSet := SearchNetFlowLegacyRecords(baseTime, uptime, packet.Records)
 	for _, msg := range flowMessageSet {
-		fmsg, ok := msg.(*flowmessage.FlowMessage)
+		fmsg, ok := msg.(*ProtoProducerMessage)
 		if !ok {
 			continue
 		}

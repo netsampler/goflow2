@@ -679,7 +679,7 @@ func ProcessMessageNetFlowV9Config(packet *netflow.NFv9Packet, samplingRateSys S
 		}
 	}
 	for _, msg := range flowMessageSet {
-		fmsg, ok := msg.(*flowmessage.FlowMessage)
+		fmsg, ok := msg.(*ProtoProducerMessage)
 		if !ok {
 			continue
 		}
