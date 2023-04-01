@@ -335,7 +335,7 @@ func ProcessMessageSFlowConfig(packet *sflow.Packet, config *producerConfigMappe
 	flowSamples := GetSFlowFlowSamples(packet)
 	flowMessageSet = SearchSFlowSamplesConfig(flowSamples, cfg)
 	for _, msg := range flowMessageSet {
-		fmsg, ok := msg.(*flowmessage.FlowMessage)
+		fmsg, ok := msg.(*ProtoProducerMessage)
 		if !ok {
 			continue
 		}
