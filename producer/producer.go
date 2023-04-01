@@ -91,7 +91,9 @@ func (p *ProtoProducer) Produce(msg interface{}, args *ProduceArgs) (flowMessage
 }
 
 func (p *ProtoProducer) Commit(flowMessageSet []ProducerMessage) {
-	// send the messages back to a sync pool
+	for _, fmsg := range flowMessageSet {
+		protoMessagePool.Put(fmsg)
+	}
 }
 
 func (p *ProtoProducer) Close() {}
@@ -114,10 +116,6 @@ func (p *RawProducer) Produce(msg interface{}, args *ProduceArgs) ([]ProducerMes
 	return []ProducerMessage{msg}, nil
 }
 
-func (p *RawProducer) Commit(flowMessageSet []ProducerMessage) {
-	for _, fmsg := range flowMessageSet {
-		protoMessagePool.Put(fmsg)
-	}
-}
+func (p *RawProducer) Commit(flowMessageSet []ProducerMessage) {}
 
 func (p *RawProducer) Close() {}
