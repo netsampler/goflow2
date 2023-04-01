@@ -10,7 +10,6 @@ import (
 	"github.com/netsampler/goflow2/decoders/sflow"
 	"github.com/netsampler/goflow2/decoders/utils"
 	"github.com/netsampler/goflow2/format"
-	flowmessage "github.com/netsampler/goflow2/pb"
 	"github.com/netsampler/goflow2/producer"
 	"github.com/netsampler/goflow2/transport"
 )
@@ -95,8 +94,6 @@ func (p *SFlowPipe) DecodeFlow(msg interface{}) error {
 	buf := bytes.NewBuffer(pkt.Payload)
 	//key := pkt.Src.String()
 
-	ts := uint64(pkt.Received.Unix())
-
 	var packet sflow.Packet
 	if err := sflow.DecodeMessageVersion(buf, &packet); err != nil {
 		return err // wrap with decode
@@ -113,18 +110,6 @@ func (p *SFlowPipe) DecodeFlow(msg interface{}) error {
 	if err != nil {
 		return err // wrap with produce
 	}
-
-	// todo: improve and set into producer
-	for _, msg := range flowMessageSet {
-		fmsg, ok := msg.(*flowmessage.FlowMessage)
-		if !ok {
-			continue
-		}
-		fmsg.TimeReceived = ts
-		fmsg.TimeFlowStart = ts
-		fmsg.TimeFlowEnd = ts
-	}
-
 	return p.formatSend(flowMessageSet)
 }
 
@@ -147,8 +132,6 @@ func (p *NetFlowPipe) DecodeFlow(msg interface{}) error {
 	buf := bytes.NewBuffer(pkt.Payload)
 
 	key := pkt.Src.String()
-	addr := pkt.Src.Addr().As16()
-	samplerAddress := addr[:]
 
 	p.templateslock.RLock()
 	templates, ok := p.templates[key]
@@ -168,8 +151,6 @@ func (p *NetFlowPipe) DecodeFlow(msg interface{}) error {
 		p.sampling[key] = sampling
 		p.samplinglock.Unlock()
 	}
-
-	ts := uint64(pkt.Received.Unix())
 
 	var packetV5 netflowlegacy.PacketNetFlowV5
 	var packetNFv9 netflow.NFv9Packet
@@ -205,6 +186,9 @@ func (p *NetFlowPipe) DecodeFlow(msg interface{}) error {
 
 		Src: pkt.Src,
 		Dst: pkt.Dst,
+
+		TimeReceived:   pkt.Received,
+		SamplerAddress: pkt.Src.Addr(),
 	}
 
 	if p.producer == nil {
@@ -213,39 +197,14 @@ func (p *NetFlowPipe) DecodeFlow(msg interface{}) error {
 
 	switch version {
 	case 5:
-		flowMessageSet, err = p.producer.Produce(packetV5, &args)
-		if err != nil {
-			return err
-		}
-
+		flowMessageSet, err = p.producer.Produce(&packetV5, &args)
 	case 9:
 		flowMessageSet, err = p.producer.Produce(&packetNFv9, &args)
-		if err != nil {
-			return err
-		}
-
-		for _, msg := range flowMessageSet {
-			fmsg, ok := msg.(*flowmessage.FlowMessage)
-			if !ok {
-				continue
-			}
-			fmsg.TimeReceived = ts
-			fmsg.SamplerAddress = samplerAddress
-		}
 	case 10:
 		flowMessageSet, err = p.producer.Produce(&packetIPFIX, &args)
-		if err != nil {
-			return err
-		}
-
-		for _, msg := range flowMessageSet {
-			fmsg, ok := msg.(*flowmessage.FlowMessage)
-			if !ok {
-				continue
-			}
-			fmsg.TimeReceived = ts
-			fmsg.SamplerAddress = samplerAddress
-		}
+	}
+	if err != nil {
+		return err
 	}
 
 	return p.formatSend(flowMessageSet)

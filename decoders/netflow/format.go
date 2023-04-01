@@ -1,7 +1,7 @@
 package netflow
 
 import (
-//"fmt"
+// "fmt"
 )
 
 func (p *IPFIXPacket) MarshalJSON() ([]byte, error) {

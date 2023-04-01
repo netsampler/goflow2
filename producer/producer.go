@@ -3,6 +3,7 @@ package producer
 import (
 	"fmt"
 	"net/netip"
+	"time"
 
 	"github.com/netsampler/goflow2/decoders/netflow"
 	"github.com/netsampler/goflow2/decoders/netflowlegacy"
@@ -25,27 +26,68 @@ type ProduceArgs struct {
 	//MessageFactory     interface{} // for use with sync pool?
 	SamplingRateSystem SamplingRateSystem
 
-	Src netip.AddrPort
-	Dst netip.AddrPort
+	Src            netip.AddrPort
+	Dst            netip.AddrPort
+	SamplerAddress netip.Addr
+	TimeReceived   time.Time
 }
 
 type ProtoProducer struct {
 	cfgMapped *producerConfigMapped
 }
 
-func (p *ProtoProducer) Produce(msg interface{}, args *ProduceArgs) ([]ProducerMessage, error) {
+func (p *ProtoProducer) Produce(msg interface{}, args *ProduceArgs) (flowMessageSet []ProducerMessage, err error) {
 	switch msgConv := msg.(type) {
 	case *netflowlegacy.PacketNetFlowV5: //todo: rename PacketNetFlowV5
-		return ProcessMessageNetFlowLegacy(msgConv)
+		flowMessageSet, err = ProcessMessageNetFlowLegacy(msgConv)
+
+		for _, msg := range flowMessageSet {
+			fmsg, ok := msg.(ProtoProducerMessage)
+			if !ok {
+				continue
+			}
+			fmsg.SamplerAddress, _ = args.SamplerAddress.MarshalBinary()
+		}
 	case *netflow.NFv9Packet:
-		return ProcessMessageNetFlowV9Config(msgConv, args.SamplingRateSystem, p.cfgMapped)
+		flowMessageSet, err = ProcessMessageNetFlowV9Config(msgConv, args.SamplingRateSystem, p.cfgMapped)
+
+		for _, msg := range flowMessageSet {
+			fmsg, ok := msg.(ProtoProducerMessage)
+			if !ok {
+				continue
+			}
+			fmsg.TimeReceived = uint64(args.TimeReceived.Unix())
+			fmsg.SamplerAddress, _ = args.SamplerAddress.MarshalBinary()
+		}
 	case *netflow.IPFIXPacket:
-		return ProcessMessageIPFIXConfig(msgConv, args.SamplingRateSystem, p.cfgMapped)
+		flowMessageSet, err = ProcessMessageIPFIXConfig(msgConv, args.SamplingRateSystem, p.cfgMapped)
+
+		for _, msg := range flowMessageSet {
+			fmsg, ok := msg.(ProtoProducerMessage)
+			if !ok {
+				continue
+			}
+			fmsg.TimeReceived = uint64(args.TimeReceived.Unix())
+			fmsg.SamplerAddress, _ = args.SamplerAddress.MarshalBinary()
+		}
 	case *sflow.Packet:
-		return ProcessMessageSFlowConfig(msgConv, p.cfgMapped)
+		flowMessageSet, err = ProcessMessageSFlowConfig(msgConv, p.cfgMapped)
+
+		for _, msg := range flowMessageSet {
+			fmsg, ok := msg.(ProtoProducerMessage)
+			if !ok {
+				continue
+			}
+			fmsg.TimeReceived = uint64(args.TimeReceived.Unix())
+			fmsg.TimeFlowStart = uint64(args.TimeReceived.Unix())
+			fmsg.TimeFlowEnd = uint64(args.TimeReceived.Unix())
+		}
+
 	default:
-		return nil, fmt.Errorf("flow not recognized")
+		return flowMessageSet, fmt.Errorf("flow not recognized")
 	}
+
+	return flowMessageSet, err
 }
 
 func (p *ProtoProducer) Close() {}
