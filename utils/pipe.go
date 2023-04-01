@@ -108,7 +108,8 @@ func (p *SFlowPipe) DecodeFlow(msg interface{}) error {
 		Src: pkt.Src,
 		Dst: pkt.Dst,
 
-		TimeReceived: pkt.Received,
+		TimeReceived:   pkt.Received,
+		SamplerAddress: pkt.Src.Addr(),
 	}
 	if p.producer == nil {
 		return nil
