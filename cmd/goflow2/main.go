@@ -156,7 +156,7 @@ func main() {
 		cfgPipe := &utils.PipeConfig{
 			Format:           formatter,
 			Transport:        transporter,
-			Producer:         metrics.PromProducerDefaultWrapper(cfgProducer),
+			Producer:         metrics.CreatePromProducerDefaultWrapper(cfgProducer),
 			NetFlowTemplater: metrics.NewDefaultPromTemplateSystem,
 		}
 

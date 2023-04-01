@@ -16,6 +16,8 @@ netflowv9:
       destination: CustomInteger1
     - field: 11
       destination: CustomInteger2
+      pb: 555
+      type: uint32
     - field: 34 # samplingInterval
       destination: SamplingRate
       endian: little

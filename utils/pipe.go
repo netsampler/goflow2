@@ -44,6 +44,7 @@ func (p *flowpipe) formatSend(flowMessageSet []*flowmessage.FlowMessage) error {
 					return err
 				}
 			}
+			// send to pool for reuse
 		}
 	}
 	return nil
@@ -82,6 +83,9 @@ func NewSFlowPipe(cfg *PipeConfig) *SFlowPipe {
 	return p
 }
 
+func (p *SFlowPipe) Close() {
+}
+
 func (p *SFlowPipe) DecodeFlow(msg interface{}) error {
 	pkt, ok := msg.(*Message)
 	if !ok {
@@ -97,14 +101,14 @@ func (p *SFlowPipe) DecodeFlow(msg interface{}) error {
 		return err // wrap with decode
 	}
 
-	args := producer.ProcessArgs{
+	args := producer.ProduceArgs{
 		Src: pkt.Src,
 		Dst: pkt.Dst,
 	}
 	if p.producer == nil {
 		return nil
 	}
-	flowMessageSet, err := p.producer(&packet, &args)
+	flowMessageSet, err := p.producer.Produce(&packet, &args)
 	if err != nil {
 		return err // wrap with produce
 	}
@@ -190,7 +194,7 @@ func (p *NetFlowPipe) DecodeFlow(msg interface{}) error {
 	var flowMessageSet []*flowmessage.FlowMessage
 	var err error
 
-	args := producer.ProcessArgs{
+	args := producer.ProduceArgs{
 		SamplingRateSystem: sampling,
 
 		Src: pkt.Src,
@@ -203,13 +207,13 @@ func (p *NetFlowPipe) DecodeFlow(msg interface{}) error {
 
 	switch version {
 	case 5:
-		flowMessageSet, err = p.producer(packetV5, &args)
+		flowMessageSet, err = p.producer.Produce(packetV5, &args)
 		if err != nil {
 			return err
 		}
 
 	case 9:
-		flowMessageSet, err = p.producer(&packetNFv9, &args)
+		flowMessageSet, err = p.producer.Produce(&packetNFv9, &args)
 		if err != nil {
 			return err
 		}
@@ -219,7 +223,7 @@ func (p *NetFlowPipe) DecodeFlow(msg interface{}) error {
 			fmsg.SamplerAddress = samplerAddress
 		}
 	case 10:
-		flowMessageSet, err = p.producer(&packetIPFIX, &args)
+		flowMessageSet, err = p.producer.Produce(&packetIPFIX, &args)
 		if err != nil {
 			return err
 		}
@@ -231,4 +235,7 @@ func (p *NetFlowPipe) DecodeFlow(msg interface{}) error {
 	}
 
 	return p.formatSend(flowMessageSet)
+}
+
+func (p *NetFlowPipe) Close() {
 }
