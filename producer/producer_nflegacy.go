@@ -47,7 +47,8 @@ func ConvertNetFlowLegacyRecord(flowMessage *ProtoProducerMessage, baseTime uint
 func SearchNetFlowLegacyRecords(baseTime uint32, uptime uint32, dataRecords []netflowlegacy.RecordsNetFlowV5) []ProducerMessage {
 	var flowMessageSet []ProducerMessage
 	for _, record := range dataRecords {
-		fmsg := &ProtoProducerMessage{}
+		fmsg := protoMessagePool.Get().(*ProtoProducerMessage)
+		fmsg.Reset()
 		ConvertNetFlowLegacyRecord(fmsg, baseTime, uptime, record)
 		flowMessageSet = append(flowMessageSet, fmsg)
 	}

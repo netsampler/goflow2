@@ -524,7 +524,8 @@ func ConvertNetFlowDataSet(flowMessage *ProtoProducerMessage, version uint16, ba
 func SearchNetFlowDataSetsRecords(version uint16, baseTime uint32, uptime uint32, dataRecords []netflow.DataRecord, mapperNetFlow *NetFlowMapper, mapperSFlow *SFlowMapper) ([]ProducerMessage, error) {
 	var flowMessageSet []ProducerMessage
 	for _, record := range dataRecords {
-		fmsg := &ProtoProducerMessage{}
+		fmsg := protoMessagePool.Get().(*ProtoProducerMessage)
+		fmsg.Reset()
 		if err := ConvertNetFlowDataSet(fmsg, version, baseTime, uptime, record.Values, mapperNetFlow, mapperSFlow); err != nil {
 			return flowMessageSet, err
 		}

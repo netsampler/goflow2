@@ -6,6 +6,7 @@ import (
 	"net"
 	"reflect"
 	"strings"
+	"sync"
 
 	flowmessage "github.com/netsampler/goflow2/pb"
 )
@@ -15,6 +16,12 @@ type ProtoProducerMessage struct {
 
 	customSelector []string
 	selectorTag    string
+}
+
+var protoMessagePool = sync.Pool{
+	New: func() any {
+		return &ProtoProducerMessage{}
+	},
 }
 
 func (m *ProtoProducerMessage) String() string {

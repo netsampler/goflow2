@@ -315,7 +315,8 @@ func SearchSFlowSamplesConfig(samples []interface{}, config *SFlowMapper) []Prod
 	var flowMessageSet []ProducerMessage
 
 	for _, flowSample := range samples {
-		fmsg := &ProtoProducerMessage{}
+		fmsg := protoMessagePool.Get().(*ProtoProducerMessage)
+		fmsg.Reset()
 		SearchSFlowSampleConfig(fmsg, flowSample, config)
 		flowMessageSet = append(flowMessageSet, fmsg)
 	}
