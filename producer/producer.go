@@ -35,10 +35,6 @@ type ProduceArgs struct {
 
 type ProtoProducer struct {
 	cfgMapped *producerConfigMapped
-
-	// temporary
-	customSelector []string
-	selectorTag    string
 }
 
 func (p *ProtoProducer) enrich(flowMessageSet []ProducerMessage, cb func(msg *ProtoProducerMessage)) {
@@ -52,34 +48,36 @@ func (p *ProtoProducer) enrich(flowMessageSet []ProducerMessage, cb func(msg *Pr
 }
 
 func (p *ProtoProducer) Produce(msg interface{}, args *ProduceArgs) (flowMessageSet []ProducerMessage, err error) {
+	tr := uint64(args.TimeReceived.Unix())
+	sa, _ := args.SamplerAddress.MarshalBinary()
 	switch msgConv := msg.(type) {
 	case *netflowlegacy.PacketNetFlowV5: //todo: rename PacketNetFlowV5
 		flowMessageSet, err = ProcessMessageNetFlowLegacy(msgConv)
 
 		p.enrich(flowMessageSet, func(fmsg *ProtoProducerMessage) {
-			fmsg.SamplerAddress, _ = args.SamplerAddress.MarshalBinary()
+			fmsg.SamplerAddress = sa
 		})
 	case *netflow.NFv9Packet:
 		flowMessageSet, err = ProcessMessageNetFlowV9Config(msgConv, args.SamplingRateSystem, p.cfgMapped)
 
 		p.enrich(flowMessageSet, func(fmsg *ProtoProducerMessage) {
-			fmsg.TimeReceived = uint64(args.TimeReceived.Unix())
-			fmsg.SamplerAddress, _ = args.SamplerAddress.MarshalBinary()
+			fmsg.TimeReceived = tr
+			fmsg.SamplerAddress = sa
 		})
 	case *netflow.IPFIXPacket:
 		flowMessageSet, err = ProcessMessageIPFIXConfig(msgConv, args.SamplingRateSystem, p.cfgMapped)
 
 		p.enrich(flowMessageSet, func(fmsg *ProtoProducerMessage) {
-			fmsg.TimeReceived = uint64(args.TimeReceived.Unix())
-			fmsg.SamplerAddress, _ = args.SamplerAddress.MarshalBinary()
+			fmsg.TimeReceived = tr
+			fmsg.SamplerAddress = sa
 		})
 	case *sflow.Packet:
 		flowMessageSet, err = ProcessMessageSFlowConfig(msgConv, p.cfgMapped)
 
 		p.enrich(flowMessageSet, func(fmsg *ProtoProducerMessage) {
-			fmsg.TimeReceived = uint64(args.TimeReceived.Unix())
-			fmsg.TimeFlowStart = uint64(args.TimeReceived.Unix())
-			fmsg.TimeFlowEnd = uint64(args.TimeReceived.Unix())
+			fmsg.TimeReceived = tr
+			fmsg.TimeFlowStart = tr
+			fmsg.TimeFlowEnd = tr
 		})
 	default:
 		return flowMessageSet, fmt.Errorf("flow not recognized")

@@ -107,6 +107,8 @@ func (p *SFlowPipe) DecodeFlow(msg interface{}) error {
 	args := producer.ProduceArgs{
 		Src: pkt.Src,
 		Dst: pkt.Dst,
+
+		TimeReceived: pkt.Received,
 	}
 	if p.producer == nil {
 		return nil
