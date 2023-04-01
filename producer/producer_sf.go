@@ -230,12 +230,12 @@ func ParseSampledHeaderConfig(flowMessage *flowmessage.FlowMessage, sampledHeade
 	return nil
 }
 
-func SearchSFlowSamples(samples []interface{}) []*flowmessage.FlowMessage {
+func SearchSFlowSamples(samples []interface{}) []ProducerMessage {
 	return SearchSFlowSamples(samples)
 }
 
-func SearchSFlowSamplesConfig(samples []interface{}, config *SFlowMapper) []*flowmessage.FlowMessage {
-	var flowMessageSet []*flowmessage.FlowMessage
+func SearchSFlowSamplesConfig(samples []interface{}, config *SFlowMapper) []ProducerMessage {
+	var flowMessageSet []ProducerMessage
 
 	for _, flowSample := range samples {
 		var records []sflow.FlowRecord
@@ -319,7 +319,7 @@ func SearchSFlowSamplesConfig(samples []interface{}, config *SFlowMapper) []*flo
 }
 
 // Converts an sFlow message
-func ProcessMessageSFlowConfig(packet *sflow.Packet, config *producerConfigMapped) (flowMessageSet []*flowmessage.FlowMessage, err error) {
+func ProcessMessageSFlowConfig(packet *sflow.Packet, config *producerConfigMapped) (flowMessageSet []ProducerMessage, err error) {
 	seqnum := packet.SequenceNumber
 	agent := packet.AgentIP
 
@@ -330,7 +330,11 @@ func ProcessMessageSFlowConfig(packet *sflow.Packet, config *producerConfigMappe
 
 	flowSamples := GetSFlowFlowSamples(packet)
 	flowMessageSet = SearchSFlowSamplesConfig(flowSamples, cfg)
-	for _, fmsg := range flowMessageSet {
+	for _, msg := range flowMessageSet {
+		fmsg, ok := msg.(*flowmessage.FlowMessage)
+		if !ok {
+			continue
+		}
 		fmsg.SamplerAddress = agent
 		fmsg.SequenceNum = seqnum
 	}

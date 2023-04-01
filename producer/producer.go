@@ -7,7 +7,6 @@ import (
 	"github.com/netsampler/goflow2/decoders/netflow"
 	"github.com/netsampler/goflow2/decoders/netflowlegacy"
 	"github.com/netsampler/goflow2/decoders/sflow"
-	flowmessage "github.com/netsampler/goflow2/pb"
 )
 
 // Interface of the messages
@@ -17,12 +16,13 @@ type ProducerMessage interface {
 }
 
 type ProducerInterface interface {
-	Produce(msg interface{}, args *ProduceArgs) ([]*flowmessage.FlowMessage, error)
+	Produce(msg interface{}, args *ProduceArgs) ([]ProducerMessage, error)
+	// add commit where the data can be sent to a sync pool
 	Close()
 }
 
 type ProduceArgs struct {
-	MessageFactory     interface{}
+	//MessageFactory     interface{} // for use with sync pool?
 	SamplingRateSystem SamplingRateSystem
 
 	Src netip.AddrPort
@@ -33,7 +33,7 @@ type ProtoProducer struct {
 	cfgMapped *producerConfigMapped
 }
 
-func (p *ProtoProducer) Produce(msg interface{}, args *ProduceArgs) ([]*flowmessage.FlowMessage, error) {
+func (p *ProtoProducer) Produce(msg interface{}, args *ProduceArgs) ([]ProducerMessage, error) {
 	switch msgConv := msg.(type) {
 	case *netflowlegacy.PacketNetFlowV5: //todo: rename PacketNetFlowV5
 		return ProcessMessageNetFlowLegacy(msgConv)
@@ -62,10 +62,10 @@ func CreateProducerWithConfig(cfg *ProducerConfig) ProducerInterface {
 type RawProducer struct {
 }
 
-func (p *RawProducer) Produce(msg interface{}, args *ProduceArgs) ([]*flowmessage.FlowMessage, error) {
+func (p *RawProducer) Produce(msg interface{}, args *ProduceArgs) ([]ProducerMessage, error) {
 	// should return msg wrapped
 	// []*interface{msg,}
-	return nil, nil
+	return []ProducerMessage{msg}, nil
 }
 
 func (p *RawProducer) Close() {}

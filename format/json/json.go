@@ -26,6 +26,12 @@ func (d *JsonDriver) Init(context.Context) error {
 }
 
 func (d *JsonDriver) Format(data interface{}) ([]byte, []byte, error) {
+
+	if dataIf, ok := data.(interface{ MarshalJSON() ([]byte, error) }); ok {
+		d, err := dataIf.MarshalJSON()
+		return []byte("sth"), d, err
+	}
+
 	msg, ok := data.(proto.Message)
 	if !ok {
 		return nil, nil, fmt.Errorf("message is not protobuf")

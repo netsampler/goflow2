@@ -20,7 +20,7 @@ type PromProducerWrapper struct {
 	wrapped producer.ProducerInterface
 }
 
-func (p *PromProducerWrapper) Produce(msg interface{}, args *producer.ProduceArgs) ([]*flowmessage.FlowMessage, error) {
+func (p *PromProducerWrapper) Produce(msg interface{}, args *producer.ProduceArgs) ([]producer.ProducerMessage, error) {
 	flowMessageSet, err := p.wrapped.Produce(msg, args)
 	if err != nil {
 		return flowMessageSet, err
@@ -119,7 +119,11 @@ func (p *PromProducerWrapper) Produce(msg interface{}, args *producer.ProduceArg
 	}
 
 	if nfvariant {
-		for _, fmsg := range flowMessageSet {
+		for _, msg := range flowMessageSet {
+			fmsg, ok := msg.(*flowmessage.FlowMessage)
+			if !ok {
+				continue
+			}
 			timeDiff := fmsg.TimeReceived - fmsg.TimeFlowEnd
 			NetFlowTimeStatsSum.With(
 				prometheus.Labels{

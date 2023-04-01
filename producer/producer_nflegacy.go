@@ -48,8 +48,8 @@ func ConvertNetFlowLegacyRecord(baseTime uint32, uptime uint32, record netflowle
 	return flowMessage
 }
 
-func SearchNetFlowLegacyRecords(baseTime uint32, uptime uint32, dataRecords []netflowlegacy.RecordsNetFlowV5) []*flowmessage.FlowMessage {
-	var flowMessageSet []*flowmessage.FlowMessage
+func SearchNetFlowLegacyRecords(baseTime uint32, uptime uint32, dataRecords []netflowlegacy.RecordsNetFlowV5) []ProducerMessage {
+	var flowMessageSet []ProducerMessage
 	for _, record := range dataRecords {
 		fmsg := ConvertNetFlowLegacyRecord(baseTime, uptime, record)
 		if fmsg != nil {
@@ -59,14 +59,18 @@ func SearchNetFlowLegacyRecords(baseTime uint32, uptime uint32, dataRecords []ne
 	return flowMessageSet
 }
 
-func ProcessMessageNetFlowLegacy(packet *netflowlegacy.PacketNetFlowV5) ([]*flowmessage.FlowMessage, error) {
+func ProcessMessageNetFlowLegacy(packet *netflowlegacy.PacketNetFlowV5) ([]ProducerMessage, error) {
 	seqnum := packet.FlowSequence
 	samplingRate := packet.SamplingInterval
 	baseTime := packet.UnixSecs
 	uptime := packet.SysUptime
 
 	flowMessageSet := SearchNetFlowLegacyRecords(baseTime, uptime, packet.Records)
-	for _, fmsg := range flowMessageSet {
+	for _, msg := range flowMessageSet {
+		fmsg, ok := msg.(*flowmessage.FlowMessage)
+		if !ok {
+			continue
+		}
 		fmsg.SequenceNum = seqnum
 		fmsg.SamplingRate = uint64(samplingRate)
 	}

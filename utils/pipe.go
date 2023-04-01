@@ -32,10 +32,11 @@ type PipeConfig struct {
 	NetFlowTemplater func() netflow.NetFlowTemplateSystem
 }
 
-func (p *flowpipe) formatSend(flowMessageSet []*flowmessage.FlowMessage) error {
-	for _, fmsg := range flowMessageSet {
+func (p *flowpipe) formatSend(flowMessageSet []producer.ProducerMessage) error {
+	for _, msg := range flowMessageSet {
+		// todo: pass normal
 		if p.format != nil {
-			key, data, err := p.format.Format(fmsg)
+			key, data, err := p.format.Format(msg)
 			if err != nil {
 				return err
 			}
@@ -113,7 +114,12 @@ func (p *SFlowPipe) DecodeFlow(msg interface{}) error {
 		return err // wrap with produce
 	}
 
-	for _, fmsg := range flowMessageSet {
+	// todo: improve and set into producer
+	for _, msg := range flowMessageSet {
+		fmsg, ok := msg.(*flowmessage.FlowMessage)
+		if !ok {
+			continue
+		}
 		fmsg.TimeReceived = ts
 		fmsg.TimeFlowStart = ts
 		fmsg.TimeFlowEnd = ts
@@ -191,7 +197,7 @@ func (p *NetFlowPipe) DecodeFlow(msg interface{}) error {
 		return fmt.Errorf("Not a NetFlow packet")
 	}
 
-	var flowMessageSet []*flowmessage.FlowMessage
+	var flowMessageSet []producer.ProducerMessage
 	var err error
 
 	args := producer.ProduceArgs{
@@ -218,7 +224,11 @@ func (p *NetFlowPipe) DecodeFlow(msg interface{}) error {
 			return err
 		}
 
-		for _, fmsg := range flowMessageSet {
+		for _, msg := range flowMessageSet {
+			fmsg, ok := msg.(*flowmessage.FlowMessage)
+			if !ok {
+				continue
+			}
 			fmsg.TimeReceived = ts
 			fmsg.SamplerAddress = samplerAddress
 		}
@@ -228,7 +238,11 @@ func (p *NetFlowPipe) DecodeFlow(msg interface{}) error {
 			return err
 		}
 
-		for _, fmsg := range flowMessageSet {
+		for _, msg := range flowMessageSet {
+			fmsg, ok := msg.(*flowmessage.FlowMessage)
+			if !ok {
+				continue
+			}
 			fmsg.TimeReceived = ts
 			fmsg.SamplerAddress = samplerAddress
 		}

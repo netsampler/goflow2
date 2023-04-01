@@ -28,6 +28,7 @@ import (
 
 	// core libraries
 	"github.com/netsampler/goflow2/metrics"
+	"github.com/netsampler/goflow2/producer"
 	"github.com/netsampler/goflow2/utils"
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -159,6 +160,8 @@ func main() {
 			Producer:         metrics.CreatePromProducerDefaultWrapper(cfgProducer),
 			NetFlowTemplater: metrics.NewDefaultPromTemplateSystem,
 		}
+
+		cfgPipe.Producer = &producer.RawProducer{}
 
 		var decodeFunc utils.DecoderFunc
 		if listenAddrUrl.Scheme == "sflow" {
