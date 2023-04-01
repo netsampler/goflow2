@@ -14,6 +14,11 @@ import (
 	"github.com/netsampler/goflow2/transport"
 )
 
+type FlowPipe interface {
+	DecodeFlow(msg interface{}) error
+	Close()
+}
+
 type flowpipe struct {
 	format    format.FormatInterface
 	transport transport.TransportInterface

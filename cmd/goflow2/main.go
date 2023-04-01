@@ -112,6 +112,7 @@ func main() {
 	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
 
 	var receivers []*utils.UDPReceiver
+	var pipes []utils.FlowPipe
 
 	wg := &sync.WaitGroup{}
 	q := make(chan bool)
@@ -165,16 +166,17 @@ func main() {
 		cfgPipe.Producer = metrics.CreatePromProducerDefaultWrapper(cfgProducer)
 
 		var decodeFunc utils.DecoderFunc
+		var p utils.FlowPipe
 		if listenAddrUrl.Scheme == "sflow" {
-			p := utils.NewSFlowPipe(cfgPipe)
-			decodeFunc = metrics.PromDecoderWrapper(p.DecodeFlow, listenAddrUrl.Scheme)
+			p = utils.NewSFlowPipe(cfgPipe)
 		} else if listenAddrUrl.Scheme == "netflow" {
-			p := utils.NewNetFlowPipe(cfgPipe)
-			decodeFunc = metrics.PromDecoderWrapper(p.DecodeFlow, listenAddrUrl.Scheme)
+			p = utils.NewNetFlowPipe(cfgPipe)
 		} else {
 			l.Errorf("scheme %s does not exist", listenAddrUrl.Scheme)
 			return
 		}
+		decodeFunc = metrics.PromDecoderWrapper(p.DecodeFlow, listenAddrUrl.Scheme)
+		pipes = append(pipes, p)
 
 		if err := recv.Start(hostname, int(port), decodeFunc); err != nil {
 			l.Fatal(err)
@@ -199,6 +201,9 @@ func main() {
 
 	for _, recv := range receivers {
 		recv.Stop()
+	}
+	for _, pipe := range pipes {
+		pipe.Close()
 	}
 	close(q)
 	wg.Wait()

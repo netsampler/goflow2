@@ -41,7 +41,7 @@ type ProtoProducer struct {
 	selectorTag    string
 }
 
-func enrich(flowMessageSet []ProducerMessage, cb func(msg *ProtoProducerMessage)) {
+func (p *ProtoProducer) enrich(flowMessageSet []ProducerMessage, cb func(msg *ProtoProducerMessage)) {
 	for _, msg := range flowMessageSet {
 		fmsg, ok := msg.(*ProtoProducerMessage)
 		if !ok {
@@ -56,27 +56,27 @@ func (p *ProtoProducer) Produce(msg interface{}, args *ProduceArgs) (flowMessage
 	case *netflowlegacy.PacketNetFlowV5: //todo: rename PacketNetFlowV5
 		flowMessageSet, err = ProcessMessageNetFlowLegacy(msgConv)
 
-		enrich(flowMessageSet, func(fmsg *ProtoProducerMessage) {
+		p.enrich(flowMessageSet, func(fmsg *ProtoProducerMessage) {
 			fmsg.SamplerAddress, _ = args.SamplerAddress.MarshalBinary()
 		})
 	case *netflow.NFv9Packet:
 		flowMessageSet, err = ProcessMessageNetFlowV9Config(msgConv, args.SamplingRateSystem, p.cfgMapped)
 
-		enrich(flowMessageSet, func(fmsg *ProtoProducerMessage) {
+		p.enrich(flowMessageSet, func(fmsg *ProtoProducerMessage) {
 			fmsg.TimeReceived = uint64(args.TimeReceived.Unix())
 			fmsg.SamplerAddress, _ = args.SamplerAddress.MarshalBinary()
 		})
 	case *netflow.IPFIXPacket:
 		flowMessageSet, err = ProcessMessageIPFIXConfig(msgConv, args.SamplingRateSystem, p.cfgMapped)
 
-		enrich(flowMessageSet, func(fmsg *ProtoProducerMessage) {
+		p.enrich(flowMessageSet, func(fmsg *ProtoProducerMessage) {
 			fmsg.TimeReceived = uint64(args.TimeReceived.Unix())
 			fmsg.SamplerAddress, _ = args.SamplerAddress.MarshalBinary()
 		})
 	case *sflow.Packet:
 		flowMessageSet, err = ProcessMessageSFlowConfig(msgConv, p.cfgMapped)
 
-		enrich(flowMessageSet, func(fmsg *ProtoProducerMessage) {
+		p.enrich(flowMessageSet, func(fmsg *ProtoProducerMessage) {
 			fmsg.TimeReceived = uint64(args.TimeReceived.Unix())
 			fmsg.TimeFlowStart = uint64(args.TimeReceived.Unix())
 			fmsg.TimeFlowEnd = uint64(args.TimeReceived.Unix())
