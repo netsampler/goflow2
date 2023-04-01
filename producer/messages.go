@@ -22,6 +22,11 @@ func (m *ProtoProducerMessage) String() string {
 	return FormatMessageReflectText(m, "")
 }
 
+func (m *ProtoProducerMessage) Key() []byte {
+	m.customSelector = []string{"Type", "SrcAddr"}
+	return []byte(FormatMessageReflectText(m, ""))
+}
+
 func (m *ProtoProducerMessage) MarshalJSON() ([]byte, error) {
 	return []byte(FormatMessageReflectJSON(m, "")), nil
 }

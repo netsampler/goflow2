@@ -79,7 +79,8 @@ func TestProcessMessageSFlow(t *testing.T) {
 
 func TestExpandedSFlowDecode(t *testing.T) {
 	flowMessages, err := ProcessMessageSFlowConfig(getSflowPacket(), nil)
-	flowMessage := flowMessages[0]
+	flowMessageIf := flowMessages[0]
+	flowMessage := flowMessageIf.(*ProtoProducerMessage)
 
 	assert.Nil(t, err)
 
