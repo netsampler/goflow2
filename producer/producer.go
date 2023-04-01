@@ -85,7 +85,7 @@ func (p *ProtoProducer) Produce(msg interface{}, args *ProduceArgs) (flowMessage
 	}
 
 	p.enrich(flowMessageSet, func(fmsg *ProtoProducerMessage) {
-		fmsg.SamplerAddress = sa
+		//sets formatting options
 	})
 	return flowMessageSet, err
 }
