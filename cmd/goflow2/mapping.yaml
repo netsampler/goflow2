@@ -1,6 +1,43 @@
 formatter:
-  fields: []
-  hash: []
+  fields:
+    - type
+    - time_received
+    - sequence_num
+    - sampling_rate
+    - flow_direction
+    - sampler_address
+    - time_flow_start
+    - time_flow_end
+    - time_flow_start_ms
+    - time_flow_end_ms
+    - bytes
+    - packets
+    - src_addr
+    - dst_addr
+    - etype
+    - proto
+    - src_port
+    - dst_port
+    - in_if
+    - out_if
+    - src_mac
+    - dst_mac
+
+    - custom_integer_1
+  key:
+    - sampler_address
+  render: # only for JSON
+    - name: src_mac
+      render: mac
+    - name: dst_mac
+      render: mac
+  rename: # only for JSON
+    dst_port: test_port
+  protobuf: # manual protobuf fields
+    - name: custom_integer_1
+      index: 555
+      type: uint32
+# Mappings
 ipfix:
   mapping:
     - field: 7 # IPFIX_FIELD_sourceTransportPort
@@ -19,8 +56,6 @@ netflowv9:
       destination: CustomInteger1
     - field: 11
       destination: CustomInteger2
-      pb: 555
-      type: uint32
     - field: 34 # samplingInterval
       destination: SamplingRate
       endian: little

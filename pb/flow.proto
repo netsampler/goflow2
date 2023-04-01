@@ -108,24 +108,4 @@ message FlowMessage {
 
   uint32 observation_domain_id = 70;
   uint32 observation_point_id = 71;
-
-  // Custom fields: start after ID 1000:
-  // uint32 my_custom_field = 1000;
-
-
-  // Custom allocations
-  uint64 custom_integer_1 = 1001;
-  uint64 custom_integer_2 = 1002;
-  uint64 custom_integer_3 = 1003;
-  uint64 custom_integer_4 = 1004;
-  uint64 custom_integer_5 = 1005;
-
-  bytes custom_bytes_1 = 1011;
-  bytes custom_bytes_2 = 1012;
-  bytes custom_bytes_3 = 1013;
-  bytes custom_bytes_4 = 1014;
-  bytes custom_bytes_5 = 1015;
-
-  repeated uint32 custom_list_1 = 1021;
-
 }

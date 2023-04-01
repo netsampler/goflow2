@@ -12,8 +12,9 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 )
 
-func CreatePromProducerDefaultWrapper(cfg *producer.ProducerConfig) producer.ProducerInterface {
-	return WarpPromProducer(producer.CreateProducerWithConfig(cfg))
+func CreatePromProducerDefaultWrapper(cfg *producer.ProducerConfig) (producer.ProducerInterface, error) {
+	wrapped, err := producer.CreateProtoProducerWithConfig(cfg)
+	return WarpPromProducer(wrapped), err
 }
 
 type PromProducerWrapper struct {

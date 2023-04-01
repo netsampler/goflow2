@@ -85,7 +85,7 @@ func (p *ProtoProducer) Produce(msg interface{}, args *ProduceArgs) (flowMessage
 	}
 
 	p.enrich(flowMessageSet, func(fmsg *ProtoProducerMessage) {
-		//sets formatting options
+		fmsg.formatter = p.cfgMapped.Formatter
 	})
 	return flowMessageSet, err
 }
@@ -98,10 +98,11 @@ func (p *ProtoProducer) Commit(flowMessageSet []ProducerMessage) {
 
 func (p *ProtoProducer) Close() {}
 
-func CreateProducerWithConfig(cfg *ProducerConfig) ProducerInterface {
+func CreateProtoProducerWithConfig(cfg *ProducerConfig) (ProducerInterface, error) {
+	cfgMapped, err := mapConfig(cfg)
 	return &ProtoProducer{
-		cfgMapped: mapConfig(cfg),
-	}
+		cfgMapped: cfgMapped,
+	}, err
 }
 
 // Producer that keeps the same format

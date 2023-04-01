@@ -16,6 +16,8 @@ type ProtoProducerMessage struct {
 
 	customSelector []string
 	selectorTag    string
+
+	formatter *FormatterConfigMapper
 }
 
 var protoMessagePool = sync.Pool{

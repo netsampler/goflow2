@@ -151,7 +151,17 @@ type SFlowProducerConfig struct {
 	Mapping []SFlowMapField `json:"mapping"`
 }
 
+type ProtobufFormatterConfig struct {
+	Name string
+	Index int
+	Type string
+}
+
 type FormatterConfig struct {
+	Fields []string
+	Key []string
+	Rename map[string]string
+	Protobuf []ProtobufFormatterConfig
 }
 
 type ProducerConfig struct {
@@ -233,12 +243,69 @@ type producerConfigMapped struct {
 	SFlow     *SFlowMapper   `json:"sflow"`
 }
 
-func mapConfig(config *ProducerConfig) *producerConfigMapped {
-	newCfg := &producerConfigMapped{}
-	if config != nil {
-		newCfg.IPFIX = MapFieldsNetFlow(config.IPFIX.Mapping)
-		newCfg.NetFlowV9 = MapFieldsNetFlow(config.NetFlowV9.Mapping)
-		newCfg.SFlow = MapFieldsSFlow(config.SFlow.Mapping)
+func mapFormat(cfg *ProducerConfig) (*FormatterConfigMapper, error) {
+	formatterMapped := &FormatterConfigMapper{}
+
+	selectorTag := "json"
+	var msg ProtoProducerMessage
+	msgT := reflect.TypeOf(msg.FlowMessage)
+	reMap := make(map[string]string)
+	var fields []string
+	
+	for i := 0; i < msgT.NumField(); i++ {
+		field := msgT.Field(i)
+		fmt.Println(field)
+		if !field.IsExported() {
+			continue
+		}
+		fieldName := field.Name
+		if selectorTag != "" {
+			fieldName = ExtractTag(selectorTag, field.Name, field.Tag)
+			reMap[fieldName] = field.Name
+			fields = append(fields, fieldName)
+		}
+		//customSelectorTmp[i] = fieldName
+
 	}
-	return newCfg
+
+
+	fmt.Println(reMap)
+	fmt.Println(fields)
+
+	pbMap := make(map[string]int)
+
+	if cfg != nil {
+		cfgFormatter := cfg.Formatter
+		for _, pbField := range cfgFormatter.Protobuf {
+			reMap[pbField.Name] = "PROTOBUF"
+			pbMap[pbField.Name] = pbField.Index
+		}
+		if len(cfgFormatter.Fields) == 0 {
+			formatterMapped.fields = fields
+		} else {
+			for _, field := range cfgFormatter.Fields {
+				if _, ok := reMap[field]; !ok {
+					return formatterMapped, fmt.Errorf("field %s in config not found in protobuf", field) // todo: make proper error
+				}
+			}
+			formatterMapped.fields = cfgFormatter.Fields
+		}
+
+	}
+	fmt.Println(pbMap)
+
+
+	return formatterMapped, nil
+}
+
+func mapConfig(cfg *ProducerConfig) (*producerConfigMapped, error) {
+	newCfg := &producerConfigMapped{}
+	if cfg != nil {
+		newCfg.IPFIX = MapFieldsNetFlow(cfg.IPFIX.Mapping)
+		newCfg.NetFlowV9 = MapFieldsNetFlow(cfg.NetFlowV9.Mapping)
+		newCfg.SFlow = MapFieldsSFlow(cfg.SFlow.Mapping)
+	}
+	var err error
+	newCfg.Formatter, err = mapFormat(cfg)
+	return newCfg, err
 }

@@ -100,6 +100,11 @@ func main() {
 	}
 	defer transporter.Close(ctx)
 
+	flowProducer, err := metrics.CreatePromProducerDefaultWrapper(cfgProducer)
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	switch *LogFmt {
 	case "json":
 		log.SetFormatter(&log.JSONFormatter{})
@@ -158,12 +163,12 @@ func main() {
 		cfgPipe := &utils.PipeConfig{
 			Format:           formatter,
 			Transport:        transporter,
-			Producer:         metrics.CreatePromProducerDefaultWrapper(cfgProducer),
+			Producer:         flowProducer,
 			NetFlowTemplater: metrics.NewDefaultPromTemplateSystem,
 		}
 
 		cfgPipe.Producer = &producer.RawProducer{}
-		cfgPipe.Producer = metrics.CreatePromProducerDefaultWrapper(cfgProducer)
+		cfgPipe.Producer = flowProducer
 
 		var decodeFunc utils.DecoderFunc
 		var p utils.FlowPipe
