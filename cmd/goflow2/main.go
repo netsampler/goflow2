@@ -162,6 +162,7 @@ func main() {
 		}
 
 		cfgPipe.Producer = &producer.RawProducer{}
+		cfgPipe.Producer = metrics.CreatePromProducerDefaultWrapper(cfgProducer)
 
 		var decodeFunc utils.DecoderFunc
 		if listenAddrUrl.Scheme == "sflow" {
