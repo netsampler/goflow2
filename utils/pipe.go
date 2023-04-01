@@ -115,6 +115,7 @@ func (p *SFlowPipe) DecodeFlow(msg interface{}) error {
 		return nil
 	}
 	flowMessageSet, err := p.producer.Produce(&packet, &args)
+	defer p.producer.Commit(flowMessageSet)
 	if err != nil {
 		return err // wrap with produce
 	}
@@ -211,6 +212,7 @@ func (p *NetFlowPipe) DecodeFlow(msg interface{}) error {
 	case 10:
 		flowMessageSet, err = p.producer.Produce(&packetIPFIX, &args)
 	}
+	defer p.producer.Commit(flowMessageSet)
 	if err != nil {
 		return err
 	}

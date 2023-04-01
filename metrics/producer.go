@@ -141,6 +141,10 @@ func (p *PromProducerWrapper) Close() {
 	p.wrapped.Close()
 }
 
+func (p *PromProducerWrapper) Commit(flowMessageSet []producer.ProducerMessage) {
+	p.wrapped.Commit(flowMessageSet)
+}
+
 // Wraps a producer with metrics
 func WarpPromProducer(wrapped producer.ProducerInterface) producer.ProducerInterface {
 	return &PromProducerWrapper{

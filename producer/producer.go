@@ -17,9 +17,10 @@ type ProducerMessage interface {
 }
 
 type ProducerInterface interface {
+	// Converts a message into a list of flow samples
 	Produce(msg interface{}, args *ProduceArgs) ([]ProducerMessage, error)
-	// add commit where the data can be sent to a sync pool
-	// Commit([]ProducerMessage) error
+	// Indicates to the producer the messages returned were processed
+	Commit([]ProducerMessage)
 	Close()
 }
 
@@ -83,7 +84,14 @@ func (p *ProtoProducer) Produce(msg interface{}, args *ProduceArgs) (flowMessage
 		return flowMessageSet, fmt.Errorf("flow not recognized")
 	}
 
+	p.enrich(flowMessageSet, func(fmsg *ProtoProducerMessage) {
+		fmsg.SamplerAddress = sa
+	})
 	return flowMessageSet, err
+}
+
+func (p *ProtoProducer) Commit(flowMessageSet []ProducerMessage) {
+	// send the messages back
 }
 
 func (p *ProtoProducer) Close() {}
@@ -105,5 +113,7 @@ func (p *RawProducer) Produce(msg interface{}, args *ProduceArgs) ([]ProducerMes
 	// []*interface{msg,}
 	return []ProducerMessage{msg}, nil
 }
+
+func (p *RawProducer) Commit(flowMessageSet []ProducerMessage) {}
 
 func (p *RawProducer) Close() {}
