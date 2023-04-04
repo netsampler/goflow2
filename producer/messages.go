@@ -181,7 +181,7 @@ func (m *ProtoProducerMessage) FormatMessageReflectCustom(msg interface{}, ext, 
 	vfm = reflect.Indirect(vfm)
 
 	var i int
-	fstr := make([]string, len(m.formatter.fields))
+	fstr := make([]string, len(m.formatter.fields)) // reuse
 
 	for _, s := range m.formatter.fields {
 		fieldName := m.formatter.reMap[s]
@@ -190,9 +190,7 @@ func (m *ProtoProducerMessage) FormatMessageReflectCustom(msg interface{}, ext, 
 			fieldName = fieldNameMap
 		}
 		fieldValue := vfm.FieldByName(fieldName)
-		// todo: replace s by json mapping of protobuf
 		if fieldValue.IsValid() {
-
 			if fieldType, ok := TextFields[s]; ok {
 				switch fieldType {
 				case FORMAT_TYPE_STRING_FUNC:

@@ -24,6 +24,7 @@ formatter:
     - dst_mac
 
     - custom_integer_1
+    - custom_list_1
   key:
     - sampler_address
   render: # only for JSON/text and specific additional fields
@@ -37,6 +38,10 @@ formatter:
     - name: custom_integer_1
       index: 555
       type: uint32
+    - name: custom_list_1
+      index: 555
+      type: uint32
+      array: true
 # Decoder mappings
 ipfix:
   mapping:
