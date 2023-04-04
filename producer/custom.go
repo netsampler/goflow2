@@ -44,6 +44,7 @@ type ProtobufFormatterConfig struct {
 	Name  string
 	Index int
 	Type  string
+	Array bool
 }
 
 type FormatterConfig struct {
@@ -70,7 +71,7 @@ type DataMap struct {
 type FormatterConfigMapper struct {
 	fields []string
 	reMap  map[string]string
-	proto  map[string]int
+	pbMap  map[string]ProtobufFormatterConfig
 }
 
 type NetFlowMapper struct {
@@ -131,9 +132,27 @@ func MapFieldsNetFlow(fields []NetFlowMapField) *NetFlowMapper {
 type producerConfigMapped struct {
 	Formatter *FormatterConfigMapper
 
-	IPFIX     *NetFlowMapper `json:"ipfix"`
-	NetFlowV9 *NetFlowMapper `json:"netflowv9"`
-	SFlow     *SFlowMapper   `json:"sflow"`
+	IPFIX     *NetFlowMapper
+	NetFlowV9 *NetFlowMapper
+	SFlow     *SFlowMapper
+}
+
+func (c *producerConfigMapped) finalize() error {
+	//
+
+	if c.Formatter != nil {
+
+		for k, v := range c.IPFIX.data {
+			if vv, ok := c.Formatter.pbMap[v.Destination]; ok {
+				fmt.Println("Something", vv)
+				v.ProtoIndex = vv.Index
+			}
+			c.IPFIX.data[k] = v
+		}
+	}
+	fmt.Println(c.IPFIX.data)
+
+	return nil
 }
 
 func mapFormat(cfg *ProducerConfig) (*FormatterConfigMapper, error) {
@@ -165,15 +184,15 @@ func mapFormat(cfg *ProducerConfig) (*FormatterConfigMapper, error) {
 	fmt.Println(reMap)
 	fmt.Println(fields)
 
-	pbMap := make(map[string]int)
-	pbTypes := make(map[string]string)
+	pbMap := make(map[string]ProtobufFormatterConfig)
 
 	if cfg != nil {
 		cfgFormatter := cfg.Formatter
+
+		// manual protobuf fields to add
 		for _, pbField := range cfgFormatter.Protobuf {
-			reMap[pbField.Name] = "" // special dynamic protobuf
-			pbMap[pbField.Name] = pbField.Index
-			pbTypes[pbField.Name] = pbField.Type // todo: check if type is valid
+			reMap[pbField.Name] = ""      // special dynamic protobuf
+			pbMap[pbField.Name] = pbField // todo: check if type is valid
 		}
 		if len(cfgFormatter.Fields) == 0 {
 			formatterMapped.fields = fields
@@ -185,6 +204,8 @@ func mapFormat(cfg *ProducerConfig) (*FormatterConfigMapper, error) {
 			}
 			formatterMapped.fields = cfgFormatter.Fields
 		}
+
+		formatterMapped.pbMap = pbMap
 
 	}
 	fmt.Println(pbMap)
@@ -201,6 +222,8 @@ func mapConfig(cfg *ProducerConfig) (*producerConfigMapped, error) {
 		newCfg.SFlow = MapFieldsSFlow(cfg.SFlow.Mapping)
 	}
 	var err error
-	newCfg.Formatter, err = mapFormat(cfg)
-	return newCfg, err
+	if newCfg.Formatter, err = mapFormat(cfg); err != nil {
+		return newCfg, err
+	}
+	return newCfg, newCfg.finalize()
 }

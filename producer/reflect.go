@@ -58,6 +58,8 @@ type MapConfigBase struct {
 	Destination string
 	Endianness  EndianType
 	ProtoIndex  int
+	ProtoType   string
+	ProtoArray  bool
 }
 
 func MapCustomNetFlow(flowMessage *ProtoProducerMessage, df netflow.DataField, mapper *NetFlowMapper) error {
@@ -126,6 +128,7 @@ func MapCustom(flowMessage *ProtoProducerMessage, v []byte, cfg MapConfigBase) e
 			}
 
 		}
+	} else if cfg.ProtoIndex > 0 {
 	}
 	return nil
 }

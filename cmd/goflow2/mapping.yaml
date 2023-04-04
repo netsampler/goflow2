@@ -39,20 +39,20 @@ formatter:
       index: 555
       type: uint32
     - name: custom_list_1
-      index: 555
+      index: 556
       type: uint32
       array: true
 # Decoder mappings
 ipfix:
   mapping:
     - field: 7 # IPFIX_FIELD_sourceTransportPort
-      destination: CustomInteger1
+      destination: custom_integer_1
     - field: 11 # IPFIX_FIELD_destinationTransportPort
-      destination: CustomInteger2
+      destination: custom_integer_2
       # penprovided: false
       # pen: 0
     - field: 137
-      destination: CustomList_1
+      destination: custom_list_1
       penprovided: true
       pen: 2636
 netflowv9:
