@@ -64,8 +64,7 @@ type ProducerConfig struct {
 }
 
 type DataMap struct {
-	Destination string
-	Endian      EndianType
+	MapConfigBase
 }
 
 type FormatterConfigMapper struct {
@@ -84,10 +83,11 @@ func (m *NetFlowMapper) Map(field netflow.DataField) (DataMap, bool) {
 }
 
 type DataMapLayer struct {
-	Offset      int
-	Length      int
-	Destination string
-	Endian      EndianType
+	MapConfigBase
+	Offset int
+	Length int
+	//Destination string
+	//Endian      EndianType
 }
 
 type SFlowMapper struct {
@@ -105,11 +105,11 @@ func MapFieldsSFlow(fields []SFlowMapField) *SFlowMapper {
 	ret := make(map[int][]DataMapLayer)
 	for _, field := range fields {
 		retLayerEntry := DataMapLayer{
-			Offset:      field.Offset,
-			Length:      field.Length,
-			Destination: field.Destination,
-			Endian:      field.Endian,
+			Offset: field.Offset,
+			Length: field.Length,
 		}
+		retLayerEntry.Destination = field.Destination
+		retLayerEntry.Endianness = field.Endian
 		retLayer := ret[field.Layer]
 		retLayer = append(retLayer, retLayerEntry)
 		ret[field.Layer] = retLayer
@@ -120,7 +120,10 @@ func MapFieldsSFlow(fields []SFlowMapField) *SFlowMapper {
 func MapFieldsNetFlow(fields []NetFlowMapField) *NetFlowMapper {
 	ret := make(map[string]DataMap)
 	for _, field := range fields {
-		ret[fmt.Sprintf("%v-%d-%d", field.PenProvided, field.Pen, field.Type)] = DataMap{Destination: field.Destination, Endian: field.Endian}
+		dm := DataMap{}
+		dm.Destination = field.Destination
+		dm.Endianness = field.Endian
+		ret[fmt.Sprintf("%v-%d-%d", field.PenProvided, field.Pen, field.Type)] = dm
 	}
 	return &NetFlowMapper{ret}
 }

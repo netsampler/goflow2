@@ -54,9 +54,10 @@ func IsInt(k reflect.Kind) bool {
 	return k == reflect.Int8 || k == reflect.Int16 || k == reflect.Int32 || k == reflect.Int64
 }
 
-type MapConfig struct {
+type MapConfigBase struct {
 	Destination string
 	Endianness  EndianType
+	ProtoIndex  int
 }
 
 func MapCustomNetFlow(flowMessage *ProtoProducerMessage, df netflow.DataField, mapper *NetFlowMapper) error {
@@ -66,18 +67,18 @@ func MapCustomNetFlow(flowMessage *ProtoProducerMessage, df netflow.DataField, m
 	mapped, ok := mapper.Map(df)
 	if ok {
 		v := df.Value.([]byte)
-		if err := MapCustom(flowMessage, v, mapped.Destination, mapped.Endian); err != nil {
+		if err := MapCustom(flowMessage, v, mapped.MapConfigBase); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func MapCustom(flowMessage *ProtoProducerMessage, v []byte, destination string, endianness EndianType) error {
+func MapCustom(flowMessage *ProtoProducerMessage, v []byte, cfg MapConfigBase) error {
 	vfm := reflect.ValueOf(flowMessage)
 	vfm = reflect.Indirect(vfm)
 
-	fieldValue := vfm.FieldByName(destination)
+	fieldValue := vfm.FieldByName(cfg.Destination)
 
 	if fieldValue.IsValid() {
 		typeDest := fieldValue.Type()
@@ -91,13 +92,13 @@ func MapCustom(flowMessage *ProtoProducerMessage, v []byte, destination string, 
 				item := reflect.New(typeDest.Elem())
 
 				if IsUInt(typeDest.Elem().Kind()) {
-					if endianness == LittleEndian {
+					if cfg.Endianness == LittleEndian {
 						DecodeUNumberLE(v, item.Interface())
 					} else {
 						DecodeUNumber(v, item.Interface())
 					}
 				} else if IsUInt(typeDest.Elem().Kind()) {
-					if endianness == LittleEndian {
+					if cfg.Endianness == LittleEndian {
 						DecodeUNumberLE(v, item.Interface())
 					} else {
 						DecodeUNumber(v, item.Interface())
@@ -111,13 +112,13 @@ func MapCustom(flowMessage *ProtoProducerMessage, v []byte, destination string, 
 
 		} else if fieldValueAddr.IsValid() {
 			if IsUInt(typeDest.Kind()) {
-				if endianness == LittleEndian {
+				if cfg.Endianness == LittleEndian {
 					DecodeUNumberLE(v, fieldValueAddr.Interface())
 				} else {
 					DecodeUNumber(v, fieldValueAddr.Interface())
 				}
 			} else if IsInt(typeDest.Kind()) {
-				if endianness == LittleEndian {
+				if cfg.Endianness == LittleEndian {
 					DecodeUNumberLE(v, fieldValueAddr.Interface())
 				} else {
 					DecodeUNumber(v, fieldValueAddr.Interface())
