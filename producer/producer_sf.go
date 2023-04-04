@@ -25,7 +25,7 @@ func ParseSampledHeader(flowMessage *ProtoProducerMessage, sampledHeader *sflow.
 	return ParseSampledHeaderConfig(flowMessage, sampledHeader, nil)
 }
 
-func ParseEthernetHeader(flowMessage *ProtoProducerMessage, data []byte, config *SFlowMapper) {
+func ParseEthernetHeader(flowMessage *ProtoProducerMessage, data []byte, config *SFlowMapper) error {
 	var hasMpls bool
 	var countMpls uint32
 	var firstLabelMpls uint32
@@ -219,13 +219,17 @@ func ParseEthernetHeader(flowMessage *ProtoProducerMessage, data []byte, config 
 
 	(*flowMessage).FragmentId = uint32(identification)
 	(*flowMessage).FragmentOffset = uint32(fragOffset)
+
+	return nil
 }
 
 func ParseSampledHeaderConfig(flowMessage *ProtoProducerMessage, sampledHeader *sflow.SampledHeader, config *SFlowMapper) error {
 	data := (*sampledHeader).HeaderData
 	switch (*sampledHeader).Protocol {
 	case 1: // Ethernet
-		ParseEthernetHeader(flowMessage, data, config)
+		if err := ParseEthernetHeader(flowMessage, data, config); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -234,7 +238,7 @@ func SearchSFlowSamples(samples []interface{}) []ProducerMessage {
 	return SearchSFlowSamples(samples)
 }
 
-func SearchSFlowSampleConfig(flowMessage *ProtoProducerMessage, flowSample interface{}, config *SFlowMapper) {
+func SearchSFlowSampleConfig(flowMessage *ProtoProducerMessage, flowSample interface{}, config *SFlowMapper) error {
 	var records []sflow.FlowRecord
 	flowMessage.Type = flowmessage.FlowMessage_SFLOW_5
 
@@ -259,7 +263,9 @@ func SearchSFlowSampleConfig(flowMessage *ProtoProducerMessage, flowSample inter
 		switch recordData := record.Data.(type) {
 		case sflow.SampledHeader:
 			flowMessage.Bytes = uint64(recordData.FrameLength)
-			ParseSampledHeaderConfig(flowMessage, &recordData, config)
+			if err := ParseSampledHeaderConfig(flowMessage, &recordData, config); err != nil {
+				return err
+			}
 		case sflow.SampledIPv4:
 			ipSrc = recordData.Base.SrcIP
 			ipDst = recordData.Base.DstIP
@@ -308,19 +314,22 @@ func SearchSFlowSampleConfig(flowMessage *ProtoProducerMessage, flowSample inter
 			flowMessage.DstVlan = recordData.DstVlan
 		}
 	}
+	return nil
 
 }
 
-func SearchSFlowSamplesConfig(samples []interface{}, config *SFlowMapper) []ProducerMessage {
+func SearchSFlowSamplesConfig(samples []interface{}, config *SFlowMapper) ([]ProducerMessage, error) {
 	var flowMessageSet []ProducerMessage
 
 	for _, flowSample := range samples {
 		fmsg := protoMessagePool.Get().(*ProtoProducerMessage)
 		fmsg.Reset()
-		SearchSFlowSampleConfig(fmsg, flowSample, config)
+		if err := SearchSFlowSampleConfig(fmsg, flowSample, config); err != nil {
+			return nil, err
+		}
 		flowMessageSet = append(flowMessageSet, fmsg)
 	}
-	return flowMessageSet
+	return flowMessageSet, nil
 }
 
 // Converts an sFlow message
@@ -334,7 +343,10 @@ func ProcessMessageSFlowConfig(packet *sflow.Packet, config *producerConfigMappe
 	}
 
 	flowSamples := GetSFlowFlowSamples(packet)
-	flowMessageSet = SearchSFlowSamplesConfig(flowSamples, cfg)
+	flowMessageSet, err = SearchSFlowSamplesConfig(flowSamples, cfg)
+	if err != nil {
+		return flowMessageSet, err
+	}
 	for _, msg := range flowMessageSet {
 		fmsg, ok := msg.(*ProtoProducerMessage)
 		if !ok {
