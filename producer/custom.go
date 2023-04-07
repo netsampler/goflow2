@@ -144,13 +144,13 @@ func (c *producerConfigMapped) finalize() error {
 
 		for k, v := range c.IPFIX.data {
 			if vv, ok := c.Formatter.pbMap[v.Destination]; ok {
-				fmt.Println("Something", vv)
+				//fmt.Println("Something", vv)
 				v.ProtoIndex = vv.Index
 			}
 			c.IPFIX.data[k] = v
 		}
 	}
-	fmt.Println(c.IPFIX.data)
+	//fmt.Println(c.IPFIX.data)
 
 	return nil
 }
@@ -181,8 +181,8 @@ func mapFormat(cfg *ProducerConfig) (*FormatterConfigMapper, error) {
 
 	formatterMapped.reMap = reMap
 
-	fmt.Println(reMap)
-	fmt.Println(fields)
+	//fmt.Println(reMap)
+	//fmt.Println(fields)
 
 	pbMap := make(map[string]ProtobufFormatterConfig)
 
@@ -208,8 +208,8 @@ func mapFormat(cfg *ProducerConfig) (*FormatterConfigMapper, error) {
 		formatterMapped.pbMap = pbMap
 
 	}
-	fmt.Println(pbMap)
-	fmt.Println(formatterMapped.fields)
+	//fmt.Println(pbMap)
+	//fmt.Println(formatterMapped.fields)
 
 	return formatterMapped, nil
 }

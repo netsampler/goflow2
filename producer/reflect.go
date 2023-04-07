@@ -3,6 +3,9 @@ package producer
 import (
 	"reflect"
 
+	//"google.golang.org/protobuf/reflect/protoreflect"
+	"google.golang.org/protobuf/encoding/protowire"
+
 	"github.com/netsampler/goflow2/decoders/netflow"
 )
 
@@ -129,6 +132,21 @@ func MapCustom(flowMessage *ProtoProducerMessage, v []byte, cfg MapConfigBase) e
 
 		}
 	} else if cfg.ProtoIndex > 0 {
+
+		var dstVar uint64
+		if cfg.Endianness == LittleEndian {
+			DecodeUNumberLE(v, &dstVar)
+		} else {
+			DecodeUNumber(v, &dstVar)
+		}
+
+		fmr := flowMessage.ProtoReflect()
+		orig := fmr.GetUnknown()
+		unk := protowire.AppendTag(orig, protowire.Number(cfg.ProtoIndex), protowire.VarintType)
+		unk = protowire.AppendVarint(unk, dstVar)
+		fmr.SetUnknown(unk)
+		//fmt.Println(fmr, orig, unk)
+
 	}
 	return nil
 }

@@ -37,10 +37,10 @@ formatter:
   protobuf: # manual protobuf fields
     - name: custom_integer_1
       index: 555
-      type: uint32
+      type: varint # or string
     - name: custom_list_1
       index: 556
-      type: uint32
+      type: varint
       array: true
 # Decoder mappings
 ipfix:
