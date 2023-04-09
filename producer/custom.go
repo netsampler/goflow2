@@ -42,7 +42,7 @@ type SFlowProducerConfig struct {
 
 type ProtobufFormatterConfig struct {
 	Name  string
-	Index int
+	Index int32
 	Type  string
 	Array bool
 }

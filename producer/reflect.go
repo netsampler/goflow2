@@ -1,6 +1,7 @@
 package producer
 
 import (
+	"fmt"
 	"reflect"
 
 	//"google.golang.org/protobuf/reflect/protoreflect"
@@ -10,10 +11,14 @@ import (
 )
 
 type EndianType string
+type ProtoType string
 
 var (
 	BigEndian    EndianType = "big"
 	LittleEndian EndianType = "little"
+
+	ProtoString ProtoType = "string"
+	ProtoVarint ProtoType = "varint"
 )
 
 func GetBytes(d []byte, offset int, length int) []byte {
@@ -60,8 +65,8 @@ func IsInt(k reflect.Kind) bool {
 type MapConfigBase struct {
 	Destination string
 	Endianness  EndianType
-	ProtoIndex  int
-	ProtoType   string
+	ProtoIndex  int32
+	ProtoType   ProtoType
 	ProtoArray  bool
 }
 
@@ -102,11 +107,11 @@ func MapCustom(flowMessage *ProtoProducerMessage, v []byte, cfg MapConfigBase) e
 					} else {
 						DecodeUNumber(v, item.Interface())
 					}
-				} else if IsUInt(typeDest.Elem().Kind()) {
+				} else if IsInt(typeDest.Elem().Kind()) {
 					if cfg.Endianness == LittleEndian {
-						DecodeUNumberLE(v, item.Interface())
+						DecodeNumberLE(v, item.Interface())
 					} else {
-						DecodeUNumber(v, item.Interface())
+						DecodeNumber(v, item.Interface())
 					}
 				}
 
@@ -124,29 +129,47 @@ func MapCustom(flowMessage *ProtoProducerMessage, v []byte, cfg MapConfigBase) e
 				}
 			} else if IsInt(typeDest.Kind()) {
 				if cfg.Endianness == LittleEndian {
-					DecodeUNumberLE(v, fieldValueAddr.Interface())
+					DecodeNumberLE(v, fieldValueAddr.Interface())
 				} else {
-					DecodeUNumber(v, fieldValueAddr.Interface())
+					DecodeNumber(v, fieldValueAddr.Interface())
 				}
 			}
 
 		}
 	} else if cfg.ProtoIndex > 0 {
 
-		var dstVar uint64
-		if cfg.Endianness == LittleEndian {
-			DecodeUNumberLE(v, &dstVar)
-		} else {
-			DecodeUNumber(v, &dstVar)
+		fmr := flowMessage.ProtoReflect()
+		unk := fmr.GetUnknown()
+
+		if !cfg.ProtoArray {
+			var offset int
+			for offset < len(unk) {
+				num, _, length := protowire.ConsumeField(unk[offset:])
+				offset += length
+				if int32(num) == cfg.ProtoIndex {
+					// only one allowed
+					break
+				}
+			}
 		}
 
-		fmr := flowMessage.ProtoReflect()
-		orig := fmr.GetUnknown()
-		unk := protowire.AppendTag(orig, protowire.Number(cfg.ProtoIndex), protowire.VarintType)
-		unk = protowire.AppendVarint(unk, dstVar)
+		var dstVar uint64
+		if cfg.ProtoType == ProtoVarint {
+			if cfg.Endianness == LittleEndian {
+				DecodeUNumberLE(v, &dstVar)
+			} else {
+				DecodeUNumber(v, &dstVar)
+			}
+			// support signed int?
+			unk = protowire.AppendTag(unk, protowire.Number(cfg.ProtoIndex), protowire.VarintType)
+			unk = protowire.AppendVarint(unk, dstVar)
+		} else if cfg.ProtoType == ProtoString {
+			unk = protowire.AppendTag(unk, protowire.Number(cfg.ProtoIndex), protowire.BytesType)
+			unk = protowire.AppendString(unk, string(v))
+		} else {
+			return fmt.Errorf("could not insert into protobuf unknown")
+		}
 		fmr.SetUnknown(unk)
-		//fmt.Println(fmr, orig, unk)
-
 	}
 	return nil
 }
