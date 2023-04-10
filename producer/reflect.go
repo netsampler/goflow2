@@ -19,6 +19,12 @@ var (
 
 	ProtoString ProtoType = "string"
 	ProtoVarint ProtoType = "varint"
+
+	ProtoTypeMap = map[string]ProtoType{
+		string(ProtoString): ProtoString,
+		string(ProtoVarint): ProtoVarint,
+		"bytes":             ProtoString,
+	}
 )
 
 func GetBytes(d []byte, offset int, length int) []byte {
@@ -62,12 +68,20 @@ func IsInt(k reflect.Kind) bool {
 	return k == reflect.Int8 || k == reflect.Int16 || k == reflect.Int32 || k == reflect.Int64
 }
 
+// Structure to help the MapCustom functions
+// populate the protobuf data
 type MapConfigBase struct {
+	// Used if the field inside the protobuf exists
+	// also serves as the field when rendering with text
 	Destination string
 	Endianness  EndianType
-	ProtoIndex  int32
-	ProtoType   ProtoType
-	ProtoArray  bool
+
+	// The following fields are used for mapping
+	// when the destination field does not exist
+	// inside the protobuf
+	ProtoIndex int32
+	ProtoType  ProtoType
+	ProtoArray bool
 }
 
 func MapCustomNetFlow(flowMessage *ProtoProducerMessage, df netflow.DataField, mapper *NetFlowMapper) error {

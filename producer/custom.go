@@ -87,8 +87,6 @@ type DataMapLayer struct {
 	MapConfigBase
 	Offset int
 	Length int
-	//Destination string
-	//Endian      EndianType
 }
 
 type SFlowMapper struct {
@@ -137,20 +135,54 @@ type producerConfigMapped struct {
 	SFlow     *SFlowMapper
 }
 
-func (c *producerConfigMapped) finalize() error {
-	//
+func (c *producerConfigMapped) finalizemapDest(v *MapConfigBase) error {
+	if vv, ok := c.Formatter.pbMap[v.Destination]; ok {
+		v.ProtoIndex = vv.Index
 
-	if c.Formatter != nil {
-
-		for k, v := range c.IPFIX.data {
-			if vv, ok := c.Formatter.pbMap[v.Destination]; ok {
-				//fmt.Println("Something", vv)
-				v.ProtoIndex = vv.Index
-			}
-			c.IPFIX.data[k] = v
+		if pt, ok := ProtoTypeMap[vv.Type]; ok {
+			v.ProtoType = pt
+		} else {
+			return fmt.Errorf("could not map %s to a ProtoType", vv.Type)
 		}
+
+		v.ProtoArray = vv.Array
 	}
-	//fmt.Println(c.IPFIX.data)
+	return nil
+}
+func (c *producerConfigMapped) finalizeSFlowMapper(m *SFlowMapper) error {
+
+	for k, vlist := range m.data {
+		for i, v := range vlist {
+			c.finalizemapDest(&(v.MapConfigBase))
+			m.data[k][i] = v
+		}
+
+	}
+	return nil
+}
+
+func (c *producerConfigMapped) finalizeNetFlowMapper(m *NetFlowMapper) error {
+
+	for k, v := range m.data {
+		c.finalizemapDest(&(v.MapConfigBase))
+		m.data[k] = v
+	}
+	return nil
+}
+
+func (c *producerConfigMapped) finalize() error {
+	if c.Formatter == nil {
+		return nil
+	}
+	if err := c.finalizeNetFlowMapper(c.IPFIX); err != nil {
+		return err
+	}
+	if err := c.finalizeNetFlowMapper(c.NetFlowV9); err != nil {
+		return err
+	}
+	if err := c.finalizeSFlowMapper(c.SFlow); err != nil {
+		return err
+	}
 
 	return nil
 }
