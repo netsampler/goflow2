@@ -2,11 +2,14 @@ package producer
 
 import (
 	"encoding/binary"
+	"encoding/hex"
 	"fmt"
 	"net"
 	"reflect"
 	"strings"
 	"sync"
+
+	"google.golang.org/protobuf/encoding/protowire"
 
 	flowmessage "github.com/netsampler/goflow2/pb"
 )
@@ -174,14 +177,58 @@ func ExtractTag(name, original string, tag reflect.StructTag) string {
 
 func (m *ProtoProducerMessage) FormatMessageReflectCustom(msg interface{}, ext, quotes, sep, sign string, null bool) string {
 	//customSelector := selector
-
 	reMap := make(map[string]string)
 
 	vfm := reflect.ValueOf(msg)
 	vfm = reflect.Indirect(vfm)
 
 	var i int
-	fstr := make([]string, len(m.formatter.fields)) // reuse
+	fstr := make([]string, len(m.formatter.fields)) // todo: reuse with pool
+
+	unkMap := make(map[string]interface{})
+	if flowMessage, ok := msg.(*ProtoProducerMessage); ok {
+		fmr := flowMessage.ProtoReflect()
+		unk := fmr.GetUnknown()
+		var offset int
+		for offset < len(unk) {
+			num, dataType, length := protowire.ConsumeTag(unk[offset:])
+			offset += length
+			length = protowire.ConsumeFieldValue(num, dataType, unk[offset:])
+			data := unk[offset : offset+length]
+			offset += length
+
+			// we check if the index is listed in the config
+			if pbField, ok := m.formatter.numToPb[int32(num)]; ok {
+
+				var dest interface{}
+				var value interface{}
+				if dataType == protowire.VarintType {
+					v, _ := protowire.ConsumeVarint(data)
+					value = v
+				} else if dataType == protowire.BytesType {
+					v, _ := protowire.ConsumeString(data)
+					value = hex.EncodeToString([]byte(v))
+				} else {
+					continue
+				}
+				if pbField.Array {
+					var destSlice []interface{}
+					if dest, ok := unkMap[pbField.Name]; !ok {
+						destSlice = make([]interface{}, 0)
+					} else {
+						destSlice = dest.([]interface{})
+					}
+					destSlice = append(destSlice, value)
+					dest = destSlice
+				} else {
+					dest = value
+				}
+
+				unkMap[pbField.Name] = dest
+
+			}
+		}
+	}
 
 	for _, s := range m.formatter.fields {
 		fieldName := m.formatter.reMap[s]
@@ -190,57 +237,69 @@ func (m *ProtoProducerMessage) FormatMessageReflectCustom(msg interface{}, ext, 
 			fieldName = fieldNameMap
 		}
 		fieldValue := vfm.FieldByName(fieldName)
-		if fieldValue.IsValid() {
-			if fieldType, ok := TextFields[s]; ok {
-				switch fieldType {
-				case FORMAT_TYPE_STRING_FUNC:
-					strMethod := fieldValue.MethodByName("String").Call([]reflect.Value{})
-					fstr[i] = fmt.Sprintf("%s%s%s%s%q", quotes, s, quotes, sign, strMethod[0].String())
-				case FORMAT_TYPE_STRING:
-					fstr[i] = fmt.Sprintf("%s%s%s%s%q", quotes, s, quotes, sign, fieldValue.String())
-				case FORMAT_TYPE_INTEGER:
-					fstr[i] = fmt.Sprintf("%s%s%s%s%d", quotes, s, quotes, sign, fieldValue.Uint())
-				case FORMAT_TYPE_IP:
-					ip := fieldValue.Bytes()
-					fstr[i] = fmt.Sprintf("%s%s%s%s%q", quotes, s, quotes, sign, RenderIP(ip))
-				case FORMAT_TYPE_MAC:
-					mac := make([]byte, 8)
-					binary.BigEndian.PutUint64(mac, fieldValue.Uint())
-					fstr[i] = fmt.Sprintf("%s%s%s%s%q", quotes, s, quotes, sign, net.HardwareAddr(mac[2:]).String())
-				case FORMAT_TYPE_BYTES:
-					fstr[i] = fmt.Sprintf("%s%s%s%s%.2x", quotes, s, quotes, sign, fieldValue.Bytes())
-				default:
-					if null {
-						fstr[i] = fmt.Sprintf("%s%s%s%snull", quotes, s, quotes, sign)
-					} else {
-
-					}
-				}
-			} else if renderer, ok := RenderExtras[s]; ok {
-				fstr[i] = fmt.Sprintf("%s%s%s%s%q", quotes, s, quotes, sign, renderer(msg))
+		if !fieldValue.IsValid() {
+			if unkField, ok := unkMap[s]; ok {
+				fieldValue = reflect.ValueOf(unkField)
 			} else {
-				// handle specific types here
-				switch fieldValue.Kind() {
-				case reflect.String:
-					fstr[i] = fmt.Sprintf("%s%s%s%s%q", quotes, s, quotes, sign, fieldValue.Interface())
-				case reflect.Slice:
-					c := fieldValue.Len()
-					v := "["
-					for i := 0; i < c; i++ {
-						v += fmt.Sprintf("%v", fieldValue.Index(i).Interface())
-						if i < c-1 {
-							v += ","
-						}
-					}
-					v += "]"
-					fstr[i] = fmt.Sprintf("%s%s%s%s%s", quotes, s, quotes, sign, v)
-				default:
-					fstr[i] = fmt.Sprintf("%s%s%s%s%v", quotes, s, quotes, sign, fieldValue.Interface())
-				}
-
+				continue
 			}
-			i++
 		}
+
+		if fieldType, ok := TextFields[s]; ok {
+			switch fieldType {
+			case FORMAT_TYPE_STRING_FUNC:
+				strMethod := fieldValue.MethodByName("String").Call([]reflect.Value{})
+				fstr[i] = fmt.Sprintf("%s%s%s%s%q", quotes, s, quotes, sign, strMethod[0].String())
+			case FORMAT_TYPE_STRING:
+				fstr[i] = fmt.Sprintf("%s%s%s%s%q", quotes, s, quotes, sign, fieldValue.String())
+			case FORMAT_TYPE_INTEGER:
+				fstr[i] = fmt.Sprintf("%s%s%s%s%d", quotes, s, quotes, sign, fieldValue.Uint())
+			case FORMAT_TYPE_IP:
+				ip := fieldValue.Bytes()
+				fstr[i] = fmt.Sprintf("%s%s%s%s%q", quotes, s, quotes, sign, RenderIP(ip))
+			case FORMAT_TYPE_MAC:
+				mac := make([]byte, 8)
+				binary.BigEndian.PutUint64(mac, fieldValue.Uint())
+				fstr[i] = fmt.Sprintf("%s%s%s%s%q", quotes, s, quotes, sign, net.HardwareAddr(mac[2:]).String())
+			case FORMAT_TYPE_BYTES:
+				fstr[i] = fmt.Sprintf("%s%s%s%s%.2x", quotes, s, quotes, sign, fieldValue.Bytes())
+			default:
+				if null {
+					fstr[i] = fmt.Sprintf("%s%s%s%snull", quotes, s, quotes, sign)
+				} else {
+
+				}
+			}
+		} else if renderer, ok := RenderExtras[s]; ok {
+			fstr[i] = fmt.Sprintf("%s%s%s%s%q", quotes, s, quotes, sign, renderer(msg))
+		} else {
+			// handle specific types here
+			switch fieldValue.Kind() {
+			case reflect.String:
+				fstr[i] = fmt.Sprintf("%s%s%s%s%q", quotes, s, quotes, sign, fieldValue.Interface())
+			case reflect.Slice:
+				c := fieldValue.Len()
+				v := "["
+				for i := 0; i < c; i++ {
+					fieldValueI := fieldValue.Index(i)
+					if fieldValueI.Elem().Type().Kind() == reflect.String {
+						v += fmt.Sprintf("%s%v%s", quotes, fieldValueI.Interface(), quotes)
+					} else {
+						v += fmt.Sprintf("%v", fieldValueI.Interface())
+					}
+
+					if i < c-1 {
+						v += ","
+					}
+				}
+				v += "]"
+				fstr[i] = fmt.Sprintf("%s%s%s%s%s", quotes, s, quotes, sign, v)
+			default:
+				fstr[i] = fmt.Sprintf("%s%s%s%s%v", quotes, s, quotes, sign, fieldValue.Interface())
+			}
+
+		}
+		i++
 
 	}
 	fstr = fstr[0:i]

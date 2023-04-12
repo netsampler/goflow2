@@ -1,5 +1,5 @@
 formatter:
-  fields:
+  fields: # list of fields to format in JSON
     - type
     - time_received
     - sequence_num
@@ -40,7 +40,7 @@ formatter:
       type: varint
     - name: custom_list_1
       index: 556
-      type: varint
+      type: string
       array: true
 # Decoder mappings
 ipfix:
