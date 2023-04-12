@@ -92,17 +92,9 @@ message FlowMessage {
   repeated uint32 as_path = 102;
 
   // MPLS information
-  bool has_mpls = 53;
-  uint32 mpls_count = 54;
-  uint32 mpls_1_ttl = 55; // First TTL
-  uint32 mpls_1_label = 56; // First Label
-  uint32 mpls_2_ttl = 57; // Second TTL
-  uint32 mpls_2_label = 58; // Second Label
-  uint32 mpls_3_ttl = 59; // Third TTL
-  uint32 mpls_3_label = 60; // Third Label
-  uint32 mpls_last_ttl = 61; // Last TTL
-  uint32 mpls_last_label = 62; // Last Label
-  bytes mpls_label_ip = 65; // MPLS TOP Label IP 
+  repeated uint32 mpls_ttl = 80;
+  repeated uint32 mpls_label = 81;
+  repeated bytes mpls_ip = 82;
 
   uint32 observation_domain_id = 70;
   uint32 observation_point_id = 71;

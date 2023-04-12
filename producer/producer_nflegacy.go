@@ -13,9 +13,7 @@ func ConvertNetFlowLegacyRecord(flowMessage *ProtoProducerMessage, baseTime uint
 
 	timeDiffFirst := (uptime - record.First)
 	timeDiffLast := (uptime - record.Last)
-	flowMessage.TimeFlowStart = uint64(baseTime - timeDiffFirst/1000)
 	flowMessage.TimeFlowStartMs = uint64(baseTime)*1000 - uint64(timeDiffFirst)
-	flowMessage.TimeFlowEnd = uint64(baseTime - timeDiffLast/1000)
 	flowMessage.TimeFlowEndMs = uint64(baseTime)*1000 - uint64(timeDiffLast)
 
 	v := make(net.IP, 4)

@@ -49,7 +49,7 @@ func (p *ProtoProducer) enrich(flowMessageSet []ProducerMessage, cb func(msg *Pr
 }
 
 func (p *ProtoProducer) Produce(msg interface{}, args *ProduceArgs) (flowMessageSet []ProducerMessage, err error) {
-	tr := uint64(args.TimeReceived.Unix())
+	tr := uint64(args.TimeReceived.UnixNano())
 	sa, _ := args.SamplerAddress.MarshalBinary()
 	switch msgConv := msg.(type) {
 	case *netflowlegacy.PacketNetFlowV5: //todo: rename PacketNetFlowV5
@@ -62,23 +62,23 @@ func (p *ProtoProducer) Produce(msg interface{}, args *ProduceArgs) (flowMessage
 		flowMessageSet, err = ProcessMessageNetFlowV9Config(msgConv, args.SamplingRateSystem, p.cfgMapped)
 
 		p.enrich(flowMessageSet, func(fmsg *ProtoProducerMessage) {
-			fmsg.TimeReceived = tr
+			fmsg.TimeReceived = tr / 1000000000
 			fmsg.SamplerAddress = sa
 		})
 	case *netflow.IPFIXPacket:
 		flowMessageSet, err = ProcessMessageIPFIXConfig(msgConv, args.SamplingRateSystem, p.cfgMapped)
 
 		p.enrich(flowMessageSet, func(fmsg *ProtoProducerMessage) {
-			fmsg.TimeReceived = tr
+			fmsg.TimeReceived = tr / 1000000000
 			fmsg.SamplerAddress = sa
 		})
 	case *sflow.Packet:
 		flowMessageSet, err = ProcessMessageSFlowConfig(msgConv, p.cfgMapped)
 
 		p.enrich(flowMessageSet, func(fmsg *ProtoProducerMessage) {
-			fmsg.TimeReceived = tr
-			fmsg.TimeFlowStart = tr
-			fmsg.TimeFlowEnd = tr
+			fmsg.TimeReceived = tr / 1000000000
+			fmsg.TimeFlowStartMs = tr / 1000000
+			fmsg.TimeFlowEndMs = tr / 1000000
 		})
 	default:
 		return flowMessageSet, fmt.Errorf("flow not recognized")

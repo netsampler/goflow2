@@ -26,16 +26,8 @@ func ParseSampledHeader(flowMessage *ProtoProducerMessage, sampledHeader *sflow.
 }
 
 func ParseEthernetHeader(flowMessage *ProtoProducerMessage, data []byte, config *SFlowMapper) error {
-	var hasMpls bool
-	var countMpls uint32
-	var firstLabelMpls uint32
-	var firstTtlMpls uint8
-	var secondLabelMpls uint32
-	var secondTtlMpls uint8
-	var thirdLabelMpls uint32
-	var thirdTtlMpls uint8
-	var lastLabelMpls uint32
-	var lastTtlMpls uint8
+	var mplsLabel []uint32
+	var mplsTtl []uint32
 
 	var nextHeader byte
 	var tcpflags byte
@@ -64,8 +56,8 @@ func ParseEthernetHeader(flowMessage *ProtoProducerMessage, data []byte, config 
 
 	dstMac = binary.BigEndian.Uint64(append([]byte{0, 0}, data[0:6]...))
 	srcMac = binary.BigEndian.Uint64(append([]byte{0, 0}, data[6:12]...))
-	(*flowMessage).SrcMac = srcMac
-	(*flowMessage).DstMac = dstMac
+	flowMessage.SrcMac = srcMac
+	flowMessage.DstMac = dstMac
 
 	encap := true
 	iterations := 0
@@ -73,14 +65,13 @@ func ParseEthernetHeader(flowMessage *ProtoProducerMessage, data []byte, config 
 		encap = false
 
 		if etherType[0] == 0x81 && etherType[1] == 0x0 { // VLAN 802.1Q
-			(*flowMessage).VlanId = uint32(binary.BigEndian.Uint16(data[14:16]))
+			flowMessage.VlanId = uint32(binary.BigEndian.Uint16(data[14:16]))
 			offset += 4
 			etherType = data[16:18]
 		}
 
 		if etherType[0] == 0x88 && etherType[1] == 0x47 { // MPLS
 			iterateMpls := true
-			hasMpls = true
 			for iterateMpls {
 				if len(data) < offset+5 {
 					iterateMpls = false
@@ -89,7 +80,7 @@ func ParseEthernetHeader(flowMessage *ProtoProducerMessage, data []byte, config 
 				label := binary.BigEndian.Uint32(append([]byte{0}, data[offset:offset+3]...)) >> 4
 				//exp := data[offset+2] > 1
 				bottom := data[offset+2] & 1
-				mplsTtl := data[offset+3]
+				ttl := data[offset+3]
 				offset += 4
 
 				if bottom == 1 || label <= 15 || offset > len(data) {
@@ -101,20 +92,8 @@ func ParseEthernetHeader(flowMessage *ProtoProducerMessage, data []byte, config 
 					iterateMpls = false
 				}
 
-				if countMpls == 0 {
-					firstLabelMpls = label
-					firstTtlMpls = mplsTtl
-				} else if countMpls == 1 {
-					secondLabelMpls = label
-					secondTtlMpls = mplsTtl
-				} else if countMpls == 2 {
-					thirdLabelMpls = label
-					thirdTtlMpls = mplsTtl
-				} else {
-					lastLabelMpls = label
-					lastTtlMpls = mplsTtl
-				}
-				countMpls++
+				mplsLabel = append(mplsLabel, label)
+				mplsTtl = append(mplsTtl, uint32(ttl))
 			}
 		}
 
@@ -179,8 +158,8 @@ func ParseEthernetHeader(flowMessage *ProtoProducerMessage, data []byte, config 
 
 		// ICMP and ICMPv6
 		if len(data) >= offset+2 && (nextHeader == 1 || nextHeader == 58) {
-			(*flowMessage).IcmpType = uint32(data[offset+0])
-			(*flowMessage).IcmpCode = uint32(data[offset+1])
+			flowMessage.IcmpType = uint32(data[offset+0])
+			flowMessage.IcmpCode = uint32(data[offset+1])
 		}
 
 		if appOffset > 0 {
@@ -193,32 +172,24 @@ func ParseEthernetHeader(flowMessage *ProtoProducerMessage, data []byte, config 
 		iterations++
 	}
 
-	(*flowMessage).HasMpls = hasMpls
-	(*flowMessage).MplsCount = countMpls
-	(*flowMessage).Mpls_1Label = firstLabelMpls
-	(*flowMessage).Mpls_1Ttl = uint32(firstTtlMpls)
-	(*flowMessage).Mpls_2Label = secondLabelMpls
-	(*flowMessage).Mpls_2Ttl = uint32(secondTtlMpls)
-	(*flowMessage).Mpls_3Label = thirdLabelMpls
-	(*flowMessage).Mpls_3Ttl = uint32(thirdTtlMpls)
-	(*flowMessage).MplsLastLabel = lastLabelMpls
-	(*flowMessage).MplsLastTtl = uint32(lastTtlMpls)
+	flowMessage.MplsLabel = mplsLabel
+	flowMessage.MplsTtl = mplsTtl
 
-	(*flowMessage).Etype = uint32(binary.BigEndian.Uint16(etherType[0:2]))
-	(*flowMessage).Ipv6FlowLabel = flowLabel & 0xFFFFF
+	flowMessage.Etype = uint32(binary.BigEndian.Uint16(etherType[0:2]))
+	flowMessage.Ipv6FlowLabel = flowLabel & 0xFFFFF
 
-	(*flowMessage).SrcPort = uint32(srcPort)
-	(*flowMessage).DstPort = uint32(dstPort)
+	flowMessage.SrcPort = uint32(srcPort)
+	flowMessage.DstPort = uint32(dstPort)
 
-	(*flowMessage).SrcAddr = srcIP
-	(*flowMessage).DstAddr = dstIP
-	(*flowMessage).Proto = uint32(nextHeader)
-	(*flowMessage).IpTos = uint32(tos)
-	(*flowMessage).IpTtl = uint32(ttl)
-	(*flowMessage).TcpFlags = uint32(tcpflags)
+	flowMessage.SrcAddr = srcIP
+	flowMessage.DstAddr = dstIP
+	flowMessage.Proto = uint32(nextHeader)
+	flowMessage.IpTos = uint32(tos)
+	flowMessage.IpTtl = uint32(ttl)
+	flowMessage.TcpFlags = uint32(tcpflags)
 
-	(*flowMessage).FragmentId = uint32(identification)
-	(*flowMessage).FragmentOffset = uint32(fragOffset)
+	flowMessage.FragmentId = uint32(identification)
+	flowMessage.FragmentOffset = uint32(fragOffset)
 
 	return nil
 }
