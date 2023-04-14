@@ -97,7 +97,11 @@ func DecodeCounterRecord(header *RecordHeader, payload *bytes.Buffer) (CounterRe
 		}
 		counterRecord.Data = ethernetCounters
 	default:
-		return counterRecord, &RecordError{header.DataFormat, fmt.Errorf("unknown counter data format")}
+		var rawRecord RawRecord
+		if err := utils.BinaryDecoder(payload, &rawRecord.Data); err != nil {
+			return counterRecord, &RecordError{header.DataFormat, err}
+		}
+		counterRecord.Data = rawRecord
 	}
 
 	return counterRecord, nil
@@ -124,7 +128,7 @@ func DecodeFlowRecord(header *RecordHeader, payload *bytes.Buffer) (FlowRecord, 
 		sampledHeader.HeaderData = payload.Bytes()
 		flowRecord.Data = sampledHeader
 	case FORMAT_IPV4:
-		sampledIPBase := SampledIP_Base{
+		sampledIPBase := SampledIPBase{
 			SrcIP: make([]byte, 4),
 			DstIP: make([]byte, 4),
 		}
@@ -139,7 +143,7 @@ func DecodeFlowRecord(header *RecordHeader, payload *bytes.Buffer) (FlowRecord, 
 		}
 		flowRecord.Data = sampledIPv4
 	case FORMAT_IPV6:
-		sampledIPBase := SampledIP_Base{
+		sampledIPBase := SampledIPBase{
 			SrcIP: make([]byte, 16),
 			DstIP: make([]byte, 16),
 		}
@@ -207,7 +211,11 @@ func DecodeFlowRecord(header *RecordHeader, payload *bytes.Buffer) (FlowRecord, 
 
 		flowRecord.Data = extendedGateway
 	default:
-		return flowRecord, &RecordError{header.DataFormat, fmt.Errorf("unknown data format")}
+		var rawRecord RawRecord
+		if err := utils.BinaryDecoder(payload, &rawRecord.Data); err != nil {
+			return flowRecord, &RecordError{header.DataFormat, err}
+		}
+		flowRecord.Data = rawRecord
 	}
 	return flowRecord, nil
 }

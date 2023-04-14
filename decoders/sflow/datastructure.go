@@ -15,7 +15,7 @@ type SampledEthernet struct {
 	EthType uint32
 }
 
-type SampledIP_Base struct {
+type SampledIPBase struct {
 	Length   uint32
 	Protocol uint32
 	SrcIP    []byte
@@ -26,12 +26,12 @@ type SampledIP_Base struct {
 }
 
 type SampledIPv4 struct {
-	Base SampledIP_Base
+	Base SampledIPBase
 	Tos  uint32
 }
 
 type SampledIPv6 struct {
-	Base     SampledIP_Base
+	Base     SampledIPBase
 	Priority uint32
 }
 
@@ -100,4 +100,8 @@ type EthernetCounters struct {
 	Dot3StatsFrameTooLongs             uint32
 	Dot3StatsInternalMacReceiveErrors  uint32
 	Dot3StatsSymbolErrors              uint32
+}
+
+type RawRecord struct {
+	Data []byte
 }
