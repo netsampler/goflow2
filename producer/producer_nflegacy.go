@@ -2,7 +2,6 @@ package producer
 
 import (
 	"encoding/binary"
-	"net"
 
 	"github.com/netsampler/goflow2/decoders/netflowlegacy"
 	flowmessage "github.com/netsampler/goflow2/pb"
@@ -16,13 +15,13 @@ func ConvertNetFlowLegacyRecord(flowMessage *ProtoProducerMessage, baseTime uint
 	flowMessage.TimeFlowStartMs = uint64(baseTime)*1000 - uint64(timeDiffFirst)
 	flowMessage.TimeFlowEndMs = uint64(baseTime)*1000 - uint64(timeDiffLast)
 
-	v := make(net.IP, 4)
+	v := make([]byte, 4)
 	binary.BigEndian.PutUint32(v, record.NextHop)
 	flowMessage.NextHop = v
-	v = make(net.IP, 4)
+	v = make([]byte, 4)
 	binary.BigEndian.PutUint32(v, record.SrcAddr)
 	flowMessage.SrcAddr = v
-	v = make(net.IP, 4)
+	v = make([]byte, 4)
 	binary.BigEndian.PutUint32(v, record.DstAddr)
 	flowMessage.DstAddr = v
 

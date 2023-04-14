@@ -2,7 +2,6 @@ package producer
 
 import (
 	"encoding/binary"
-	"net"
 
 	"github.com/netsampler/goflow2/decoders/sflow"
 	flowmessage "github.com/netsampler/goflow2/pb"
@@ -31,8 +30,7 @@ func ParseEthernetHeader(flowMessage *ProtoProducerMessage, data []byte, config 
 
 	var nextHeader byte
 	var tcpflags byte
-	srcIP := net.IP{}
-	dstIP := net.IP{}
+	var srcIP, dstIP []byte
 	offset := 14
 
 	var srcMac uint64
@@ -226,9 +224,7 @@ func SearchSFlowSampleConfig(flowMessage *ProtoProducerMessage, flowSample inter
 		flowMessage.OutIf = flowSample.OutputIfValue
 	}
 
-	ipNh := net.IP{}
-	ipSrc := net.IP{}
-	ipDst := net.IP{}
+	var ipNh, ipSrc, ipDst []byte
 	flowMessage.Packets = 1
 	for _, record := range records {
 		switch recordData := record.Data.(type) {

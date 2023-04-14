@@ -59,7 +59,6 @@ func ExtractTag(name, original string, tag reflect.StructTag) string {
 }
 
 func (m *ProtoProducerMessage) FormatMessageReflectCustom(msg interface{}, ext, quotes, sep, sign string, null bool) string {
-	//customSelector := selector
 	vfm := reflect.ValueOf(msg)
 	vfm = reflect.Indirect(vfm)
 
@@ -115,7 +114,8 @@ func (m *ProtoProducerMessage) FormatMessageReflectCustom(msg interface{}, ext, 
 		}
 	}
 
-	for _, s := range m.formatter.fields { // iterate through the fields
+	// iterate through the fields requested by the user
+	for _, s := range m.formatter.fields {
 		fieldName := s
 
 		fieldFinalName := s
@@ -149,6 +149,9 @@ func (m *ProtoProducerMessage) FormatMessageReflectCustom(msg interface{}, ext, 
 
 		isSlice := m.formatter.isSlice[fieldName]
 
+		// render each item of the array independently
+		// note: isSlice is necessary to consider certain byte arrays in their entirety
+		// eg: IP addresses
 		if isSlice {
 			c := fieldValue.Len()
 			v := "["

@@ -5,7 +5,6 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
-	"net"
 	"sync"
 	"time"
 
@@ -89,8 +88,8 @@ func NetFlowPopulate(dataFields []netflow.DataField, typeId uint16, addr interfa
 		valueReader := bytes.NewReader(valueBytes)
 		if ok {
 			switch addrt := addr.(type) {
-			case *(net.IP):
-				*addrt = valueBytes
+			//case *(net.IP):
+			//	*addrt = valueBytes
 			case *(time.Time):
 				t := uint64(0)
 				binary.Read(valueReader, binary.BigEndian, &t)

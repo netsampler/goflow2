@@ -1,9 +1,7 @@
 package netflowlegacy
 
 import (
-	"encoding/binary"
 	"fmt"
-	"net"
 	"time"
 )
 
@@ -33,17 +31,14 @@ func (p PacketNetFlowV5) String() string {
 	return str
 }
 
-func (r RecordsNetFlowV5) String() string {
-	srcaddr := make(net.IP, 4)
-	binary.BigEndian.PutUint32(srcaddr, r.SrcAddr)
-	dstaddr := make(net.IP, 4)
-	binary.BigEndian.PutUint32(dstaddr, r.DstAddr)
-	nexthop := make(net.IP, 4)
-	binary.BigEndian.PutUint32(nexthop, r.NextHop)
+func IPToString(ip uint32) string {
+	return fmt.Sprintf("%d.%d.%d.%d", ip>>24, (ip>>16)&0xFF, (ip>>8)&0xFF, ip&0xFF)
+}
 
-	str := fmt.Sprintf("      SrcAddr: %v\n", srcaddr.String())
-	str += fmt.Sprintf("      DstAddr: %v\n", dstaddr.String())
-	str += fmt.Sprintf("      NextHop: %v\n", nexthop.String())
+func (r RecordsNetFlowV5) String() string {
+	str := fmt.Sprintf("      SrcAddr: %v\n", IPToString(r.SrcAddr))
+	str += fmt.Sprintf("      DstAddr: %v\n", IPToString(r.DstAddr))
+	str += fmt.Sprintf("      NextHop: %v\n", IPToString(r.NextHop))
 	str += fmt.Sprintf("      Input: %v\n", r.Input)
 	str += fmt.Sprintf("      Output: %v\n", r.Output)
 	str += fmt.Sprintf("      DPkts: %v\n", r.DPkts)
