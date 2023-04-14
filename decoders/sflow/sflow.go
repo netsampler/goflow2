@@ -55,34 +55,6 @@ func (e *RecordError) Unwrap() error {
 	return e.Err
 }
 
-type ErrorDecodingSFlow struct {
-	msg string
-}
-
-func NewErrorDecodingSFlow(msg string) *ErrorDecodingSFlow {
-	return &ErrorDecodingSFlow{
-		msg: msg,
-	}
-}
-
-func (e *ErrorDecodingSFlow) Error() string {
-	return fmt.Sprintf("Error decoding sFlow: %v", e.msg)
-}
-
-type ErrorDataFormat struct {
-	dataformat uint32
-}
-
-func NewErrorDataFormat(dataformat uint32) *ErrorDataFormat {
-	return &ErrorDataFormat{
-		dataformat: dataformat,
-	}
-}
-
-func (e *ErrorDataFormat) Error() string {
-	return fmt.Sprintf("Unknown data format %v", e.dataformat)
-}
-
 func DecodeIP(payload *bytes.Buffer) (uint32, []byte, error) {
 	var ipVersion uint32
 	if err := utils.BinaryDecoder(payload, &ipVersion); err != nil {
