@@ -7,13 +7,14 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"net"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
 	sarama "github.com/Shopify/sarama"
 	"github.com/netsampler/goflow2/transport"
-	"github.com/netsampler/goflow2/utils"
 
 	log "github.com/sirupsen/logrus"
 )
@@ -174,7 +175,7 @@ func (d *KafkaDriver) Init(context.Context) error {
 
 	var addrs []string
 	if d.kafkaSrv != "" {
-		addrs, _ = utils.GetServiceAddresses(d.kafkaSrv)
+		addrs, _ = GetServiceAddresses(d.kafkaSrv)
 	} else {
 		addrs = strings.Split(d.kafkaBrk, ",")
 	}
@@ -218,6 +219,18 @@ func (d *KafkaDriver) Close(context.Context) error {
 	d.producer.Close()
 	close(d.q)
 	return nil
+}
+
+// todo: deprecate?
+func GetServiceAddresses(srv string) (addrs []string, err error) {
+	_, srvs, err := net.LookupSRV("", "", srv)
+	if err != nil {
+		return nil, errors.New(fmt.Sprintf("Service discovery: %v\n", err))
+	}
+	for _, srv := range srvs {
+		addrs = append(addrs, net.JoinHostPort(srv.Target, strconv.Itoa(int(srv.Port))))
+	}
+	return addrs, nil
 }
 
 func init() {
