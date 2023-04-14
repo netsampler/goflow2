@@ -1,14 +1,26 @@
 package sflow
 
+import (
+	"fmt"
+	"net/netip"
+)
+
 type Packet struct {
 	Version        uint32        `json:"version"`
 	IPVersion      uint32        `json:"ip-version"`
-	AgentIP        []byte        `json:"agent-ip"`
+	AgentIP        IPAddress     `json:"agent-ip"`
 	SubAgentId     uint32        `json:"sub-agent-id"`
 	SequenceNumber uint32        `json:"sequence-number"`
 	Uptime         uint32        `json:"uptime"`
 	SamplesCount   uint32        `json:"samples-count"`
 	Samples        []interface{} `json:"samples"`
+}
+
+type IPAddress []byte // purely for the formatting purpose
+
+func (s *IPAddress) MarshalJSON() ([]byte, error) {
+	ip, _ := netip.AddrFromSlice([]byte(*s))
+	return []byte(fmt.Sprintf("\"%s\"", ip.String())), nil
 }
 
 type SampleHeader struct {

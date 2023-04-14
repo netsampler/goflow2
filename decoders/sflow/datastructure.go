@@ -1,5 +1,10 @@
 package sflow
 
+import (
+	"fmt"
+	"net"
+)
+
 type SampledHeader struct {
 	Protocol       uint32 `json:"protocol"`
 	FrameLength    uint32 `json:"frame-length"`
@@ -9,20 +14,26 @@ type SampledHeader struct {
 }
 
 type SampledEthernet struct {
-	Length  uint32 `json:"length"`
-	SrcMac  []byte `json:"src-mac"`
-	DstMac  []byte `json:"dst-mac"`
-	EthType uint32 `json:"eth-type"`
+	Length  uint32     `json:"length"`
+	SrcMac  MacAddress `json:"src-mac"`
+	DstMac  MacAddress `json:"dst-mac"`
+	EthType uint32     `json:"eth-type"`
 }
 
 type SampledIPBase struct {
-	Length   uint32 `json:"length"`
-	Protocol uint32 `json:"protocol"`
-	SrcIP    []byte `json:"src-ip"`
-	DstIP    []byte `json:"dst-ip"`
-	SrcPort  uint32 `json:"src-port"`
-	DstPort  uint32 `json:"dst-port"`
-	TcpFlags uint32 `json:"tcp-flags"`
+	Length   uint32    `json:"length"`
+	Protocol uint32    `json:"protocol"`
+	SrcIP    IPAddress `json:"src-ip"`
+	DstIP    IPAddress `json:"dst-ip"`
+	SrcPort  uint32    `json:"src-port"`
+	DstPort  uint32    `json:"dst-port"`
+	TcpFlags uint32    `json:"tcp-flags"`
+}
+
+type MacAddress []byte // purely for the formatting purpose
+
+func (s *MacAddress) MarshalJSON() ([]byte, error) {
+	return []byte(fmt.Sprintf("\"%s\"", net.HardwareAddr([]byte(*s)).String())), nil
 }
 
 type SampledIPv4 struct {
@@ -43,25 +54,25 @@ type ExtendedSwitch struct {
 }
 
 type ExtendedRouter struct {
-	NextHopIPVersion uint32 `json:"next-hop-ip-version"`
-	NextHop          []byte `json:"next-hop"`
-	SrcMaskLen       uint32 `json:"src-mask-len"`
-	DstMaskLen       uint32 `json:"dst-mask-len"`
+	NextHopIPVersion uint32    `json:"next-hop-ip-version"`
+	NextHop          IPAddress `json:"next-hop"`
+	SrcMaskLen       uint32    `json:"src-mask-len"`
+	DstMaskLen       uint32    `json:"dst-mask-len"`
 }
 
 type ExtendedGateway struct {
-	NextHopIPVersion  uint32   `json:"next-hop-ip-version"`
-	NextHop           []byte   `json:"next-hop"`
-	AS                uint32   `json:"as"`
-	SrcAS             uint32   `json:"src-as"`
-	SrcPeerAS         uint32   `json:"src-peer-as"`
-	ASDestinations    uint32   `json:"as-destinations"`
-	ASPathType        uint32   `json:"as-path-type"`
-	ASPathLength      uint32   `json:"as-path-length"`
-	ASPath            []uint32 `json:"as-path"`
-	CommunitiesLength uint32   `json:"communities-length"`
-	Communities       []uint32 `json:"communities"`
-	LocalPref         uint32   `json:"local-pref"`
+	NextHopIPVersion  uint32    `json:"next-hop-ip-version"`
+	NextHop           IPAddress `json:"next-hop"`
+	AS                uint32    `json:"as"`
+	SrcAS             uint32    `json:"src-as"`
+	SrcPeerAS         uint32    `json:"src-peer-as"`
+	ASDestinations    uint32    `json:"as-destinations"`
+	ASPathType        uint32    `json:"as-path-type"`
+	ASPathLength      uint32    `json:"as-path-length"`
+	ASPath            []uint32  `json:"as-path"`
+	CommunitiesLength uint32    `json:"communities-length"`
+	Communities       []uint32  `json:"communities"`
+	LocalPref         uint32    `json:"local-pref"`
 }
 
 type IfCounters struct {
