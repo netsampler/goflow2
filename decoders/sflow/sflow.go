@@ -128,35 +128,27 @@ func DecodeFlowRecord(header *RecordHeader, payload *bytes.Buffer) (FlowRecord, 
 		sampledHeader.HeaderData = payload.Bytes()
 		flowRecord.Data = sampledHeader
 	case FORMAT_IPV4:
-		sampledIPBase := SampledIPBase{
-			SrcIP: make([]byte, 4),
-			DstIP: make([]byte, 4),
+		sampledIP := SampledIPv4{
+			SampledIPBase: SampledIPBase{
+				SrcIP: make([]byte, 4),
+				DstIP: make([]byte, 4),
+			},
 		}
-		if err := utils.BinaryDecoder(payload, &sampledIPBase); err != nil {
+		if err := utils.BinaryDecoder(payload, &(sampledIP.SampledIPBase), &(sampledIP.Tos)); err != nil {
 			return flowRecord, &RecordError{header.DataFormat, err}
 		}
-		sampledIPv4 := SampledIPv4{
-			Base: sampledIPBase,
-		}
-		if err := utils.BinaryDecoder(payload, &(sampledIPv4.Tos)); err != nil {
-			return flowRecord, &RecordError{header.DataFormat, err}
-		}
-		flowRecord.Data = sampledIPv4
+		flowRecord.Data = sampledIP
 	case FORMAT_IPV6:
-		sampledIPBase := SampledIPBase{
-			SrcIP: make([]byte, 16),
-			DstIP: make([]byte, 16),
+		sampledIP := SampledIPv6{
+			SampledIPBase: SampledIPBase{
+				SrcIP: make([]byte, 16),
+				DstIP: make([]byte, 16),
+			},
 		}
-		if err := utils.BinaryDecoder(payload, &sampledIPBase); err != nil {
+		if err := utils.BinaryDecoder(payload, &(sampledIP.SampledIPBase), &(sampledIP.Priority)); err != nil {
 			return flowRecord, &RecordError{header.DataFormat, err}
 		}
-		sampledIPv6 := SampledIPv6{
-			Base: sampledIPBase,
-		}
-		if err := utils.BinaryDecoder(payload, &(sampledIPv6.Priority)); err != nil {
-			return flowRecord, &RecordError{header.DataFormat, err}
-		}
-		flowRecord.Data = sampledIPv6
+		flowRecord.Data = sampledIP
 	case FORMAT_EXT_ROUTER:
 		extendedRouter := ExtendedRouter{}
 		if extendedRouter.NextHopIPVersion, extendedRouter.NextHop, err = DecodeIP(payload); err != nil {

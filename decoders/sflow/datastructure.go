@@ -26,12 +26,12 @@ type SampledIPBase struct {
 }
 
 type SampledIPv4 struct {
-	Base SampledIPBase
-	Tos  uint32
+	SampledIPBase
+	Tos uint32
 }
 
 type SampledIPv6 struct {
-	Base     SampledIPBase
+	SampledIPBase
 	Priority uint32
 }
 

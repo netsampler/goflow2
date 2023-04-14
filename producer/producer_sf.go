@@ -234,25 +234,25 @@ func SearchSFlowSampleConfig(flowMessage *ProtoProducerMessage, flowSample inter
 				return err
 			}
 		case sflow.SampledIPv4:
-			ipSrc = recordData.Base.SrcIP
-			ipDst = recordData.Base.DstIP
+			ipSrc = recordData.SrcIP
+			ipDst = recordData.DstIP
 			flowMessage.SrcAddr = ipSrc
 			flowMessage.DstAddr = ipDst
-			flowMessage.Bytes = uint64(recordData.Base.Length)
-			flowMessage.Proto = recordData.Base.Protocol
-			flowMessage.SrcPort = recordData.Base.SrcPort
-			flowMessage.DstPort = recordData.Base.DstPort
+			flowMessage.Bytes = uint64(recordData.Length)
+			flowMessage.Proto = recordData.Protocol
+			flowMessage.SrcPort = recordData.SrcPort
+			flowMessage.DstPort = recordData.DstPort
 			flowMessage.IpTos = recordData.Tos
 			flowMessage.Etype = 0x800
 		case sflow.SampledIPv6:
-			ipSrc = recordData.Base.SrcIP
-			ipDst = recordData.Base.DstIP
+			ipSrc = recordData.SrcIP
+			ipDst = recordData.DstIP
 			flowMessage.SrcAddr = ipSrc
 			flowMessage.DstAddr = ipDst
-			flowMessage.Bytes = uint64(recordData.Base.Length)
-			flowMessage.Proto = recordData.Base.Protocol
-			flowMessage.SrcPort = recordData.Base.SrcPort
-			flowMessage.DstPort = recordData.Base.DstPort
+			flowMessage.Bytes = uint64(recordData.Length)
+			flowMessage.Proto = recordData.Protocol
+			flowMessage.SrcPort = recordData.SrcPort
+			flowMessage.DstPort = recordData.DstPort
 			flowMessage.IpTos = recordData.Priority
 			flowMessage.Etype = 0x86dd
 		case sflow.ExtendedRouter:
