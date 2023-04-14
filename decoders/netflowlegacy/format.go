@@ -9,7 +9,11 @@ func (p PacketNetFlowV5) MarshalJSON() ([]byte, error) {
 	return []byte("todo"), nil
 }
 
-func (p PacketNetFlowV5) String() string {
+func (p *PacketNetFlowV5) String() string {
+	return fmt.Sprintf("NetFlowV%d seq:%d count:%d", p.Version, p.FlowSequence, p.Count)
+}
+
+func (p PacketNetFlowV5) String2() string {
 	str := "NetFlow v5 Packet\n"
 	str += "-----------------\n"
 	str += fmt.Sprintf("  Version: %v\n", p.Version)

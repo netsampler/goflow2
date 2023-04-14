@@ -172,14 +172,17 @@ func (p *NetFlowPipe) DecodeFlow(msg interface{}) error {
 	}
 	switch version {
 	case 5:
+		packetV5.Version = 5
 		if err := netflowlegacy.DecodeMessage(buf, &packetV5); err != nil {
 			return err
 		}
 	case 9:
+		packetNFv9.Version = 9
 		if err := netflow.DecodeMessageNetFlow(buf, templates, &packetNFv9); err != nil {
 			return err
 		}
 	case 10:
+		packetIPFIX.Version = 10
 		if err := netflow.DecodeMessageIPFIX(buf, templates, &packetIPFIX); err != nil {
 			return err
 		}

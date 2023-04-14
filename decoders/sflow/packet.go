@@ -1,69 +1,69 @@
 package sflow
 
 type Packet struct {
-	Version        uint32
-	IPVersion      uint32
-	AgentIP        []byte
-	SubAgentId     uint32
-	SequenceNumber uint32
-	Uptime         uint32
-	SamplesCount   uint32
-	Samples        []interface{}
+	Version        uint32        `json:"version"`
+	IPVersion      uint32        `json:"ip-version"`
+	AgentIP        []byte        `json:"agent-ip"`
+	SubAgentId     uint32        `json:"sub-agent-id"`
+	SequenceNumber uint32        `json:"sequence-number"`
+	Uptime         uint32        `json:"uptime"`
+	SamplesCount   uint32        `json:"samples-count"`
+	Samples        []interface{} `json:"samples"`
 }
 
 type SampleHeader struct {
-	Format uint32
-	Length uint32
+	Format uint32 `json:"format"`
+	Length uint32 `json:"length"`
 
-	SampleSequenceNumber uint32
-	SourceIdType         uint32
-	SourceIdValue        uint32
+	SampleSequenceNumber uint32 `json:"sample-sequence-number"`
+	SourceIdType         uint32 `json:"source-id-type"`
+	SourceIdValue        uint32 `json:"source-id-value"`
 }
 
 type FlowSample struct {
-	Header SampleHeader
+	Header SampleHeader `json:"header"`
 
-	SamplingRate     uint32
-	SamplePool       uint32
-	Drops            uint32
-	Input            uint32
-	Output           uint32
-	FlowRecordsCount uint32
-	Records          []FlowRecord
+	SamplingRate     uint32       `json:"sampling-rate"`
+	SamplePool       uint32       `json:"sample-pool"`
+	Drops            uint32       `json:"drops"`
+	Input            uint32       `json:"input"`
+	Output           uint32       `json:"output"`
+	FlowRecordsCount uint32       `json:"flow-records-count"`
+	Records          []FlowRecord `json:"records"`
 }
 
 type CounterSample struct {
-	Header SampleHeader
+	Header SampleHeader `json:"header"`
 
-	CounterRecordsCount uint32
-	Records             []CounterRecord
+	CounterRecordsCount uint32          `json:"counter-records-count"`
+	Records             []CounterRecord `json:"records"`
 }
 
 type ExpandedFlowSample struct {
-	Header SampleHeader
+	Header SampleHeader `json:"header"`
 
-	SamplingRate     uint32
-	SamplePool       uint32
-	Drops            uint32
-	InputIfFormat    uint32
-	InputIfValue     uint32
-	OutputIfFormat   uint32
-	OutputIfValue    uint32
-	FlowRecordsCount uint32
-	Records          []FlowRecord
+	SamplingRate     uint32       `json:"sampling-rate"`
+	SamplePool       uint32       `json:"sample-pool"`
+	Drops            uint32       `json:"drops"`
+	InputIfFormat    uint32       `json:"input-if-format"`
+	InputIfValue     uint32       `json:"input-if-value"`
+	OutputIfFormat   uint32       `json:"output-if-format"`
+	OutputIfValue    uint32       `json:"output-if-value"`
+	FlowRecordsCount uint32       `json:"flow-records-count"`
+	Records          []FlowRecord `json:"records"`
 }
 
 type RecordHeader struct {
-	DataFormat uint32
-	Length     uint32
+	DataFormat uint32 `json:"data-format"`
+	Length     uint32 `json:"length"`
 }
 
 type FlowRecord struct {
-	Header RecordHeader
-	Data   interface{}
+	Header RecordHeader `json:"header"`
+	Data   interface{}  `json:"data"`
 }
 
 type CounterRecord struct {
-	Header RecordHeader
-	Data   interface{}
+	Header RecordHeader `json:"header"`
+	Data   interface{}  `json:"data"`
 }

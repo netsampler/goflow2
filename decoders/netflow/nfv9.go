@@ -282,7 +282,7 @@ func (flowSet NFv9OptionsTemplateFlowSet) String(TypeToString func(uint16) strin
 	return str
 }
 
-func (p NFv9Packet) String() string {
+func (p NFv9Packet) String2() string {
 	str := "Flow Packet\n"
 	str += "------------\n"
 	str += fmt.Sprintf("  Version: %v\n", p.Version)

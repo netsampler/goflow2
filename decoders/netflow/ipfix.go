@@ -954,7 +954,7 @@ func (flowSet IPFIXOptionsTemplateFlowSet) String(TypeToString func(uint16) stri
 	return str
 }
 
-func (p IPFIXPacket) String() string {
+func (p IPFIXPacket) String2() string {
 	str := "Flow Packet\n"
 	str += "------------\n"
 	str += fmt.Sprintf("  Version: %v\n", p.Version)
