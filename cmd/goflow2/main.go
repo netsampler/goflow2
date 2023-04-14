@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"net/http"
@@ -15,13 +16,16 @@ import (
 
 	_ "net/http/pprof"
 
-	// import various formatters
+	// decoders
+	"github.com/netsampler/goflow2/decoders/netflow"
+
+	// various formatters
 	"github.com/netsampler/goflow2/format"
 	_ "github.com/netsampler/goflow2/format/json"
 	_ "github.com/netsampler/goflow2/format/protobuf"
 	_ "github.com/netsampler/goflow2/format/text"
 
-	// import various transports
+	// various transports
 	"github.com/netsampler/goflow2/transport"
 	_ "github.com/netsampler/goflow2/transport/file"
 	_ "github.com/netsampler/goflow2/transport/kafka"
@@ -194,7 +198,13 @@ func main() {
 					case <-q:
 						return
 					case err := <-recv.Errors():
-						l.WithError(err).Error("error")
+						l := l.WithError(err)
+						if errors.Is(err, netflow.ErrorTemplateNotFound) {
+							l.Warn("template error")
+						} else {
+							l.Error("error")
+						}
+
 					}
 				}
 			}()

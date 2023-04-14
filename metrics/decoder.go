@@ -1,6 +1,7 @@
 package metrics
 
 import (
+	"errors"
 	"fmt"
 	"time"
 
@@ -61,19 +62,21 @@ func PromDecoderWrapper(wrapped utils.DecoderFunc, name string) utils.DecoderFun
 			Observe(float64((timeTrackStop.Sub(timeTrackStart)).Nanoseconds()) / 1000)
 
 		if err != nil {
+			if errors.Is(err, netflow.ErrorTemplateNotFound) {
+				NetFlowErrors.With(
+					prometheus.Labels{
+						"router": remote,
+						"error":  "template_not_found",
+					}).
+					Inc()
+			}
+
 			switch err.(type) {
 			case *netflowlegacy.ErrorVersion:
 				NetFlowErrors.With(
 					prometheus.Labels{
 						"router": remote,
 						"error":  "error_version",
-					}).
-					Inc()
-			case *netflow.ErrorTemplateNotFound:
-				NetFlowErrors.With(
-					prometheus.Labels{
-						"router": remote,
-						"error":  "template_not_found",
 					}).
 					Inc()
 			case *sflow.ErrorVersion:

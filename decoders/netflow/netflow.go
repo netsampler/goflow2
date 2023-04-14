@@ -9,6 +9,10 @@ import (
 	"github.com/netsampler/goflow2/decoders/utils"
 )
 
+var (
+	ErrorTemplateNotFound = fmt.Errorf("Error template not found")
+)
+
 type FlowBaseTemplateSet map[uint16]map[uint32]map[uint16]interface{}
 
 type NetFlowTemplateSystem interface {
@@ -193,24 +197,20 @@ func DecodeDataSetUsingFields(version uint16, payload *bytes.Buffer, listFields 
 	return []DataField{}
 }
 
-type ErrorTemplateNotFound struct {
-	version      uint16
-	obsDomainId  uint32
-	templateId   uint16
-	typeTemplate string
+// todo: change to decoder error
+type NetFlowDecoderError struct {
+	Version     uint16
+	ObsDomainId uint32
+	TemplateId  uint16
+	Err         error
 }
 
-func NewErrorTemplateNotFound(version uint16, obsDomainId uint32, templateId uint16, typeTemplate string) *ErrorTemplateNotFound {
-	return &ErrorTemplateNotFound{
-		version:      version,
-		obsDomainId:  obsDomainId,
-		templateId:   templateId,
-		typeTemplate: typeTemplate,
-	}
+func (e *NetFlowDecoderError) Error() string {
+	return fmt.Sprintf("Decoder error Version:%d ObsDomainId:%v: TemplateId:%d Err:%s", e.Version, e.ObsDomainId, e.TemplateId, e.Err.Error())
 }
 
-func (e *ErrorTemplateNotFound) Error() string {
-	return fmt.Sprintf("No %v template %v found for and domain id %v", e.typeTemplate, e.templateId, e.obsDomainId)
+func (e *NetFlowDecoderError) Unwrap() error {
+	return e.Err
 }
 
 func DecodeOptionsDataSet(version uint16, payload *bytes.Buffer, listFieldsScopes, listFieldsOption []Field) ([]OptionsDataRecord, error) {
@@ -292,7 +292,7 @@ func (ts *BasicTemplateSystem) GetTemplate(version uint16, obsDomainId uint32, t
 			}
 		}
 	}
-	return nil, NewErrorTemplateNotFound(version, obsDomainId, templateId, "info")
+	return nil, ErrorTemplateNotFound
 }
 
 type BasicTemplateSystem struct {
@@ -440,7 +440,7 @@ func DecodeMessageCommon(payload *bytes.Buffer, templates NetFlowTemplateSystem,
 					flowSet = datafs
 				}
 			} else {
-				return flowSet, err
+				return flowSet, &NetFlowDecoderError{version, obsDomainId, fsheader.Id, err}
 			}
 		} else {
 			return flowSet, fmt.Errorf("Error with ID %d", fsheader.Id)
