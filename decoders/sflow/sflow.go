@@ -83,6 +83,29 @@ func (e *ErrorDataFormat) Error() string {
 	return fmt.Sprintf("Unknown data format %v", e.dataformat)
 }
 
+func DecodeIP(payload *bytes.Buffer) (uint32, []byte, error) {
+	var ipVersion uint32
+	if err := utils.BinaryDecoder(payload, &ipVersion); err != nil {
+		return 0, nil, fmt.Errorf("DecodeIP: [%w]", err)
+	}
+	var ip []byte
+	if ipVersion == 1 {
+		ip = make([]byte, 4)
+	} else if ipVersion == 2 {
+		ip = make([]byte, 16)
+	} else {
+		return ipVersion, ip, fmt.Errorf("DecodeIP: unknown IP version %d", ipVersion)
+	}
+	if payload.Len() >= len(ip) {
+		if err := utils.BinaryDecoder(payload, &ip); err != nil {
+			return 0, nil, fmt.Errorf("DecodeIP: [%w]", err)
+		}
+	} else {
+		return ipVersion, ip, fmt.Errorf("DecodeIP: truncated data (need %d, got %d)", len(ip), payload.Len())
+	}
+	return ipVersion, ip, nil
+}
+
 func DecodeCounterRecord(header *RecordHeader, payload *bytes.Buffer) (CounterRecord, error) {
 	counterRecord := CounterRecord{
 		Header: *header,
@@ -105,29 +128,6 @@ func DecodeCounterRecord(header *RecordHeader, payload *bytes.Buffer) (CounterRe
 	}
 
 	return counterRecord, nil
-}
-
-func DecodeIP(payload *bytes.Buffer) (uint32, []byte, error) {
-	var ipVersion uint32
-	if err := utils.BinaryDecoder(payload, &ipVersion); err != nil {
-		return 0, nil, fmt.Errorf("DecodeIP: [%w]", err)
-	}
-	var ip []byte
-	if ipVersion == 1 {
-		ip = make([]byte, 4)
-	} else if ipVersion == 2 {
-		ip = make([]byte, 16)
-	} else {
-		return ipVersion, ip, fmt.Errorf("DecodeIP: unknown IP version %d", ipVersion)
-	}
-	if payload.Len() >= len(ip) {
-		if err := utils.BinaryDecoder(payload, &ip); err != nil {
-			return 0, nil, fmt.Errorf("DecodeIP: [%w]", err)
-		}
-	} else {
-		return ipVersion, ip, fmt.Errorf("DecodeIP: truncated data (need %d, got %d)", len(ip), payload.Len())
-	}
-	return ipVersion, ip, nil
 }
 
 func DecodeFlowRecord(header *RecordHeader, payload *bytes.Buffer) (FlowRecord, error) {
