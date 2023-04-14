@@ -21,6 +21,22 @@ func (e *ErrorVersion) Error() string {
 	return fmt.Sprintf("Unknown NetFlow version %v (only decodes v5)", e.version)
 }
 
+type NetFlowLegacyDecoderError struct {
+	Version     uint16
+	Type        string
+	ObsDomainId uint32
+	TemplateId  uint16
+	Err         error
+}
+
+func (e *NetFlowLegacyDecoderError) Error() string {
+	return fmt.Sprintf("NetFlow Legacy decoder error: [version:%d type:%s obsDomainId:%v: templateId:%d] %s", e.Version, e.Type, e.ObsDomainId, e.TemplateId, e.Err.Error())
+}
+
+func (e *NetFlowLegacyDecoderError) Unwrap() error {
+	return e.Err
+}
+
 func DecodeMessageVersion(payload *bytes.Buffer, packet *PacketNetFlowV5) error {
 	var version uint16
 	if err := utils.BinaryDecoder(payload, &version); err != nil {

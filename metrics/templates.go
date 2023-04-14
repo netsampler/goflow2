@@ -31,8 +31,8 @@ func NewPromTemplateSystem(wrapped netflow.NetFlowTemplateSystem) netflow.NetFlo
 	}
 }
 
-func (s *PromTemplateSystem) AddTemplate(version uint16, obsDomainId uint32, template interface{}) {
-	s.wrapped.AddTemplate(version, obsDomainId, template)
+func (s *PromTemplateSystem) AddTemplate(version uint16, obsDomainId uint32, template interface{}) error {
+	err := s.wrapped.AddTemplate(version, obsDomainId, template)
 
 	typeStr := "options_template"
 	var templateId uint16
@@ -54,6 +54,7 @@ func (s *PromTemplateSystem) AddTemplate(version uint16, obsDomainId uint32, tem
 			"type":          typeStr,
 		}).
 		Inc()
+	return err
 }
 
 func (s *PromTemplateSystem) GetTemplate(version uint16, obsDomainId uint32, templateId uint16) (interface{}, error) {

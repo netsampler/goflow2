@@ -181,6 +181,18 @@ func (r *UDPReceiver) receive(addr string, port int, started chan bool) error {
 
 }
 
+type ReceiverError struct {
+	Err error
+}
+
+func (e *ReceiverError) Error() string {
+	return "receiver: " + e.Err.Error()
+}
+
+func (e *ReceiverError) Unwrap() error {
+	return e.Err
+}
+
 // Start the processing routines
 func (r *UDPReceiver) decoders(workers int, decodeFunc DecoderFunc) error {
 	for i := 0; i < workers; i++ {
@@ -204,7 +216,7 @@ func (r *UDPReceiver) decoders(workers int, decodeFunc DecoderFunc) error {
 						}
 
 						if err := decodeFunc(&msg); err != nil {
-							r.logError(fmt.Errorf("error decoding: [%w]", err))
+							r.logError(&ReceiverError{err})
 						}
 					}
 					packetPool.Put(pkt)
@@ -224,7 +236,7 @@ func (r *UDPReceiver) receivers(sockets int, addr string, port int) error {
 		go func() {
 			defer r.wg.Done()
 			if err := r.receive(addr, port, started); err != nil {
-				r.logError(fmt.Errorf("error receiver: [%w]", err))
+				r.logError(&ReceiverError{err})
 			}
 		}()
 		<-started
