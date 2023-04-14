@@ -50,56 +50,56 @@ type ExtendedRouter struct {
 }
 
 type ExtendedGateway struct {
-	NextHopIPVersion  uint32
-	NextHop           []byte
-	AS                uint32
-	SrcAS             uint32
-	SrcPeerAS         uint32
-	ASDestinations    uint32
-	ASPathType        uint32
-	ASPathLength      uint32
-	ASPath            []uint32
-	CommunitiesLength uint32
-	Communities       []uint32
-	LocalPref         uint32
+	NextHopIPVersion  uint32   `json:"next-hop-ip-version"`
+	NextHop           []byte   `json:"next-hop"`
+	AS                uint32   `json:"as"`
+	SrcAS             uint32   `json:"src-as"`
+	SrcPeerAS         uint32   `json:"src-peer-as"`
+	ASDestinations    uint32   `json:"as-destinations"`
+	ASPathType        uint32   `json:"as-path-type"`
+	ASPathLength      uint32   `json:"as-path-length"`
+	ASPath            []uint32 `json:"as-path"`
+	CommunitiesLength uint32   `json:"communities-length"`
+	Communities       []uint32 `json:"communities"`
+	LocalPref         uint32   `json:"local-pref"`
 }
 
 type IfCounters struct {
-	IfIndex            uint32
-	IfType             uint32
-	IfSpeed            uint64
-	IfDirection        uint32
-	IfStatus           uint32
-	IfInOctets         uint64
-	IfInUcastPkts      uint32
-	IfInMulticastPkts  uint32
-	IfInBroadcastPkts  uint32
-	IfInDiscards       uint32
-	IfInErrors         uint32
-	IfInUnknownProtos  uint32
-	IfOutOctets        uint64
-	IfOutUcastPkts     uint32
-	IfOutMulticastPkts uint32
-	IfOutBroadcastPkts uint32
-	IfOutDiscards      uint32
-	IfOutErrors        uint32
-	IfPromiscuousMode  uint32
+	IfIndex            uint32 `json:"if-index"`
+	IfType             uint32 `json:"if-type"`
+	IfSpeed            uint64 `json:"if-speed"`
+	IfDirection        uint32 `json:"if-direction"`
+	IfStatus           uint32 `json:"if-status"`
+	IfInOctets         uint64 `json:"if-in-octets"`
+	IfInUcastPkts      uint32 `json:"if-in-ucast-pkts"`
+	IfInMulticastPkts  uint32 `json:"if-in-multicast-pkts"`
+	IfInBroadcastPkts  uint32 `json:"if-in-broadcast-pkts"`
+	IfInDiscards       uint32 `json:"if-in-discards"`
+	IfInErrors         uint32 `json:"if-in-errors"`
+	IfInUnknownProtos  uint32 `json:"if-in-unknown-protos"`
+	IfOutOctets        uint64 `json:"if-out-octets"`
+	IfOutUcastPkts     uint32 `json:"if-out-ucast-pkts"`
+	IfOutMulticastPkts uint32 `json:"if-out-multicast-pkts"`
+	IfOutBroadcastPkts uint32 `json:"if-out-broadcast-pkts"`
+	IfOutDiscards      uint32 `json:"if-out-discards"`
+	IfOutErrors        uint32 `json:"if-out-errors"`
+	IfPromiscuousMode  uint32 `json:"if-promiscuous-mode"`
 }
 
 type EthernetCounters struct {
-	Dot3StatsAlignmentErrors           uint32
-	Dot3StatsFCSErrors                 uint32
-	Dot3StatsSingleCollisionFrames     uint32
-	Dot3StatsMultipleCollisionFrames   uint32
-	Dot3StatsSQETestErrors             uint32
-	Dot3StatsDeferredTransmissions     uint32
-	Dot3StatsLateCollisions            uint32
-	Dot3StatsExcessiveCollisions       uint32
-	Dot3StatsInternalMacTransmitErrors uint32
-	Dot3StatsCarrierSenseErrors        uint32
-	Dot3StatsFrameTooLongs             uint32
-	Dot3StatsInternalMacReceiveErrors  uint32
-	Dot3StatsSymbolErrors              uint32
+	Dot3StatsAlignmentErrors           uint32 `json:"dot3-stats-aligment-errors"`
+	Dot3StatsFCSErrors                 uint32 `json:"dot3-stats-fcse-errors"`
+	Dot3StatsSingleCollisionFrames     uint32 `json:"dot3-stats-single-collision-frames"`
+	Dot3StatsMultipleCollisionFrames   uint32 `json:"dot3-stats-multiple-collision-frames"`
+	Dot3StatsSQETestErrors             uint32 `json:"dot3-stats-seq-test-errors"`
+	Dot3StatsDeferredTransmissions     uint32 `json:"dot3-stats-deferred-transmissions"`
+	Dot3StatsLateCollisions            uint32 `json:"dot3-stats-late-collisions"`
+	Dot3StatsExcessiveCollisions       uint32 `json:"dot3-stats-excessive-collisions"`
+	Dot3StatsInternalMacTransmitErrors uint32 `json:"dot3-stats-internal-mac-transmit-errors"`
+	Dot3StatsCarrierSenseErrors        uint32 `json:"dot3-stats-carrier-sense-errors"`
+	Dot3StatsFrameTooLongs             uint32 `json:"dot3-stats-frame-too-longs"`
+	Dot3StatsInternalMacReceiveErrors  uint32 `json:"dot3-stats-internal-mac-receive-errors"`
+	Dot3StatsSymbolErrors              uint32 `json:"dot3-stats-symbol-errors"`
 }
 
 type RawRecord struct {
