@@ -5,6 +5,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -201,6 +202,8 @@ func main() {
 						l := l.WithError(err)
 						if errors.Is(err, netflow.ErrorTemplateNotFound) {
 							l.Warn("template error")
+						} else if errors.Is(err, net.ErrClosed) {
+							l.Info("closed")
 						} else {
 							l.Error("error")
 						}

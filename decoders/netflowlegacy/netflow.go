@@ -12,7 +12,7 @@ type DecoderError struct {
 }
 
 func (e *DecoderError) Error() string {
-	return fmt.Sprintf("%s", e.Err.Error())
+	return fmt.Sprintf("NetFlowLegacy %s", e.Err.Error())
 }
 
 func (e *DecoderError) Unwrap() error {
