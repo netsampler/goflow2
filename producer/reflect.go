@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"reflect"
 
-	//"google.golang.org/protobuf/reflect/protoreflect"
 	"google.golang.org/protobuf/encoding/protowire"
 
 	"github.com/netsampler/goflow2/decoders/netflow"

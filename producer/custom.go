@@ -48,18 +48,19 @@ type ProtobufFormatterConfig struct {
 }
 
 type FormatterConfig struct {
-	Fields   []string
-	Key      []string
-	Rename   map[string]string
-	Protobuf []ProtobufFormatterConfig
+	Fields   []string                  `yaml:"fields"`
+	Key      []string                  `yaml:"key"`
+	Render   map[string]RendererID     `yaml:"render"`
+	Rename   map[string]string         `yaml:"rename"`
+	Protobuf []ProtobufFormatterConfig `yaml:"protobuf"`
 }
 
 type ProducerConfig struct {
-	Formatter FormatterConfig `json:"formatter"`
+	Formatter FormatterConfig `yaml:"formatter"`
 
-	IPFIX     IPFIXProducerConfig     `json:"ipfix"`
-	NetFlowV9 NetFlowV9ProducerConfig `json:"netflowv9"`
-	SFlow     SFlowProducerConfig     `json:"sflow"` // also used for IPFIX data frames
+	IPFIX     IPFIXProducerConfig     `yaml:"ipfix"`
+	NetFlowV9 NetFlowV9ProducerConfig `yaml:"netflowv9"`
+	SFlow     SFlowProducerConfig     `yaml:"sflow"` // also used for IPFIX data frames
 
 	// should do a rename map list for when printing
 }
@@ -70,9 +71,12 @@ type DataMap struct {
 
 type FormatterConfigMapper struct {
 	fields  []string
-	reMap   map[string]string
+	reMap   map[string]string // map from a potential json name into the protobuf structure
+	rename  map[string]string // manually renaming fields
+	render  map[string]RenderFunc
 	pbMap   map[string]ProtobufFormatterConfig
 	numToPb map[int32]ProtobufFormatterConfig
+	isSlice map[string]bool
 }
 
 type NetFlowMapper struct {
@@ -214,11 +218,18 @@ func mapFormat(cfg *ProducerConfig) (*FormatterConfigMapper, error) {
 	}
 
 	formatterMapped.reMap = reMap
-
-	//fmt.Println(reMap)
-	//fmt.Println(fields)
-
 	pbMap := make(map[string]ProtobufFormatterConfig)
+	formatterMapped.render = make(map[string]RenderFunc)
+	formatterMapped.rename = make(map[string]string)
+	formatterMapped.isSlice = map[string]bool{
+		"BgpCommunities": true,
+		"AsPath":         true,
+		"MplsIp":         true,
+		"MplsLabel":      true,
+	} // todo: improve this with defaults
+	for k, v := range defaultRenderers {
+		formatterMapped.render[k] = v
+	}
 
 	if cfg != nil {
 		cfgFormatter := cfg.Formatter
@@ -229,14 +240,37 @@ func mapFormat(cfg *ProducerConfig) (*FormatterConfigMapper, error) {
 			pbMap[pbField.Name] = pbField // todo: check if type is valid
 
 			numToPb[pbField.Index] = pbField
+			formatterMapped.isSlice[pbField.Name] = pbField.Array
 		}
+		// populate manual renames
+		for k, v := range cfgFormatter.Rename {
+			formatterMapped.rename[k] = v
+		}
+
+		// process renderers
+		for k, v := range cfgFormatter.Render {
+			if kk, ok := reMap[k]; ok && kk != "" {
+				k = kk
+			}
+			if renderer, ok := renderers[v]; ok {
+				formatterMapped.render[k] = renderer
+			} else {
+				return formatterMapped, fmt.Errorf("field %s is not a renderer", v) // todo: make proper error
+			}
+		}
+
 		// if the config does not contain any fields initially, we set with the protobuf ones
 		if len(cfgFormatter.Fields) == 0 {
 			formatterMapped.fields = fields
 		} else {
 			for _, field := range cfgFormatter.Fields {
 				if _, ok := reMap[field]; !ok {
-					return formatterMapped, fmt.Errorf("field %s in config not found in protobuf", field) // todo: make proper error
+
+					// check if it's a virtual field
+					if _, ok := formatterMapped.render[field]; !ok {
+						return formatterMapped, fmt.Errorf("field %s in config not found in protobuf", field) // todo: make proper error
+					}
+
 				}
 			}
 			formatterMapped.fields = cfgFormatter.Fields
@@ -246,8 +280,6 @@ func mapFormat(cfg *ProducerConfig) (*FormatterConfigMapper, error) {
 		formatterMapped.numToPb = numToPb
 
 	}
-	//fmt.Println(pbMap)
-	//fmt.Println(formatterMapped.fields)
 
 	return formatterMapped, nil
 }

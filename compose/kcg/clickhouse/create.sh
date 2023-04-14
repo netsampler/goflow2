@@ -18,7 +18,7 @@ clickhouse client -n <<-EOSQL
     CREATE TABLE IF NOT EXISTS flows
     (
         time_received UInt64,
-        time_flow_start UInt64,
+        time_flow_start_ms UInt64,
 
         sequence_num UInt32,
         sampling_rate UInt64,
@@ -50,7 +50,7 @@ clickhouse client -n <<-EOSQL
     (
         date Date,
         time_received DateTime,
-        time_flow_start DateTime,
+        time_flow_start_ms DateTime,
 
         sequence_num UInt32,
         sampling_rate UInt64,
