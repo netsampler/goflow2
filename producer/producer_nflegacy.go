@@ -16,13 +16,13 @@ func ConvertNetFlowLegacyRecord(flowMessage *ProtoProducerMessage, baseTime uint
 	flowMessage.TimeFlowEndMs = uint64(baseTime)*1000 - uint64(timeDiffLast)
 
 	v := make([]byte, 4)
-	binary.BigEndian.PutUint32(v, record.NextHop)
+	binary.BigEndian.PutUint32(v, uint32(record.NextHop))
 	flowMessage.NextHop = v
 	v = make([]byte, 4)
-	binary.BigEndian.PutUint32(v, record.SrcAddr)
+	binary.BigEndian.PutUint32(v, uint32(record.SrcAddr))
 	flowMessage.SrcAddr = v
 	v = make([]byte, 4)
-	binary.BigEndian.PutUint32(v, record.DstAddr)
+	binary.BigEndian.PutUint32(v, uint32(record.DstAddr))
 	flowMessage.DstAddr = v
 
 	flowMessage.Etype = 0x800

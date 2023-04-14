@@ -1,37 +1,47 @@
 package netflowlegacy
 
+import (
+	"fmt"
+)
+
 type PacketNetFlowV5 struct {
-	Version          uint16
-	Count            uint16
-	SysUptime        uint32
-	UnixSecs         uint32
-	UnixNSecs        uint32
-	FlowSequence     uint32
-	EngineType       uint8
-	EngineId         uint8
-	SamplingInterval uint16
-	Records          []RecordsNetFlowV5
+	Version          uint16             `json:"version"`
+	Count            uint16             `json:"count"`
+	SysUptime        uint32             `json:"sys-uptime"`
+	UnixSecs         uint32             `json:"unix-secs"`
+	UnixNSecs        uint32             `json:"unix-nsecs"`
+	FlowSequence     uint32             `json:"flow-sequence"`
+	EngineType       uint8              `json:"engine-type"`
+	EngineId         uint8              `json:"engine-id"`
+	SamplingInterval uint16             `json:"sampling-interval"`
+	Records          []RecordsNetFlowV5 `json:"records"`
 }
 
 type RecordsNetFlowV5 struct {
-	SrcAddr  uint32
-	DstAddr  uint32
-	NextHop  uint32
-	Input    uint16
-	Output   uint16
-	DPkts    uint32
-	DOctets  uint32
-	First    uint32
-	Last     uint32
-	SrcPort  uint16
-	DstPort  uint16
-	Pad1     byte
-	TCPFlags uint8
-	Proto    uint8
-	Tos      uint8
-	SrcAS    uint16
-	DstAS    uint16
-	SrcMask  uint8
-	DstMask  uint8
-	Pad2     uint16
+	SrcAddr  IPAddress `json:"src-addr"`
+	DstAddr  IPAddress `json:"dst-addr"`
+	NextHop  IPAddress `json:"next-hop"`
+	Input    uint16    `json:"input"`
+	Output   uint16    `json:"output"`
+	DPkts    uint32    `json:"dpkts"`
+	DOctets  uint32    `json:"doctets"`
+	First    uint32    `json:"first"`
+	Last     uint32    `json:"last"`
+	SrcPort  uint16    `json:"src-port"`
+	DstPort  uint16    `json:"dst-port"`
+	Pad1     byte      `json:"pad1"`
+	TCPFlags uint8     `json:"tcp-flgas"`
+	Proto    uint8     `json:"proto"`
+	Tos      uint8     `json:"tos"`
+	SrcAS    uint16    `json:"src-as"`
+	DstAS    uint16    `json:"dst-as"`
+	SrcMask  uint8     `json:"src-mask"`
+	DstMask  uint8     `json:"dst-mask"`
+	Pad2     uint16    `json:"pad2"`
+}
+
+type IPAddress uint32 // purely for the formatting purpose
+
+func (s *IPAddress) MarshalJSON() ([]byte, error) {
+	return []byte(fmt.Sprintf("\"%d.%d.%d.%d\"", *s>>24, (*s>>16)&0xFF, (*s>>8)&0xFF, *s&0xFF)), nil
 }

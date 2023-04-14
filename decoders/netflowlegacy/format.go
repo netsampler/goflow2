@@ -5,9 +5,9 @@ import (
 	"time"
 )
 
-func (p PacketNetFlowV5) MarshalJSON() ([]byte, error) {
+/*func (p PacketNetFlowV5) MarshalJSON() ([]byte, error) {
 	return []byte("todo"), nil
-}
+}*/
 
 func (p *PacketNetFlowV5) String() string {
 	return fmt.Sprintf("NetFlowV%d seq:%d count:%d", p.Version, p.FlowSequence, p.Count)
@@ -35,14 +35,10 @@ func (p PacketNetFlowV5) String2() string {
 	return str
 }
 
-func IPToString(ip uint32) string {
-	return fmt.Sprintf("%d.%d.%d.%d", ip>>24, (ip>>16)&0xFF, (ip>>8)&0xFF, ip&0xFF)
-}
-
 func (r RecordsNetFlowV5) String() string {
-	str := fmt.Sprintf("      SrcAddr: %v\n", IPToString(r.SrcAddr))
-	str += fmt.Sprintf("      DstAddr: %v\n", IPToString(r.DstAddr))
-	str += fmt.Sprintf("      NextHop: %v\n", IPToString(r.NextHop))
+	str := fmt.Sprintf("      SrcAddr: %v\n", r.SrcAddr)
+	str += fmt.Sprintf("      DstAddr: %v\n", r.DstAddr)
+	str += fmt.Sprintf("      NextHop: %v\n", r.NextHop)
 	str += fmt.Sprintf("      Input: %v\n", r.Input)
 	str += fmt.Sprintf("      Output: %v\n", r.Output)
 	str += fmt.Sprintf("      DPkts: %v\n", r.DPkts)
