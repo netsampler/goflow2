@@ -17,7 +17,7 @@ message FlowMessage {
   uint32 sequence_num = 4;
   uint64 sampling_rate = 3;
 
-  uint32 flow_direction = 42;
+  //uint32 flow_direction = 42;
 
   // Sampler information
   bytes sampler_address = 11;

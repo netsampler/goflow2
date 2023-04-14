@@ -48,6 +48,9 @@ formatter:
       index: 556
       type: varint
       array: true
+    - name: flow_direction
+      index: 42
+      type: varint
 # Decoder mappings
 ipfix:
   mapping:
@@ -59,6 +62,10 @@ ipfix:
       destination: juniper_properties
       penprovided: true
       pen: 2636 # Juniper enterprise
+    - field: 61
+      destination: flow_direction
+    - field: 239
+      destination: flow_direction
 netflowv9:
   mapping:
     - field: 7
@@ -68,6 +75,8 @@ netflowv9:
     - field: 34 # samplingInterval provided within the template
       destination: sampling_rate
       endian: little
+    - field: 61
+      destination: flow_direction
 sflow:
   mapping:
     - layer: 4 # Layer 4: TCP or UDP

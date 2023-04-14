@@ -98,9 +98,7 @@ func DecodeCounterRecord(header *RecordHeader, payload *bytes.Buffer) (CounterRe
 		counterRecord.Data = ethernetCounters
 	default:
 		var rawRecord RawRecord
-		if err := utils.BinaryDecoder(payload, &rawRecord.Data); err != nil {
-			return counterRecord, &RecordError{header.DataFormat, err}
-		}
+		rawRecord.Data = payload.Bytes()
 		counterRecord.Data = rawRecord
 	}
 
@@ -204,9 +202,7 @@ func DecodeFlowRecord(header *RecordHeader, payload *bytes.Buffer) (FlowRecord, 
 		flowRecord.Data = extendedGateway
 	default:
 		var rawRecord RawRecord
-		if err := utils.BinaryDecoder(payload, &rawRecord.Data); err != nil {
-			return flowRecord, &RecordError{header.DataFormat, err}
-		}
+		rawRecord.Data = payload.Bytes()
 		flowRecord.Data = rawRecord
 	}
 	return flowRecord, nil
