@@ -6,8 +6,6 @@ import (
 	"time"
 
 	"github.com/netsampler/goflow2/decoders/netflow"
-	"github.com/netsampler/goflow2/decoders/netflowlegacy"
-	"github.com/netsampler/goflow2/decoders/sflow"
 	"github.com/netsampler/goflow2/utils"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -72,34 +70,6 @@ func PromDecoderWrapper(wrapped utils.DecoderFunc, name string) utils.DecoderFun
 			}
 
 			switch err.(type) {
-			case *netflowlegacy.ErrorVersion:
-				NetFlowErrors.With(
-					prometheus.Labels{
-						"router": remote,
-						"error":  "error_version",
-					}).
-					Inc()
-			case *sflow.ErrorVersion:
-				SFlowErrors.With(
-					prometheus.Labels{
-						"router": remote,
-						"error":  "error_version",
-					}).
-					Inc()
-			case *sflow.ErrorIPVersion:
-				SFlowErrors.With(
-					prometheus.Labels{
-						"router": remote,
-						"error":  "error_ip_version",
-					}).
-					Inc()
-			case *sflow.ErrorDataFormat:
-				SFlowErrors.With(
-					prometheus.Labels{
-						"router": remote,
-						"error":  "error_data_format",
-					}).
-					Inc()
 			default:
 				// FIXME
 				NetFlowErrors.With(
