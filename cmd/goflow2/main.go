@@ -50,6 +50,7 @@ var (
 	LogLevel = flag.String("loglevel", "info", "Log level")
 	LogFmt   = flag.String("logfmt", "normal", "Log formatter")
 
+	Produce   = flag.String("produce", "sample", "Producer method (sample or raw)")
 	Format    = flag.String("format", "json", fmt.Sprintf("Choose the format (available: %s)", strings.Join(format.GetFormats(), ", ")))
 	Transport = flag.String("transport", "file", fmt.Sprintf("Choose the transport (available: %s)", strings.Join(transport.GetTransports(), ", ")))
 
@@ -60,6 +61,11 @@ var (
 	MappingFile = flag.String("mapping", "", "Configuration file for custom mappings")
 
 	Version = flag.Bool("v", false, "Print version")
+
+	producerOptions = map[string]bool{
+		"sample": true,
+		"raw":    true,
+	}
 )
 
 func httpServer( /*state *utils.StateNetFlow*/ ) {
@@ -78,6 +84,11 @@ func main() {
 
 	lvl, _ := log.ParseLevel(*LogLevel)
 	log.SetLevel(lvl)
+
+	switch *LogFmt {
+	case "json":
+		log.SetFormatter(&log.JSONFormatter{})
+	}
 
 	var cfgProducer utils.ProducerConfig
 	if *MappingFile != "" {
@@ -105,14 +116,16 @@ func main() {
 	}
 	defer transporter.Close(ctx)
 
-	flowProducer, err := metrics.CreatePromProducerDefaultWrapper(cfgProducer)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	switch *LogFmt {
-	case "json":
-		log.SetFormatter(&log.JSONFormatter{})
+	var flowProducer producer.ProducerInterface
+	if *Produce == "sample" {
+		flowProducer, err = metrics.CreatePromProducerDefaultWrapper(cfgProducer)
+		if err != nil {
+			log.Fatal(err)
+		}
+	} else if *Produce == "raw" {
+		flowProducer = &producer.RawProducer{}
+	} else {
+		log.Fatalf("producer %s does not exist", *Produce)
 	}
 
 	log.Info("Starting GoFlow2")
@@ -171,9 +184,6 @@ func main() {
 			Producer:         flowProducer,
 			NetFlowTemplater: metrics.NewDefaultPromTemplateSystem,
 		}
-
-		cfgPipe.Producer = &producer.RawProducer{}
-		cfgPipe.Producer = flowProducer
 
 		var decodeFunc utils.DecoderFunc
 		var p utils.FlowPipe
