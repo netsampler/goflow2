@@ -2,7 +2,8 @@ package json
 
 import (
 	"context"
-	"fmt"
+	//"fmt"
+	"encoding/json"
 	"github.com/netsampler/goflow2/format"
 )
 
@@ -26,7 +27,9 @@ func (d *JsonDriver) Format(data interface{}) ([]byte, []byte, error) {
 		d, err := dataIf.MarshalJSON()
 		return key, d, err
 	}
-	return nil, nil, fmt.Errorf("message is not serializable in json")
+	output, err := json.Marshal(data)
+	return key, output, err
+	//return nil, nil, fmt.Errorf("message is not serializable in json")
 }
 
 func init() {

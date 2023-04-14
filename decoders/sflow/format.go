@@ -1,16 +1,17 @@
 package sflow
 
 import (
-	"encoding/json"
+	//"encoding/json"
 	"fmt"
 	"net/netip"
 )
 
+/*
 func (p *Packet) MarshalJSON() ([]byte, error) {
 	return json.Marshal(p.Samples)
 	// todo: improve
 	return []byte("todo"), nil
-}
+}*/
 
 func (p *Packet) String() string {
 	agentIP, _ := netip.AddrFromSlice(p.AgentIP)
