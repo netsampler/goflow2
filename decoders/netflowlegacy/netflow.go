@@ -45,7 +45,7 @@ func DecodeMessage(payload *bytes.Buffer, packet *PacketNetFlowV5) error {
 		return &DecoderError{err}
 	}
 
-	packet.Records = make([]RecordsNetFlowV5, int(packet.Count))
+	packet.Records = make([]RecordsNetFlowV5, int(packet.Count)) // maximum is 65535 which would be 3MB
 	for i := 0; i < int(packet.Count) && payload.Len() >= 48; i++ {
 		record := RecordsNetFlowV5{}
 		if err := utils.BinaryDecoder(payload, &record); err != nil {

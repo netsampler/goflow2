@@ -174,10 +174,14 @@ func DecodeFlowRecord(header *RecordHeader, payload *bytes.Buffer) (FlowRecord, 
 			if err := utils.BinaryDecoder(payload, &(extendedGateway.ASPathType), &(extendedGateway.ASPathLength)); err != nil {
 				return flowRecord, &RecordError{header.DataFormat, err}
 			}
+			// protection for as-path length
+			if extendedGateway.ASPathLength > 1000 {
+				return flowRecord, &RecordError{header.DataFormat, fmt.Errorf("as-path length of %d seems quite large", extendedGateway.ASPathLength)}
+			}
 			if int(extendedGateway.ASPathLength) > payload.Len()-4 {
 				return flowRecord, &RecordError{header.DataFormat, fmt.Errorf("invalid AS path length: %d", extendedGateway.ASPathLength)}
 			}
-			asPath = make([]uint32, extendedGateway.ASPathLength)
+			asPath = make([]uint32, extendedGateway.ASPathLength) // max size of 1000 for protection
 			if len(asPath) > 0 {
 				if err := utils.BinaryDecoder(payload, asPath); err != nil {
 					return flowRecord, &RecordError{header.DataFormat, err}
@@ -189,10 +193,14 @@ func DecodeFlowRecord(header *RecordHeader, payload *bytes.Buffer) (FlowRecord, 
 		if err := utils.BinaryDecoder(payload, &(extendedGateway.CommunitiesLength)); err != nil {
 			return flowRecord, &RecordError{header.DataFormat, err}
 		}
-		if int(extendedGateway.CommunitiesLength) > payload.Len()-4 {
-			return flowRecord, &RecordError{header.DataFormat, fmt.Errorf("invalid Communities length: %d", extendedGateway.ASPathLength)}
+		// protection for communities length
+		if extendedGateway.CommunitiesLength > 1000 {
+			return flowRecord, &RecordError{header.DataFormat, fmt.Errorf("communities length of %d seems quite large", extendedGateway.ASPathLength)}
 		}
-		communities := make([]uint32, extendedGateway.CommunitiesLength)
+		if int(extendedGateway.CommunitiesLength) > payload.Len()-4 {
+			return flowRecord, &RecordError{header.DataFormat, fmt.Errorf("invalid communities length: %d", extendedGateway.ASPathLength)}
+		}
+		communities := make([]uint32, extendedGateway.CommunitiesLength) // max size of 1000 for protection
 		if len(communities) > 0 {
 			if err := utils.BinaryDecoder(payload, communities); err != nil {
 				return flowRecord, &RecordError{header.DataFormat, err}
@@ -249,17 +257,23 @@ func DecodeSample(header *SampleHeader, payload *bytes.Buffer) (interface{}, err
 			return sample, &FlowError{format, seq, fmt.Errorf("raw [%w]", err)}
 		}
 		recordsCount = flowSample.FlowRecordsCount
-		flowSample.Records = make([]FlowRecord, recordsCount)
+		if recordsCount > 1000 { // protection against ddos
+			return sample, &FlowError{format, seq, fmt.Errorf("too many flow records: %d", recordsCount)}
+		}
+		flowSample.Records = make([]FlowRecord, recordsCount) // max size of 1000 for protection
 		sample = flowSample
 	} else if format == FORMAT_ETH || format == FORMAT_IPV6 {
 		if err := utils.BinaryDecoder(payload, &recordsCount); err != nil {
 			return sample, &FlowError{format, seq, fmt.Errorf("eth [%w]", err)}
 		}
+		if recordsCount > 1000 { // protection against ddos
+			return sample, &FlowError{format, seq, fmt.Errorf("too many flow records: %d", recordsCount)}
+		}
 		counterSample = CounterSample{
 			Header:              *header,
 			CounterRecordsCount: recordsCount,
 		}
-		counterSample.Records = make([]CounterRecord, recordsCount)
+		counterSample.Records = make([]CounterRecord, recordsCount) // max size of 1000 for protection
 		sample = counterSample
 	} else if format == FORMAT_IPV4 {
 		expandedFlowSample = ExpandedFlowSample{
@@ -350,7 +364,11 @@ func DecodeMessage(payload *bytes.Buffer, packetV5 *Packet) error {
 		&(packetV5.SamplesCount)); err != nil {
 		return &DecoderError{err}
 	}
-	packetV5.Samples = make([]interface{}, int(packetV5.SamplesCount))
+	if packetV5.SamplesCount > 1000 {
+		return &DecoderError{fmt.Errorf("too many samples: %d", packetV5.SamplesCount)}
+	}
+
+	packetV5.Samples = make([]interface{}, int(packetV5.SamplesCount)) // max size of 1000 for protection
 	for i := 0; i < int(packetV5.SamplesCount) && payload.Len() >= 8; i++ {
 		header := SampleHeader{}
 		if err := utils.BinaryDecoder(payload, &(header.Format), &(header.Length)); err != nil {

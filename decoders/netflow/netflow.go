@@ -65,7 +65,7 @@ func DecodeNFv9OptionsTemplateSet(payload *bytes.Buffer) ([]NFv9OptionsTemplateR
 			return records, fmt.Errorf("NFv9OptionsTemplateSet: negative length")
 		}
 
-		fields := make([]Field, sizeScope)
+		fields := make([]Field, sizeScope) // max 16383 entries, 65KB
 		for i := 0; i < sizeScope; i++ {
 			field := Field{}
 			if err := DecodeField(payload, &field, false); err != nil {
@@ -107,12 +107,15 @@ func DecodeIPFIXOptionsTemplateSet(payload *bytes.Buffer) ([]IPFIXOptionsTemplat
 	var err error
 	for payload.Len() >= 4 {
 		optsTemplateRecord := IPFIXOptionsTemplateRecord{}
-		err = utils.BinaryDecoder(payload, &optsTemplateRecord.TemplateId, &optsTemplateRecord.FieldCount, &optsTemplateRecord.ScopeFieldCount)
+		err = utils.BinaryDecoder(payload,
+			&optsTemplateRecord.TemplateId,
+			&optsTemplateRecord.FieldCount,
+			&optsTemplateRecord.ScopeFieldCount)
 		if err != nil {
 			return records, fmt.Errorf("IPFIXOptionsTemplateSet: header [%w]", err)
 		}
 
-		fields := make([]Field, int(optsTemplateRecord.ScopeFieldCount))
+		fields := make([]Field, int(optsTemplateRecord.ScopeFieldCount)) // max 65532 which would be 589KB
 		for i := 0; i < int(optsTemplateRecord.ScopeFieldCount); i++ {
 			field := Field{}
 			if err := DecodeField(payload, &field, true); err != nil {
@@ -156,7 +159,7 @@ func DecodeTemplateSet(version uint16, payload *bytes.Buffer) ([]TemplateRecord,
 			return records, fmt.Errorf("TemplateSet: zero count")
 		}
 
-		fields := make([]Field, int(templateRecord.FieldCount))
+		fields := make([]Field, int(templateRecord.FieldCount)) // max 65532 which would be 589KB
 		for i := 0; i < int(templateRecord.FieldCount); i++ {
 			field := Field{}
 			if err := utils.BinaryDecoder(payload, &field.Type, &field.Length); err != nil {
