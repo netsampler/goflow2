@@ -1,10 +1,11 @@
-package producer
+package protoproducer
 
 import (
 	"encoding/binary"
 
 	"github.com/netsampler/goflow2/decoders/sflow"
 	flowmessage "github.com/netsampler/goflow2/pb"
+	"github.com/netsampler/goflow2/producer"
 )
 
 func GetSFlowFlowSamples(packet *sflow.Packet) []interface{} {
@@ -234,7 +235,7 @@ func ParseSampledHeaderConfig(flowMessage *ProtoProducerMessage, sampledHeader *
 	return nil
 }
 
-func SearchSFlowSamples(samples []interface{}) []ProducerMessage {
+func SearchSFlowSamples(samples []interface{}) []producer.ProducerMessage {
 	return SearchSFlowSamples(samples)
 }
 
@@ -316,9 +317,7 @@ func SearchSFlowSampleConfig(flowMessage *ProtoProducerMessage, flowSample inter
 
 }
 
-func SearchSFlowSamplesConfig(samples []interface{}, config *SFlowMapper) ([]ProducerMessage, error) {
-	var flowMessageSet []ProducerMessage
-
+func SearchSFlowSamplesConfig(samples []interface{}, config *SFlowMapper) (flowMessageSet []producer.ProducerMessage, err error) {
 	for _, flowSample := range samples {
 		fmsg := protoMessagePool.Get().(*ProtoProducerMessage)
 		fmsg.Reset()
@@ -331,7 +330,7 @@ func SearchSFlowSamplesConfig(samples []interface{}, config *SFlowMapper) ([]Pro
 }
 
 // Converts an sFlow message
-func ProcessMessageSFlowConfig(packet *sflow.Packet, config *producerConfigMapped) (flowMessageSet []ProducerMessage, err error) {
+func ProcessMessageSFlowConfig(packet *sflow.Packet, config *producerConfigMapped) (flowMessageSet []producer.ProducerMessage, err error) {
 	seqnum := packet.SequenceNumber
 	agent := packet.AgentIP
 

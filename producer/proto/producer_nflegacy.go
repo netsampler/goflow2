@@ -1,10 +1,11 @@
-package producer
+package protoproducer
 
 import (
 	"encoding/binary"
 
 	"github.com/netsampler/goflow2/decoders/netflowlegacy"
 	flowmessage "github.com/netsampler/goflow2/pb"
+	"github.com/netsampler/goflow2/producer"
 )
 
 func ConvertNetFlowLegacyRecord(flowMessage *ProtoProducerMessage, baseTime uint64, uptime uint32, record netflowlegacy.RecordsNetFlowV5) {
@@ -41,8 +42,7 @@ func ConvertNetFlowLegacyRecord(flowMessage *ProtoProducerMessage, baseTime uint
 	flowMessage.Bytes = uint64(record.DOctets)
 }
 
-func SearchNetFlowLegacyRecords(baseTime uint64, uptime uint32, dataRecords []netflowlegacy.RecordsNetFlowV5) []ProducerMessage {
-	var flowMessageSet []ProducerMessage
+func SearchNetFlowLegacyRecords(baseTime uint64, uptime uint32, dataRecords []netflowlegacy.RecordsNetFlowV5) (flowMessageSet []producer.ProducerMessage) {
 	for _, record := range dataRecords {
 		fmsg := protoMessagePool.Get().(*ProtoProducerMessage)
 		fmsg.Reset()
@@ -52,7 +52,7 @@ func SearchNetFlowLegacyRecords(baseTime uint64, uptime uint32, dataRecords []ne
 	return flowMessageSet
 }
 
-func ProcessMessageNetFlowLegacy(packet *netflowlegacy.PacketNetFlowV5) ([]ProducerMessage, error) {
+func ProcessMessageNetFlowLegacy(packet *netflowlegacy.PacketNetFlowV5) ([]producer.ProducerMessage, error) {
 	seqnum := packet.FlowSequence
 	samplingRate := packet.SamplingInterval
 	baseTime := uint64(packet.UnixSecs)*1000000000 + uint64(packet.UnixNSecs)

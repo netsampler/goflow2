@@ -78,8 +78,8 @@ type NetFlowPipe struct {
 	templateslock *sync.RWMutex
 	templates     map[string]netflow.NetFlowTemplateSystem
 
-	samplinglock *sync.RWMutex
-	sampling     map[string]producer.SamplingRateSystem
+	/*samplinglock *sync.RWMutex
+	sampling     map[string]producer.SamplingRateSystem*/
 }
 
 func NewSFlowPipe(cfg *PipeConfig) *SFlowPipe {
@@ -125,9 +125,9 @@ func (p *SFlowPipe) DecodeFlow(msg interface{}) error {
 func NewNetFlowPipe(cfg *PipeConfig) *NetFlowPipe {
 	p := &NetFlowPipe{
 		templateslock: &sync.RWMutex{},
-		samplinglock:  &sync.RWMutex{},
-		templates:     make(map[string]netflow.NetFlowTemplateSystem),
-		sampling:      make(map[string]producer.SamplingRateSystem),
+		//samplinglock:  &sync.RWMutex{},
+		templates: make(map[string]netflow.NetFlowTemplateSystem),
+		//sampling:      make(map[string]producer.SamplingRateSystem),
 	}
 	p.parseConfig(cfg)
 	return p
@@ -151,15 +151,16 @@ func (p *NetFlowPipe) DecodeFlow(msg interface{}) error {
 		p.templates[key] = templates
 		p.templateslock.Unlock()
 	}
-	p.samplinglock.RLock()
-	sampling, ok := p.sampling[key]
-	p.samplinglock.RUnlock()
-	if !ok {
-		sampling = producer.CreateSamplingSystem()
-		p.samplinglock.Lock()
-		p.sampling[key] = sampling
-		p.samplinglock.Unlock()
-	}
+	/*
+		p.samplinglock.RLock()
+		sampling, ok := p.sampling[key]
+		p.samplinglock.RUnlock()
+		if !ok {
+			sampling = producer.CreateSamplingSystem()
+			p.samplinglock.Lock()
+			p.sampling[key] = sampling
+			p.samplinglock.Unlock()
+		}*/
 
 	var packetV5 netflowlegacy.PacketNetFlowV5
 	var packetNFv9 netflow.NFv9Packet
@@ -194,7 +195,7 @@ func (p *NetFlowPipe) DecodeFlow(msg interface{}) error {
 	var err error
 
 	args := producer.ProduceArgs{
-		SamplingRateSystem: sampling,
+		//SamplingRateSystem: sampling,
 
 		Src: pkt.Src,
 		Dst: pkt.Dst,

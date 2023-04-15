@@ -12,11 +12,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 )
 
-func CreatePromProducerDefaultWrapper(cfg *producer.ProducerConfig) (producer.ProducerInterface, error) {
-	wrapped, err := producer.CreateProtoProducerWithConfig(cfg)
-	return WarpPromProducer(wrapped), err
-}
-
 type PromProducerWrapper struct {
 	wrapped producer.ProducerInterface
 }
@@ -147,7 +142,7 @@ func (p *PromProducerWrapper) Commit(flowMessageSet []producer.ProducerMessage) 
 }
 
 // Wraps a producer with metrics
-func WarpPromProducer(wrapped producer.ProducerInterface) producer.ProducerInterface {
+func WrapPromProducer(wrapped producer.ProducerInterface) producer.ProducerInterface {
 	return &PromProducerWrapper{
 		wrapped: wrapped,
 	}

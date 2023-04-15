@@ -1,4 +1,4 @@
-package producer
+package protoproducer
 
 import (
 	"encoding/hex"

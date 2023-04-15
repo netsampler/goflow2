@@ -4,6 +4,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/url"
@@ -30,13 +31,18 @@ import (
 	_ "github.com/netsampler/goflow2/transport/file"
 	_ "github.com/netsampler/goflow2/transport/kafka"
 
+	// various producers
+	"github.com/netsampler/goflow2/producer"
+	"github.com/netsampler/goflow2/producer/proto"
+	"github.com/netsampler/goflow2/producer/raw"
+
 	// core libraries
 	"github.com/netsampler/goflow2/metrics"
-	"github.com/netsampler/goflow2/producer"
 	"github.com/netsampler/goflow2/utils"
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	log "github.com/sirupsen/logrus"
+	"gopkg.in/yaml.v2"
 )
 
 var (
@@ -73,6 +79,13 @@ func httpServer( /*state *utils.StateNetFlow*/ ) {
 	log.Fatal(http.ListenAndServe(*MetricsAddr, nil))
 }
 
+func LoadMapping(f io.Reader) (*protoproducer.ProducerConfig, error) {
+	config := &protoproducer.ProducerConfig{}
+	dec := yaml.NewDecoder(f)
+	err := dec.Decode(config)
+	return config, err
+}
+
 func main() {
 	flag.Parse()
 
@@ -89,19 +102,6 @@ func main() {
 		log.SetFormatter(&log.JSONFormatter{})
 	}
 
-	var cfgProducer utils.ProducerConfig
-	if *MappingFile != "" {
-		f, err := os.Open(*MappingFile)
-		if err != nil {
-			log.Fatal(err)
-		}
-		cfgProducer, err = utils.LoadMapping(f)
-		f.Close()
-		if err != nil {
-			log.Fatal(err)
-		}
-	}
-
 	formatter, err := format.FindFormat(*Format)
 	if err != nil {
 		log.Fatal(err)
@@ -114,17 +114,32 @@ func main() {
 
 	var flowProducer producer.ProducerInterface
 	if *Produce == "sample" {
-		flowProducer, err = producer.CreateProtoProducerWithConfig(cfgProducer)
+
+		var cfgProducer *protoproducer.ProducerConfig
+		if *MappingFile != "" {
+			f, err := os.Open(*MappingFile)
+			if err != nil {
+				log.Fatal(err)
+			}
+			cfgProducer, err = LoadMapping(f)
+			f.Close()
+			if err != nil {
+				log.Fatal(err)
+			}
+		}
+
+		flowProducer, err = protoproducer.CreateProtoProducerWithConfig(cfgProducer, protoproducer.CreateSamplingSystem())
 		if err != nil {
 			log.Fatal(err)
 		}
 	} else if *Produce == "raw" {
-		flowProducer = &producer.RawProducer{}
+		flowProducer = &rawproducer.RawProducer{}
 	} else {
 		log.Fatalf("producer %s does not exist", *Produce)
 	}
 
-	flowProducer = metrics.WarpPromProducer(flowProducer)
+	// wrap producer with Prometheus metrics
+	flowProducer = metrics.WrapPromProducer(flowProducer)
 
 	log.Info("Starting GoFlow2")
 	go httpServer()
@@ -180,7 +195,7 @@ func main() {
 			Format:           formatter,
 			Transport:        transporter,
 			Producer:         flowProducer,
-			NetFlowTemplater: metrics.NewDefaultPromTemplateSystem,
+			NetFlowTemplater: metrics.NewDefaultPromTemplateSystem, // wrap template system
 		}
 
 		var decodeFunc utils.DecoderFunc

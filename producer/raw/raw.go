@@ -1,4 +1,4 @@
-package producer
+package rawproducer
 
 import (
 	"encoding/json"
@@ -9,6 +9,7 @@ import (
 	"github.com/netsampler/goflow2/decoders/netflow"
 	"github.com/netsampler/goflow2/decoders/netflowlegacy"
 	"github.com/netsampler/goflow2/decoders/sflow"
+	"github.com/netsampler/goflow2/producer"
 )
 
 // Producer that keeps the same format
@@ -62,12 +63,12 @@ func (m RawMessage) MarshalText() ([]byte, error) {
 	return []byte(fmt.Sprintf("%s %s: %s", m.TimeReceived.String(), m.Src.String(), string(msgContents))), err
 }
 
-func (p *RawProducer) Produce(msg interface{}, args *ProduceArgs) ([]ProducerMessage, error) {
+func (p *RawProducer) Produce(msg interface{}, args *producer.ProduceArgs) ([]producer.ProducerMessage, error) {
 	// should return msg wrapped
 	// []*interface{msg,}
-	return []ProducerMessage{RawMessage{msg, args.Src, args.TimeReceived}}, nil
+	return []producer.ProducerMessage{RawMessage{msg, args.Src, args.TimeReceived}}, nil
 }
 
-func (p *RawProducer) Commit(flowMessageSet []ProducerMessage) {}
+func (p *RawProducer) Commit(flowMessageSet []producer.ProducerMessage) {}
 
 func (p *RawProducer) Close() {}
