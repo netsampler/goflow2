@@ -114,7 +114,7 @@ func main() {
 
 	var flowProducer producer.ProducerInterface
 	if *Produce == "sample" {
-		flowProducer, err = metrics.CreatePromProducerDefaultWrapper(cfgProducer)
+		flowProducer, err = producer.CreateProtoProducerWithConfig(cfgProducer)
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -123,6 +123,8 @@ func main() {
 	} else {
 		log.Fatalf("producer %s does not exist", *Produce)
 	}
+
+	flowProducer = metrics.WarpPromProducer(flowProducer)
 
 	log.Info("Starting GoFlow2")
 	go httpServer()
