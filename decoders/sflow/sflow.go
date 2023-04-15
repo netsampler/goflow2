@@ -316,8 +316,6 @@ func DecodeMessageVersion(payload *bytes.Buffer, packetV5 *Packet) error {
 }
 
 func DecodeMessage(payload *bytes.Buffer, packetV5 *Packet) error {
-
-	//if version == 5 {
 	if err := utils.BinaryDecoder(payload, &(packetV5.IPVersion)); err != nil {
 		return &DecoderError{err}
 	}

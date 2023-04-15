@@ -482,6 +482,7 @@ func DecodeMessageCommon(payload *bytes.Buffer, templates NetFlowTemplateSystem,
 }
 
 func DecodeMessageNetFlow(payload *bytes.Buffer, templates NetFlowTemplateSystem, packetNFv9 *NFv9Packet) error {
+	packetNFv9.Version = 9
 	if err := utils.BinaryDecoder(payload,
 		&packetNFv9.Count,
 		&packetNFv9.SystemUptime,
@@ -502,6 +503,7 @@ func DecodeMessageNetFlow(payload *bytes.Buffer, templates NetFlowTemplateSystem
 }
 
 func DecodeMessageIPFIX(payload *bytes.Buffer, templates NetFlowTemplateSystem, packetIPFIX *IPFIXPacket) error {
+	packetIPFIX.Version = 10
 	if err := utils.BinaryDecoder(payload,
 		&packetIPFIX.Length,
 		&packetIPFIX.ExportTime,
