@@ -1,13 +1,13 @@
 formatter:
   fields: # list of fields to format in JSON
     - type
-    - time_received
+    - time_received_ns
     - sequence_num
     - sampling_rate
     - flow_direction
     - sampler_address
-    - time_flow_start_ms
-    - time_flow_end_ms
+    - time_flow_start_ns
+    - time_flow_end_ns
     - bytes
     - packets
     - src_addr

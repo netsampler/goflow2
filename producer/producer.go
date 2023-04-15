@@ -62,23 +62,23 @@ func (p *ProtoProducer) Produce(msg interface{}, args *ProduceArgs) (flowMessage
 		flowMessageSet, err = ProcessMessageNetFlowV9Config(msgConv, args.SamplingRateSystem, p.cfgMapped)
 
 		p.enrich(flowMessageSet, func(fmsg *ProtoProducerMessage) {
-			fmsg.TimeReceived = tr / 1000000000
+			fmsg.TimeReceivedNs = tr
 			fmsg.SamplerAddress = sa
 		})
 	case *netflow.IPFIXPacket:
 		flowMessageSet, err = ProcessMessageIPFIXConfig(msgConv, args.SamplingRateSystem, p.cfgMapped)
 
 		p.enrich(flowMessageSet, func(fmsg *ProtoProducerMessage) {
-			fmsg.TimeReceived = tr / 1000000000
+			fmsg.TimeReceivedNs = tr
 			fmsg.SamplerAddress = sa
 		})
 	case *sflow.Packet:
 		flowMessageSet, err = ProcessMessageSFlowConfig(msgConv, p.cfgMapped)
 
 		p.enrich(flowMessageSet, func(fmsg *ProtoProducerMessage) {
-			fmsg.TimeReceived = tr / 1000000000
-			fmsg.TimeFlowStartMs = tr / 1000000
-			fmsg.TimeFlowEndMs = tr / 1000000
+			fmsg.TimeReceivedNs = tr
+			fmsg.TimeFlowStartNs = tr
+			fmsg.TimeFlowEndNs = tr
 		})
 	default:
 		return flowMessageSet, fmt.Errorf("flow not recognized")

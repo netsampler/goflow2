@@ -10,10 +10,12 @@ import (
 func ConvertNetFlowLegacyRecord(flowMessage *ProtoProducerMessage, baseTime uint32, uptime uint32, record netflowlegacy.RecordsNetFlowV5) {
 	flowMessage.Type = flowmessage.FlowMessage_NETFLOW_V5
 
+	baseTimeNs := uint64(baseTime) * 1000000000
+
 	timeDiffFirst := (uptime - record.First)
 	timeDiffLast := (uptime - record.Last)
-	flowMessage.TimeFlowStartMs = uint64(baseTime)*1000 - uint64(timeDiffFirst)
-	flowMessage.TimeFlowEndMs = uint64(baseTime)*1000 - uint64(timeDiffLast)
+	flowMessage.TimeFlowStartNs = baseTimeNs - uint64(timeDiffFirst)*1000000000
+	flowMessage.TimeFlowEndNs = baseTimeNs - uint64(timeDiffLast)*1000000000
 
 	v := make([]byte, 4)
 	binary.BigEndian.PutUint32(v, uint32(record.NextHop))

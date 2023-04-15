@@ -125,7 +125,7 @@ func (p *PromProducerWrapper) Produce(msg interface{}, args *producer.ProduceArg
 			if !ok {
 				continue
 			}
-			timeDiff := fmsg.TimeReceived - fmsg.TimeFlowEndMs/1000000000
+			timeDiff := fmsg.TimeReceivedNs - fmsg.TimeFlowEndNs
 			NetFlowTimeStatsSum.With(
 				prometheus.Labels{
 					"router":  key,

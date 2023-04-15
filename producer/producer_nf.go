@@ -264,6 +264,11 @@ func addrReplaceCheck(dstAddr *[]byte, v []byte, eType *uint32, ipv6 bool) {
 
 func ConvertNetFlowDataSet(flowMessage *ProtoProducerMessage, version uint16, baseTime uint32, uptime uint32, record []netflow.DataField, mapperNetFlow *NetFlowMapper, mapperSFlow *SFlowMapper) error {
 	var time uint64
+	baseTimeNs := uint64(baseTime) * 1000000000
+	// the following should be overriden if the template contains timing information
+	// otherwise, defaults to the export time
+	flowMessage.TimeFlowStartNs = baseTimeNs
+	flowMessage.TimeFlowEndNs = baseTimeNs
 
 	if version == 9 {
 		flowMessage.Type = flowmessage.FlowMessage_NETFLOW_V9
@@ -425,12 +430,6 @@ func ConvertNetFlowDataSet(flowMessage *ProtoProducerMessage, version uint16, ba
 		case netflow.NFV9_FIELD_IPV6_FLOW_LABEL:
 			DecodeUNumber(v, &(flowMessage.Ipv6FlowLabel))
 
-		case netflow.IPFIX_FIELD_biflowDirection:
-			DecodeUNumber(v, &(flowMessage.BiFlowDirection))
-
-		case netflow.NFV9_FIELD_DIRECTION:
-			DecodeUNumber(v, &(flowMessage.FlowDirection))
-
 		// MPLS
 		case netflow.IPFIX_FIELD_mplsTopLabelStackSection:
 			var mplsLabel uint32
@@ -466,45 +465,45 @@ func ConvertNetFlowDataSet(flowMessage *ProtoProducerMessage, version uint16, ba
 					var timeFirstSwitched uint32
 					DecodeUNumber(v, &timeFirstSwitched)
 					timeDiff := (uptime - timeFirstSwitched)
-					flowMessage.TimeFlowStartMs = uint64(baseTime)*1000 - uint64(timeDiff)
+					flowMessage.TimeFlowStartNs = baseTimeNs - uint64(timeDiff)*1000000000
 				case netflow.NFV9_FIELD_LAST_SWITCHED:
 					var timeLastSwitched uint32
 					DecodeUNumber(v, &timeLastSwitched)
 					timeDiff := (uptime - timeLastSwitched)
-					flowMessage.TimeFlowEndMs = uint64(baseTime)*1000 - uint64(timeDiff)
+					flowMessage.TimeFlowEndNs = baseTimeNs - uint64(timeDiff)*1000000000
 				}
 			} else if version == 10 {
 				switch df.Type {
 				case netflow.IPFIX_FIELD_flowStartSeconds:
 					DecodeUNumber(v, &time)
-					flowMessage.TimeFlowStartMs = time * 1000
+					flowMessage.TimeFlowStartNs = time * 1000000000
 				case netflow.IPFIX_FIELD_flowStartMilliseconds:
 					DecodeUNumber(v, &time)
-					flowMessage.TimeFlowStartMs = time
+					flowMessage.TimeFlowStartNs = time * 1000000
 				case netflow.IPFIX_FIELD_flowStartMicroseconds:
 					DecodeUNumber(v, &time)
-					flowMessage.TimeFlowStartMs = time / 1000
+					flowMessage.TimeFlowStartNs = time * 1000
 				case netflow.IPFIX_FIELD_flowStartNanoseconds:
 					DecodeUNumber(v, &time)
-					flowMessage.TimeFlowStartMs = time / 1000000
+					flowMessage.TimeFlowStartNs = time
 				case netflow.IPFIX_FIELD_flowEndSeconds:
 					DecodeUNumber(v, &time)
-					flowMessage.TimeFlowEndMs = time * 1000
+					flowMessage.TimeFlowEndNs = time * 1000000000
 				case netflow.IPFIX_FIELD_flowEndMilliseconds:
 					DecodeUNumber(v, &time)
-					flowMessage.TimeFlowEndMs = time
+					flowMessage.TimeFlowEndNs = time * 1000000
 				case netflow.IPFIX_FIELD_flowEndMicroseconds:
 					DecodeUNumber(v, &time)
-					flowMessage.TimeFlowEndMs = time / 1000
+					flowMessage.TimeFlowEndNs = time * 1000
 				case netflow.IPFIX_FIELD_flowEndNanoseconds:
 					DecodeUNumber(v, &time)
-					flowMessage.TimeFlowEndMs = time / 1000000
+					flowMessage.TimeFlowEndNs = time
 				case netflow.IPFIX_FIELD_flowStartDeltaMicroseconds:
 					DecodeUNumber(v, &time)
-					flowMessage.TimeFlowStartMs = uint64(baseTime)*1000 - time/1000
+					flowMessage.TimeFlowStartNs = baseTimeNs - time*1000
 				case netflow.IPFIX_FIELD_flowEndDeltaMicroseconds:
 					DecodeUNumber(v, &time)
-					flowMessage.TimeFlowEndMs = uint64(baseTime)*1000 - time/1000
+					flowMessage.TimeFlowEndNs = baseTimeNs - time*1000
 				// RFC7133
 				case netflow.IPFIX_FIELD_dataLinkFrameSize:
 					DecodeUNumber(v, &(flowMessage.Bytes))

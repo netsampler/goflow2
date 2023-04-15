@@ -13,7 +13,7 @@ message FlowMessage {
   }
   FlowType type = 1;
 
-  uint64 time_received = 2;
+  uint64 time_received_ns = 110;
   uint32 sequence_num = 4;
   uint64 sampling_rate = 3;
 
@@ -23,8 +23,8 @@ message FlowMessage {
   bytes sampler_address = 11;
 
   // Found inside packet
-  uint64 time_flow_start_ms = 63;
-  uint64 time_flow_end_ms = 64;
+  uint64 time_flow_start_ns = 111;
+  uint64 time_flow_end_ns = 112;
 
   // Size of the sampled packet
   uint64 bytes = 9;
