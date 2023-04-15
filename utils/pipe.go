@@ -82,6 +82,19 @@ type NetFlowPipe struct {
 	sampling     map[string]producer.SamplingRateSystem*/
 }
 
+type PipeMessageError struct {
+	Message *Message
+	Err     error
+}
+
+func (e *PipeMessageError) Error() string {
+	return fmt.Sprintf("message from %s %s", e.Message.Src.String(), e.Err.Error())
+}
+
+func (e *PipeMessageError) Unwrap() error {
+	return e.Err
+}
+
 func NewSFlowPipe(cfg *PipeConfig) *SFlowPipe {
 	p := &SFlowPipe{}
 	p.parseConfig(cfg)
@@ -101,7 +114,7 @@ func (p *SFlowPipe) DecodeFlow(msg interface{}) error {
 
 	var packet sflow.Packet
 	if err := sflow.DecodeMessageVersion(buf, &packet); err != nil {
-		return err // wrap with decode
+		return &PipeMessageError{pkt, err}
 	}
 
 	args := producer.ProduceArgs{
@@ -117,7 +130,7 @@ func (p *SFlowPipe) DecodeFlow(msg interface{}) error {
 	flowMessageSet, err := p.producer.Produce(&packet, &args)
 	defer p.producer.Commit(flowMessageSet)
 	if err != nil {
-		return err // wrap with produce
+		return &PipeMessageError{pkt, err}
 	}
 	return p.formatSend(flowMessageSet)
 }
@@ -169,26 +182,26 @@ func (p *NetFlowPipe) DecodeFlow(msg interface{}) error {
 	// decode the version
 	var version uint16
 	if err := utils.BinaryDecoder(buf, &version); err != nil {
-		return err
+		return &PipeMessageError{pkt, err}
 	}
 	switch version {
 	case 5:
 		packetV5.Version = 5
 		if err := netflowlegacy.DecodeMessage(buf, &packetV5); err != nil {
-			return err
+			return &PipeMessageError{pkt, err}
 		}
 	case 9:
 		packetNFv9.Version = 9
 		if err := netflow.DecodeMessageNetFlow(buf, templates, &packetNFv9); err != nil {
-			return err
+			return &PipeMessageError{pkt, err}
 		}
 	case 10:
 		packetIPFIX.Version = 10
 		if err := netflow.DecodeMessageIPFIX(buf, templates, &packetIPFIX); err != nil {
-			return err
+			return &PipeMessageError{pkt, err}
 		}
 	default:
-		return fmt.Errorf("Not a NetFlow packet")
+		return &PipeMessageError{pkt, fmt.Errorf("Not a NetFlow packet")}
 	}
 
 	var flowMessageSet []producer.ProducerMessage
@@ -218,7 +231,7 @@ func (p *NetFlowPipe) DecodeFlow(msg interface{}) error {
 	}
 	defer p.producer.Commit(flowMessageSet)
 	if err != nil {
-		return err
+		return &PipeMessageError{pkt, err}
 	}
 
 	return p.formatSend(flowMessageSet)

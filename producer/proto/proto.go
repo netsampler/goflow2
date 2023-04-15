@@ -28,7 +28,7 @@ func (p *ProtoProducer) Produce(msg interface{}, args *producer.ProduceArgs) (fl
 	tr := uint64(args.TimeReceived.UnixNano())
 	sa, _ := args.SamplerAddress.MarshalBinary()
 	switch msgConv := msg.(type) {
-	case *netflowlegacy.PacketNetFlowV5: //todo: rename PacketNetFlowV5
+	case *netflowlegacy.PacketNetFlowV5:
 		flowMessageSet, err = ProcessMessageNetFlowLegacy(msgConv)
 
 		p.enrich(flowMessageSet, func(fmsg *ProtoProducerMessage) {
@@ -74,7 +74,7 @@ func (p *ProtoProducer) Commit(flowMessageSet []producer.ProducerMessage) {
 
 func (p *ProtoProducer) Close() {}
 
-func CreateProtoProducerWithConfig(cfg *ProducerConfig, samplingRateSystem SamplingRateSystem) (producer.ProducerInterface, error) {
+func CreateProtoProducer(cfg *ProducerConfig, samplingRateSystem SamplingRateSystem) (producer.ProducerInterface, error) {
 	cfgMapped, err := mapConfig(cfg)
 	return &ProtoProducer{
 		cfgMapped:          cfgMapped,

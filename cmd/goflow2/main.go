@@ -113,8 +113,9 @@ func main() {
 	}
 
 	var flowProducer producer.ProducerInterface
+	// instanciate a producer
+	// unlike transport and format, the producer requires extensive configurations and can be chained
 	if *Produce == "sample" {
-
 		var cfgProducer *protoproducer.ProducerConfig
 		if *MappingFile != "" {
 			f, err := os.Open(*MappingFile)
@@ -128,7 +129,7 @@ func main() {
 			}
 		}
 
-		flowProducer, err = protoproducer.CreateProtoProducerWithConfig(cfgProducer, protoproducer.CreateSamplingSystem())
+		flowProducer, err = protoproducer.CreateProtoProducer(cfgProducer, protoproducer.CreateSamplingSystem())
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -240,12 +241,17 @@ func main() {
 
 	<-c
 
+	// stops receivers first, udp sockets will be down
 	for _, recv := range receivers {
 		recv.Stop()
 	}
+	// then stop pipe
 	for _, pipe := range pipes {
 		pipe.Close()
 	}
+	// close producer
+	flowProducer.Close()
+	// final close transporter (eg: flushes message to Kafka)
 	transporter.Close()
 	close(q) // close errors
 	wg.Wait()
