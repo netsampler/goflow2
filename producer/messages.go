@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/golang/protobuf/proto"
 	"google.golang.org/protobuf/encoding/protowire"
 
 	flowmessage "github.com/netsampler/goflow2/pb"
@@ -24,6 +25,12 @@ var protoMessagePool = sync.Pool{
 	New: func() any {
 		return &ProtoProducerMessage{}
 	},
+}
+
+func (m *ProtoProducerMessage) MarshalBinary() ([]byte, error) {
+	buf := proto.NewBuffer([]byte{})
+	err := buf.EncodeMessage(m)
+	return buf.Bytes(), err
 }
 
 func (m *ProtoProducerMessage) MarshalText() ([]byte, error) {

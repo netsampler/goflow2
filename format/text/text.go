@@ -2,7 +2,9 @@ package text
 
 import (
 	"context"
+	"encoding"
 	"fmt"
+
 	"github.com/netsampler/goflow2/format"
 )
 
@@ -22,7 +24,7 @@ func (d *TextDriver) Format(data interface{}) ([]byte, []byte, error) {
 	if dataIf, ok := data.(interface{ Key() []byte }); ok {
 		key = dataIf.Key()
 	}
-	if dataIf, ok := data.(interface{ MarshalText() ([]byte, error) }); ok {
+	if dataIf, ok := data.(encoding.TextMarshaler); ok {
 		txt, err := dataIf.MarshalText()
 		return key, txt, err
 	}

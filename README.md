@@ -132,7 +132,7 @@ $ ./goflow2 -transport.file /var/logs/goflow2.log
 
 To enable Kafka and send protobuf, use the following arguments:
 ```bash
-$ ./goflow2 -transport=kafka -transport.kafka.brokers=localhost:9092 -transport.kafka.topic=flows -format=pb
+$ ./goflow2 -transport=kafka -transport.kafka.brokers=localhost:9092 -transport.kafka.topic=flows -format=bin
 ```
 
 By default, the distribution will be randomized.
@@ -207,7 +207,7 @@ with a database for Autonomous System Number and Country.
 Similar output options as GoFlow are provided.
 
 ```bash
-$ ./goflow2 -transport.file.sep= -format=pb -format.protobuf.fixedlen=true | ./enricher -db.asn path-to/GeoLite2-ASN.mmdb -db.country path-to/GeoLite2-Country.mmdb
+$ ./goflow2 -transport.file.sep= -format=bin | ./enricher -db.asn path-to/GeoLite2-ASN.mmdb -db.country path-to/GeoLite2-Country.mmdb
 ```
 
 For a more scalable production setting, Kafka and protobuf are recommended.
@@ -215,8 +215,7 @@ Stream operations (aggregation and filtering) can be done with stream-processor 
 For instance Flink, or the more recent Kafka Streams and kSQLdb.
 Direct storage can be done with data-warehouses like Clickhouse.
 
-In some cases, the consumer will require protobuf messages to be prefixed by
-length. To do this, use the flag `-format.protobuf.fixedlen=true`.
+Each protobuf message is prefixed by its varint length.
 
 This repository contains [examples of pipelines](./compose) with docker-compose.
 The available pipelines are:

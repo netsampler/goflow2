@@ -20,8 +20,8 @@ import (
 
 	// import various formatters
 	"github.com/netsampler/goflow2/format"
+	_ "github.com/netsampler/goflow2/format/binary"
 	_ "github.com/netsampler/goflow2/format/json"
-	_ "github.com/netsampler/goflow2/format/protobuf"
 	_ "github.com/netsampler/goflow2/format/text"
 
 	// import various transports

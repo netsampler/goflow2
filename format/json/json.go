@@ -2,8 +2,8 @@ package json
 
 import (
 	"context"
-	//"fmt"
 	"encoding/json"
+
 	"github.com/netsampler/goflow2/format"
 )
 
