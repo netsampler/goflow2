@@ -3,6 +3,8 @@ package producer
 import (
 	"encoding/hex"
 	"fmt"
+	"hash"
+	"hash/fnv"
 	"reflect"
 	"strings"
 	"sync"
@@ -15,9 +17,6 @@ import (
 type ProtoProducerMessage struct {
 	flowmessage.FlowMessage
 
-	customSelector []string
-	selectorTag    string
-
 	formatter *FormatterConfigMapper
 }
 
@@ -27,26 +26,59 @@ var protoMessagePool = sync.Pool{
 	},
 }
 
-func (m *ProtoProducerMessage) String() string {
-	m.customSelector = []string{"Type", "SrcAddr"}
-	return m.FormatMessageReflectText(m, "")
+func (m *ProtoProducerMessage) MarshalText() ([]byte, error) {
+	return []byte(m.FormatMessageReflectText("")), nil
+}
+
+func (m *ProtoProducerMessage) baseKey(h hash.Hash) {
+	if m.formatter == nil || len(m.formatter.key) == 0 {
+		return
+	}
+	vfm := reflect.ValueOf(m)
+	vfm = reflect.Indirect(vfm)
+
+	unkMap := m.mapUnknown() // todo: should be able to reuse if set in structure
+
+	for _, s := range m.formatter.key {
+		fieldName := s
+
+		// get original name from structure
+		if fieldNameMap, ok := m.formatter.reMap[fieldName]; ok && fieldNameMap != "" {
+			fieldName = fieldNameMap
+		}
+
+		fieldValue := vfm.FieldByName(fieldName)
+		// if does not exist from structure,
+		// fetch from unknown (only numbered) fields
+		// that were parsed above
+
+		if !fieldValue.IsValid() {
+			if unkField, ok := unkMap[s]; ok {
+				fieldValue = reflect.ValueOf(unkField)
+			} else {
+				continue
+			}
+		}
+		h.Write([]byte(fmt.Sprintf("%v", fieldValue.Interface())))
+	}
 }
 
 func (m *ProtoProducerMessage) Key() []byte {
-	m.customSelector = []string{"Type", "SrcAddr"}
-	return []byte(m.FormatMessageReflectText(m, ""))
+	h := fnv.New32()
+	m.baseKey(h)
+	return h.Sum(nil)
 }
 
 func (m *ProtoProducerMessage) MarshalJSON() ([]byte, error) {
-	return []byte(m.FormatMessageReflectJSON(m, "")), nil
+	return []byte(m.FormatMessageReflectJSON("")), nil
 }
 
-func (m *ProtoProducerMessage) FormatMessageReflectText(msg interface{}, ext string) string {
-	return m.FormatMessageReflectCustom(msg, ext, "", " ", "=", false)
+func (m *ProtoProducerMessage) FormatMessageReflectText(ext string) string {
+	return m.FormatMessageReflectCustom(ext, "", " ", "=", false)
 }
 
-func (m *ProtoProducerMessage) FormatMessageReflectJSON(msg interface{}, ext string) string {
-	return fmt.Sprintf("{%s}", m.FormatMessageReflectCustom(msg, ext, "\"", ",", ":", true))
+func (m *ProtoProducerMessage) FormatMessageReflectJSON(ext string) string {
+	return fmt.Sprintf("{%s}", m.FormatMessageReflectCustom(ext, "\"", ",", ":", true))
 }
 
 func ExtractTag(name, original string, tag reflect.StructTag) string {
@@ -58,21 +90,10 @@ func ExtractTag(name, original string, tag reflect.StructTag) string {
 	return before
 }
 
-func (m *ProtoProducerMessage) FormatMessageReflectCustom(msg interface{}, ext, quotes, sep, sign string, null bool) string {
-	vfm := reflect.ValueOf(msg)
-	vfm = reflect.Indirect(vfm)
-
-	var i int
-	fstr := make([]string, len(m.formatter.fields)) // todo: reuse with pool
-
-	// map unknown values
+func (m *ProtoProducerMessage) mapUnknown() map[string]interface{} {
 	unkMap := make(map[string]interface{})
-	flowMessage, ok := msg.(*ProtoProducerMessage)
-	if !ok {
-		return "could not format" // todo: return error
-	}
 
-	fmr := flowMessage.ProtoReflect()
+	fmr := m.ProtoReflect()
 	unk := fmr.GetUnknown()
 	var offset int
 	for offset < len(unk) {
@@ -113,6 +134,17 @@ func (m *ProtoProducerMessage) FormatMessageReflectCustom(msg interface{}, ext, 
 
 		}
 	}
+	return unkMap
+}
+
+func (m *ProtoProducerMessage) FormatMessageReflectCustom(ext, quotes, sep, sign string, null bool) string {
+	vfm := reflect.ValueOf(m)
+	vfm = reflect.Indirect(vfm)
+
+	var i int
+	fstr := make([]string, len(m.formatter.fields)) // todo: reuse with pool
+
+	unkMap := m.mapUnknown()
 
 	// iterate through the fields requested by the user
 	for _, s := range m.formatter.fields {
@@ -162,7 +194,7 @@ func (m *ProtoProducerMessage) FormatMessageReflectCustom(msg interface{}, ext, 
 					val = fieldValueI.Interface()
 				}
 
-				rendered := renderer(flowMessage, fieldName, val)
+				rendered := renderer(m, fieldName, val)
 				if rendered == nil {
 					continue
 				}
@@ -185,7 +217,7 @@ func (m *ProtoProducerMessage) FormatMessageReflectCustom(msg interface{}, ext, 
 				val = fieldValue.Interface()
 			}
 
-			rendered := renderer(flowMessage, fieldName, val)
+			rendered := renderer(m, fieldName, val)
 			if rendered == nil {
 				continue
 			}

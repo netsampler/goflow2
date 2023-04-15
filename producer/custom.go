@@ -71,6 +71,7 @@ type DataMap struct {
 
 type FormatterConfigMapper struct {
 	fields  []string
+	key     []string
 	reMap   map[string]string // map from a potential json name into the protobuf structure
 	rename  map[string]string // manually renaming fields
 	render  map[string]RenderFunc
@@ -245,6 +246,14 @@ func mapFormat(cfg *ProducerConfig) (*FormatterConfigMapper, error) {
 		// populate manual renames
 		for k, v := range cfgFormatter.Rename {
 			formatterMapped.rename[k] = v
+		}
+
+		// populate key
+		for _, v := range cfgFormatter.Key {
+			if _, ok := reMap[v]; !ok {
+				return formatterMapped, fmt.Errorf("key field %s does not exist", v)
+			}
+			formatterMapped.key = append(formatterMapped.key, v)
 		}
 
 		// process renderers
