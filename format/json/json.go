@@ -1,7 +1,6 @@
 package json
 
 import (
-	"context"
 	"encoding/json"
 
 	"github.com/netsampler/goflow2/format"
@@ -18,7 +17,7 @@ func (d *JsonDriver) Prepare() error {
 	return nil
 }
 
-func (d *JsonDriver) Init(context.Context) error {
+func (d *JsonDriver) Init() error {
 	return nil
 }
 

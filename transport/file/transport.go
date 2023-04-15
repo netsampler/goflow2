@@ -1,7 +1,6 @@
 package file
 
 import (
-	"context"
 	"flag"
 	"fmt"
 	"github.com/netsampler/goflow2/transport"
@@ -38,7 +37,7 @@ func (d *FileDriver) openFile() error {
 	return err
 }
 
-func (d *FileDriver) Init(context.Context) error {
+func (d *FileDriver) Init() error {
 	d.q = make(chan bool, 1)
 
 	if d.fileDestination == "" {
@@ -82,7 +81,7 @@ func (d *FileDriver) Send(key, data []byte) error {
 	return err
 }
 
-func (d *FileDriver) Close(context.Context) error {
+func (d *FileDriver) Close() error {
 	if d.fileDestination != "" {
 		d.lock.Lock()
 		d.file.Close()

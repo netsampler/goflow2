@@ -1,7 +1,6 @@
 package transport
 
 import (
-	"context"
 	"fmt"
 	"sync"
 )
@@ -13,8 +12,8 @@ var (
 
 type TransportDriver interface {
 	Prepare() error              // Prepare driver (eg: flag registration)
-	Init(context.Context) error  // Initialize driver (eg: start connections, open files...)
-	Close(context.Context) error // Close driver (eg: close connections and files...)
+	Init() error                 // Initialize driver (eg: start connections, open files...)
+	Close() error                // Close driver (eg: close connections and files...)
 	Send(key, data []byte) error // Send a formatted message
 }
 
@@ -26,8 +25,8 @@ type Transport struct {
 	driver TransportDriver
 }
 
-func (t *Transport) Close(ctx context.Context) {
-	t.driver.Close(ctx)
+func (t *Transport) Close() {
+	t.driver.Close()
 }
 func (t *Transport) Send(key, data []byte) error {
 	return t.driver.Send(key, data)
@@ -43,7 +42,7 @@ func RegisterTransportDriver(name string, t TransportDriver) {
 	}
 }
 
-func FindTransport(ctx context.Context, name string) (*Transport, error) {
+func FindTransport(name string) (*Transport, error) {
 	lock.RLock()
 	t, ok := transportDrivers[name]
 	lock.RUnlock()
@@ -51,7 +50,7 @@ func FindTransport(ctx context.Context, name string) (*Transport, error) {
 		return nil, fmt.Errorf("Transport %s not found", name)
 	}
 
-	err := t.Init(ctx)
+	err := t.Init()
 	return &Transport{t}, err
 }
 

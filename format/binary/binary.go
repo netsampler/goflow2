@@ -1,7 +1,6 @@
 package binary
 
 import (
-	"context"
 	"encoding"
 
 	"github.com/netsampler/goflow2/format"
@@ -18,7 +17,7 @@ func (d *BinaryDriver) Prepare() error {
 	return nil
 }
 
-func (d *BinaryDriver) Init(context.Context) error {
+func (d *BinaryDriver) Init() error {
 	return nil
 }
 

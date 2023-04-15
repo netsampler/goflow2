@@ -1,7 +1,6 @@
 package text
 
 import (
-	"context"
 	"encoding"
 
 	"github.com/netsampler/goflow2/format"
@@ -18,7 +17,7 @@ func (d *TextDriver) Prepare() error {
 	return nil
 }
 
-func (d *TextDriver) Init(context.Context) error {
+func (d *TextDriver) Init() error {
 	return nil
 }
 

@@ -138,6 +138,7 @@ It enables features like:
 * Mapping new values from samples
 
 For example, you can rename:
+
 ```yaml
 formatter:
   rename: # only for JSON/text
@@ -167,6 +168,8 @@ formatter
     dst_mac: mac
     dst_net: none # overrides: render the network as integer instead of prefix based on src/dst addr
 ```
+
+You can assign a specific formatter.
 
 ### Map custom fields
 

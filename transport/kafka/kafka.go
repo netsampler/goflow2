@@ -1,7 +1,6 @@
 package kafka
 
 import (
-	"context"
 	"crypto/tls"
 	"crypto/x509"
 	"errors"
@@ -96,7 +95,7 @@ func (d *KafkaDriver) Prepare() error {
 	return nil
 }
 
-func (d *KafkaDriver) Init(context.Context) error {
+func (d *KafkaDriver) Init() error {
 	kafkaConfigVersion, err := sarama.ParseKafkaVersion(d.kafkaVersion)
 	if err != nil {
 		return err
@@ -215,7 +214,7 @@ func (d *KafkaDriver) Send(key, data []byte) error {
 	return nil
 }
 
-func (d *KafkaDriver) Close(context.Context) error {
+func (d *KafkaDriver) Close() error {
 	d.producer.Close()
 	close(d.q)
 	return nil

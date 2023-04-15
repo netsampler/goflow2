@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"errors"
 	"flag"
 	"fmt"
@@ -103,18 +102,15 @@ func main() {
 		}
 	}
 
-	ctx := context.Background()
-
-	formatter, err := format.FindFormat(ctx, *Format)
+	formatter, err := format.FindFormat(*Format)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	transporter, err := transport.FindTransport(ctx, *Transport)
+	transporter, err := transport.FindTransport(*Transport)
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer transporter.Close(ctx)
 
 	var flowProducer producer.ProducerInterface
 	if *Produce == "sample" {
@@ -233,7 +229,8 @@ func main() {
 	for _, pipe := range pipes {
 		pipe.Close()
 	}
-	close(q)
+	transporter.Close()
+	close(q) // close errors
 	wg.Wait()
 
 }

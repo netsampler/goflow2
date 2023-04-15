@@ -1,7 +1,6 @@
 package format
 
 import (
-	"context"
 	"fmt"
 	"sync"
 )
@@ -30,7 +29,7 @@ func (e *DriverFormatError) Unwrap() []error {
 type FormatDriver interface {
 	Name() string
 	Prepare() error                                  // Prepare driver (eg: flag registration)
-	Init(context.Context) error                      // Initialize driver (eg: parse keying)
+	Init() error                                     // Initialize driver (eg: parse keying)
 	Format(data interface{}) ([]byte, []byte, error) // Send a message
 }
 
@@ -63,7 +62,7 @@ func RegisterFormatDriver(name string, t FormatDriver) {
 	}
 }
 
-func FindFormat(ctx context.Context, name string) (*Format, error) {
+func FindFormat(name string) (*Format, error) {
 	lock.RLock()
 	t, ok := formatDrivers[name]
 	lock.RUnlock()
@@ -71,7 +70,7 @@ func FindFormat(ctx context.Context, name string) (*Format, error) {
 		return nil, fmt.Errorf("Format %s not found", name)
 	}
 
-	err := t.Init(ctx)
+	err := t.Init()
 	return &Format{t}, err
 }
 
