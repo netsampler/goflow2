@@ -18,8 +18,8 @@ type Packet struct {
 
 type IPAddress []byte // purely for the formatting purpose
 
-func (s *IPAddress) MarshalJSON() ([]byte, error) {
-	ip, _ := netip.AddrFromSlice([]byte(*s))
+func (s IPAddress) MarshalJSON() ([]byte, error) {
+	ip, _ := netip.AddrFromSlice([]byte(s))
 	return []byte(fmt.Sprintf("\"%s\"", ip.String())), nil
 }
 

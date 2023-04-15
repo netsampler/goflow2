@@ -3,12 +3,15 @@ package text
 import (
 	"context"
 	"encoding"
-	"fmt"
 
 	"github.com/netsampler/goflow2/format"
 )
 
 type TextDriver struct {
+}
+
+func (d *TextDriver) Name() string {
+	return "text"
 }
 
 func (d *TextDriver) Prepare() error {
@@ -25,13 +28,13 @@ func (d *TextDriver) Format(data interface{}) ([]byte, []byte, error) {
 		key = dataIf.Key()
 	}
 	if dataIf, ok := data.(encoding.TextMarshaler); ok {
-		txt, err := dataIf.MarshalText()
-		return key, txt, err
+		text, err := dataIf.MarshalText()
+		return key, text, err
 	}
 	if dataIf, ok := data.(interface{ String() string }); ok {
 		return key, []byte(dataIf.String()), nil
 	}
-	return key, nil, fmt.Errorf("message is not serializable as string")
+	return key, nil, format.ErrorNoSerializer
 }
 
 func init() {

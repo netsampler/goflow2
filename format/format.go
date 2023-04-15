@@ -9,9 +9,26 @@ import (
 var (
 	formatDrivers = make(map[string]FormatDriver)
 	lock          = &sync.RWMutex{}
+
+	ErrorFormat       = fmt.Errorf("format error")
+	ErrorNoSerializer = fmt.Errorf("message is not serializable")
 )
 
+type DriverFormatError struct {
+	Driver string
+	Err    error
+}
+
+func (e *DriverFormatError) Error() string {
+	return fmt.Sprintf("%s for %s format", e.Err.Error(), e.Driver)
+}
+
+func (e *DriverFormatError) Unwrap() []error {
+	return []error{ErrorFormat, e.Err}
+}
+
 type FormatDriver interface {
+	Name() string
 	Prepare() error                                  // Prepare driver (eg: flag registration)
 	Init(context.Context) error                      // Initialize driver (eg: parse keying)
 	Format(data interface{}) ([]byte, []byte, error) // Send a message
@@ -26,7 +43,14 @@ type Format struct {
 }
 
 func (t *Format) Format(data interface{}) ([]byte, []byte, error) {
-	return t.driver.Format(data)
+	key, text, err := t.driver.Format(data)
+	if err != nil {
+		err = &DriverFormatError{
+			t.driver.Name(),
+			err,
+		}
+	}
+	return key, text, err
 }
 
 func RegisterFormatDriver(name string, t FormatDriver) {

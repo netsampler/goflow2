@@ -45,7 +45,7 @@ func ParseEthernetHeader(flowMessage *ProtoProducerMessage, data []byte, config 
 	var srcPort uint16
 	var dstPort uint16
 
-	for _, configLayer := range GetSFlowConfigLayer(config, 0) {
+	for _, configLayer := range GetSFlowConfigLayer(config, "0") {
 		extracted := GetBytes(data, configLayer.Offset, configLayer.Length)
 		MapCustom(flowMessage, extracted, configLayer.MapConfigBase)
 	}
@@ -95,7 +95,7 @@ func ParseEthernetHeader(flowMessage *ProtoProducerMessage, data []byte, config 
 			}
 		}
 
-		for _, configLayer := range GetSFlowConfigLayer(config, 3) {
+		for _, configLayer := range GetSFlowConfigLayer(config, "3") {
 			extracted := GetBytes(data, offset*8+configLayer.Offset, configLayer.Length)
 			MapCustom(flowMessage, extracted, configLayer.MapConfigBase)
 		}
@@ -111,6 +111,11 @@ func ParseEthernetHeader(flowMessage *ProtoProducerMessage, data []byte, config 
 				identification = binary.BigEndian.Uint16(data[offset+4 : offset+6])
 				fragOffset = binary.BigEndian.Uint16(data[offset+6 : offset+8])
 
+				for _, configLayer := range GetSFlowConfigLayer(config, "ipv4") {
+					extracted := GetBytes(data, offset*8+configLayer.Offset, configLayer.Length)
+					MapCustom(flowMessage, extracted, configLayer.MapConfigBase)
+				}
+
 				offset += 20
 			}
 		} else if etherType[0] == 0x86 && etherType[1] == 0xdd { // IPv6
@@ -125,15 +130,19 @@ func ParseEthernetHeader(flowMessage *ProtoProducerMessage, data []byte, config 
 
 				flowLabel = binary.BigEndian.Uint32(data[offset : offset+4])
 
+				for _, configLayer := range GetSFlowConfigLayer(config, "ipv6") {
+					extracted := GetBytes(data, offset*8+configLayer.Offset, configLayer.Length)
+					MapCustom(flowMessage, extracted, configLayer.MapConfigBase)
+				}
+
 				offset += 40
 
 			}
 		} else if etherType[0] == 0x8 && etherType[1] == 0x6 { // ARP
-		} /*else {
-			return errors.New(fmt.Sprintf("Unknown EtherType: %v\n", etherType))
-		} */
 
-		for _, configLayer := range GetSFlowConfigLayer(config, 4) {
+		}
+
+		for _, configLayer := range GetSFlowConfigLayer(config, "4") {
 			extracted := GetBytes(data, offset*8+configLayer.Offset, configLayer.Length)
 			MapCustom(flowMessage, extracted, configLayer.MapConfigBase)
 		}
@@ -146,22 +155,44 @@ func ParseEthernetHeader(flowMessage *ProtoProducerMessage, data []byte, config 
 
 		if nextHeader == 17 {
 			appOffset = 8
+
+			for _, configLayer := range GetSFlowConfigLayer(config, "udp") {
+				extracted := GetBytes(data, offset*8+configLayer.Offset, configLayer.Length)
+				MapCustom(flowMessage, extracted, configLayer.MapConfigBase)
+			}
 		}
 
 		if len(data) > offset+13 && nextHeader == 6 {
 			tcpflags = data[offset+13]
 
 			appOffset = int(data[13]>>4) * 4
+
+			for _, configLayer := range GetSFlowConfigLayer(config, "tcp") {
+				extracted := GetBytes(data, offset*8+configLayer.Offset, configLayer.Length)
+				MapCustom(flowMessage, extracted, configLayer.MapConfigBase)
+			}
 		}
 
 		// ICMP and ICMPv6
 		if len(data) >= offset+2 && (nextHeader == 1 || nextHeader == 58) {
 			flowMessage.IcmpType = uint32(data[offset+0])
 			flowMessage.IcmpCode = uint32(data[offset+1])
+
+			if nextHeader == 1 {
+				for _, configLayer := range GetSFlowConfigLayer(config, "icmp") {
+					extracted := GetBytes(data, offset*8+configLayer.Offset, configLayer.Length)
+					MapCustom(flowMessage, extracted, configLayer.MapConfigBase)
+				}
+			} else if nextHeader == 58 {
+				for _, configLayer := range GetSFlowConfigLayer(config, "icmp6") {
+					extracted := GetBytes(data, offset*8+configLayer.Offset, configLayer.Length)
+					MapCustom(flowMessage, extracted, configLayer.MapConfigBase)
+				}
+			}
 		}
 
 		if appOffset > 0 {
-			for _, configLayer := range GetSFlowConfigLayer(config, 7) {
+			for _, configLayer := range GetSFlowConfigLayer(config, "7") {
 				extracted := GetBytes(data, (offset+appOffset)*8+configLayer.Offset, configLayer.Length)
 				MapCustom(flowMessage, extracted, configLayer.MapConfigBase)
 			}

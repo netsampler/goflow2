@@ -58,7 +58,7 @@ func (s *basicSamplingRateSystem) GetSamplingRate(version uint16, obsDomainId ui
 		return samplingRate, nil
 	}
 
-	return 0, errors.New("") // TBC
+	return 0, errors.New("") // TBC // todo: now
 }
 
 type SingleSamplingRateSystem struct {
@@ -114,7 +114,7 @@ func WriteUDecoded(o uint64, out interface{}) error {
 	case *uint64:
 		*t = o
 	default:
-		return errors.New("The parameter is not a pointer to a byte/uint16/uint32/uint64 structure")
+		return fmt.Errorf("the parameter is not a pointer to a byte/uint16/uint32/uint64 structure")
 	}
 	return nil
 }
@@ -130,7 +130,7 @@ func WriteDecoded(o int64, out interface{}) error {
 	case *int64:
 		*t = o
 	default:
-		return errors.New("The parameter is not a pointer to a int8/int16/int32/int64 structure")
+		return fmt.Errorf("the parameter is not a pointer to a int8/int16/int32/int64 structure")
 	}
 	return nil
 }
@@ -155,7 +155,7 @@ func DecodeUNumber(b []byte, out interface{}) error {
 				iter++
 			}
 		} else {
-			return errors.New(fmt.Sprintf("Non-regular number of bytes for a number: %v", l))
+			return fmt.Errorf("non-regular number of bytes for a number: %v", l)
 		}
 	}
 	return WriteUDecoded(o, out)
@@ -181,7 +181,7 @@ func DecodeUNumberLE(b []byte, out interface{}) error {
 				iter++
 			}
 		} else {
-			return errors.New(fmt.Sprintf("Non-regular number of bytes for a number: %v", l))
+			return fmt.Errorf("non-regular number of bytes for a number: %v", l)
 		}
 	}
 	return WriteUDecoded(o, out)
@@ -207,7 +207,7 @@ func DecodeNumber(b []byte, out interface{}) error {
 				iter++
 			}
 		} else {
-			return errors.New(fmt.Sprintf("Non-regular number of bytes for a number: %v", l))
+			return fmt.Errorf("non-regular number of bytes for a number: %v", l)
 		}
 	}
 	return WriteDecoded(o, out)
@@ -233,7 +233,7 @@ func DecodeNumberLE(b []byte, out interface{}) error {
 				iter++
 			}
 		} else {
-			return errors.New(fmt.Sprintf("Non-regular number of bytes for a number: %v", l))
+			return fmt.Errorf("non-regular number of bytes for a number: %v", l)
 		}
 	}
 	return WriteDecoded(o, out)
@@ -411,11 +411,6 @@ func ConvertNetFlowDataSet(flowMessage *ProtoProducerMessage, version uint16, ba
 			DecodeUNumber(v, &(flowMessage.SrcVlan))
 		case netflow.NFV9_FIELD_DST_VLAN:
 			DecodeUNumber(v, &(flowMessage.DstVlan))
-
-		case netflow.IPFIX_FIELD_ingressVRFID:
-			DecodeUNumber(v, &(flowMessage.IngressVrfId))
-		case netflow.IPFIX_FIELD_egressVRFID:
-			DecodeUNumber(v, &(flowMessage.EgressVrfId))
 
 		case netflow.NFV9_FIELD_IPV4_IDENT:
 			DecodeUNumber(v, &(flowMessage.FragmentId))

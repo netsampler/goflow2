@@ -8,17 +8,17 @@ import (
 )
 
 type NetFlowMapField struct {
-	PenProvided bool   `json:"penprovided" yaml:"penprovided"`
-	Type        uint16 `json:"field" yaml:"field"`
-	Pen         uint32 `json:"pen" yaml:"pen"`
+	PenProvided bool   `yaml:"penprovided"`
+	Type        uint16 `yaml:"field"`
+	Pen         uint32 `yaml:"pen"`
 
-	Destination string     `json:"destination" yaml:"destination"`
-	Endian      EndianType `json:"endianness" yaml:"endianness"`
+	Destination string     `yaml:"destination"`
+	Endian      EndianType `yaml:"endianness"`
 	//DestinationLength uint8  `json:"dlen"` // could be used if populating a slice of uint16 that aren't in protobuf
 }
 
 type IPFIXProducerConfig struct {
-	Mapping []NetFlowMapField `json:"mapping"`
+	Mapping []NetFlowMapField `yaml:"mapping"`
 	//PacketMapping []SFlowMapField   `json:"packet-mapping"` // for embedded frames: use sFlow configuration
 }
 
@@ -27,17 +27,17 @@ type NetFlowV9ProducerConfig struct {
 }
 
 type SFlowMapField struct {
-	Layer  int `json:"layer"`
-	Offset int `json:"offset"` // offset in bits
-	Length int `json:"length"` // length in bits
+	Layer  string `yaml:"layer"`
+	Offset int    `yaml:"offset"` // offset in bits
+	Length int    `yaml:"length"` // length in bits
 
-	Destination string     `json:"destination" yaml:"destination"`
-	Endian      EndianType `json:"endianness" yaml:"endianness"`
+	Destination string     `yaml:"destination"`
+	Endian      EndianType `yaml:"endianness"`
 	//DestinationLength uint8  `json:"dlen"`
 }
 
 type SFlowProducerConfig struct {
-	Mapping []SFlowMapField `json:"mapping"`
+	Mapping []SFlowMapField `yaml:"mapping"`
 }
 
 type ProtobufFormatterConfig struct {
@@ -96,10 +96,10 @@ type DataMapLayer struct {
 }
 
 type SFlowMapper struct {
-	data map[int][]DataMapLayer // map layer to list of offsets
+	data map[string][]DataMapLayer // map layer to list of offsets
 }
 
-func GetSFlowConfigLayer(m *SFlowMapper, layer int) []DataMapLayer {
+func GetSFlowConfigLayer(m *SFlowMapper, layer string) []DataMapLayer {
 	if m == nil {
 		return nil
 	}
@@ -107,7 +107,7 @@ func GetSFlowConfigLayer(m *SFlowMapper, layer int) []DataMapLayer {
 }
 
 func mapFieldsSFlow(fields []SFlowMapField) *SFlowMapper {
-	ret := make(map[int][]DataMapLayer)
+	ret := make(map[string][]DataMapLayer)
 	for _, field := range fields {
 		retLayerEntry := DataMapLayer{
 			Offset: field.Offset,
@@ -232,6 +232,7 @@ func mapFormat(cfg *ProducerConfig) (*FormatterConfigMapper, error) {
 		"AsPath":         true,
 		"MplsIp":         true,
 		"MplsLabel":      true,
+		"MplsTtl":        true,
 	} // todo: improve this with defaults
 	for k, v := range defaultRenderers {
 		formatterMapped.render[k] = v

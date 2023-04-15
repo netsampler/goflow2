@@ -58,10 +58,6 @@ message FlowMessage {
   // 802.1q VLAN in sampled packet
   uint32 vlan_id = 29;
 
-  // VRF
-  uint32 ingress_vrf_id = 39;
-  uint32 egress_vrf_id = 40;
-
   // IP and TCP special flags
   uint32 ip_tos = 23;
   uint32 forwarding_status = 24;
@@ -73,7 +69,6 @@ message FlowMessage {
   // Fragments (IPv4/IPv6)
   uint32 fragment_id = 35;
   uint32 fragment_offset = 36;
-  uint32 bi_flow_direction = 41;
 
   // Autonomous system information
   uint32 src_as = 14;

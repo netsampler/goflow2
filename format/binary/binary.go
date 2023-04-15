@@ -3,12 +3,15 @@ package binary
 import (
 	"context"
 	"encoding"
-	"fmt"
 
 	"github.com/netsampler/goflow2/format"
 )
 
 type BinaryDriver struct {
+}
+
+func (d *BinaryDriver) Name() string {
+	return "binary"
 }
 
 func (d *BinaryDriver) Prepare() error {
@@ -25,10 +28,10 @@ func (d *BinaryDriver) Format(data interface{}) ([]byte, []byte, error) {
 		key = dataIf.Key()
 	}
 	if dataIf, ok := data.(encoding.BinaryMarshaler); ok {
-		txt, err := dataIf.MarshalBinary()
-		return key, txt, err
+		text, err := dataIf.MarshalBinary()
+		return key, text, err
 	}
-	return key, nil, fmt.Errorf("message is not serializable as binary")
+	return key, nil, format.ErrorNoSerializer
 }
 
 func init() {

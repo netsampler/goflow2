@@ -10,6 +10,10 @@ import (
 type JsonDriver struct {
 }
 
+func (d *JsonDriver) Name() string {
+	return "json"
+}
+
 func (d *JsonDriver) Prepare() error {
 	return nil
 }

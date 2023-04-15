@@ -23,67 +23,39 @@ formatter:
     - src_mac
     - dst_mac
     # additional fields
-    - custom_integer_1
-    - custom_integer_2
-    - juniper_properties
     - icmp_name # virtual column
   key:
     - sampler_address
-  render: # only for JSON/text and specific additional fields
-    src_mac: mac
-    dst_mac: mac
-    dst_net: none # overrides: render the network as integer instead of prefix based on src/dst addr
-    # juniper_properties: juniper
-  rename: # only for JSON
-    src_mac: src_macaddr
-    dst_mac: dst_macaddr
-  protobuf: # manual protobuf fields
-    - name: custom_integer_1
-      index: 554
-      type: varint
-    - name: custom_integer_2
-      index: 555
-      type: varint
-    - name: juniper_properties
-      index: 556
-      type: varint
-      array: true
+  protobuf: # manual protobuf fields addition
     - name: flow_direction
       index: 42
+      type: varint
+    - name: bi_flow_direction
+      index: 41
+      type: varint
+    - name: ingress_vrf_id
+      index: 39
+      type: varint
+    - name: egress_vrf_id
+      index: 40
       type: varint
 # Decoder mappings
 ipfix:
   mapping:
-    - field: 7 # IPFIX_FIELD_sourceTransportPort
-      destination: custom_integer_1
-    - field: 11 # IPFIX_FIELD_destinationTransportPort
-      destination: custom_integer_2
-    - field: 137 # Juniper Properties
-      destination: juniper_properties
-      penprovided: true
-      pen: 2636 # Juniper enterprise
     - field: 61
       destination: flow_direction
     - field: 239
-      destination: flow_direction
+      destination: bi_flow_direction
+    - field: 234
+      destination: ingress_vrf_id
+    - field: 235
+      destination: egress_vrf_id
 netflowv9:
   mapping:
-    - field: 7
-      destination: custom_integer_1
-    - field: 11
-      destination: custom_integer_2
     - field: 34 # samplingInterval provided within the template
       destination: sampling_rate
       endian: little
     - field: 61
       destination: flow_direction
 sflow:
-  mapping:
-    - layer: 4 # Layer 4: TCP or UDP
-      offset: 0 # Source port
-      length: 16 # 2 bytes
-      destination: custom_integer_1
-    - layer: 4
-      offset: 16 # Destination port
-      length: 16 # 2 bytes
-      destination: custom_integer_2
+  mapping: []
