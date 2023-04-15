@@ -155,8 +155,11 @@ func (c *producerConfigMapped) finalizemapDest(v *MapConfigBase) error {
 	}
 	return nil
 }
-func (c *producerConfigMapped) finalizeSFlowMapper(m *SFlowMapper) error {
 
+func (c *producerConfigMapped) finalizeSFlowMapper(m *SFlowMapper) error {
+	if m == nil {
+		return nil
+	}
 	for k, vlist := range m.data {
 		for i, v := range vlist {
 			c.finalizemapDest(&(v.MapConfigBase))
@@ -168,7 +171,9 @@ func (c *producerConfigMapped) finalizeSFlowMapper(m *SFlowMapper) error {
 }
 
 func (c *producerConfigMapped) finalizeNetFlowMapper(m *NetFlowMapper) error {
-
+	if m == nil {
+		return nil
+	}
 	for k, v := range m.data {
 		c.finalizemapDest(&(v.MapConfigBase))
 		m.data[k] = v
@@ -288,6 +293,8 @@ func mapFormat(cfg *ProducerConfig) (*FormatterConfigMapper, error) {
 		formatterMapped.pbMap = pbMap
 		formatterMapped.numToPb = numToPb
 
+	} else {
+		formatterMapped.fields = fields
 	}
 
 	return formatterMapped, nil
