@@ -22,10 +22,14 @@ func (d *TextDriver) Format(data interface{}) ([]byte, []byte, error) {
 	if dataIf, ok := data.(interface{ Key() []byte }); ok {
 		key = dataIf.Key()
 	}
+	if dataIf, ok := data.(interface{ MarshalText() ([]byte, error) }); ok {
+		txt, err := dataIf.MarshalText()
+		return key, txt, err
+	}
 	if dataIf, ok := data.(interface{ String() string }); ok {
 		return key, []byte(dataIf.String()), nil
 	}
-	return nil, nil, fmt.Errorf("message is not serializable as string")
+	return key, nil, fmt.Errorf("message is not serializable as string")
 }
 
 func init() {

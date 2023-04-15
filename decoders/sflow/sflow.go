@@ -120,7 +120,11 @@ func DecodeFlowRecord(header *RecordHeader, payload *bytes.Buffer) (FlowRecord, 
 		flowRecord.Data = extendedSwitch
 	case FORMAT_RAW_PKT:
 		sampledHeader := SampledHeader{}
-		if err := utils.BinaryDecoder(payload, &(sampledHeader.Protocol), &(sampledHeader.FrameLength), &(sampledHeader.Stripped), &(sampledHeader.OriginalLength)); err != nil {
+		if err := utils.BinaryDecoder(payload,
+			&(sampledHeader.Protocol),
+			&(sampledHeader.FrameLength),
+			&(sampledHeader.Stripped),
+			&(sampledHeader.OriginalLength)); err != nil {
 			return flowRecord, &RecordError{header.DataFormat, err}
 		}
 		sampledHeader.HeaderData = payload.Bytes()
@@ -261,9 +265,15 @@ func DecodeSample(header *SampleHeader, payload *bytes.Buffer) (interface{}, err
 		expandedFlowSample = ExpandedFlowSample{
 			Header: *header,
 		}
-		if err := utils.BinaryDecoder(payload, &(expandedFlowSample.SamplingRate), &(expandedFlowSample.SamplePool),
-			&(expandedFlowSample.Drops), &(expandedFlowSample.InputIfFormat), &(expandedFlowSample.InputIfValue),
-			&(expandedFlowSample.OutputIfFormat), &(expandedFlowSample.OutputIfValue), &(expandedFlowSample.FlowRecordsCount)); err != nil {
+		if err := utils.BinaryDecoder(payload,
+			&(expandedFlowSample.SamplingRate),
+			&(expandedFlowSample.SamplePool),
+			&(expandedFlowSample.Drops),
+			&(expandedFlowSample.InputIfFormat),
+			&(expandedFlowSample.InputIfValue),
+			&(expandedFlowSample.OutputIfFormat),
+			&(expandedFlowSample.OutputIfValue),
+			&(expandedFlowSample.FlowRecordsCount)); err != nil {
 			return sample, &FlowError{format, seq, fmt.Errorf("IPv4 [%w]", err)}
 		}
 		recordsCount = expandedFlowSample.FlowRecordsCount
@@ -282,7 +292,6 @@ func DecodeSample(header *SampleHeader, payload *bytes.Buffer) (interface{}, err
 		if format == FORMAT_RAW_PKT || format == FORMAT_IPV4 {
 			record, err := DecodeFlowRecord(&recordHeader, recordReader)
 			if err != nil {
-				// todo: return or continue?
 				return sample, &FlowError{format, seq, fmt.Errorf("record [%w]", err)}
 			}
 			if format == FORMAT_RAW_PKT {
@@ -293,7 +302,6 @@ func DecodeSample(header *SampleHeader, payload *bytes.Buffer) (interface{}, err
 		} else if format == FORMAT_ETH || format == FORMAT_IPV6 {
 			record, err := DecodeCounterRecord(&recordHeader, recordReader)
 			if err != nil {
-				// todo: return or continue?
 				return sample, &FlowError{format, seq, fmt.Errorf("counter [%w]", err)}
 			}
 			counterSample.Records[i] = record

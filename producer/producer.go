@@ -104,19 +104,3 @@ func CreateProtoProducerWithConfig(cfg *ProducerConfig) (ProducerInterface, erro
 		cfgMapped: cfgMapped,
 	}, err
 }
-
-// Producer that keeps the same format
-// as the original flow samples.
-// This can be used for debugging (eg: getting NetFlow Option Templates)
-type RawProducer struct {
-}
-
-func (p *RawProducer) Produce(msg interface{}, args *ProduceArgs) ([]ProducerMessage, error) {
-	// should return msg wrapped
-	// []*interface{msg,}
-	return []ProducerMessage{msg}, nil
-}
-
-func (p *RawProducer) Commit(flowMessageSet []ProducerMessage) {}
-
-func (p *RawProducer) Close() {}

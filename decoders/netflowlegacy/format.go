@@ -1,19 +1,20 @@
 package netflowlegacy
 
 import (
+	"encoding/json"
 	"fmt"
 	"time"
 )
 
-/*func (p PacketNetFlowV5) MarshalJSON() ([]byte, error) {
-	return []byte("todo"), nil
-}*/
-
-func (p *PacketNetFlowV5) String() string {
-	return fmt.Sprintf("NetFlowV%d seq:%d count:%d", p.Version, p.FlowSequence, p.Count)
+func (p *PacketNetFlowV5) MarshalJSON() ([]byte, error) {
+	return json.Marshal(*p) // this is a trick to avoid having the JSON marshaller defaults to MarshalText
 }
 
-func (p PacketNetFlowV5) String2() string {
+func (p *PacketNetFlowV5) MarshalText() ([]byte, error) {
+	return []byte(fmt.Sprintf("NetFlowV%d seq:%d count:%d", p.Version, p.FlowSequence, p.Count)), nil
+}
+
+func (p PacketNetFlowV5) String() string {
 	str := "NetFlow v5 Packet\n"
 	str += "-----------------\n"
 	str += fmt.Sprintf("  Version: %v\n", p.Version)

@@ -112,7 +112,7 @@ func TestDecodeNetFlowV9(t *testing.T) {
             - 21. Unassigned (234/false): 4
             - 22. Unassigned (235/false): 4
 `,
-		decNfv9.String2())
+		decNfv9.String())
 
 	// Decode some data using the above template
 	data := []byte{
@@ -410,5 +410,5 @@ func TestDecodeNetFlowV9(t *testing.T) {
             - 21. Unassigned (234): [96 0 0 2]
             - 22. Unassigned (235): [96 0 0 0]
 `,
-		decNfv9.String2())
+		decNfv9.String())
 }
