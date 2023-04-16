@@ -455,7 +455,7 @@ func DecodeMessageIPFIX(payload *bytes.Buffer, templates NetFlowTemplateSystem, 
 func DecodeMessageVersion(payload *bytes.Buffer, templates NetFlowTemplateSystem, packetNFv9 *NFv9Packet, packetIPFIX *IPFIXPacket) error {
 	var version uint16
 
-	if err := utils.BinaryDecoder(payload, binary.BigEndian, &version); err != nil {
+	if err := utils.BinaryDecoder(payload, &version); err != nil {
 		return &DecoderError{"IPFIX/NetFlowV9 version", err}
 	}
 
