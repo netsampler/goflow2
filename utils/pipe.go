@@ -19,12 +19,15 @@ type FlowPipe interface {
 	Close()
 }
 
+// Function that create Template Systems
+type CreateTemplateSystemFunction func(key string) netflow.NetFlowTemplateSystem
+
 type flowpipe struct {
 	format    format.FormatInterface
 	transport transport.TransportInterface
 	producer  producer.ProducerInterface
 
-	netFlowTemplater func() netflow.NetFlowTemplateSystem
+	netFlowTemplater CreateTemplateSystemFunction
 }
 
 type PipeConfig struct {
@@ -32,8 +35,7 @@ type PipeConfig struct {
 	Transport transport.TransportInterface
 	Producer  producer.ProducerInterface
 
-	// Function that create Template Systems
-	NetFlowTemplater func() netflow.NetFlowTemplateSystem
+	NetFlowTemplater CreateTemplateSystemFunction
 }
 
 func (p *flowpipe) formatSend(flowMessageSet []producer.ProducerMessage) error {
@@ -63,7 +65,9 @@ func (p *flowpipe) parseConfig(cfg *PipeConfig) {
 	if cfg.NetFlowTemplater != nil {
 		p.netFlowTemplater = cfg.NetFlowTemplater
 	} else {
-		p.netFlowTemplater = netflow.CreateTemplateSystem
+		p.netFlowTemplater = func(key string) netflow.NetFlowTemplateSystem {
+			return netflow.CreateTemplateSystem()
+		}
 	}
 
 }
@@ -159,21 +163,11 @@ func (p *NetFlowPipe) DecodeFlow(msg interface{}) error {
 	templates, ok := p.templates[key]
 	p.templateslock.RUnlock()
 	if !ok {
-		templates = p.netFlowTemplater()
+		templates = p.netFlowTemplater(key)
 		p.templateslock.Lock()
 		p.templates[key] = templates
 		p.templateslock.Unlock()
 	}
-	/*
-		p.samplinglock.RLock()
-		sampling, ok := p.sampling[key]
-		p.samplinglock.RUnlock()
-		if !ok {
-			sampling = producer.CreateSamplingSystem()
-			p.samplinglock.Lock()
-			p.sampling[key] = sampling
-			p.samplinglock.Unlock()
-		}*/
 
 	var packetV5 netflowlegacy.PacketNetFlowV5
 	var packetNFv9 netflow.NFv9Packet
@@ -208,8 +202,6 @@ func (p *NetFlowPipe) DecodeFlow(msg interface{}) error {
 	var err error
 
 	args := producer.ProduceArgs{
-		//SamplingRateSystem: sampling,
-
 		Src: pkt.Src,
 		Dst: pkt.Dst,
 

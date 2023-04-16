@@ -13,20 +13,16 @@ type PromTemplateSystem struct {
 	wrapped netflow.NetFlowTemplateSystem
 }
 
-func NewDefaultPromTemplateSystem() netflow.NetFlowTemplateSystem {
-	return NewPromTemplateSystem(netflow.CreateTemplateSystem())
+// Creates a default Prometheus template wrapper function to be used by a pipe
+func NewDefaultPromTemplateSystem(key string) netflow.NetFlowTemplateSystem {
+	return NewPromTemplateSystem(key, netflow.CreateTemplateSystem())
 }
 
-// todo: improve naming
-func NewPromTemplateWrapper(wrapped netflow.NetFlowTemplateSystem) func() netflow.NetFlowTemplateSystem {
-	return func() netflow.NetFlowTemplateSystem {
-		return NewPromTemplateSystem(wrapped)
-	}
-}
-
-func NewPromTemplateSystem(wrapped netflow.NetFlowTemplateSystem) netflow.NetFlowTemplateSystem {
+// Creates a Prometheus template system that wraps another template system.
+// The key argument is providing the router information for metrics.
+func NewPromTemplateSystem(key string, wrapped netflow.NetFlowTemplateSystem) netflow.NetFlowTemplateSystem {
 	return &PromTemplateSystem{
-		key:     "test",
+		key:     key,
 		wrapped: wrapped,
 	}
 }
