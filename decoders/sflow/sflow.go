@@ -381,7 +381,6 @@ func DecodeMessage(payload *bytes.Buffer, packetV5 *Packet) error {
 
 		sample, err := DecodeSample(&header, sampleReader)
 		if err != nil {
-			// todo: investigate if better as log
 			return &DecoderError{fmt.Errorf("sample [%w]", err)}
 		} else {
 			packetV5.Samples[i] = sample
