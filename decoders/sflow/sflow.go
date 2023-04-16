@@ -94,7 +94,9 @@ func DecodeCounterRecord(header *RecordHeader, payload *bytes.Buffer) (CounterRe
 		}
 		counterRecord.Data = ethernetCounters
 	default:
-		return counterRecord, NewErrorDataFormat((*header).DataFormat)
+		counterRecord.Data = &FlowRecordRaw{
+			Data: payload.Next(int(header.Length)),
+		}
 	}
 
 	return counterRecord, nil
