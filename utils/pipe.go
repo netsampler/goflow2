@@ -12,6 +12,7 @@ import (
 	"github.com/netsampler/goflow2/v2/format"
 	"github.com/netsampler/goflow2/v2/producer"
 	"github.com/netsampler/goflow2/v2/transport"
+	"github.com/netsampler/goflow2/v2/utils/templates"
 )
 
 type FlowPipe interface {
@@ -19,15 +20,12 @@ type FlowPipe interface {
 	Close()
 }
 
-// Function that create Template Systems
-type CreateTemplateSystemFunction func(key string) netflow.NetFlowTemplateSystem
-
 type flowpipe struct {
 	format    format.FormatInterface
 	transport transport.TransportInterface
 	producer  producer.ProducerInterface
 
-	netFlowTemplater CreateTemplateSystemFunction
+	netFlowTemplater templates.CreateTemplateSystemGenerator
 }
 
 type PipeConfig struct {
@@ -35,7 +33,7 @@ type PipeConfig struct {
 	Transport transport.TransportInterface
 	Producer  producer.ProducerInterface
 
-	NetFlowTemplater CreateTemplateSystemFunction
+	NetFlowTemplater templates.CreateTemplateSystemGenerator
 }
 
 func (p *flowpipe) formatSend(flowMessageSet []producer.ProducerMessage) error {
@@ -65,9 +63,7 @@ func (p *flowpipe) parseConfig(cfg *PipeConfig) {
 	if cfg.NetFlowTemplater != nil {
 		p.netFlowTemplater = cfg.NetFlowTemplater
 	} else {
-		p.netFlowTemplater = func(key string) netflow.NetFlowTemplateSystem {
-			return netflow.CreateTemplateSystem()
-		}
+		p.netFlowTemplater = templates.DefaultTemplateGenerator
 	}
 
 }
