@@ -60,7 +60,15 @@ type RecordHeader struct {
 
 type FlowRecord struct {
 	Header RecordHeader
-	Data   interface{}
+	Data   interface{} // replace by FlowRecordData
+}
+
+type FlowRecordRaw struct {
+	Data []byte
+}
+
+type FlowRecordData interface {
+	GetBytes(offset int, length int, dst []byte) error
 }
 
 type CounterRecord struct {
