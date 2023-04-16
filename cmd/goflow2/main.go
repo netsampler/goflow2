@@ -123,7 +123,7 @@ func main() {
 			}
 		}
 
-		flowProducer, err = protoproducer.CreateProtoProducer(cfgProducer, protoproducer.CreateSamplingSystem())
+		flowProducer, err = protoproducer.CreateProtoProducer(cfgProducer, protoproducer.CreateSamplingSystem)
 		if err != nil {
 			log.Fatal(err)
 		}

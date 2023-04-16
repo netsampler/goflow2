@@ -2,6 +2,7 @@ package protoproducer
 
 import (
 	"fmt"
+	"sync"
 
 	"github.com/netsampler/goflow2/decoders/netflow"
 	"github.com/netsampler/goflow2/decoders/netflowlegacy"
@@ -11,7 +12,9 @@ import (
 
 type ProtoProducer struct {
 	cfgMapped          *producerConfigMapped
-	samplingRateSystem SamplingRateSystem
+	samplinglock       *sync.RWMutex
+	sampling           map[string]SamplingRateSystem
+	samplingRateSystem func() SamplingRateSystem
 }
 
 func (p *ProtoProducer) enrich(flowMessageSet []producer.ProducerMessage, cb func(msg *ProtoProducerMessage)) {
@@ -22,6 +25,21 @@ func (p *ProtoProducer) enrich(flowMessageSet []producer.ProducerMessage, cb fun
 		}
 		cb(fmsg)
 	}
+}
+
+func (p *ProtoProducer) getSamplingRateSystem(args *producer.ProduceArgs) SamplingRateSystem {
+	key := args.Src.String()
+	p.samplinglock.RLock()
+	sampling, ok := p.sampling[key]
+	p.samplinglock.RUnlock()
+	if !ok {
+		sampling = p.samplingRateSystem()
+		p.samplinglock.Lock()
+		p.sampling[key] = sampling
+		p.samplinglock.Unlock()
+	}
+
+	return sampling
 }
 
 func (p *ProtoProducer) Produce(msg interface{}, args *producer.ProduceArgs) (flowMessageSet []producer.ProducerMessage, err error) {
@@ -35,14 +53,16 @@ func (p *ProtoProducer) Produce(msg interface{}, args *producer.ProduceArgs) (fl
 			fmsg.SamplerAddress = sa
 		})
 	case *netflow.NFv9Packet:
-		flowMessageSet, err = ProcessMessageNetFlowV9Config(msgConv, p.samplingRateSystem, p.cfgMapped)
+		samplingRateSystem := p.getSamplingRateSystem(args)
+		flowMessageSet, err = ProcessMessageNetFlowV9Config(msgConv, samplingRateSystem, p.cfgMapped)
 
 		p.enrich(flowMessageSet, func(fmsg *ProtoProducerMessage) {
 			fmsg.TimeReceivedNs = tr
 			fmsg.SamplerAddress = sa
 		})
 	case *netflow.IPFIXPacket:
-		flowMessageSet, err = ProcessMessageIPFIXConfig(msgConv, p.samplingRateSystem, p.cfgMapped)
+		samplingRateSystem := p.getSamplingRateSystem(args)
+		flowMessageSet, err = ProcessMessageIPFIXConfig(msgConv, samplingRateSystem, p.cfgMapped)
 
 		p.enrich(flowMessageSet, func(fmsg *ProtoProducerMessage) {
 			fmsg.TimeReceivedNs = tr
@@ -74,10 +94,12 @@ func (p *ProtoProducer) Commit(flowMessageSet []producer.ProducerMessage) {
 
 func (p *ProtoProducer) Close() {}
 
-func CreateProtoProducer(cfg *ProducerConfig, samplingRateSystem SamplingRateSystem) (producer.ProducerInterface, error) {
+func CreateProtoProducer(cfg *ProducerConfig, samplingRateSystem func() SamplingRateSystem) (producer.ProducerInterface, error) {
 	cfgMapped, err := mapConfig(cfg)
 	return &ProtoProducer{
 		cfgMapped:          cfgMapped,
+		samplinglock:       &sync.RWMutex{},
+		sampling:           make(map[string]SamplingRateSystem),
 		samplingRateSystem: samplingRateSystem,
 	}, err
 }
