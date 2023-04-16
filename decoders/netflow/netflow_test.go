@@ -2,13 +2,17 @@ package netflow
 
 import (
 	"bytes"
+	"context"
 	"testing"
+
+	"github.com/netsampler/goflow2/decoders/netflow/templates/memory"
 
 	"github.com/stretchr/testify/assert"
 )
 
 func TestDecodeNetFlowV9(t *testing.T) {
-	templates := CreateTemplateSystem()
+	templates := &memory.MemoryDriver{}
+	templates.Init(context.Background())
 
 	// Decode a template
 	template := []byte{
