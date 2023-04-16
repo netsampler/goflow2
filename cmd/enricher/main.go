@@ -7,14 +7,10 @@ import (
 	"fmt"
 	"io"
 	"net"
-	"net/http"
 	"os"
 	"strings"
 
-	"github.com/oschwald/geoip2-golang"
-
 	flowmessage "github.com/netsampler/goflow2/cmd/enricher/pb"
-	"google.golang.org/protobuf/encoding/protodelim"
 
 	// import various formatters
 	"github.com/netsampler/goflow2/format"
@@ -27,8 +23,9 @@ import (
 	_ "github.com/netsampler/goflow2/transport/file"
 	_ "github.com/netsampler/goflow2/transport/kafka"
 
-	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"github.com/oschwald/geoip2-golang"
 	log "github.com/sirupsen/logrus"
+	"google.golang.org/protobuf/encoding/protodelim"
 )
 
 var (
@@ -47,18 +44,8 @@ var (
 	Format    = flag.String("format", "json", fmt.Sprintf("Choose the format (available: %s)", strings.Join(format.GetFormats(), ", ")))
 	Transport = flag.String("transport", "file", fmt.Sprintf("Choose the transport (available: %s)", strings.Join(transport.GetTransports(), ", ")))
 
-	MetricsAddr = flag.String("metrics.addr", ":8081", "Metrics address")
-	MetricsPath = flag.String("metrics.path", "/metrics", "Metrics path")
-
-	TemplatePath = flag.String("templates.path", "/templates", "NetFlow/IPFIX templates list")
-
 	Version = flag.Bool("v", false, "Print version")
 )
-
-func httpServer() {
-	http.Handle(*MetricsPath, promhttp.Handler())
-	log.Fatal(http.ListenAndServe(*MetricsAddr, nil))
-}
 
 func MapAsn(db *geoip2.Reader, addr []byte, dest *uint32) {
 	entry, err := db.ASN(net.IP(addr))
@@ -131,9 +118,7 @@ func main() {
 		log.SetFormatter(&log.JSONFormatter{})
 	}
 
-	log.Info("Starting enricher")
-
-	go httpServer()
+	log.Info("starting enricher")
 
 	rdr := bufio.NewReader(os.Stdin)
 
