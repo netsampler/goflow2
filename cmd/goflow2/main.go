@@ -235,6 +235,8 @@ func main() {
 		decodeFunc = metrics.PromDecoderWrapper(p.DecodeFlow, listenAddrUrl.Scheme)
 		pipes = append(pipes, p)
 
+		// starts receivers
+		// the function either returns an error
 		if err := recv.Start(hostname, int(port), decodeFunc); err != nil {
 			l.Fatal(err)
 		} else {
@@ -280,6 +282,9 @@ func main() {
 			case <-q:
 				return
 			case err := <-transportErr:
+				if err == nil {
+					return
+				}
 				l := log.WithError(err)
 				l.Error("transport error")
 			}
@@ -302,9 +307,10 @@ func main() {
 	}
 	// close producer
 	flowProducer.Close()
-	// final close transporter (eg: flushes message to Kafka)
+	// close transporter (eg: flushes message to Kafka)
 	transporter.Close()
 
+	// close http server (prometheus + health check)
 	ctx, _ := context.WithTimeout(context.Background(), time.Second*5)
 	srv.Shutdown(ctx)
 	close(q) // close errors

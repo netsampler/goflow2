@@ -210,9 +210,17 @@ func (d *KafkaDriver) Init() error {
 		for {
 			select {
 			case msg := <-kafkaProducer.Errors():
+				var err error
+				if msg != nil {
+					err = &KafkaTransportError{msg}
+				}
 				select {
-				case d.errors <- &KafkaTransportError{msg}:
+				case d.errors <- err:
 				default:
+				}
+
+				if msg == nil {
+					return
 				}
 			case <-d.q:
 				return
