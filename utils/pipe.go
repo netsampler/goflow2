@@ -25,7 +25,7 @@ type flowpipe struct {
 	transport transport.TransportInterface
 	producer  producer.ProducerInterface
 
-	netFlowTemplater templates.CreateTemplateSystemGenerator
+	netFlowTemplater templates.TemplateSystemGenerator
 }
 
 type PipeConfig struct {
@@ -33,7 +33,7 @@ type PipeConfig struct {
 	Transport transport.TransportInterface
 	Producer  producer.ProducerInterface
 
-	NetFlowTemplater templates.CreateTemplateSystemGenerator
+	NetFlowTemplater templates.TemplateSystemGenerator
 }
 
 func (p *flowpipe) formatSend(flowMessageSet []producer.ProducerMessage) error {
@@ -77,9 +77,6 @@ type NetFlowPipe struct {
 
 	templateslock *sync.RWMutex
 	templates     map[string]netflow.NetFlowTemplateSystem
-
-	/*samplinglock *sync.RWMutex
-	sampling     map[string]producer.SamplingRateSystem*/
 }
 
 type PipeMessageError struct {
@@ -138,9 +135,7 @@ func (p *SFlowPipe) DecodeFlow(msg interface{}) error {
 func NewNetFlowPipe(cfg *PipeConfig) *NetFlowPipe {
 	p := &NetFlowPipe{
 		templateslock: &sync.RWMutex{},
-		//samplinglock:  &sync.RWMutex{},
-		templates: make(map[string]netflow.NetFlowTemplateSystem),
-		//sampling:      make(map[string]producer.SamplingRateSystem),
+		templates:     make(map[string]netflow.NetFlowTemplateSystem),
 	}
 	p.parseConfig(cfg)
 	return p

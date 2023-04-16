@@ -11,8 +11,9 @@ var (
 
 type FlowBaseTemplateSet map[uint16]map[uint32]map[uint16]interface{}
 
-// Store interface that allows storing and retrieving template data
+// Store interface that allows storing, removing and retrieving template data
 type NetFlowTemplateSystem interface {
+	RemoveTemplate(version uint16, obsDomainId uint32, templateId uint16) (interface{}, error)
 	GetTemplate(version uint16, obsDomainId uint32, templateId uint16) (interface{}, error)
 	AddTemplate(version uint16, obsDomainId uint32, template interface{}) error
 }
@@ -51,12 +52,31 @@ func (ts *BasicTemplateSystem) AddTemplate(version uint16, obsDomainId uint32, t
 func (ts *BasicTemplateSystem) GetTemplate(version uint16, obsDomainId uint32, templateId uint16) (interface{}, error) {
 	ts.templateslock.RLock()
 	defer ts.templateslock.RUnlock()
-	templatesVersion, okver := ts.templates[version]
-	if okver {
-		templatesObsDom, okobs := templatesVersion[obsDomainId]
-		if okobs {
-			template, okid := templatesObsDom[templateId]
-			if okid {
+	if templatesVersion, ok := ts.templates[version]; ok {
+		if templatesObsDom, ok := templatesVersion[obsDomainId]; ok {
+			if template, ok := templatesObsDom[templateId]; ok {
+				return template, nil
+			}
+		}
+	}
+	return nil, ErrorTemplateNotFound
+}
+
+func (ts *BasicTemplateSystem) RemoveTemplate(version uint16, obsDomainId uint32, templateId uint16) (interface{}, error) {
+	ts.templateslock.RLock()
+	defer ts.templateslock.RUnlock()
+	if templatesVersion, ok := ts.templates[version]; ok {
+		if templatesObsDom, ok := templatesVersion[obsDomainId]; ok {
+			if template, ok := templatesObsDom[templateId]; ok {
+
+				delete(templatesObsDom, templateId)
+				if len(templatesObsDom) == 0 {
+					delete(templatesVersion, obsDomainId)
+					if len(templatesVersion) == 0 {
+						delete(ts.templates, version)
+					}
+				}
+
 				return template, nil
 			}
 		}

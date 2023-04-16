@@ -6,7 +6,7 @@ import (
 
 // Function that Create Template Systems.
 // This is meant to be used by a pipe
-type CreateTemplateSystemGenerator func(key string) netflow.NetFlowTemplateSystem
+type TemplateSystemGenerator func(key string) netflow.NetFlowTemplateSystem
 
 // Default template generator
 func DefaultTemplateGenerator(key string) netflow.NetFlowTemplateSystem {
