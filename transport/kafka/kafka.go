@@ -12,10 +12,9 @@ import (
 	"strings"
 	"time"
 
-	sarama "github.com/Shopify/sarama"
 	"github.com/netsampler/goflow2/transport"
 
-	log "github.com/sirupsen/logrus"
+	sarama "github.com/Shopify/sarama"
 )
 
 type KafkaDriver struct {
@@ -38,6 +37,19 @@ type KafkaDriver struct {
 	producer sarama.AsyncProducer
 
 	q chan bool
+
+	errors chan error
+}
+
+type KafkaTransportError struct {
+	Err error
+}
+
+func (e *KafkaTransportError) Error() string {
+	return fmt.Sprintf("kafka transport %s", e.Err.Error())
+}
+func (e *KafkaTransportError) Unwrap() []error {
+	return []error{transport.ErrorTransport, e.Err}
 }
 
 type KafkaSASLAlgorithm string
@@ -71,6 +83,10 @@ var (
 	}
 )
 
+func (d *KafkaDriver) Name() string {
+	return "kafka"
+}
+
 func (d *KafkaDriver) Prepare() error {
 	flag.BoolVar(&d.kafkaTLS, "transport.kafka.tls", false, "Use TLS to connect to Kafka")
 	flag.StringVar(&d.kafkaSASL, "transport.kafka.sasl", "none",
@@ -85,7 +101,6 @@ func (d *KafkaDriver) Prepare() error {
 	flag.IntVar(&d.kafkaFlushBytes, "transport.kafka.flushbytes", int(sarama.MaxRequestSize), "Kafka flush bytes")
 	flag.DurationVar(&d.kafkaFlushFrequency, "transport.kafka.flushfreq", time.Second*5, "Kafka flush frequency")
 
-	flag.BoolVar(&d.kafkaLogErrors, "transport.kafka.log.err", false, "Log Kafka errors")
 	flag.BoolVar(&d.kafkaHashing, "transport.kafka.hashing", false, "Enable partition hashing")
 
 	//flag.StringVar(&d.kafkaKeying, "transport.kafka.key", "SamplerAddress,DstAS", "Kafka list of fields to do hashing on (partition) separated by commas")
@@ -93,6 +108,10 @@ func (d *KafkaDriver) Prepare() error {
 	flag.StringVar(&d.kafkaCompressionCodec, "transport.kafka.compression", "", "Kafka default compression")
 
 	return nil
+}
+
+func (d *KafkaDriver) Errors() <-chan error {
+	return d.errors
 }
 
 func (d *KafkaDriver) Init() error {
@@ -104,7 +123,7 @@ func (d *KafkaDriver) Init() error {
 	kafkaConfig := sarama.NewConfig()
 	kafkaConfig.Version = kafkaConfigVersion
 	kafkaConfig.Producer.Return.Successes = false
-	kafkaConfig.Producer.Return.Errors = d.kafkaLogErrors
+	kafkaConfig.Producer.Return.Errors = true
 	kafkaConfig.Producer.MaxMessageBytes = d.kafkaMaxMsgBytes
 	kafkaConfig.Producer.Flush.Bytes = d.kafkaFlushBytes
 	kafkaConfig.Producer.Flush.Frequency = d.kafkaFlushFrequency
@@ -187,20 +206,19 @@ func (d *KafkaDriver) Init() error {
 
 	d.q = make(chan bool)
 
-	if d.kafkaLogErrors {
-		go func() {
-			for {
+	go func() {
+		for {
+			select {
+			case msg := <-kafkaProducer.Errors():
 				select {
-				case msg := <-kafkaProducer.Errors():
-					//if log != nil {
-					log.Error(msg)
-					//}
-				case <-d.q:
-					return
+				case d.errors <- &KafkaTransportError{msg}:
+				default:
 				}
+			case <-d.q:
+				return
 			}
-		}()
-	}
+		}
+	}()
 
 	return err
 }
@@ -233,6 +251,8 @@ func GetServiceAddresses(srv string) (addrs []string, err error) {
 }
 
 func init() {
-	d := &KafkaDriver{}
+	d := &KafkaDriver{
+		errors: make(chan error),
+	}
 	transport.RegisterTransportDriver("kafka", d)
 }

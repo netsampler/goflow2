@@ -8,9 +8,25 @@ import (
 var (
 	transportDrivers = make(map[string]TransportDriver)
 	lock             = &sync.RWMutex{}
+
+	ErrorTransport = fmt.Errorf("transport error")
 )
 
+type DriverTransportError struct {
+	Driver string
+	Err    error
+}
+
+func (e *DriverTransportError) Error() string {
+	return fmt.Sprintf("%s for %s transport", e.Err.Error(), e.Driver)
+}
+
+func (e *DriverTransportError) Unwrap() []error {
+	return []error{ErrorTransport, e.Err}
+}
+
 type TransportDriver interface {
+	Name() string                // Get the name of the driver
 	Prepare() error              // Prepare driver (eg: flag registration)
 	Init() error                 // Initialize driver (eg: start connections, open files...)
 	Close() error                // Close driver (eg: close connections and files...)
@@ -22,14 +38,20 @@ type TransportInterface interface {
 }
 
 type Transport struct {
-	driver TransportDriver
+	TransportDriver
 }
 
-func (t *Transport) Close() {
-	t.driver.Close()
+func (t *Transport) Close() error {
+	if err := t.TransportDriver.Close(); err != nil {
+		return &DriverTransportError{t.Name(), err}
+	}
+	return nil
 }
 func (t *Transport) Send(key, data []byte) error {
-	return t.driver.Send(key, data)
+	if err := t.TransportDriver.Send(key, data); err != nil {
+		return &DriverTransportError{t.Name(), err}
+	}
+	return nil
 }
 
 func RegisterTransportDriver(name string, t TransportDriver) {
@@ -47,10 +69,13 @@ func FindTransport(name string) (*Transport, error) {
 	t, ok := transportDrivers[name]
 	lock.RUnlock()
 	if !ok {
-		return nil, fmt.Errorf("Transport %s not found", name)
+		return nil, fmt.Errorf("%w %s not found", ErrorTransport, name)
 	}
 
 	err := t.Init()
+	if err != nil {
+		err = &DriverTransportError{t.Name(), err}
+	}
 	return &Transport{t}, err
 }
 

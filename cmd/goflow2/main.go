@@ -196,7 +196,7 @@ func main() {
 			Format:           formatter,
 			Transport:        transporter,
 			Producer:         flowProducer,
-			NetFlowTemplater: metrics.NewDefaultPromTemplateSystem, // wrap template system
+			NetFlowTemplater: metrics.NewDefaultPromTemplateSystem, // wrap template system to get Prometheus info
 		}
 
 		var decodeFunc utils.DecoderFunc
@@ -218,10 +218,21 @@ func main() {
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
+
+				var transportErr <-chan error
+				if transportErrorFct, ok := transporter.TransportDriver.(interface {
+					Errors() <-chan error
+				}); ok {
+					transportErr = transportErrorFct.Errors()
+				}
+
 				for {
 					select {
 					case <-q:
 						return
+					case err := <-transportErr:
+						l := l.WithError(err)
+						l.Error("transport error")
 					case err := <-recv.Errors():
 						l := l.WithError(err)
 						if errors.Is(err, netflow.ErrorTemplateNotFound) {
