@@ -32,19 +32,12 @@ var (
 		},
 		[]string{"remote_ip", "local_ip", "local_port", "type"},
 	)
-	DecoderStats = prometheus.NewCounterVec(
-		prometheus.CounterOpts{
-			Name:      "flow_decoder_total",
-			Help:      "Decoder processed count.",
-			Namespace: NAMESPACE},
-		[]string{"worker", "name"},
-	)
 	DecoderErrors = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Name:      "flow_decoder_error_total",
-			Help:      "Decoder processed error count.",
+			Help:      "NetFlow/sFlow processed errors.",
 			Namespace: NAMESPACE},
-		[]string{"worker", "name"},
+		[]string{"router", "name"},
 	)
 	DecoderTime = prometheus.NewSummaryVec(
 		prometheus.SummaryOpts{
@@ -104,13 +97,6 @@ var (
 			Namespace: NAMESPACE},
 		[]string{"router", "agent", "version"},
 	)
-	SFlowErrors = prometheus.NewCounterVec(
-		prometheus.CounterOpts{
-			Name:      "flow_process_sf_errors_total",
-			Help:      "sFlows processed errors.",
-			Namespace: NAMESPACE},
-		[]string{"router", "error"},
-	)
 	SFlowSampleStatsSum = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Name:      "flow_process_sf_samples_total",
@@ -132,7 +118,6 @@ func init() {
 	prometheus.MustRegister(MetricTrafficPackets)
 	prometheus.MustRegister(MetricPacketSizeSum)
 
-	prometheus.MustRegister(DecoderStats)
 	prometheus.MustRegister(DecoderErrors)
 	prometheus.MustRegister(DecoderTime)
 
@@ -144,7 +129,6 @@ func init() {
 	prometheus.MustRegister(NetFlowTemplatesStats)
 
 	prometheus.MustRegister(SFlowStats)
-	prometheus.MustRegister(SFlowErrors)
 	prometheus.MustRegister(SFlowSampleStatsSum)
 	prometheus.MustRegister(SFlowSampleRecordsStatsSum)
 }

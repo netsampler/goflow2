@@ -71,17 +71,10 @@ func PromDecoderWrapper(wrapped utils.DecoderFunc, name string) utils.DecoderFun
 
 			switch err.(type) {
 			default:
-				// FIXME
-				NetFlowErrors.With(
+				DecoderErrors.With(
 					prometheus.Labels{
 						"router": remote,
-						"error":  "error_decoding",
-					}).
-					Inc()
-				SFlowErrors.With(
-					prometheus.Labels{
-						"router": remote,
-						"error":  "error_decoding",
+						"name":   name,
 					}).
 					Inc()
 			}
