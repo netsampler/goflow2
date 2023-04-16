@@ -17,8 +17,9 @@ func PromDecoderWrapper(wrapped utils.DecoderFunc, name string) utils.DecoderFun
 		if !ok {
 			return fmt.Errorf("flow is not *Message")
 		}
-		remote := pkt.Src.Addr().String()
-		localIP := pkt.Dst.Addr().String()
+		remote := pkt.Src.Addr().Unmap().String()
+		localIP := pkt.Dst.Addr().Unmap().String()
+
 		port := fmt.Sprintf("%d", pkt.Dst.Port())
 		size := len(pkt.Payload)
 

@@ -21,7 +21,7 @@ func (p *PromProducerWrapper) Produce(msg interface{}, args *producer.ProduceArg
 	if err != nil {
 		return flowMessageSet, err
 	}
-	key := args.Src.Addr().String()
+	key := args.Src.Addr().Unmap().String()
 	var nfvariant bool
 	var versionStr string
 	switch packet := msg.(type) {
