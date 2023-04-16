@@ -27,17 +27,11 @@ func NewPromTemplateSystem(key string, wrapped netflow.NetFlowTemplateSystem) ne
 	}
 }
 
-func (s *PromTemplateSystem) getLabels(version uint16, obsDomainId uint32, template interface{}) prometheus.Labels {
+func (s *PromTemplateSystem) getLabels(version uint16, obsDomainId uint32, templateId uint16, template interface{}) prometheus.Labels {
 
 	typeStr := "options_template"
-	var templateId uint16
-	switch templateIdConv := template.(type) {
-	case netflow.IPFIXOptionsTemplateRecord:
-		templateId = templateIdConv.TemplateId
-	case netflow.NFv9OptionsTemplateRecord:
-		templateId = templateIdConv.TemplateId
+	switch template.(type) {
 	case netflow.TemplateRecord:
-		templateId = templateIdConv.TemplateId
 		typeStr = "template"
 	}
 
@@ -50,10 +44,10 @@ func (s *PromTemplateSystem) getLabels(version uint16, obsDomainId uint32, templ
 	}
 }
 
-func (s *PromTemplateSystem) AddTemplate(version uint16, obsDomainId uint32, template interface{}) error {
-	err := s.wrapped.AddTemplate(version, obsDomainId, template)
+func (s *PromTemplateSystem) AddTemplate(version uint16, obsDomainId uint32, templateId uint16, template interface{}) error {
+	err := s.wrapped.AddTemplate(version, obsDomainId, templateId, template)
 
-	labels := s.getLabels(version, obsDomainId, template)
+	labels := s.getLabels(version, obsDomainId, templateId, template)
 	NetFlowTemplatesStats.With(
 		labels).
 		Inc()
@@ -69,7 +63,7 @@ func (s *PromTemplateSystem) RemoveTemplate(version uint16, obsDomainId uint32, 
 	template, err := s.wrapped.RemoveTemplate(version, obsDomainId, templateId)
 
 	if err == nil {
-		labels := s.getLabels(version, obsDomainId, template)
+		labels := s.getLabels(version, obsDomainId, templateId, template)
 
 		NetFlowTemplatesStats.Delete(labels)
 	}

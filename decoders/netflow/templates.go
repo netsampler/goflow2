@@ -15,7 +15,7 @@ type FlowBaseTemplateSet map[uint16]map[uint32]map[uint16]interface{}
 type NetFlowTemplateSystem interface {
 	RemoveTemplate(version uint16, obsDomainId uint32, templateId uint16) (interface{}, error)
 	GetTemplate(version uint16, obsDomainId uint32, templateId uint16) (interface{}, error)
-	AddTemplate(version uint16, obsDomainId uint32, template interface{}) error
+	AddTemplate(version uint16, obsDomainId uint32, templateId uint16, template interface{}) error
 }
 
 func (ts *BasicTemplateSystem) GetTemplates() map[uint16]map[uint32]map[uint16]interface{} {
@@ -25,7 +25,7 @@ func (ts *BasicTemplateSystem) GetTemplates() map[uint16]map[uint32]map[uint16]i
 	return tmp
 }
 
-func (ts *BasicTemplateSystem) AddTemplate(version uint16, obsDomainId uint32, template interface{}) error {
+func (ts *BasicTemplateSystem) AddTemplate(version uint16, obsDomainId uint32, templateId uint16, template interface{}) error {
 	ts.templateslock.Lock()
 	defer ts.templateslock.Unlock()
 	_, exists := ts.templates[version]
@@ -36,7 +36,7 @@ func (ts *BasicTemplateSystem) AddTemplate(version uint16, obsDomainId uint32, t
 	if !exists {
 		ts.templates[version][obsDomainId] = make(map[uint16]interface{})
 	}
-	var templateId uint16
+	/*var templateId uint16
 	switch templateIdConv := template.(type) {
 	case IPFIXOptionsTemplateRecord:
 		templateId = templateIdConv.TemplateId
@@ -44,7 +44,7 @@ func (ts *BasicTemplateSystem) AddTemplate(version uint16, obsDomainId uint32, t
 		templateId = templateIdConv.TemplateId
 	case TemplateRecord:
 		templateId = templateIdConv.TemplateId
-	}
+	}*/
 	ts.templates[version][obsDomainId][templateId] = template
 	return nil
 }
