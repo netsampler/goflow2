@@ -290,7 +290,7 @@ func DecodeMessageCommon(payload *bytes.Buffer, templates NetFlowTemplateSystem,
 
 			if templates != nil {
 				for _, record := range records {
-					if err := templates.AddTemplate(version, obsDomainId, fsheader.Id, record); err != nil {
+					if err := templates.AddTemplate(version, obsDomainId, record.TemplateId, record); err != nil {
 						return flowSet, &FlowError{version, "FlowSet", obsDomainId, fsheader.Id, err}
 					}
 				}
@@ -310,7 +310,7 @@ func DecodeMessageCommon(payload *bytes.Buffer, templates NetFlowTemplateSystem,
 
 			if templates != nil {
 				for _, record := range records {
-					if err := templates.AddTemplate(version, obsDomainId, fsheader.Id, record); err != nil {
+					if err := templates.AddTemplate(version, obsDomainId, record.TemplateId, record); err != nil {
 						return flowSet, &FlowError{version, "OptionsTemplateSet", obsDomainId, fsheader.Id, err}
 					}
 				}
@@ -330,7 +330,7 @@ func DecodeMessageCommon(payload *bytes.Buffer, templates NetFlowTemplateSystem,
 
 			if templates != nil {
 				for _, record := range records {
-					if err := templates.AddTemplate(version, obsDomainId, fsheader.Id, record); err != nil {
+					if err := templates.AddTemplate(version, obsDomainId, record.TemplateId, record); err != nil {
 						return flowSet, &FlowError{version, "IPFIX TemplateSet", obsDomainId, fsheader.Id, err}
 					}
 				}
@@ -350,7 +350,7 @@ func DecodeMessageCommon(payload *bytes.Buffer, templates NetFlowTemplateSystem,
 
 			if templates != nil {
 				for _, record := range records {
-					if err := templates.AddTemplate(version, obsDomainId, fsheader.Id, record); err != nil {
+					if err := templates.AddTemplate(version, obsDomainId, record.TemplateId, record); err != nil {
 						return flowSet, &FlowError{version, "IPFIX OptionsTemplateSet", obsDomainId, fsheader.Id, err}
 					}
 				}

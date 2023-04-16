@@ -207,6 +207,7 @@ func TestDecodeNetFlowV9(t *testing.T) {
 	buf = bytes.NewBuffer(data[:89]) // truncate: we don't want to test for everything
 	decNfv9 = NFv9Packet{}           // reset
 	err = DecodeMessageVersion(buf, templates, &decNfv9, nil)
+
 	assert.Nil(t, err)
 	assert.Equal(t,
 		NFv9Packet{
