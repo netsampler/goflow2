@@ -126,13 +126,18 @@ By default, the samples received will be printed in JSON format on the stdout.
 
 If you are using a log integration (e.g: Loki with Promtail, Splunk, Fluentd, Google Cloud Logs, etc.),
 just send the output into a file.
+
 ```bash
 $ ./goflow2 -transport.file /var/logs/goflow2.log
 ```
 
 To enable Kafka and send protobuf, use the following arguments:
+
 ```bash
-$ ./goflow2 -transport=kafka -transport.kafka.brokers=localhost:9092 -transport.kafka.topic=flows -format=bin
+$ ./goflow2 -transport=kafka \
+  -transport.kafka.brokers=localhost:9092 \
+  -transport.kafka.topic=flows \
+  -format=bin
 ```
 
 By default, the distribution will be randomized.
@@ -141,6 +146,7 @@ in the formatter.
 
 By default, compression is disabled when sending data to Kafka.
 To change the kafka compression type of the producer side configure the following option:
+
 ```
 -transport.kafka.compression.type=gzip
 ```
@@ -207,7 +213,8 @@ with a database for Autonomous System Number and Country.
 Similar output options as GoFlow are provided.
 
 ```bash
-$ ./goflow2 -transport.file.sep= -format=bin | ./enricher -db.asn path-to/GeoLite2-ASN.mmdb -db.country path-to/GeoLite2-Country.mmdb
+$ ./goflow2 -transport.file.sep= -format=bin | \
+  ./enricher -db.asn path-to/GeoLite2-ASN.mmdb -db.country path-to/GeoLite2-Country.mmdb
 ```
 
 For a more scalable production setting, Kafka and protobuf are recommended.
