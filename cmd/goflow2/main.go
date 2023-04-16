@@ -22,6 +22,11 @@ import (
 	_ "github.com/netsampler/goflow2/transport/file"
 	_ "github.com/netsampler/goflow2/transport/kafka"
 
+	// import various NetFlow/IPFIX templates
+	"github.com/netsampler/goflow2/decoders/netflow/templates"
+	_ "github.com/netsampler/goflow2/decoders/netflow/templates/file"
+	_ "github.com/netsampler/goflow2/decoders/netflow/templates/memory"
+
 	"github.com/netsampler/goflow2/utils"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	log "github.com/sirupsen/logrus"
@@ -38,6 +43,8 @@ var (
 	Workers  = flag.Int("workers", 1, "Number of workers per collector")
 	LogLevel = flag.String("loglevel", "info", "Log level")
 	LogFmt   = flag.String("logfmt", "normal", "Log formatter")
+
+	NetFlowTemplates = flag.String("netflow.templates", "memory", fmt.Sprintf("Choose the format (available: %s)", strings.Join(templates.GetTemplates(), ", ")))
 
 	Format    = flag.String("format", "json", fmt.Sprintf("Choose the format (available: %s)", strings.Join(format.GetFormats(), ", ")))
 	Transport = flag.String("transport", "file", fmt.Sprintf("Choose the transport (available: %s)", strings.Join(transport.GetTransports(), ", ")))
@@ -94,6 +101,13 @@ func main() {
 		log.Fatal(err)
 	}
 	defer transporter.Close(ctx)
+
+	// the following is only useful when parsing NetFlowV9/IPFIX (template-based flow)
+	templateSystem, err := templates.FindTemplateSystem(ctx, *NetFlowTemplates)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer templateSystem.Close(ctx)
 
 	switch *LogFmt {
 	case "json":
@@ -154,10 +168,11 @@ func main() {
 					err = sSFlow.FlowRoutine(*Workers, hostname, int(port), *ReusePort)
 				} else if listenAddrUrl.Scheme == "netflow" {
 					sNF := &utils.StateNetFlow{
-						Format:    formatter,
-						Transport: transporter,
-						Logger:    log.StandardLogger(),
-						Config:    config,
+						Format:         formatter,
+						Transport:      transporter,
+						Logger:         log.StandardLogger(),
+						Config:         config,
+						TemplateSystem: templateSystem,
 					}
 					err = sNF.FlowRoutine(*Workers, hostname, int(port), *ReusePort)
 				} else if listenAddrUrl.Scheme == "nfl" {
