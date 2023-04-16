@@ -150,7 +150,10 @@ func (d *KafkaDriver) Init() error {
 			return fmt.Errorf("error initializing TLS: %v", err)
 		}
 		kafkaConfig.Net.TLS.Enable = true
-		kafkaConfig.Net.TLS.Config = &tls.Config{RootCAs: rootCAs}
+		kafkaConfig.Net.TLS.Config = &tls.Config{
+			RootCAs:    rootCAs,
+			MinVersion: tls.VersionTLS12,
+		}
 	}
 
 	if d.kafkaHashing {

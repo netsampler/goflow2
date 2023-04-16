@@ -149,7 +149,8 @@ func main() {
 		}
 	})
 	srv := http.Server{
-		Addr: *Addr,
+		Addr:              *Addr,
+		ReadHeaderTimeout: time.Second * 5,
 	}
 	if *Addr != "" {
 		wg.Add(1)
