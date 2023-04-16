@@ -163,11 +163,11 @@ func main() {
 			if err != nil && !errors.Is(err, http.ErrServerClosed) {
 				l.WithError(err).Fatal("HTTP server error")
 			}
-			l.Info("HTTP server closed")
+			l.Info("closed HTTP server")
 		}()
 	}
 
-	log.Info("Starting GoFlow2")
+	log.Info("starting GoFlow2")
 
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
@@ -208,7 +208,7 @@ func main() {
 		}
 		l := log.WithFields(logFields)
 
-		l.Info("Starting collection")
+		l.Info("starting collection")
 
 		cfg := &utils.UDPReceiverConfig{
 			Sockets: numSockets,
@@ -253,7 +253,7 @@ func main() {
 						if errors.Is(err, netflow.ErrorTemplateNotFound) {
 							l.Warn("template error")
 						} else if errors.Is(err, net.ErrClosed) {
-							l.Info("closed")
+							l.Info("closed receiver")
 						} else {
 							l.Error("error")
 						}
@@ -309,7 +309,7 @@ func main() {
 	flowProducer.Close()
 	// close transporter (eg: flushes message to Kafka)
 	transporter.Close()
-
+	log.Info("closed transporter")
 	// close http server (prometheus + health check)
 	ctx, _ := context.WithTimeout(context.Background(), time.Second*5)
 	srv.Shutdown(ctx)
