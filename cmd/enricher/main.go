@@ -2,8 +2,7 @@ package main
 
 import (
 	"bufio"
-	"bytes"
-	"encoding/binary"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -14,8 +13,8 @@ import (
 
 	"github.com/oschwald/geoip2-golang"
 
-	"github.com/golang/protobuf/proto"
 	flowmessage "github.com/netsampler/goflow2/cmd/enricher/pb"
+	"google.golang.org/protobuf/encoding/protodelim"
 
 	// import various formatters
 	"github.com/netsampler/goflow2/format"
@@ -139,36 +138,10 @@ func main() {
 	rdr := bufio.NewReader(os.Stdin)
 
 	msg := &flowmessage.FlowMessageExt{}
-	lenBufSize := binary.MaxVarintLen64
 	for {
-		msgLen, err := rdr.Peek(lenBufSize)
-		if err != nil && err != io.EOF {
-			log.Error(err)
-			continue
-		}
-
-		l, vn := proto.DecodeVarint(msgLen)
-		if l == 0 {
-			continue
-		}
-
-		_, err = rdr.Discard(vn)
-		if err != nil {
-			log.Error(err)
-			continue
-		}
-
-		line := make([]byte, l)
-
-		_, err = io.ReadFull(rdr, line)
-		if err != nil && err != io.EOF {
-			log.Error(err)
-			continue
-		}
-		line = bytes.TrimSuffix(line, []byte("\n"))
-
-		err = proto.Unmarshal(line, msg)
-		if err != nil {
+		if err := protodelim.UnmarshalFrom(rdr, msg); err != nil && errors.Is(err, io.EOF) {
+			return
+		} else if err != nil {
 			log.Error(err)
 			continue
 		}

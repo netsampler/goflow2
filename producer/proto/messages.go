@@ -1,6 +1,7 @@
 package protoproducer
 
 import (
+	"bytes"
 	"encoding/hex"
 	"fmt"
 	"hash"
@@ -9,7 +10,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/golang/protobuf/proto"
+	"google.golang.org/protobuf/encoding/protodelim"
 	"google.golang.org/protobuf/encoding/protowire"
 
 	flowmessage "github.com/netsampler/goflow2/pb"
@@ -28,8 +29,8 @@ var protoMessagePool = sync.Pool{
 }
 
 func (m *ProtoProducerMessage) MarshalBinary() ([]byte, error) {
-	buf := proto.NewBuffer([]byte{})
-	err := buf.EncodeMessage(m)
+	buf := bytes.NewBuffer([]byte{})
+	_, err := protodelim.MarshalTo(buf, m)
 	return buf.Bytes(), err
 }
 
