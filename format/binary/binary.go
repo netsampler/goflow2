@@ -9,10 +9,6 @@ import (
 type BinaryDriver struct {
 }
 
-func (d *BinaryDriver) Name() string {
-	return "binary"
-}
-
 func (d *BinaryDriver) Prepare() error {
 	return nil
 }

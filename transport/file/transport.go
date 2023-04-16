@@ -20,10 +20,6 @@ type FileDriver struct {
 	q               chan bool
 }
 
-func (d *FileDriver) Name() string {
-	return "file"
-}
-
 func (d *FileDriver) Prepare() error {
 	flag.StringVar(&d.fileDestination, "transport.file", "", "File/console output (empty for stdout)")
 	flag.StringVar(&d.lineSeparator, "transport.file.sep", "\n", "Line separator")

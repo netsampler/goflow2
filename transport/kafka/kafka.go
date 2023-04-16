@@ -81,10 +81,6 @@ var (
 	}
 )
 
-func (d *KafkaDriver) Name() string {
-	return "kafka"
-}
-
 func (d *KafkaDriver) Prepare() error {
 	flag.BoolVar(&d.kafkaTLS, "transport.kafka.tls", false, "Use TLS to connect to Kafka")
 	flag.StringVar(&d.kafkaSASL, "transport.kafka.sasl", "none",

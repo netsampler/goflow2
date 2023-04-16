@@ -26,7 +26,6 @@ func (e *DriverTransportError) Unwrap() []error {
 }
 
 type TransportDriver interface {
-	Name() string                // Get the name of the driver
 	Prepare() error              // Prepare driver (eg: flag registration)
 	Init() error                 // Initialize driver (eg: start connections, open files...)
 	Close() error                // Close driver (eg: close connections and files...)
@@ -39,18 +38,19 @@ type TransportInterface interface {
 
 type Transport struct {
 	TransportDriver
+	name string
 }
 
 func (t *Transport) Close() error {
 	if err := t.TransportDriver.Close(); err != nil {
-		return &DriverTransportError{t.Name(), err}
+		return &DriverTransportError{t.name, err}
 	}
 	return nil
 }
 
 func (t *Transport) Send(key, data []byte) error {
 	if err := t.TransportDriver.Send(key, data); err != nil {
-		return &DriverTransportError{t.Name(), err}
+		return &DriverTransportError{t.name, err}
 	}
 	return nil
 }
@@ -75,9 +75,9 @@ func FindTransport(name string) (*Transport, error) {
 
 	err := t.Init()
 	if err != nil {
-		err = &DriverTransportError{t.Name(), err}
+		err = &DriverTransportError{name, err}
 	}
-	return &Transport{t}, err
+	return &Transport{t, name}, err
 }
 
 func GetTransports() []string {

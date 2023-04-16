@@ -27,7 +27,6 @@ func (e *DriverFormatError) Unwrap() []error {
 }
 
 type FormatDriver interface {
-	Name() string                                    // Get the name of the driver
 	Prepare() error                                  // Prepare driver (eg: flag registration)
 	Init() error                                     // Initialize driver (eg: parse keying)
 	Format(data interface{}) ([]byte, []byte, error) // Send a message
@@ -39,13 +38,14 @@ type FormatInterface interface {
 
 type Format struct {
 	FormatDriver
+	name string
 }
 
 func (t *Format) Format(data interface{}) ([]byte, []byte, error) {
 	key, text, err := t.FormatDriver.Format(data)
 	if err != nil {
 		err = &DriverFormatError{
-			t.Name(),
+			t.name,
 			err,
 		}
 	}
@@ -72,9 +72,9 @@ func FindFormat(name string) (*Format, error) {
 
 	err := t.Init()
 	if err != nil {
-		err = &DriverFormatError{t.Name(), err}
+		err = &DriverFormatError{name, err}
 	}
-	return &Format{t}, err
+	return &Format{t, name}, err
 }
 
 func GetFormats() []string {

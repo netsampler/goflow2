@@ -9,10 +9,6 @@ import (
 type TextDriver struct {
 }
 
-func (d *TextDriver) Name() string {
-	return "text"
-}
-
 func (d *TextDriver) Prepare() error {
 	return nil
 }
