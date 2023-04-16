@@ -97,6 +97,38 @@ func NetFlowPopulate(dataFields []netflow.DataField, typeId uint16, addr interfa
 	return exists
 }
 
+func WriteUDecoded(o uint64, out interface{}) error {
+	switch t := out.(type) {
+	case *byte:
+		*t = byte(o)
+	case *uint16:
+		*t = uint16(o)
+	case *uint32:
+		*t = uint32(o)
+	case *uint64:
+		*t = o
+	default:
+		return errors.New("The parameter is not a pointer to a byte/uint16/uint32/uint64 structure")
+	}
+	return nil
+}
+
+func WriteDecoded(o int64, out interface{}) error {
+	switch t := out.(type) {
+	case *int8:
+		*t = int8(o)
+	case *int16:
+		*t = int16(o)
+	case *int32:
+		*t = int32(o)
+	case *int64:
+		*t = o
+	default:
+		return errors.New("The parameter is not a pointer to a int8/int16/int32/int64 structure")
+	}
+	return nil
+}
+
 func DecodeUNumber(b []byte, out interface{}) error {
 	var o uint64
 	l := len(b)
@@ -120,19 +152,33 @@ func DecodeUNumber(b []byte, out interface{}) error {
 			return errors.New(fmt.Sprintf("Non-regular number of bytes for a number: %v", l))
 		}
 	}
-	switch t := out.(type) {
-	case *byte:
-		*t = byte(o)
-	case *uint16:
-		*t = uint16(o)
-	case *uint32:
-		*t = uint32(o)
-	case *uint64:
-		*t = o
+	return WriteUDecoded(o, out)
+}
+
+func DecodeUNumberLE(b []byte, out interface{}) error {
+	var o uint64
+	l := len(b)
+	switch l {
+	case 1:
+		o = uint64(b[0])
+	case 2:
+		o = uint64(binary.LittleEndian.Uint16(b))
+	case 4:
+		o = uint64(binary.LittleEndian.Uint32(b))
+	case 8:
+		o = binary.LittleEndian.Uint64(b)
 	default:
-		return errors.New("The parameter is not a pointer to a byte/uint16/uint32/uint64 structure")
+		if l < 8 {
+			var iter uint
+			for i := range b {
+				o |= uint64(b[i]) << uint(8*(iter))
+				iter++
+			}
+		} else {
+			return errors.New(fmt.Sprintf("Non-regular number of bytes for a number: %v", l))
+		}
 	}
-	return nil
+	return WriteUDecoded(o, out)
 }
 
 func DecodeNumber(b []byte, out interface{}) error {
@@ -158,19 +204,56 @@ func DecodeNumber(b []byte, out interface{}) error {
 			return errors.New(fmt.Sprintf("Non-regular number of bytes for a number: %v", l))
 		}
 	}
-	switch t := out.(type) {
-	case *int8:
-		*t = int8(o)
-	case *int16:
-		*t = int16(o)
-	case *int32:
-		*t = int32(o)
-	case *int64:
-		*t = o
+	return WriteDecoded(o, out)
+}
+
+func DecodeNumberLE(b []byte, out interface{}) error {
+	var o int64
+	l := len(b)
+	switch l {
+	case 1:
+		o = int64(int8(b[0]))
+	case 2:
+		o = int64(int16(binary.LittleEndian.Uint16(b)))
+	case 4:
+		o = int64(int32(binary.LittleEndian.Uint32(b)))
+	case 8:
+		o = int64(binary.LittleEndian.Uint64(b))
 	default:
-		return errors.New("The parameter is not a pointer to a int8/int16/int32/int64 structure")
+		if l < 8 {
+			var iter int
+			for i := range b {
+				o |= int64(b[i]) << int(8*(iter))
+				iter++
+			}
+		} else {
+			return errors.New(fmt.Sprintf("Non-regular number of bytes for a number: %v", l))
+		}
 	}
-	return nil
+	return WriteDecoded(o, out)
+}
+
+func allZeroes(v []byte) bool {
+	for _, b := range v {
+		if b != 0 {
+			return false
+		}
+	}
+	return true
+}
+
+func addrReplaceCheck(dstAddr *[]byte, v []byte, eType *uint32, ipv6 bool) {
+	if (len(*dstAddr) == 0 && len(v) > 0) ||
+		(len(*dstAddr) != 0 && len(v) > 0 && !allZeroes(v)) {
+		*dstAddr = v
+
+		if ipv6 {
+			*eType = 0x86dd
+		} else {
+			*eType = 0x800
+		}
+
+	}
 }
 
 func ConvertNetFlowDataSet(version uint16, baseTime uint32, uptime uint32, record []netflow.DataField, mapperNetFlow *NetFlowMapper, mapperSFlow *SFlowMapper) *flowmessage.FlowMessage {
@@ -199,6 +282,9 @@ func ConvertNetFlowDataSet(version uint16, baseTime uint32, uptime uint32, recor
 
 		switch df.Type {
 
+		case netflow.IPFIX_FIELD_observationPointId:
+			DecodeUNumber(v, &(flowMessage.ObservationPointId))
+
 		// Statistics
 		case netflow.NFV9_FIELD_IN_BYTES:
 			DecodeUNumber(v, &(flowMessage.Bytes))
@@ -219,9 +305,9 @@ func ConvertNetFlowDataSet(version uint16, baseTime uint32, uptime uint32, recor
 
 		// Network
 		case netflow.NFV9_FIELD_SRC_AS:
-			DecodeUNumber(v, &(flowMessage.SrcAS))
+			DecodeUNumber(v, &(flowMessage.SrcAs))
 		case netflow.NFV9_FIELD_DST_AS:
-			DecodeUNumber(v, &(flowMessage.DstAS))
+			DecodeUNumber(v, &(flowMessage.DstAs))
 
 		// Interfaces
 		case netflow.NFV9_FIELD_INPUT_SNMP:
@@ -232,19 +318,27 @@ func ConvertNetFlowDataSet(version uint16, baseTime uint32, uptime uint32, recor
 		case netflow.NFV9_FIELD_FORWARDING_STATUS:
 			DecodeUNumber(v, &(flowMessage.ForwardingStatus))
 		case netflow.NFV9_FIELD_SRC_TOS:
-			DecodeUNumber(v, &(flowMessage.IPTos))
+			DecodeUNumber(v, &(flowMessage.IpTos))
 		case netflow.NFV9_FIELD_TCP_FLAGS:
-			DecodeUNumber(v, &(flowMessage.TCPFlags))
+			DecodeUNumber(v, &(flowMessage.TcpFlags))
 		case netflow.NFV9_FIELD_MIN_TTL:
-			DecodeUNumber(v, &(flowMessage.IPTTL))
+			DecodeUNumber(v, &(flowMessage.IpTtl))
 
 		// IP
+		case netflow.NFV9_FIELD_IP_PROTOCOL_VERSION:
+			if len(v) > 0 {
+				if v[0] == 4 {
+					flowMessage.Etype = 0x800
+				} else if v[0] == 6 {
+					flowMessage.Etype = 0x86dd
+				}
+			}
+
 		case netflow.NFV9_FIELD_IPV4_SRC_ADDR:
-			flowMessage.SrcAddr = v
-			flowMessage.Etype = 0x800
+			addrReplaceCheck(&(flowMessage.SrcAddr), v, &(flowMessage.Etype), false)
+
 		case netflow.NFV9_FIELD_IPV4_DST_ADDR:
-			flowMessage.DstAddr = v
-			flowMessage.Etype = 0x800
+			addrReplaceCheck(&(flowMessage.DstAddr), v, &(flowMessage.Etype), false)
 
 		case netflow.NFV9_FIELD_SRC_MASK:
 			DecodeUNumber(v, &(flowMessage.SrcNet))
@@ -252,11 +346,10 @@ func ConvertNetFlowDataSet(version uint16, baseTime uint32, uptime uint32, recor
 			DecodeUNumber(v, &(flowMessage.DstNet))
 
 		case netflow.NFV9_FIELD_IPV6_SRC_ADDR:
-			flowMessage.SrcAddr = v
-			flowMessage.Etype = 0x86dd
+			addrReplaceCheck(&(flowMessage.SrcAddr), v, &(flowMessage.Etype), true)
+
 		case netflow.NFV9_FIELD_IPV6_DST_ADDR:
-			flowMessage.DstAddr = v
-			flowMessage.Etype = 0x86dd
+			addrReplaceCheck(&(flowMessage.DstAddr), v, &(flowMessage.Etype), true)
 
 		case netflow.NFV9_FIELD_IPV6_SRC_MASK:
 			DecodeUNumber(v, &(flowMessage.SrcNet))
@@ -266,12 +359,12 @@ func ConvertNetFlowDataSet(version uint16, baseTime uint32, uptime uint32, recor
 		case netflow.NFV9_FIELD_IPV4_NEXT_HOP:
 			flowMessage.NextHop = v
 		case netflow.NFV9_FIELD_BGP_IPV4_NEXT_HOP:
-			flowMessage.NextHop = v
+			flowMessage.BgpNextHop = v
 
 		case netflow.NFV9_FIELD_IPV6_NEXT_HOP:
 			flowMessage.NextHop = v
 		case netflow.NFV9_FIELD_BGP_IPV6_NEXT_HOP:
-			flowMessage.NextHop = v
+			flowMessage.BgpNextHop = v
 
 		// ICMP
 		case netflow.NFV9_FIELD_ICMP_TYPE:
@@ -310,9 +403,9 @@ func ConvertNetFlowDataSet(version uint16, baseTime uint32, uptime uint32, recor
 			DecodeUNumber(v, &(flowMessage.DstVlan))
 
 		case netflow.IPFIX_FIELD_ingressVRFID:
-			DecodeUNumber(v, &(flowMessage.IngressVrfID))
+			DecodeUNumber(v, &(flowMessage.IngressVrfId))
 		case netflow.IPFIX_FIELD_egressVRFID:
-			DecodeUNumber(v, &(flowMessage.EgressVrfID))
+			DecodeUNumber(v, &(flowMessage.EgressVrfId))
 
 		case netflow.NFV9_FIELD_IPV4_IDENT:
 			DecodeUNumber(v, &(flowMessage.FragmentId))
@@ -325,13 +418,32 @@ func ConvertNetFlowDataSet(version uint16, baseTime uint32, uptime uint32, recor
 			DecodeUNumber(v, &ipFlags)
 			flowMessage.FragmentOffset |= ipFlags
 		case netflow.NFV9_FIELD_IPV6_FLOW_LABEL:
-			DecodeUNumber(v, &(flowMessage.IPv6FlowLabel))
+			DecodeUNumber(v, &(flowMessage.Ipv6FlowLabel))
 
 		case netflow.IPFIX_FIELD_biflowDirection:
 			DecodeUNumber(v, &(flowMessage.BiFlowDirection))
 
 		case netflow.NFV9_FIELD_DIRECTION:
 			DecodeUNumber(v, &(flowMessage.FlowDirection))
+
+		// MPLS
+		case netflow.IPFIX_FIELD_mplsTopLabelStackSection:
+			var mplsLabel uint32
+			DecodeUNumber(v, &mplsLabel)
+			flowMessage.Mpls_1Label = uint32(mplsLabel >> 4)
+			flowMessage.HasMpls = true
+		case netflow.IPFIX_FIELD_mplsLabelStackSection2:
+			var mplsLabel uint32
+			DecodeUNumber(v, &mplsLabel)
+			flowMessage.Mpls_2Label = uint32(mplsLabel >> 4)
+		case netflow.IPFIX_FIELD_mplsLabelStackSection3:
+			var mplsLabel uint32
+			DecodeUNumber(v, &mplsLabel)
+			flowMessage.Mpls_3Label = uint32(mplsLabel >> 4)
+		case netflow.IPFIX_FIELD_mplsTopLabelIPv4Address:
+			flowMessage.MplsLabelIp = v
+		case netflow.IPFIX_FIELD_mplsTopLabelIPv6Address:
+			flowMessage.MplsLabelIp = v
 
 		default:
 			if version == 9 {
@@ -340,46 +452,58 @@ func ConvertNetFlowDataSet(version uint16, baseTime uint32, uptime uint32, recor
 				case netflow.NFV9_FIELD_FIRST_SWITCHED:
 					var timeFirstSwitched uint32
 					DecodeUNumber(v, &timeFirstSwitched)
-					timeDiff := (uptime - timeFirstSwitched) / 1000
-					flowMessage.TimeFlowStart = uint64(baseTime - timeDiff)
+					timeDiff := (uptime - timeFirstSwitched)
+					flowMessage.TimeFlowStart = uint64(baseTime - timeDiff/1000)
+					flowMessage.TimeFlowStartMs = uint64(baseTime)*1000 - uint64(timeDiff)
 				case netflow.NFV9_FIELD_LAST_SWITCHED:
 					var timeLastSwitched uint32
 					DecodeUNumber(v, &timeLastSwitched)
-					timeDiff := (uptime - timeLastSwitched) / 1000
-					flowMessage.TimeFlowEnd = uint64(baseTime - timeDiff)
+					timeDiff := (uptime - timeLastSwitched)
+					flowMessage.TimeFlowEnd = uint64(baseTime - timeDiff/1000)
+					flowMessage.TimeFlowEndMs = uint64(baseTime)*1000 - uint64(timeDiff)
 				}
 			} else if version == 10 {
 				switch df.Type {
 				case netflow.IPFIX_FIELD_flowStartSeconds:
 					DecodeUNumber(v, &time)
 					flowMessage.TimeFlowStart = time
+					flowMessage.TimeFlowStartMs = time * 1000
 				case netflow.IPFIX_FIELD_flowStartMilliseconds:
 					DecodeUNumber(v, &time)
 					flowMessage.TimeFlowStart = time / 1000
+					flowMessage.TimeFlowStartMs = time
 				case netflow.IPFIX_FIELD_flowStartMicroseconds:
 					DecodeUNumber(v, &time)
 					flowMessage.TimeFlowStart = time / 1000000
+					flowMessage.TimeFlowStartMs = time / 1000
 				case netflow.IPFIX_FIELD_flowStartNanoseconds:
 					DecodeUNumber(v, &time)
 					flowMessage.TimeFlowStart = time / 1000000000
+					flowMessage.TimeFlowStartMs = time / 1000000
 				case netflow.IPFIX_FIELD_flowEndSeconds:
 					DecodeUNumber(v, &time)
 					flowMessage.TimeFlowEnd = time
+					flowMessage.TimeFlowEndMs = time * 1000
 				case netflow.IPFIX_FIELD_flowEndMilliseconds:
 					DecodeUNumber(v, &time)
 					flowMessage.TimeFlowEnd = time / 1000
+					flowMessage.TimeFlowEndMs = time
 				case netflow.IPFIX_FIELD_flowEndMicroseconds:
 					DecodeUNumber(v, &time)
 					flowMessage.TimeFlowEnd = time / 1000000
+					flowMessage.TimeFlowEndMs = time / 1000
 				case netflow.IPFIX_FIELD_flowEndNanoseconds:
 					DecodeUNumber(v, &time)
 					flowMessage.TimeFlowEnd = time / 1000000000
+					flowMessage.TimeFlowEndMs = time / 1000000
 				case netflow.IPFIX_FIELD_flowStartDeltaMicroseconds:
 					DecodeUNumber(v, &time)
 					flowMessage.TimeFlowStart = uint64(baseTime) - time/1000000
+					flowMessage.TimeFlowStartMs = uint64(baseTime)*1000 - time/1000
 				case netflow.IPFIX_FIELD_flowEndDeltaMicroseconds:
 					DecodeUNumber(v, &time)
 					flowMessage.TimeFlowEnd = uint64(baseTime) - time/1000000
+					flowMessage.TimeFlowEndMs = uint64(baseTime)*1000 - time/1000
 				// RFC7133
 				case netflow.IPFIX_FIELD_dataLinkFrameSize:
 					DecodeUNumber(v, &(flowMessage.Bytes))
@@ -400,7 +524,7 @@ func ConvertNetFlowDataSet(version uint16, baseTime uint32, uptime uint32, recor
 }
 
 func SearchNetFlowDataSetsRecords(version uint16, baseTime uint32, uptime uint32, dataRecords []netflow.DataRecord, mapperNetFlow *NetFlowMapper, mapperSFlow *SFlowMapper) []*flowmessage.FlowMessage {
-	flowMessageSet := make([]*flowmessage.FlowMessage, 0)
+	var flowMessageSet []*flowmessage.FlowMessage
 	for _, record := range dataRecords {
 		fmsg := ConvertNetFlowDataSet(version, baseTime, uptime, record.Values, mapperNetFlow, mapperSFlow)
 		if fmsg != nil {
@@ -411,7 +535,7 @@ func SearchNetFlowDataSetsRecords(version uint16, baseTime uint32, uptime uint32
 }
 
 func SearchNetFlowDataSets(version uint16, baseTime uint32, uptime uint32, dataFlowSet []netflow.DataFlowSet, mapperNetFlow *NetFlowMapper, mapperSFlow *SFlowMapper) []*flowmessage.FlowMessage {
-	flowMessageSet := make([]*flowmessage.FlowMessage, 0)
+	var flowMessageSet []*flowmessage.FlowMessage
 	for _, dataFlowSetItem := range dataFlowSet {
 		fmsg := SearchNetFlowDataSetsRecords(version, baseTime, uptime, dataFlowSetItem.Records, mapperNetFlow, mapperSFlow)
 		if fmsg != nil {
@@ -444,40 +568,40 @@ func SearchNetFlowOptionDataSets(dataFlowSet []netflow.OptionsDataFlowSet) (uint
 }
 
 func SplitNetFlowSets(packetNFv9 netflow.NFv9Packet) ([]netflow.DataFlowSet, []netflow.TemplateFlowSet, []netflow.NFv9OptionsTemplateFlowSet, []netflow.OptionsDataFlowSet) {
-	dataFlowSet := make([]netflow.DataFlowSet, 0)
-	templatesFlowSet := make([]netflow.TemplateFlowSet, 0)
-	optionsTemplatesFlowSet := make([]netflow.NFv9OptionsTemplateFlowSet, 0)
-	optionsDataFlowSet := make([]netflow.OptionsDataFlowSet, 0)
+	var dataFlowSet []netflow.DataFlowSet
+	var templatesFlowSet []netflow.TemplateFlowSet
+	var optionsTemplatesFlowSet []netflow.NFv9OptionsTemplateFlowSet
+	var optionsDataFlowSet []netflow.OptionsDataFlowSet
 	for _, flowSet := range packetNFv9.FlowSets {
-		switch flowSet.(type) {
+		switch tFlowSet := flowSet.(type) {
 		case netflow.TemplateFlowSet:
-			templatesFlowSet = append(templatesFlowSet, flowSet.(netflow.TemplateFlowSet))
+			templatesFlowSet = append(templatesFlowSet, tFlowSet)
 		case netflow.NFv9OptionsTemplateFlowSet:
-			optionsTemplatesFlowSet = append(optionsTemplatesFlowSet, flowSet.(netflow.NFv9OptionsTemplateFlowSet))
+			optionsTemplatesFlowSet = append(optionsTemplatesFlowSet, tFlowSet)
 		case netflow.DataFlowSet:
-			dataFlowSet = append(dataFlowSet, flowSet.(netflow.DataFlowSet))
+			dataFlowSet = append(dataFlowSet, tFlowSet)
 		case netflow.OptionsDataFlowSet:
-			optionsDataFlowSet = append(optionsDataFlowSet, flowSet.(netflow.OptionsDataFlowSet))
+			optionsDataFlowSet = append(optionsDataFlowSet, tFlowSet)
 		}
 	}
 	return dataFlowSet, templatesFlowSet, optionsTemplatesFlowSet, optionsDataFlowSet
 }
 
 func SplitIPFIXSets(packetIPFIX netflow.IPFIXPacket) ([]netflow.DataFlowSet, []netflow.TemplateFlowSet, []netflow.IPFIXOptionsTemplateFlowSet, []netflow.OptionsDataFlowSet) {
-	dataFlowSet := make([]netflow.DataFlowSet, 0)
-	templatesFlowSet := make([]netflow.TemplateFlowSet, 0)
-	optionsTemplatesFlowSet := make([]netflow.IPFIXOptionsTemplateFlowSet, 0)
-	optionsDataFlowSet := make([]netflow.OptionsDataFlowSet, 0)
+	var dataFlowSet []netflow.DataFlowSet
+	var templatesFlowSet []netflow.TemplateFlowSet
+	var optionsTemplatesFlowSet []netflow.IPFIXOptionsTemplateFlowSet
+	var optionsDataFlowSet []netflow.OptionsDataFlowSet
 	for _, flowSet := range packetIPFIX.FlowSets {
-		switch flowSet.(type) {
+		switch tFlowSet := flowSet.(type) {
 		case netflow.TemplateFlowSet:
-			templatesFlowSet = append(templatesFlowSet, flowSet.(netflow.TemplateFlowSet))
+			templatesFlowSet = append(templatesFlowSet, tFlowSet)
 		case netflow.IPFIXOptionsTemplateFlowSet:
-			optionsTemplatesFlowSet = append(optionsTemplatesFlowSet, flowSet.(netflow.IPFIXOptionsTemplateFlowSet))
+			optionsTemplatesFlowSet = append(optionsTemplatesFlowSet, tFlowSet)
 		case netflow.DataFlowSet:
-			dataFlowSet = append(dataFlowSet, flowSet.(netflow.DataFlowSet))
+			dataFlowSet = append(dataFlowSet, tFlowSet)
 		case netflow.OptionsDataFlowSet:
-			optionsDataFlowSet = append(optionsDataFlowSet, flowSet.(netflow.OptionsDataFlowSet))
+			optionsDataFlowSet = append(optionsDataFlowSet, tFlowSet)
 		}
 	}
 	return dataFlowSet, templatesFlowSet, optionsTemplatesFlowSet, optionsDataFlowSet
@@ -494,7 +618,7 @@ func ProcessMessageNetFlowConfig(msgDec interface{}, samplingRateSys SamplingRat
 	var baseTime uint32
 	var uptime uint32
 
-	flowMessageSet := make([]*flowmessage.FlowMessage, 0)
+	var flowMessageSet []*flowmessage.FlowMessage
 
 	switch msgDecConv := msgDec.(type) {
 	case netflow.NFv9Packet:
@@ -548,6 +672,7 @@ func ProcessMessageNetFlowConfig(msgDec interface{}, samplingRateSys SamplingRat
 		for _, fmsg := range flowMessageSet {
 			fmsg.SequenceNum = seqnum
 			fmsg.SamplingRate = uint64(samplingRate)
+			fmsg.ObservationDomainId = obsDomainId
 		}
 	default:
 		return flowMessageSet, errors.New("Bad NetFlow/IPFIX version")

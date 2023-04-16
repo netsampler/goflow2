@@ -21,7 +21,6 @@ datasources:
    basicAuthPassword: ''
    withCredentials: false
    isDefault: true
-   jsonData: {}
    secureJsonFields: {}
    version: 3
    readOnly: false

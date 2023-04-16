@@ -206,7 +206,7 @@ func DecodeFlowRecord(header *RecordHeader, payload *bytes.Buffer) (FlowRecord, 
 		if err != nil {
 			return flowRecord, err
 		}
-		asPath := make([]uint32, 0)
+		var asPath []uint32
 		if extendedGateway.ASDestinations != 0 {
 			err := utils.BinaryDecoder(payload, &(extendedGateway.ASPathType), &(extendedGateway.ASPathLength))
 			if err != nil {

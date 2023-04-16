@@ -20,9 +20,9 @@ import (
 
 	// import various formatters
 	"github.com/netsampler/goflow2/format"
-	"github.com/netsampler/goflow2/format/common"
 	_ "github.com/netsampler/goflow2/format/json"
 	_ "github.com/netsampler/goflow2/format/protobuf"
+	_ "github.com/netsampler/goflow2/format/text"
 
 	// import various transports
 	"github.com/netsampler/goflow2/transport"
@@ -79,18 +79,13 @@ func MapCountry(db *geoip2.Reader, addr []byte, dest *string) {
 
 func MapFlow(dbAsn, dbCountry *geoip2.Reader, msg *flowmessage.FlowMessageExt) {
 	if dbAsn != nil {
-		MapAsn(dbAsn, msg.SrcAddr, &(msg.SrcAS))
-		MapAsn(dbAsn, msg.DstAddr, &(msg.DstAS))
+		MapAsn(dbAsn, msg.SrcAddr, &(msg.SrcAs))
+		MapAsn(dbAsn, msg.DstAddr, &(msg.DstAs))
 	}
 	if dbCountry != nil {
 		MapCountry(dbCountry, msg.SrcAddr, &(msg.SrcCountry))
 		MapCountry(dbCountry, msg.DstAddr, &(msg.DstCountry))
 	}
-}
-
-func init() {
-	common.AddTextField("SrcCountry", common.FORMAT_TYPE_STRING)
-	common.AddTextField("DstCountry", common.FORMAT_TYPE_STRING)
 }
 
 func main() {
@@ -147,26 +142,28 @@ func main() {
 	rdr := bufio.NewReader(os.Stdin)
 
 	msg := &flowmessage.FlowMessageExt{}
-	msgLen := make([]byte, binary.MaxVarintLen64)
-	lenBufSize := len(msgLen)
+	lenBufSize := binary.MaxVarintLen64
 	for {
-		n, err := rdr.Read(msgLen)
+		msgLen, err := rdr.Peek(lenBufSize)
 		if err != nil && err != io.EOF {
 			log.Error(err)
 			continue
 		}
 
-		len, vn := proto.DecodeVarint(msgLen[0:n])
-		if len == 0 {
+		l, vn := proto.DecodeVarint(msgLen)
+		if l == 0 {
 			continue
 		}
 
-		line := make([]byte, len)
-		if vn < lenBufSize {
-			copy(line[0:lenBufSize-vn], msgLen[vn:lenBufSize])
+		_, err = rdr.Discard(vn)
+		if err != nil {
+			log.Error(err)
+			continue
 		}
 
-		n, err = io.ReadFull(rdr, line[lenBufSize-vn:])
+		line := make([]byte, l)
+
+		_, err = io.ReadFull(rdr, line)
 		if err != nil && err != io.EOF {
 			log.Error(err)
 			continue

@@ -1,9 +1,13 @@
 version: "3"
 services:
-  goflow:
+  goflow2:
     build:
       context: ../../
       dockerfile: Dockerfile
+      args:
+        VERSION: compose
+        LDFLAGS: -X main.version=compose
+    image: netsampler/goflow2
     user: root # because docker-compose mount as root
     ports:
       - '8080:8080'
@@ -11,7 +15,7 @@ services:
       - '2055:2055/udp'
     command:
       - -transport=file
-      - -transport.file=/var/log/goflow/goflow.log
+      - -transport.file=/var/log/goflow/goflow2.log
       - -format=json
     restart: always
     logging:

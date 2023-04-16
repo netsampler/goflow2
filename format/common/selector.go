@@ -9,7 +9,7 @@ import (
 var (
 	selectorVar string
 	selector    []string // Hashing fields
-	selectorMap = make(map[string]bool)
+	selectorTag string   // Hashing fields
 
 	selectorDeclared     bool
 	selectorDeclaredLock = &sync.Mutex{}
@@ -24,6 +24,7 @@ func SelectorFlag() {
 	}
 	selectorDeclared = true
 	flag.StringVar(&selectorVar, "format.selector", "", "List of fields to do keep in output")
+	flag.StringVar(&selectorTag, "format.tag", "", "Use format tag")
 }
 
 func ManualSelectorInit() error {
@@ -31,8 +32,5 @@ func ManualSelectorInit() error {
 		return nil
 	}
 	selector = strings.Split(selectorVar, ",")
-	for _, v := range selector {
-		selectorMap[v] = true
-	}
 	return nil
 }
