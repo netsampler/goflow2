@@ -203,7 +203,7 @@ func mapFormat(cfg *ProducerConfig) (*FormatterConfigMapper, error) {
 
 	selectorTag := "json"
 	var msg ProtoProducerMessage
-	msgT := reflect.TypeOf(msg.FlowMessage)
+	msgT := reflect.TypeOf(&msg.FlowMessage).Elem() // required indirect otherwise go vet indicates TypeOf copies lock
 	reMap := make(map[string]string)
 	numToPb := make(map[int32]ProtobufFormatterConfig)
 	var fields []string
