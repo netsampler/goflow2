@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"flag"
 	"fmt"
@@ -14,8 +15,7 @@ import (
 	"strings"
 	"sync"
 	"syscall"
-
-	_ "net/http/pprof"
+	"time"
 
 	// decoders
 	"github.com/netsampler/goflow2/decoders/netflow"
@@ -59,7 +59,7 @@ var (
 	Format    = flag.String("format", "json", fmt.Sprintf("Choose the format (available: %s)", strings.Join(format.GetFormats(), ", ")))
 	Transport = flag.String("transport", "file", fmt.Sprintf("Choose the transport (available: %s)", strings.Join(transport.GetTransports(), ", ")))
 
-	MetricsAddr = flag.String("metrics.addr", ":8080", "Metrics address")
+	Addr = flag.String("addr", ":8080", "HTTP server address")
 
 	TemplatePath = flag.String("templates.path", "/templates", "NetFlow/IPFIX templates list")
 
@@ -72,12 +72,6 @@ var (
 		"raw":    true,
 	}
 )
-
-func httpServer( /*state *utils.StateNetFlow*/ ) {
-	http.Handle("/metrics", promhttp.Handler())
-	//http.HandleFunc(*TemplatePath, state.ServeHTTPTemplates)
-	log.Fatal(http.ListenAndServe(*MetricsAddr, nil))
-}
 
 func LoadMapping(f io.Reader) (*protoproducer.ProducerConfig, error) {
 	config := &protoproducer.ProducerConfig{}
@@ -142,8 +136,38 @@ func main() {
 	// wrap producer with Prometheus metrics
 	flowProducer = metrics.WrapPromProducer(flowProducer)
 
+	wg := &sync.WaitGroup{}
+
+	var collecting bool
+	http.Handle("/metrics", promhttp.Handler())
+	http.HandleFunc("/__health", func(wr http.ResponseWriter, r *http.Request) {
+		if !collecting {
+			wr.WriteHeader(http.StatusServiceUnavailable)
+			wr.Write([]byte("NOK\n"))
+		} else {
+			wr.WriteHeader(http.StatusOK)
+			wr.Write([]byte("OK\n"))
+		}
+	})
+	srv := http.Server{
+		Addr: *Addr,
+	}
+	if *Addr != "" {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			l := log.WithFields(log.Fields{
+				"http": *Addr,
+			})
+			err := srv.ListenAndServe()
+			if err != nil && !errors.Is(err, http.ErrServerClosed) {
+				l.WithError(err).Fatal("HTTP server error")
+			}
+			l.Info("HTTP server closed")
+		}()
+	}
+
 	log.Info("Starting GoFlow2")
-	go httpServer()
 
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
@@ -151,7 +175,6 @@ func main() {
 	var receivers []*utils.UDPReceiver
 	var pipes []utils.FlowPipe
 
-	wg := &sync.WaitGroup{}
 	q := make(chan bool)
 	for _, listenAddress := range strings.Split(*ListenAddresses, ",") {
 		listenAddrUrl, err := url.Parse(listenAddress)
@@ -240,12 +263,12 @@ func main() {
 		}
 	}
 
+	// special routine to handle kafka errors transmitted as a stream
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
 
 		var transportErr <-chan error
-		// specifically for Kafka errors
 		if transportErrorFct, ok := transporter.TransportDriver.(interface {
 			Errors() <-chan error
 		}); ok {
@@ -263,7 +286,11 @@ func main() {
 		}
 	}()
 
+	collecting = true
+
 	<-c
+
+	collecting = false
 
 	// stops receivers first, udp sockets will be down
 	for _, recv := range receivers {
@@ -277,6 +304,9 @@ func main() {
 	flowProducer.Close()
 	// final close transporter (eg: flushes message to Kafka)
 	transporter.Close()
+
+	ctx, _ := context.WithTimeout(context.Background(), time.Second*5)
+	srv.Shutdown(ctx)
 	close(q) // close errors
 	wg.Wait()
 

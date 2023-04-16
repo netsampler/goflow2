@@ -41,6 +41,7 @@ type KafkaDriver struct {
 	errors chan error
 }
 
+// Error specifically for inner Kafka errors
 type KafkaTransportError struct {
 	Err error
 }
@@ -103,7 +104,6 @@ func (d *KafkaDriver) Prepare() error {
 
 	flag.BoolVar(&d.kafkaHashing, "transport.kafka.hashing", false, "Enable partition hashing")
 
-	//flag.StringVar(&d.kafkaKeying, "transport.kafka.key", "SamplerAddress,DstAS", "Kafka list of fields to do hashing on (partition) separated by commas")
 	flag.StringVar(&d.kafkaVersion, "transport.kafka.version", "2.8.0", "Kafka version")
 	flag.StringVar(&d.kafkaCompressionCodec, "transport.kafka.compression", "", "Kafka default compression")
 
