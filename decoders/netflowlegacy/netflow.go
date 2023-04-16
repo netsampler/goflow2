@@ -33,14 +33,14 @@ func DecodeMessageVersion(payload *bytes.Buffer, packet *PacketNetFlowV5) error 
 
 func DecodeMessage(payload *bytes.Buffer, packet *PacketNetFlowV5) error {
 	if err := utils.BinaryDecoder(payload,
-		&(packet.Count),
-		&(packet.SysUptime),
-		&(packet.UnixSecs),
-		&(packet.UnixNSecs),
-		&(packet.FlowSequence),
-		&(packet.EngineType),
-		&(packet.EngineId),
-		&(packet.SamplingInterval),
+		&packet.Count,
+		&packet.SysUptime,
+		&packet.UnixSecs,
+		&packet.UnixNSecs,
+		&packet.FlowSequence,
+		&packet.EngineType,
+		&packet.EngineId,
+		&packet.SamplingInterval,
 	); err != nil {
 		return &DecoderError{err}
 	}
