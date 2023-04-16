@@ -219,20 +219,10 @@ func main() {
 			go func() {
 				defer wg.Done()
 
-				var transportErr <-chan error
-				if transportErrorFct, ok := transporter.TransportDriver.(interface {
-					Errors() <-chan error
-				}); ok {
-					transportErr = transportErrorFct.Errors()
-				}
-
 				for {
 					select {
 					case <-q:
 						return
-					case err := <-transportErr:
-						l := l.WithError(err)
-						l.Error("transport error")
 					case err := <-recv.Errors():
 						l := l.WithError(err)
 						if errors.Is(err, netflow.ErrorTemplateNotFound) {
@@ -249,6 +239,29 @@ func main() {
 			receivers = append(receivers, recv)
 		}
 	}
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+
+		var transportErr <-chan error
+		// specifically for Kafka errors
+		if transportErrorFct, ok := transporter.TransportDriver.(interface {
+			Errors() <-chan error
+		}); ok {
+			transportErr = transportErrorFct.Errors()
+		}
+
+		for {
+			select {
+			case <-q:
+				return
+			case err := <-transportErr:
+				l := log.WithError(err)
+				l.Error("transport error")
+			}
+		}
+	}()
 
 	<-c
 

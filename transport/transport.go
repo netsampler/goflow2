@@ -47,6 +47,7 @@ func (t *Transport) Close() error {
 	}
 	return nil
 }
+
 func (t *Transport) Send(key, data []byte) error {
 	if err := t.TransportDriver.Send(key, data); err != nil {
 		return &DriverTransportError{t.Name(), err}
