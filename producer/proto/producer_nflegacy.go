@@ -3,9 +3,9 @@ package protoproducer
 import (
 	"encoding/binary"
 
-	"github.com/netsampler/goflow2/decoders/netflowlegacy"
-	flowmessage "github.com/netsampler/goflow2/pb"
-	"github.com/netsampler/goflow2/producer"
+	"github.com/netsampler/goflow2/v2/decoders/netflowlegacy"
+	flowmessage "github.com/netsampler/goflow2/v2/pb"
+	"github.com/netsampler/goflow2/v2/producer"
 )
 
 func ConvertNetFlowLegacyRecord(flowMessage *ProtoProducerMessage, baseTime uint64, uptime uint32, record netflowlegacy.RecordsNetFlowV5) {

@@ -3,7 +3,7 @@ package text
 import (
 	"encoding"
 
-	"github.com/netsampler/goflow2/format"
+	"github.com/netsampler/goflow2/v2/format"
 )
 
 type TextDriver struct {

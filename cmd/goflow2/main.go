@@ -18,27 +18,27 @@ import (
 	"time"
 
 	// decoders
-	"github.com/netsampler/goflow2/decoders/netflow"
+	"github.com/netsampler/goflow2/v2/decoders/netflow"
 
 	// various formatters
-	"github.com/netsampler/goflow2/format"
-	_ "github.com/netsampler/goflow2/format/binary"
-	_ "github.com/netsampler/goflow2/format/json"
-	_ "github.com/netsampler/goflow2/format/text"
+	"github.com/netsampler/goflow2/v2/format"
+	_ "github.com/netsampler/goflow2/v2/format/binary"
+	_ "github.com/netsampler/goflow2/v2/format/json"
+	_ "github.com/netsampler/goflow2/v2/format/text"
 
 	// various transports
-	"github.com/netsampler/goflow2/transport"
-	_ "github.com/netsampler/goflow2/transport/file"
-	_ "github.com/netsampler/goflow2/transport/kafka"
+	"github.com/netsampler/goflow2/v2/transport"
+	_ "github.com/netsampler/goflow2/v2/transport/file"
+	_ "github.com/netsampler/goflow2/v2/transport/kafka"
 
 	// various producers
-	"github.com/netsampler/goflow2/producer"
-	protoproducer "github.com/netsampler/goflow2/producer/proto"
-	rawproducer "github.com/netsampler/goflow2/producer/raw"
+	"github.com/netsampler/goflow2/v2/producer"
+	protoproducer "github.com/netsampler/goflow2/v2/producer/proto"
+	rawproducer "github.com/netsampler/goflow2/v2/producer/raw"
 
 	// core libraries
-	"github.com/netsampler/goflow2/metrics"
-	"github.com/netsampler/goflow2/utils"
+	"github.com/netsampler/goflow2/v2/metrics"
+	"github.com/netsampler/goflow2/v2/utils"
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	log "github.com/sirupsen/logrus"

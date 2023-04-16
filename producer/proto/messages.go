@@ -13,7 +13,7 @@ import (
 	"google.golang.org/protobuf/encoding/protodelim"
 	"google.golang.org/protobuf/encoding/protowire"
 
-	flowmessage "github.com/netsampler/goflow2/pb"
+	flowmessage "github.com/netsampler/goflow2/v2/pb"
 )
 
 type ProtoProducerMessage struct {

@@ -3,7 +3,7 @@ package file
 import (
 	"flag"
 	"fmt"
-	"github.com/netsampler/goflow2/transport"
+	"github.com/netsampler/goflow2/v2/transport"
 	"io"
 	"os"
 	"os/signal"

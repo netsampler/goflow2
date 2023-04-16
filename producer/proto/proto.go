@@ -4,10 +4,10 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/netsampler/goflow2/decoders/netflow"
-	"github.com/netsampler/goflow2/decoders/netflowlegacy"
-	"github.com/netsampler/goflow2/decoders/sflow"
-	"github.com/netsampler/goflow2/producer"
+	"github.com/netsampler/goflow2/v2/decoders/netflow"
+	"github.com/netsampler/goflow2/v2/decoders/netflowlegacy"
+	"github.com/netsampler/goflow2/v2/decoders/sflow"
+	"github.com/netsampler/goflow2/v2/producer"
 )
 
 type ProtoProducer struct {
