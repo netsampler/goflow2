@@ -162,7 +162,9 @@ func (c *producerConfigMapped) finalizeSFlowMapper(m *SFlowMapper) error {
 	}
 	for k, vlist := range m.data {
 		for i, v := range vlist {
-			c.finalizemapDest(&(v.MapConfigBase))
+			if err := c.finalizemapDest(&(v.MapConfigBase)); err != nil {
+				return err
+			}
 			m.data[k][i] = v
 		}
 
@@ -175,7 +177,9 @@ func (c *producerConfigMapped) finalizeNetFlowMapper(m *NetFlowMapper) error {
 		return nil
 	}
 	for k, v := range m.data {
-		c.finalizemapDest(&(v.MapConfigBase))
+		if err := c.finalizemapDest(&(v.MapConfigBase)); err != nil {
+			return err
+		}
 		m.data[k] = v
 	}
 	return nil
@@ -215,7 +219,7 @@ func mapFormat(cfg *ProducerConfig) (*FormatterConfigMapper, error) {
 		}
 		fieldName := field.Name
 		if selectorTag != "" {
-			fieldName = ExtractTag(selectorTag, field.Name, field.Tag)
+			fieldName = ExtractTag(selectorTag, fieldName, field.Tag)
 			reMap[fieldName] = field.Name
 			fields = append(fields, fieldName)
 		}

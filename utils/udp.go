@@ -57,7 +57,7 @@ type UDPReceiverConfig struct {
 	QueueSize int
 }
 
-func NewUDPReceiver(cfg *UDPReceiverConfig) *UDPReceiver {
+func NewUDPReceiver(cfg *UDPReceiverConfig) (*UDPReceiver, error) {
 	r := &UDPReceiver{
 		wg:      &sync.WaitGroup{},
 		sockets: 2,
@@ -88,9 +88,9 @@ func NewUDPReceiver(cfg *UDPReceiverConfig) *UDPReceiver {
 		r.dispatch = make(chan *udpPacket, dispatchSize)
 	}
 
-	r.init()
+	err := r.init()
 
-	return r
+	return r, err
 }
 
 // Initialize channels that are related to a session
@@ -134,7 +134,6 @@ func (r *UDPReceiver) receive(addr string, port int, started chan bool) error {
 		case <-r.q: // upon general close
 		}
 		pconn.Close()
-		return
 	}()
 	defer close(q)
 
@@ -200,27 +199,25 @@ func (r *UDPReceiver) decoders(workers int, decodeFunc DecoderFunc) error {
 		r.decodersCnt += 1
 		go func() {
 			defer r.wg.Done()
-			for {
+			for pkt := range r.dispatch {
 
-				select {
-				case pkt := <-r.dispatch:
-					if pkt == nil {
-						return
-					}
-					if decodeFunc != nil {
-						msg := Message{
-							Src:      pkt.src.AddrPort(),
-							Dst:      pkt.dst.AddrPort(),
-							Payload:  pkt.payload[0:pkt.size],
-							Received: pkt.received,
-						}
-
-						if err := decodeFunc(&msg); err != nil {
-							r.logError(&ReceiverError{err})
-						}
-					}
-					packetPool.Put(pkt)
+				if pkt == nil {
+					return
 				}
+				if decodeFunc != nil {
+					msg := Message{
+						Src:      pkt.src.AddrPort(),
+						Dst:      pkt.dst.AddrPort(),
+						Payload:  pkt.payload[0:pkt.size],
+						Received: pkt.received,
+					}
+
+					if err := decodeFunc(&msg); err != nil {
+						r.logError(&ReceiverError{err})
+					}
+				}
+				packetPool.Put(pkt)
+
 			}
 		}()
 	}

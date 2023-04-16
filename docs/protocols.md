@@ -180,7 +180,7 @@ Data coming from the flows can be added to the protobuf either as an unsigned/si
 The `sflow` section allow to extract data from packet samples inside sFlow and inside IPFIX (dataframe).
 The following layers are available:
 * 0: no offset
-* 3, ipv4, ipv6: network layer, offsets to IP/IPv6 header
+* 3, ipv4, ipv6, arp: network layer, offsets to IP/IPv6 header
 * 4, icmp, icmp6, udp, tcp: transport layer, offsets to TCP/UDP/ICMP header
 * 7: application layer, offsets to the TCP/UDP payload
 

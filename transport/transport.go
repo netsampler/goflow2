@@ -85,7 +85,7 @@ func GetTransports() []string {
 	defer lock.RUnlock()
 	t := make([]string, len(transportDrivers))
 	var i int
-	for k, _ := range transportDrivers {
+	for k := range transportDrivers {
 		t[i] = k
 		i++
 	}

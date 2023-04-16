@@ -82,7 +82,7 @@ func GetFormats() []string {
 	defer lock.RUnlock()
 	t := make([]string, len(formatDrivers))
 	var i int
-	for k, _ := range formatDrivers {
+	for k := range formatDrivers {
 		t[i] = k
 		i++
 	}

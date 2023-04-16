@@ -20,15 +20,12 @@ import (
 type KafkaDriver struct {
 	kafkaTLS            bool
 	kafkaSASL           string
-	kafkaSCRAM          string
 	kafkaTopic          string
 	kafkaSrv            string
 	kafkaBrk            string
 	kafkaMaxMsgBytes    int
 	kafkaFlushBytes     int
 	kafkaFlushFrequency time.Duration
-
-	kafkaLogErrors bool
 
 	kafkaHashing          bool
 	kafkaVersion          string
@@ -141,7 +138,7 @@ func (d *KafkaDriver) Init() error {
 		*/
 
 		if cc, ok := compressionCodecs[strings.ToLower(d.kafkaCompressionCodec)]; !ok {
-			return errors.New("compression codec does not exist")
+			return fmt.Errorf("compression codec does not exist")
 		} else {
 			kafkaConfig.Producer.Compression = cc
 		}
@@ -150,7 +147,7 @@ func (d *KafkaDriver) Init() error {
 	if d.kafkaTLS {
 		rootCAs, err := x509.SystemCertPool()
 		if err != nil {
-			return errors.New(fmt.Sprintf("Error initializing TLS: %v", err))
+			return fmt.Errorf("error initializing TLS: %v", err)
 		}
 		kafkaConfig.Net.TLS.Enable = true
 		kafkaConfig.Net.TLS.Config = &tls.Config{RootCAs: rootCAs}
@@ -171,7 +168,7 @@ func (d *KafkaDriver) Init() error {
 		kafkaConfig.Net.SASL.User = os.Getenv("KAFKA_SASL_USER")
 		kafkaConfig.Net.SASL.Password = os.Getenv("KAFKA_SASL_PASS")
 		if kafkaConfig.Net.SASL.User == "" && kafkaConfig.Net.SASL.Password == "" {
-			return errors.New("Kafka SASL config from environment was unsuccessful. KAFKA_SASL_USER and KAFKA_SASL_PASS need to be set.")
+			return fmt.Errorf("Kafka SASL config from environment was unsuccessful. KAFKA_SASL_USER and KAFKA_SASL_PASS need to be set.")
 		}
 
 		if kafkaSASL == KAFKA_SASL_SCRAM_SHA256 || kafkaSASL == KAFKA_SASL_SCRAM_SHA512 {
@@ -250,7 +247,7 @@ func (d *KafkaDriver) Close() error {
 func GetServiceAddresses(srv string) (addrs []string, err error) {
 	_, srvs, err := net.LookupSRV("", "", srv)
 	if err != nil {
-		return nil, errors.New(fmt.Sprintf("Service discovery: %v\n", err))
+		return nil, fmt.Errorf("service discovery: %v\n", err)
 	}
 	for _, srv := range srvs {
 		addrs = append(addrs, net.JoinHostPort(srv.Target, strconv.Itoa(int(srv.Port))))

@@ -48,7 +48,9 @@ func ParseEthernetHeader(flowMessage *ProtoProducerMessage, data []byte, config 
 
 	for _, configLayer := range GetSFlowConfigLayer(config, "0") {
 		extracted := GetBytes(data, configLayer.Offset, configLayer.Length)
-		MapCustom(flowMessage, extracted, configLayer.MapConfigBase)
+		if err := MapCustom(flowMessage, extracted, configLayer.MapConfigBase); err != nil {
+			return err
+		}
 	}
 
 	etherType := data[12:14]
@@ -73,7 +75,7 @@ func ParseEthernetHeader(flowMessage *ProtoProducerMessage, data []byte, config 
 			iterateMpls := true
 			for iterateMpls {
 				if len(data) < offset+5 {
-					iterateMpls = false
+					// stop iterating mpls, not enough payload left
 					break
 				}
 				label := binary.BigEndian.Uint32(append([]byte{0}, data[offset:offset+3]...)) >> 4
@@ -88,7 +90,7 @@ func ParseEthernetHeader(flowMessage *ProtoProducerMessage, data []byte, config 
 					} else if data[offset]&0xf0>>4 == 6 {
 						etherType = []byte{0x86, 0xdd}
 					}
-					iterateMpls = false
+					iterateMpls = false // stop iterating mpls, bottom of stack
 				}
 
 				mplsLabel = append(mplsLabel, label)
@@ -98,7 +100,9 @@ func ParseEthernetHeader(flowMessage *ProtoProducerMessage, data []byte, config 
 
 		for _, configLayer := range GetSFlowConfigLayer(config, "3") {
 			extracted := GetBytes(data, offset*8+configLayer.Offset, configLayer.Length)
-			MapCustom(flowMessage, extracted, configLayer.MapConfigBase)
+			if err := MapCustom(flowMessage, extracted, configLayer.MapConfigBase); err != nil {
+				return err
+			}
 		}
 
 		if etherType[0] == 0x8 && etherType[1] == 0x0 { // IPv4
@@ -114,7 +118,9 @@ func ParseEthernetHeader(flowMessage *ProtoProducerMessage, data []byte, config 
 
 				for _, configLayer := range GetSFlowConfigLayer(config, "ipv4") {
 					extracted := GetBytes(data, offset*8+configLayer.Offset, configLayer.Length)
-					MapCustom(flowMessage, extracted, configLayer.MapConfigBase)
+					if err := MapCustom(flowMessage, extracted, configLayer.MapConfigBase); err != nil {
+						return err
+					}
 				}
 
 				offset += 20
@@ -133,19 +139,28 @@ func ParseEthernetHeader(flowMessage *ProtoProducerMessage, data []byte, config 
 
 				for _, configLayer := range GetSFlowConfigLayer(config, "ipv6") {
 					extracted := GetBytes(data, offset*8+configLayer.Offset, configLayer.Length)
-					MapCustom(flowMessage, extracted, configLayer.MapConfigBase)
+					if err := MapCustom(flowMessage, extracted, configLayer.MapConfigBase); err != nil {
+						return err
+					}
 				}
 
 				offset += 40
 
 			}
 		} else if etherType[0] == 0x8 && etherType[1] == 0x6 { // ARP
-
+			for _, configLayer := range GetSFlowConfigLayer(config, "arp") {
+				extracted := GetBytes(data, offset*8+configLayer.Offset, configLayer.Length)
+				if err := MapCustom(flowMessage, extracted, configLayer.MapConfigBase); err != nil {
+					return err
+				}
+			}
 		}
 
 		for _, configLayer := range GetSFlowConfigLayer(config, "4") {
 			extracted := GetBytes(data, offset*8+configLayer.Offset, configLayer.Length)
-			MapCustom(flowMessage, extracted, configLayer.MapConfigBase)
+			if err := MapCustom(flowMessage, extracted, configLayer.MapConfigBase); err != nil {
+				return err
+			}
 		}
 
 		appOffset := 0
@@ -159,7 +174,9 @@ func ParseEthernetHeader(flowMessage *ProtoProducerMessage, data []byte, config 
 
 			for _, configLayer := range GetSFlowConfigLayer(config, "udp") {
 				extracted := GetBytes(data, offset*8+configLayer.Offset, configLayer.Length)
-				MapCustom(flowMessage, extracted, configLayer.MapConfigBase)
+				if err := MapCustom(flowMessage, extracted, configLayer.MapConfigBase); err != nil {
+					return err
+				}
 			}
 		}
 
@@ -170,7 +187,9 @@ func ParseEthernetHeader(flowMessage *ProtoProducerMessage, data []byte, config 
 
 			for _, configLayer := range GetSFlowConfigLayer(config, "tcp") {
 				extracted := GetBytes(data, offset*8+configLayer.Offset, configLayer.Length)
-				MapCustom(flowMessage, extracted, configLayer.MapConfigBase)
+				if err := MapCustom(flowMessage, extracted, configLayer.MapConfigBase); err != nil {
+					return err
+				}
 			}
 		}
 
@@ -182,12 +201,16 @@ func ParseEthernetHeader(flowMessage *ProtoProducerMessage, data []byte, config 
 			if nextHeader == 1 {
 				for _, configLayer := range GetSFlowConfigLayer(config, "icmp") {
 					extracted := GetBytes(data, offset*8+configLayer.Offset, configLayer.Length)
-					MapCustom(flowMessage, extracted, configLayer.MapConfigBase)
+					if err := MapCustom(flowMessage, extracted, configLayer.MapConfigBase); err != nil {
+						return err
+					}
 				}
 			} else if nextHeader == 58 {
 				for _, configLayer := range GetSFlowConfigLayer(config, "icmp6") {
 					extracted := GetBytes(data, offset*8+configLayer.Offset, configLayer.Length)
-					MapCustom(flowMessage, extracted, configLayer.MapConfigBase)
+					if err := MapCustom(flowMessage, extracted, configLayer.MapConfigBase); err != nil {
+						return err
+					}
 				}
 			}
 		}
@@ -195,7 +218,9 @@ func ParseEthernetHeader(flowMessage *ProtoProducerMessage, data []byte, config 
 		if appOffset > 0 {
 			for _, configLayer := range GetSFlowConfigLayer(config, "7") {
 				extracted := GetBytes(data, (offset+appOffset)*8+configLayer.Offset, configLayer.Length)
-				MapCustom(flowMessage, extracted, configLayer.MapConfigBase)
+				if err := MapCustom(flowMessage, extracted, configLayer.MapConfigBase); err != nil {
+					return err
+				}
 			}
 		}
 
@@ -233,10 +258,6 @@ func ParseSampledHeaderConfig(flowMessage *ProtoProducerMessage, sampledHeader *
 		}
 	}
 	return nil
-}
-
-func SearchSFlowSamples(samples []interface{}) []producer.ProducerMessage {
-	return SearchSFlowSamples(samples)
 }
 
 func SearchSFlowSampleConfig(flowMessage *ProtoProducerMessage, flowSample interface{}, config *SFlowMapper) error {

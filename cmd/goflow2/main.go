@@ -33,8 +33,8 @@ import (
 
 	// various producers
 	"github.com/netsampler/goflow2/producer"
-	"github.com/netsampler/goflow2/producer/proto"
-	"github.com/netsampler/goflow2/producer/raw"
+	protoproducer "github.com/netsampler/goflow2/producer/proto"
+	rawproducer "github.com/netsampler/goflow2/producer/raw"
 
 	// core libraries
 	"github.com/netsampler/goflow2/metrics"
@@ -66,11 +66,6 @@ var (
 	MappingFile = flag.String("mapping", "", "Configuration file for custom mappings")
 
 	Version = flag.Bool("v", false, "Print version")
-
-	producerOptions = map[string]bool{
-		"sample": true,
-		"raw":    true,
-	}
 )
 
 func LoadMapping(f io.Reader) (*protoproducer.ProducerConfig, error) {
@@ -143,10 +138,14 @@ func main() {
 	http.HandleFunc("/__health", func(wr http.ResponseWriter, r *http.Request) {
 		if !collecting {
 			wr.WriteHeader(http.StatusServiceUnavailable)
-			wr.Write([]byte("NOK\n"))
+			if _, err := wr.Write([]byte("Not OK\n")); err != nil {
+				log.WithError(err).Error("error writing HTTP")
+			}
 		} else {
 			wr.WriteHeader(http.StatusOK)
-			wr.Write([]byte("OK\n"))
+			if _, err := wr.Write([]byte("OK\n")); err != nil {
+				log.WithError(err).Error("error writing HTTP")
+			}
 		}
 	})
 	srv := http.Server{
@@ -213,7 +212,10 @@ func main() {
 		cfg := &utils.UDPReceiverConfig{
 			Sockets: numSockets,
 		}
-		recv := utils.NewUDPReceiver(cfg)
+		recv, err := utils.NewUDPReceiver(cfg)
+		if err != nil {
+			log.WithError(err).Fatal("error creating UDP receiver")
+		}
 
 		cfgPipe := &utils.PipeConfig{
 			Format:           formatter,
@@ -299,7 +301,9 @@ func main() {
 
 	// stops receivers first, udp sockets will be down
 	for _, recv := range receivers {
-		recv.Stop()
+		if err := recv.Stop(); err != nil {
+			log.WithError(err).Error("error stopping receiver")
+		}
 	}
 	// then stop pipe
 	for _, pipe := range pipes {
@@ -312,7 +316,9 @@ func main() {
 	log.Info("closed transporter")
 	// close http server (prometheus + health check)
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
-	srv.Shutdown(ctx)
+	if err := srv.Shutdown(ctx); err != nil {
+		log.WithError(err).Error("error shutting-down HTTP server")
+	}
 	cancel()
 	close(q) // close errors
 	wg.Wait()

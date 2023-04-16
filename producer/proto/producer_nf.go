@@ -93,11 +93,15 @@ func NetFlowPopulate(dataFields []netflow.DataField, typeId uint16, addr interfa
 			//	*addrt = valueBytes
 			case *(time.Time):
 				t := uint64(0)
-				binary.Read(valueReader, binary.BigEndian, &t)
+				if err := binary.Read(valueReader, binary.BigEndian, &t); err != nil {
+					return false, err
+				}
 				t64 := int64(t / 1000)
 				*addrt = time.Unix(t64, 0)
 			default:
-				binary.Read(valueReader, binary.BigEndian, addr)
+				if err := binary.Read(valueReader, binary.BigEndian, addr); err != nil {
+					return false, err
+				}
 			}
 		}
 	}
@@ -285,7 +289,9 @@ func ConvertNetFlowDataSet(flowMessage *ProtoProducerMessage, version uint16, ba
 			continue
 		}
 
-		MapCustomNetFlow(flowMessage, df, mapperNetFlow)
+		if err := MapCustomNetFlow(flowMessage, df, mapperNetFlow); err != nil {
+			return err
+		}
 
 		if df.PenProvided {
 			continue
@@ -294,46 +300,78 @@ func ConvertNetFlowDataSet(flowMessage *ProtoProducerMessage, version uint16, ba
 		switch df.Type {
 
 		case netflow.IPFIX_FIELD_observationPointId:
-			DecodeUNumber(v, &(flowMessage.ObservationPointId))
+			if err := DecodeUNumber(v, &(flowMessage.ObservationPointId)); err != nil {
+				return err
+			}
 
 		// Statistics
 		case netflow.NFV9_FIELD_IN_BYTES:
-			DecodeUNumber(v, &(flowMessage.Bytes))
+			if err := DecodeUNumber(v, &(flowMessage.Bytes)); err != nil {
+				return err
+			}
 		case netflow.NFV9_FIELD_IN_PKTS:
-			DecodeUNumber(v, &(flowMessage.Packets))
+			if err := DecodeUNumber(v, &(flowMessage.Packets)); err != nil {
+				return err
+			}
 		case netflow.NFV9_FIELD_OUT_BYTES:
-			DecodeUNumber(v, &(flowMessage.Bytes))
+			if err := DecodeUNumber(v, &(flowMessage.Bytes)); err != nil {
+				return err
+			}
 		case netflow.NFV9_FIELD_OUT_PKTS:
-			DecodeUNumber(v, &(flowMessage.Packets))
+			if err := DecodeUNumber(v, &(flowMessage.Packets)); err != nil {
+				return err
+			}
 
 		// L4
 		case netflow.NFV9_FIELD_L4_SRC_PORT:
-			DecodeUNumber(v, &(flowMessage.SrcPort))
+			if err := DecodeUNumber(v, &(flowMessage.SrcPort)); err != nil {
+				return err
+			}
 		case netflow.NFV9_FIELD_L4_DST_PORT:
-			DecodeUNumber(v, &(flowMessage.DstPort))
+			if err := DecodeUNumber(v, &(flowMessage.DstPort)); err != nil {
+				return err
+			}
 		case netflow.NFV9_FIELD_PROTOCOL:
-			DecodeUNumber(v, &(flowMessage.Proto))
+			if err := DecodeUNumber(v, &(flowMessage.Proto)); err != nil {
+				return err
+			}
 
 		// Network
 		case netflow.NFV9_FIELD_SRC_AS:
-			DecodeUNumber(v, &(flowMessage.SrcAs))
+			if err := DecodeUNumber(v, &(flowMessage.SrcAs)); err != nil {
+				return err
+			}
 		case netflow.NFV9_FIELD_DST_AS:
-			DecodeUNumber(v, &(flowMessage.DstAs))
+			if err := DecodeUNumber(v, &(flowMessage.DstAs)); err != nil {
+				return err
+			}
 
 		// Interfaces
 		case netflow.NFV9_FIELD_INPUT_SNMP:
-			DecodeUNumber(v, &(flowMessage.InIf))
+			if err := DecodeUNumber(v, &(flowMessage.InIf)); err != nil {
+				return err
+			}
 		case netflow.NFV9_FIELD_OUTPUT_SNMP:
-			DecodeUNumber(v, &(flowMessage.OutIf))
+			if err := DecodeUNumber(v, &(flowMessage.OutIf)); err != nil {
+				return err
+			}
 
 		case netflow.NFV9_FIELD_FORWARDING_STATUS:
-			DecodeUNumber(v, &(flowMessage.ForwardingStatus))
+			if err := DecodeUNumber(v, &(flowMessage.ForwardingStatus)); err != nil {
+				return err
+			}
 		case netflow.NFV9_FIELD_SRC_TOS:
-			DecodeUNumber(v, &(flowMessage.IpTos))
+			if err := DecodeUNumber(v, &(flowMessage.IpTos)); err != nil {
+				return err
+			}
 		case netflow.NFV9_FIELD_TCP_FLAGS:
-			DecodeUNumber(v, &(flowMessage.TcpFlags))
+			if err := DecodeUNumber(v, &(flowMessage.TcpFlags)); err != nil {
+				return err
+			}
 		case netflow.NFV9_FIELD_MIN_TTL:
-			DecodeUNumber(v, &(flowMessage.IpTtl))
+			if err := DecodeUNumber(v, &(flowMessage.IpTtl)); err != nil {
+				return err
+			}
 
 		// IP
 		case netflow.NFV9_FIELD_IP_PROTOCOL_VERSION:
@@ -352,9 +390,13 @@ func ConvertNetFlowDataSet(flowMessage *ProtoProducerMessage, version uint16, ba
 			addrReplaceCheck(&(flowMessage.DstAddr), v, &(flowMessage.Etype), false)
 
 		case netflow.NFV9_FIELD_SRC_MASK:
-			DecodeUNumber(v, &(flowMessage.SrcNet))
+			if err := DecodeUNumber(v, &(flowMessage.SrcNet)); err != nil {
+				return err
+			}
 		case netflow.NFV9_FIELD_DST_MASK:
-			DecodeUNumber(v, &(flowMessage.DstNet))
+			if err := DecodeUNumber(v, &(flowMessage.DstNet)); err != nil {
+				return err
+			}
 
 		case netflow.NFV9_FIELD_IPV6_SRC_ADDR:
 			addrReplaceCheck(&(flowMessage.SrcAddr), v, &(flowMessage.Etype), true)
@@ -363,9 +405,13 @@ func ConvertNetFlowDataSet(flowMessage *ProtoProducerMessage, version uint16, ba
 			addrReplaceCheck(&(flowMessage.DstAddr), v, &(flowMessage.Etype), true)
 
 		case netflow.NFV9_FIELD_IPV6_SRC_MASK:
-			DecodeUNumber(v, &(flowMessage.SrcNet))
+			if err := DecodeUNumber(v, &(flowMessage.SrcNet)); err != nil {
+				return err
+			}
 		case netflow.NFV9_FIELD_IPV6_DST_MASK:
-			DecodeUNumber(v, &(flowMessage.DstNet))
+			if err := DecodeUNumber(v, &(flowMessage.DstNet)); err != nil {
+				return err
+			}
 
 		case netflow.NFV9_FIELD_IPV4_NEXT_HOP:
 			flowMessage.NextHop = v
@@ -380,70 +426,110 @@ func ConvertNetFlowDataSet(flowMessage *ProtoProducerMessage, version uint16, ba
 		// ICMP
 		case netflow.NFV9_FIELD_ICMP_TYPE:
 			var icmpTypeCode uint16
-			DecodeUNumber(v, &icmpTypeCode)
+			if err := DecodeUNumber(v, &icmpTypeCode); err != nil {
+				return err
+			}
 			flowMessage.IcmpType = uint32(icmpTypeCode >> 8)
 			flowMessage.IcmpCode = uint32(icmpTypeCode & 0xff)
 		case netflow.IPFIX_FIELD_icmpTypeCodeIPv6:
 			var icmpTypeCode uint16
-			DecodeUNumber(v, &icmpTypeCode)
+			if err := DecodeUNumber(v, &icmpTypeCode); err != nil {
+				return err
+			}
 			flowMessage.IcmpType = uint32(icmpTypeCode >> 8)
 			flowMessage.IcmpCode = uint32(icmpTypeCode & 0xff)
 		case netflow.IPFIX_FIELD_icmpTypeIPv4:
-			DecodeUNumber(v, &(flowMessage.IcmpType))
+			if err := DecodeUNumber(v, &(flowMessage.IcmpType)); err != nil {
+				return err
+			}
 		case netflow.IPFIX_FIELD_icmpTypeIPv6:
-			DecodeUNumber(v, &(flowMessage.IcmpType))
+			if err := DecodeUNumber(v, &(flowMessage.IcmpType)); err != nil {
+				return err
+			}
 		case netflow.IPFIX_FIELD_icmpCodeIPv4:
-			DecodeUNumber(v, &(flowMessage.IcmpCode))
+			if err := DecodeUNumber(v, &(flowMessage.IcmpCode)); err != nil {
+				return err
+			}
 		case netflow.IPFIX_FIELD_icmpCodeIPv6:
-			DecodeUNumber(v, &(flowMessage.IcmpCode))
+			if err := DecodeUNumber(v, &(flowMessage.IcmpCode)); err != nil {
+				return err
+			}
 
 		// Mac
 		case netflow.NFV9_FIELD_IN_SRC_MAC:
-			DecodeUNumber(v, &(flowMessage.SrcMac))
+			if err := DecodeUNumber(v, &(flowMessage.SrcMac)); err != nil {
+				return err
+			}
 		case netflow.NFV9_FIELD_IN_DST_MAC:
-			DecodeUNumber(v, &(flowMessage.DstMac))
+			if err := DecodeUNumber(v, &(flowMessage.DstMac)); err != nil {
+				return err
+			}
 		case netflow.NFV9_FIELD_OUT_SRC_MAC:
-			DecodeUNumber(v, &(flowMessage.SrcMac))
+			if err := DecodeUNumber(v, &(flowMessage.SrcMac)); err != nil {
+				return err
+			}
 		case netflow.NFV9_FIELD_OUT_DST_MAC:
-			DecodeUNumber(v, &(flowMessage.DstMac))
+			if err := DecodeUNumber(v, &(flowMessage.DstMac)); err != nil {
+				return err
+			}
 
 		case netflow.NFV9_FIELD_SRC_VLAN:
-			DecodeUNumber(v, &(flowMessage.VlanId))
-			DecodeUNumber(v, &(flowMessage.SrcVlan))
+			if err := DecodeUNumber(v, &(flowMessage.VlanId)); err != nil {
+				return err
+			}
+			if err := DecodeUNumber(v, &(flowMessage.SrcVlan)); err != nil {
+				return err
+			}
 		case netflow.NFV9_FIELD_DST_VLAN:
-			DecodeUNumber(v, &(flowMessage.DstVlan))
+			if err := DecodeUNumber(v, &(flowMessage.DstVlan)); err != nil {
+				return err
+			}
 
 		case netflow.NFV9_FIELD_IPV4_IDENT:
-			DecodeUNumber(v, &(flowMessage.FragmentId))
+			if err := DecodeUNumber(v, &(flowMessage.FragmentId)); err != nil {
+				return err
+			}
 		case netflow.NFV9_FIELD_FRAGMENT_OFFSET:
 			var fragOffset uint32
-			DecodeUNumber(v, &fragOffset)
+			if err := DecodeUNumber(v, &fragOffset); err != nil {
+				return err
+			}
 			flowMessage.FragmentOffset |= fragOffset
 		case netflow.IPFIX_FIELD_fragmentFlags:
 			var ipFlags uint32
-			DecodeUNumber(v, &ipFlags)
+			if err := DecodeUNumber(v, &ipFlags); err != nil {
+				return err
+			}
 			flowMessage.FragmentOffset |= ipFlags
 		case netflow.NFV9_FIELD_IPV6_FLOW_LABEL:
-			DecodeUNumber(v, &(flowMessage.Ipv6FlowLabel))
+			if err := DecodeUNumber(v, &(flowMessage.Ipv6FlowLabel)); err != nil {
+				return err
+			}
 
 		// MPLS
 		case netflow.IPFIX_FIELD_mplsTopLabelStackSection:
 			var mplsLabel uint32
-			DecodeUNumber(v, &mplsLabel)
+			if err := DecodeUNumber(v, &mplsLabel); err != nil {
+				return err
+			}
 			if len(flowMessage.MplsLabel) < 1 {
 				flowMessage.MplsLabel = make([]uint32, 1)
 			}
 			flowMessage.MplsLabel[0] = uint32(mplsLabel >> 4)
 		case netflow.IPFIX_FIELD_mplsLabelStackSection2:
 			var mplsLabel uint32
-			DecodeUNumber(v, &mplsLabel)
+			if err := DecodeUNumber(v, &mplsLabel); err != nil {
+				return err
+			}
 			if len(flowMessage.MplsLabel) < 2 {
 				flowMessage.MplsLabel = make([]uint32, 2)
 			}
 			flowMessage.MplsLabel[1] = uint32(mplsLabel >> 4)
 		case netflow.IPFIX_FIELD_mplsLabelStackSection3:
 			var mplsLabel uint32
-			DecodeUNumber(v, &mplsLabel)
+			if err := DecodeUNumber(v, &mplsLabel); err != nil {
+				return err
+			}
 			if len(flowMessage.MplsLabel) < 3 {
 				flowMessage.MplsLabel = make([]uint32, 3)
 			}
@@ -459,53 +545,81 @@ func ConvertNetFlowDataSet(flowMessage *ProtoProducerMessage, version uint16, ba
 				switch df.Type {
 				case netflow.NFV9_FIELD_FIRST_SWITCHED:
 					var timeFirstSwitched uint32
-					DecodeUNumber(v, &timeFirstSwitched)
+					if err := DecodeUNumber(v, &timeFirstSwitched); err != nil {
+						return err
+					}
 					timeDiff := (uptime - timeFirstSwitched)
 					flowMessage.TimeFlowStartNs = baseTimeNs - uint64(timeDiff)*1000000000
 				case netflow.NFV9_FIELD_LAST_SWITCHED:
 					var timeLastSwitched uint32
-					DecodeUNumber(v, &timeLastSwitched)
+					if err := DecodeUNumber(v, &timeLastSwitched); err != nil {
+						return err
+					}
 					timeDiff := (uptime - timeLastSwitched)
 					flowMessage.TimeFlowEndNs = baseTimeNs - uint64(timeDiff)*1000000000
 				}
 			} else if version == 10 {
 				switch df.Type {
 				case netflow.IPFIX_FIELD_flowStartSeconds:
-					DecodeUNumber(v, &time)
+					if err := DecodeUNumber(v, &time); err != nil {
+						return err
+					}
 					flowMessage.TimeFlowStartNs = time * 1000000000
 				case netflow.IPFIX_FIELD_flowStartMilliseconds:
-					DecodeUNumber(v, &time)
+					if err := DecodeUNumber(v, &time); err != nil {
+						return err
+					}
 					flowMessage.TimeFlowStartNs = time * 1000000
 				case netflow.IPFIX_FIELD_flowStartMicroseconds:
-					DecodeUNumber(v, &time)
+					if err := DecodeUNumber(v, &time); err != nil {
+						return err
+					}
 					flowMessage.TimeFlowStartNs = time * 1000
 				case netflow.IPFIX_FIELD_flowStartNanoseconds:
-					DecodeUNumber(v, &time)
+					if err := DecodeUNumber(v, &time); err != nil {
+						return err
+					}
 					flowMessage.TimeFlowStartNs = time
 				case netflow.IPFIX_FIELD_flowEndSeconds:
-					DecodeUNumber(v, &time)
+					if err := DecodeUNumber(v, &time); err != nil {
+						return err
+					}
 					flowMessage.TimeFlowEndNs = time * 1000000000
 				case netflow.IPFIX_FIELD_flowEndMilliseconds:
-					DecodeUNumber(v, &time)
+					if err := DecodeUNumber(v, &time); err != nil {
+						return err
+					}
 					flowMessage.TimeFlowEndNs = time * 1000000
 				case netflow.IPFIX_FIELD_flowEndMicroseconds:
-					DecodeUNumber(v, &time)
+					if err := DecodeUNumber(v, &time); err != nil {
+						return err
+					}
 					flowMessage.TimeFlowEndNs = time * 1000
 				case netflow.IPFIX_FIELD_flowEndNanoseconds:
-					DecodeUNumber(v, &time)
+					if err := DecodeUNumber(v, &time); err != nil {
+						return err
+					}
 					flowMessage.TimeFlowEndNs = time
 				case netflow.IPFIX_FIELD_flowStartDeltaMicroseconds:
-					DecodeUNumber(v, &time)
+					if err := DecodeUNumber(v, &time); err != nil {
+						return err
+					}
 					flowMessage.TimeFlowStartNs = baseTimeNs - time*1000
 				case netflow.IPFIX_FIELD_flowEndDeltaMicroseconds:
-					DecodeUNumber(v, &time)
+					if err := DecodeUNumber(v, &time); err != nil {
+						return err
+					}
 					flowMessage.TimeFlowEndNs = baseTimeNs - time*1000
 				// RFC7133
 				case netflow.IPFIX_FIELD_dataLinkFrameSize:
-					DecodeUNumber(v, &(flowMessage.Bytes))
+					if err := DecodeUNumber(v, &(flowMessage.Bytes)); err != nil {
+						return err
+					}
 					flowMessage.Packets = 1
 				case netflow.IPFIX_FIELD_dataLinkFrameSection:
-					ParseEthernetHeader(flowMessage, v, mapperSFlow)
+					if err := ParseEthernetHeader(flowMessage, v, mapperSFlow); err != nil {
+						return err
+					}
 					flowMessage.Packets = 1
 					if flowMessage.Bytes == 0 {
 						flowMessage.Bytes = uint64(len(v))

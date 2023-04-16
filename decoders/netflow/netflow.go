@@ -193,9 +193,9 @@ func GetTemplateSize(version uint16, template []Field) int {
 }
 
 func DecodeDataSetUsingFields(version uint16, payload *bytes.Buffer, listFields []Field) ([]DataField, error) {
+	dataFields := make([]DataField, len(listFields))
 	for payload.Len() >= GetTemplateSize(version, listFields) {
 
-		dataFields := make([]DataField, len(listFields))
 		for i, templateField := range listFields {
 
 			finalLength := int(templateField.Length)
@@ -224,9 +224,8 @@ func DecodeDataSetUsingFields(version uint16, payload *bytes.Buffer, listFields 
 			}
 			dataFields[i] = nfvalue
 		}
-		return dataFields, nil
 	}
-	return nil, nil
+	return dataFields, nil
 }
 
 func DecodeOptionsDataSet(version uint16, payload *bytes.Buffer, listFieldsScopes, listFieldsOption []Field) ([]OptionsDataRecord, error) {
@@ -285,11 +284,11 @@ func (ts *BasicTemplateSystem) AddTemplate(version uint16, obsDomainId uint32, t
 	ts.templateslock.Lock()
 	defer ts.templateslock.Unlock()
 	_, exists := ts.templates[version]
-	if exists != true {
+	if !exists {
 		ts.templates[version] = make(map[uint32]map[uint16]interface{})
 	}
 	_, exists = ts.templates[version][obsDomainId]
-	if exists != true {
+	if !exists {
 		ts.templates[version][obsDomainId] = make(map[uint16]interface{})
 	}
 	var templateId uint16

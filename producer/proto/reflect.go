@@ -116,15 +116,23 @@ func MapCustom(flowMessage *ProtoProducerMessage, v []byte, cfg MapConfigBase) e
 
 				if IsUInt(typeDest.Elem().Kind()) {
 					if cfg.Endianness == LittleEndian {
-						DecodeUNumberLE(v, item.Interface())
+						if err := DecodeUNumberLE(v, item.Interface()); err != nil {
+							return err
+						}
 					} else {
-						DecodeUNumber(v, item.Interface())
+						if err := DecodeUNumber(v, item.Interface()); err != nil {
+							return err
+						}
 					}
 				} else if IsInt(typeDest.Elem().Kind()) {
 					if cfg.Endianness == LittleEndian {
-						DecodeNumberLE(v, item.Interface())
+						if err := DecodeNumberLE(v, item.Interface()); err != nil {
+							return err
+						}
 					} else {
-						DecodeNumber(v, item.Interface())
+						if err := DecodeNumber(v, item.Interface()); err != nil {
+							return err
+						}
 					}
 				}
 
@@ -136,15 +144,23 @@ func MapCustom(flowMessage *ProtoProducerMessage, v []byte, cfg MapConfigBase) e
 		} else if fieldValueAddr.IsValid() {
 			if IsUInt(typeDest.Kind()) {
 				if cfg.Endianness == LittleEndian {
-					DecodeUNumberLE(v, fieldValueAddr.Interface())
+					if err := DecodeUNumberLE(v, fieldValueAddr.Interface()); err != nil {
+						return err
+					}
 				} else {
-					DecodeUNumber(v, fieldValueAddr.Interface())
+					if err := DecodeUNumber(v, fieldValueAddr.Interface()); err != nil {
+						return err
+					}
 				}
 			} else if IsInt(typeDest.Kind()) {
 				if cfg.Endianness == LittleEndian {
-					DecodeNumberLE(v, fieldValueAddr.Interface())
+					if err := DecodeNumberLE(v, fieldValueAddr.Interface()); err != nil {
+						return err
+					}
 				} else {
-					DecodeNumber(v, fieldValueAddr.Interface())
+					if err := DecodeNumber(v, fieldValueAddr.Interface()); err != nil {
+						return err
+					}
 				}
 			}
 
@@ -169,9 +185,13 @@ func MapCustom(flowMessage *ProtoProducerMessage, v []byte, cfg MapConfigBase) e
 		var dstVar uint64
 		if cfg.ProtoType == ProtoVarint {
 			if cfg.Endianness == LittleEndian {
-				DecodeUNumberLE(v, &dstVar)
+				if err := DecodeUNumberLE(v, &dstVar); err != nil {
+					return err
+				}
 			} else {
-				DecodeUNumber(v, &dstVar)
+				if err := DecodeUNumber(v, &dstVar); err != nil {
+					return err
+				}
 			}
 			// support signed int?
 			unk = protowire.AppendTag(unk, protowire.Number(cfg.ProtoIndex), protowire.VarintType)

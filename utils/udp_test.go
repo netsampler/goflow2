@@ -15,9 +15,10 @@ func TestUDPReceiver(t *testing.T) {
 	require.NoError(t, err)
 	t.Logf("starting UDP receiver on %s:%d\n", addr, port)
 
-	r := NewUDPReceiver(nil)
-	r.Start(addr, port, nil)
+	r, err := NewUDPReceiver(nil)
+	require.NoError(t, err)
 
+	require.NoError(t, r.Start(addr, port, nil))
 	sendMessage := func(msg string) error {
 		conn, err := net.Dial("udp", fmt.Sprintf("%s:%d", addr, port))
 		if err != nil {
@@ -29,7 +30,7 @@ func TestUDPReceiver(t *testing.T) {
 	}
 	require.NoError(t, sendMessage("message"))
 	t.Log("sending message\n")
-	r.Stop()
+	require.NoError(t, r.Stop())
 }
 
 func TestUDPClose(t *testing.T) {
@@ -38,9 +39,10 @@ func TestUDPClose(t *testing.T) {
 	require.NoError(t, err)
 	t.Logf("starting UDP receiver on %s:%d\n", addr, port)
 
-	r := NewUDPReceiver(nil)
-	r.Start(addr, port, nil)
-	r.Stop()
+	r, err := NewUDPReceiver(nil)
+	require.NoError(t, err)
+	require.NoError(t, r.Start(addr, port, nil))
+	require.NoError(t, r.Stop())
 	require.NoError(t, r.Start(addr, port, nil))
 	require.Error(t, r.Start(addr, port, nil))
 	require.NoError(t, r.Stop())
