@@ -311,8 +311,9 @@ func main() {
 	transporter.Close()
 	log.Info("closed transporter")
 	// close http server (prometheus + health check)
-	ctx, _ := context.WithTimeout(context.Background(), time.Second*5)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
 	srv.Shutdown(ctx)
+	cancel()
 	close(q) // close errors
 	wg.Wait()
 
