@@ -167,13 +167,12 @@ func main() {
 					}
 					err = sSFlow.FlowRoutine(*Workers, hostname, int(port), *ReusePort)
 				} else if listenAddrUrl.Scheme == "netflow" {
-					sNF := &utils.StateNetFlow{
-						Format:         formatter,
-						Transport:      transporter,
-						Logger:         log.StandardLogger(),
-						Config:         config,
-						TemplateSystem: templateSystem,
-					}
+					sNF := utils.NewStateNetFlow()
+					sNF.Format = formatter
+					sNF.Transport = transporter
+					sNF.Logger = log.StandardLogger()
+					sNF.Config = config
+					sNF.TemplateSystem = templateSystem
 					err = sNF.FlowRoutine(*Workers, hostname, int(port), *ReusePort)
 				} else if listenAddrUrl.Scheme == "nfl" {
 					sNFL := &utils.StateNFLegacy{
