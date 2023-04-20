@@ -16,6 +16,8 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 )
 
+var MaxNegativePacketsSequenceDifference = 100
+
 type TemplateSystem struct {
 	key       string
 	templates *netflow.BasicTemplateSystem
@@ -62,8 +64,9 @@ type StateNetFlow struct {
 	samplinglock *sync.RWMutex
 	sampling     map[string]producer.SamplingRateSystem
 
-	Config       *producer.ProducerConfig
-	configMapped *producer.ProducerConfigMapped
+	Config              *producer.ProducerConfig
+	configMapped        *producer.ProducerConfigMapped
+	missingFlowsTracker *MissingFlowsTracker
 }
 
 func (s *StateNetFlow) DecodeFlow(msg interface{}) error {
@@ -219,6 +222,24 @@ func (s *StateNetFlow) DecodeFlow(msg interface{}) error {
 				}).
 				Observe(float64(timeDiff))
 		}
+		obsDomainId := strconv.Itoa(int(msgDecConv.SourceId))
+		missingFlowsTrackerKey := key + "|" + obsDomainId
+		missingFlows := s.missingFlowsTracker.countMissing(missingFlowsTrackerKey, msgDecConv.SequenceNumber, 1)
+
+		NetFlowPacketsMissing.With(
+			prometheus.Labels{
+				"router":     key,
+				"version":    "9",
+				"obs_domain": obsDomainId,
+			}).
+			Set(float64(missingFlows))
+		NetFlowPacketsSequence.With(
+			prometheus.Labels{
+				"router":        key,
+				"version":       "9",
+				"obs_domain_id": obsDomainId,
+			}).
+			Set(float64(msgDecConv.SequenceNumber))
 	case netflow.IPFIXPacket:
 		NetFlowStats.With(
 			prometheus.Labels{
@@ -312,6 +333,25 @@ func (s *StateNetFlow) DecodeFlow(msg interface{}) error {
 				}).
 				Observe(float64(timeDiff))
 		}
+
+		obsDomainId := strconv.Itoa(int(msgDecConv.ObservationDomainId))
+		missingFlowsTrackerKey := key + "|" + obsDomainId
+		missingFlows := s.missingFlowsTracker.countMissing(missingFlowsTrackerKey, msgDecConv.SequenceNumber, 1)
+
+		NetFlowPacketsMissing.With(
+			prometheus.Labels{
+				"router":     key,
+				"version":    "10",
+				"obs_domain": obsDomainId,
+			}).
+			Set(float64(missingFlows))
+		NetFlowPacketsSequence.With(
+			prometheus.Labels{
+				"router":        key,
+				"version":       "10",
+				"obs_domain_id": obsDomainId,
+			}).
+			Set(float64(msgDecConv.SequenceNumber))
 	}
 
 	timeTrackStop := time.Now()
@@ -358,6 +398,7 @@ func (s *StateNetFlow) InitTemplates() {
 
 func (s *StateNetFlow) initConfig() {
 	s.configMapped = producer.NewProducerConfigMapped(s.Config)
+	s.missingFlowsTracker = NewMissingFlowsTracker(MaxNegativePacketsSequenceDifference)
 }
 
 func (s *StateNetFlow) FlowRoutine(workers int, addr string, port int, reuseport bool) error {

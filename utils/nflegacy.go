@@ -2,6 +2,7 @@ package utils
 
 import (
 	"bytes"
+	"strconv"
 	"time"
 
 	"github.com/netsampler/goflow2/decoders/netflowlegacy"
@@ -12,12 +13,16 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 )
 
+var MaxNegativeFlowsSequenceDifference = 1000
+
 type StateNFLegacy struct {
 	stopper
 
 	Format    format.FormatInterface
 	Transport transport.TransportInterface
 	Logger    Logger
+
+	missingFlowsTracker *MissingFlowsTracker
 }
 
 func (s *StateNFLegacy) DecodeFlow(msg interface{}) error {
@@ -65,6 +70,25 @@ func (s *StateNFLegacy) DecodeFlow(msg interface{}) error {
 				"type":    "DataFlowSet",
 			}).
 			Add(float64(msgDecConv.Count))
+
+		missingFlows := s.missingFlowsTracker.countMissing(key, msgDecConv.FlowSequence, msgDecConv.Count)
+
+		NetFlowFlowsMissing.With(
+			prometheus.Labels{
+				"router":      key,
+				"version":     "5",
+				"engine_id":   strconv.Itoa(int(msgDecConv.EngineId)),
+				"engine_type": strconv.Itoa(int(msgDecConv.EngineType)),
+			}).
+			Set(float64(missingFlows))
+		NetFlowFlowsSequence.With(
+			prometheus.Labels{
+				"router":      key,
+				"version":     "5",
+				"engine_id":   strconv.Itoa(int(msgDecConv.EngineId)),
+				"engine_type": strconv.Itoa(int(msgDecConv.EngineType)),
+			}).
+			Set(float64(msgDecConv.FlowSequence))
 	}
 
 	var flowMessageSet []*flowmessage.FlowMessage
@@ -96,9 +120,14 @@ func (s *StateNFLegacy) DecodeFlow(msg interface{}) error {
 	return nil
 }
 
+func (s *StateNFLegacy) initConfig() {
+	s.missingFlowsTracker = NewMissingFlowsTracker(MaxNegativeFlowsSequenceDifference)
+}
+
 func (s *StateNFLegacy) FlowRoutine(workers int, addr string, port int, reuseport bool) error {
 	if err := s.start(); err != nil {
 		return err
 	}
+	s.initConfig()
 	return UDPStoppableRoutine(s.stopCh, "NetFlowV5", s.DecodeFlow, workers, addr, port, reuseport, s.Logger)
 }

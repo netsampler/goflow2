@@ -103,6 +103,34 @@ var (
 		},
 		[]string{"router", "version", "obs_domain_id", "template_id", "type"}, // options/template
 	)
+	NetFlowFlowsMissing = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "flow_process_nf_flows_missing",
+			Help: "NetFlows missing flows (mostly monotonic, but not always when packets arrive in unordered sequence).",
+		},
+		[]string{"router", "version", "engine_id", "engine_type"},
+	)
+	NetFlowFlowsSequence = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "flow_process_nf_flows_sequence",
+			Help: "NetFlows last sequence number (can be used to detect sequence reset).",
+		},
+		[]string{"router", "version", "engine_id", "engine_type"},
+	)
+	NetFlowPacketsMissing = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "flow_process_nf_packets_missing",
+			Help: "NetFlows missing packets (mostly monotonic, but not always when packets in arrive unordered sequence).",
+		},
+		[]string{"router", "version", "obs_domain_id"},
+	)
+	NetFlowPacketsSequence = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "flow_process_nf_packets_sequence",
+			Help: "NetFlows last sequence number (can be used to detect sequence reset).",
+		},
+		[]string{"router", "version", "obs_domain_id"},
+	)
 	SFlowStats = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "flow_process_sf_count",
@@ -149,6 +177,10 @@ func init() {
 	prometheus.MustRegister(NetFlowSetStatsSum)
 	prometheus.MustRegister(NetFlowTimeStatsSum)
 	prometheus.MustRegister(NetFlowTemplatesStats)
+	prometheus.MustRegister(NetFlowFlowsMissing)
+	prometheus.MustRegister(NetFlowFlowsSequence)
+	prometheus.MustRegister(NetFlowPacketsMissing)
+	prometheus.MustRegister(NetFlowPacketsSequence)
 
 	prometheus.MustRegister(SFlowStats)
 	prometheus.MustRegister(SFlowErrors)
