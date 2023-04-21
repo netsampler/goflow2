@@ -105,7 +105,7 @@ func (s *StateNetFlow) DecodeFlow(msg interface{}) error {
 	}
 
 	timeTrackStart := time.Now()
-	msgDec, err := netflow.DecodeMessageContext(s.ctx, buf, key, s.TemplateSystem)
+	msgDec, err := netflow.DecodeMessageContext(s.ctx, buf, key, netflow.TemplateWrapper{s.ctx, key, s.TemplateSystem})
 	if err != nil {
 		switch err.(type) {
 		case *netflow.ErrorTemplateNotFound:
