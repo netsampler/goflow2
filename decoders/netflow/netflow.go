@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"sync"
 
-	//"github.com/netsampler/goflow2/decoders/netflow/templates"
+	"github.com/netsampler/goflow2/decoders/netflow/templates"
 	"github.com/netsampler/goflow2/decoders/utils"
 )
 
@@ -16,6 +16,33 @@ type FlowBaseTemplateSet map[uint16]map[uint32]map[uint16]interface{}
 type NetFlowTemplateSystem interface {
 	GetTemplate(version uint16, obsDomainId uint32, templateId uint16) (interface{}, error)
 	AddTemplate(version uint16, obsDomainId uint32, template interface{})
+}
+
+// Transition structure to ease the conversion with the new template systems
+type TemplateWrapper struct {
+	Ctx   context.Context
+	Key   string
+	Inner templates.TemplateInterface
+}
+
+func (w *TemplateWrapper) getTemplateId(template interface{}) (templateId uint16) {
+	switch templateIdConv := template.(type) {
+	case IPFIXOptionsTemplateRecord:
+		templateId = templateIdConv.TemplateId
+	case NFv9OptionsTemplateRecord:
+		templateId = templateIdConv.TemplateId
+	case TemplateRecord:
+		templateId = templateIdConv.TemplateId
+	}
+	return templateId
+}
+
+func (w TemplateWrapper) GetTemplate(version uint16, obsDomainId uint32, templateId uint16) (interface{}, error) {
+	return w.Inner.GetTemplate(w.Ctx, &templates.TemplateKey{w.Key, version, obsDomainId, templateId})
+}
+
+func (w TemplateWrapper) AddTemplate(version uint16, obsDomainId uint32, template interface{}) {
+	w.Inner.AddTemplate(w.Ctx, &templates.TemplateKey{w.Key, version, obsDomainId, w.getTemplateId(template)}, template)
 }
 
 func DecodeNFv9OptionsTemplateSet(payload *bytes.Buffer) ([]NFv9OptionsTemplateRecord, error) {

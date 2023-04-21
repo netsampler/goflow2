@@ -79,32 +79,6 @@ func NewStateNetFlow() *StateNetFlow {
 	}
 }
 
-type TemplateWrapper struct {
-	Ctx   context.Context
-	Key   string
-	Inner templates.TemplateInterface
-}
-
-func (w *TemplateWrapper) getTemplateId(template interface{}) (templateId uint16) {
-	switch templateIdConv := template.(type) {
-	case netflow.IPFIXOptionsTemplateRecord:
-		templateId = templateIdConv.TemplateId
-	case netflow.NFv9OptionsTemplateRecord:
-		templateId = templateIdConv.TemplateId
-	case netflow.TemplateRecord:
-		templateId = templateIdConv.TemplateId
-	}
-	return templateId
-}
-
-func (w TemplateWrapper) GetTemplate(version uint16, obsDomainId uint32, templateId uint16) (interface{}, error) {
-	return w.Inner.GetTemplate(w.Ctx, &templates.TemplateKey{w.Key, version, obsDomainId, templateId})
-}
-
-func (w TemplateWrapper) AddTemplate(version uint16, obsDomainId uint32, template interface{}) {
-	w.Inner.AddTemplate(w.Ctx, &templates.TemplateKey{w.Key, version, obsDomainId, w.getTemplateId(template)}, template)
-}
-
 func (s *StateNetFlow) DecodeFlow(msg interface{}) error {
 	pkt := msg.(BaseMessage)
 	buf := bytes.NewBuffer(pkt.Payload)
@@ -131,7 +105,7 @@ func (s *StateNetFlow) DecodeFlow(msg interface{}) error {
 	}
 
 	timeTrackStart := time.Now()
-	msgDec, err := netflow.DecodeMessageContext(s.ctx, buf, key, TemplateWrapper{s.ctx, key, s.TemplateSystem})
+	msgDec, err := netflow.DecodeMessageContext(s.ctx, buf, key, netflow.TemplateWrapper{s.ctx, key, s.TemplateSystem})
 	if err != nil {
 		switch err.(type) {
 		case *netflow.ErrorTemplateNotFound:
