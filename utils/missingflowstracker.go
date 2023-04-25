@@ -6,7 +6,7 @@ import (
 
 // MissingFlowsTracker is used to track missing packets/flows
 type MissingFlowsTracker struct {
-	counters   map[string]int64 // map[SOURCE_ADDR_DOMAIN_KEY]ACTUAL_FLOWS/PACKET_COUNT
+	counters   map[string]int64 // counter key is based on source addr and sourceId/obsDomain/engineType/engineId
 	countersMu *sync.RWMutex
 
 	maxNegativeSequenceDifference int

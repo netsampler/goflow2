@@ -223,8 +223,8 @@ func (s *StateNetFlow) DecodeFlow(msg interface{}) error {
 				Observe(float64(timeDiff))
 		}
 		obsDomainId := strconv.Itoa(int(msgDecConv.SourceId))
-		missingFlowsTrackerKey := key + "|" + obsDomainId
-		missingFlows := s.missingFlowsTracker.countMissing(missingFlowsTrackerKey, msgDecConv.SequenceNumber, 1)
+		missingFlowsKey := key + "|" + obsDomainId
+		missingFlows := s.missingFlowsTracker.countMissing(missingFlowsKey, msgDecConv.SequenceNumber, 1)
 
 		NetFlowPacketsMissing.With(
 			prometheus.Labels{
@@ -335,8 +335,8 @@ func (s *StateNetFlow) DecodeFlow(msg interface{}) error {
 		}
 
 		obsDomainId := strconv.Itoa(int(msgDecConv.ObservationDomainId))
-		missingFlowsTrackerKey := key + "|" + obsDomainId
-		missingFlows := s.missingFlowsTracker.countMissing(missingFlowsTrackerKey, msgDecConv.SequenceNumber, 1)
+		missingFlowsKey := key + "|" + obsDomainId
+		missingFlows := s.missingFlowsTracker.countMissing(missingFlowsKey, msgDecConv.SequenceNumber, 1)
 
 		NetFlowPacketsMissing.With(
 			prometheus.Labels{

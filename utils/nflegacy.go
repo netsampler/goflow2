@@ -71,22 +71,25 @@ func (s *StateNFLegacy) DecodeFlow(msg interface{}) error {
 			}).
 			Add(float64(msgDecConv.Count))
 
-		missingFlows := s.missingFlowsTracker.countMissing(key, msgDecConv.FlowSequence, msgDecConv.Count)
+		engineType := strconv.Itoa(int(msgDecConv.EngineType))
+		engineId := strconv.Itoa(int(msgDecConv.EngineId))
+		missingFlowsKey := key + "|" + engineType + "|" + engineId
+		missingFlows := s.missingFlowsTracker.countMissing(missingFlowsKey, msgDecConv.FlowSequence, msgDecConv.Count)
 
 		NetFlowFlowsMissing.With(
 			prometheus.Labels{
 				"router":      key,
 				"version":     "5",
-				"engine_id":   strconv.Itoa(int(msgDecConv.EngineId)),
-				"engine_type": strconv.Itoa(int(msgDecConv.EngineType)),
+				"engine_id":   engineId,
+				"engine_type": engineType,
 			}).
 			Set(float64(missingFlows))
 		NetFlowFlowsSequence.With(
 			prometheus.Labels{
 				"router":      key,
 				"version":     "5",
-				"engine_id":   strconv.Itoa(int(msgDecConv.EngineId)),
-				"engine_type": strconv.Itoa(int(msgDecConv.EngineType)),
+				"engine_id":   engineId,
+				"engine_type": engineType,
 			}).
 			Set(float64(msgDecConv.FlowSequence))
 	}
