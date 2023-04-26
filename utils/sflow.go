@@ -14,6 +14,8 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 )
 
+var MaxNegativeSamplesSequenceDifference = 1000
+
 type StateSFlow struct {
 	stopper
 
@@ -182,7 +184,7 @@ func (s *StateSFlow) DecodeFlow(msg interface{}) error {
 
 func (s *StateSFlow) initConfig() {
 	s.configMapped = producer.NewProducerConfigMapped(s.Config)
-	s.missingFlowsTracker = NewMissingFlowsTracker(MaxNegativePacketsSequenceDifference)
+	s.missingFlowsTracker = NewMissingFlowsTracker(MaxNegativeSamplesSequenceDifference)
 }
 
 func (s *StateSFlow) FlowRoutine(workers int, addr string, port int, reuseport bool) error {
