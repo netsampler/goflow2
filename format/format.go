@@ -15,6 +15,8 @@ type FormatDriver interface {
 	Prepare() error                                  // Prepare driver (eg: flag registration)
 	Init(context.Context) error                      // Initialize driver (eg: parse keying)
 	Format(data interface{}) ([]byte, []byte, error) // Send a message
+
+	//FormatInterface // set this and remove Format
 }
 
 type FormatInterface interface {

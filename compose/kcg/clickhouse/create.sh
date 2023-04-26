@@ -4,7 +4,7 @@ set -e
 clickhouse client -n <<-EOSQL
 
     CREATE DATABASE IF NOT EXISTS dictionaries;
-    
+
     CREATE DICTIONARY IF NOT EXISTS dictionaries.protocols (
         proto UInt8,
         name String,
@@ -17,109 +17,109 @@ clickhouse client -n <<-EOSQL
 
     CREATE TABLE IF NOT EXISTS flows
     (
-        TimeReceived UInt64,
-        TimeFlowStart UInt64,
+        time_received UInt64,
+        time_flow_start UInt64,
 
-        SequenceNum UInt32,
-        SamplingRate UInt64,
-        SamplerAddress FixedString(16),
+        sequence_num UInt32,
+        sampling_rate UInt64,
+        sampler_address FixedString(16),
 
-        SrcAddr FixedString(16),
-        DstAddr FixedString(16),
+        src_addr FixedString(16),
+        dst_addr FixedString(16),
 
-        SrcAS UInt32,
-        DstAS UInt32,
+        src_as UInt32,
+        dst_as UInt32,
 
-        EType UInt32,
-        Proto UInt32,
+        etype UInt32,
+        proto UInt32,
 
-        SrcPort UInt32,
-        DstPort UInt32,
+        src_port UInt32,
+        dst_port UInt32,
 
-        Bytes UInt64,
-        Packets UInt64
+        bytes UInt64,
+        packets UInt64
     ) ENGINE = Kafka()
     SETTINGS
         kafka_broker_list = 'kafka:9092',
         kafka_topic_list = 'flows',
         kafka_group_name = 'clickhouse',
         kafka_format = 'Protobuf',
-        kafka_schema = './flow.proto:FlowMessage';
+        kafka_schema = 'flow.proto:FlowMessage';
 
     CREATE TABLE IF NOT EXISTS flows_raw
     (
-        Date Date,
-        TimeReceived DateTime,
-        TimeFlowStart DateTime,
+        date Date,
+        time_received DateTime,
+        time_flow_start DateTime,
 
-        SequenceNum UInt32,
-        SamplingRate UInt64,
-        SamplerAddress FixedString(16),
+        sequence_num UInt32,
+        sampling_rate UInt64,
+        sampler_address FixedString(16),
 
-        SrcAddr FixedString(16),
-        DstAddr FixedString(16),
+        src_addr FixedString(16),
+        dst_addr FixedString(16),
 
-        SrcAS UInt32,
-        DstAS UInt32,
+        src_as UInt32,
+        dst_as UInt32,
 
-        EType UInt32,
-        Proto UInt32,
+        etype UInt32,
+        proto UInt32,
 
-        SrcPort UInt32,
-        DstPort UInt32,
+        src_port UInt32,
+        dst_port UInt32,
 
-        Bytes UInt64,
-        Packets UInt64
+        bytes UInt64,
+        packets UInt64
     ) ENGINE = MergeTree()
-    PARTITION BY Date
-    ORDER BY TimeReceived;
+    PARTITION BY date
+    ORDER BY time_received;
 
-    CREATE MATERIALIZED VIEW IF NOT EXISTS flows_raw_view TO flows_raw 
+    CREATE MATERIALIZED VIEW IF NOT EXISTS flows_raw_view TO flows_raw
     AS SELECT
-        toDate(TimeReceived) AS Date,
+        toDate(time_received) AS date,
         *
        FROM flows;
 
     CREATE TABLE IF NOT EXISTS flows_5m
     (
-        Date Date,
-        Timeslot DateTime,
+        date Date,
+        timeslot DateTime,
 
-        SrcAS UInt32,
-        DstAS UInt32,
+        src_as UInt32,
+        dst_as UInt32,
 
-        ETypeMap Nested (
-            EType UInt32,
-            Bytes UInt64,
-            Packets UInt64,
-            Count UInt64
+        etypeMap Nested (
+            etype UInt32,
+            bytes UInt64,
+            packets UInt64,
+            count UInt64
         ),
 
-        Bytes UInt64,
-        Packets UInt64,
-        Count UInt64
+        bytes UInt64,
+        packets UInt64,
+        count UInt64
     ) ENGINE = SummingMergeTree()
-    PARTITION BY Date
-    ORDER BY (Date, Timeslot, SrcAS, DstAS, \`ETypeMap.EType\`);
+    PARTITION BY date
+    ORDER BY (date, timeslot, src_as, dst_as, \`etypeMap.etype\`);
 
-    CREATE MATERIALIZED VIEW IF NOT EXISTS flows_5m_view TO flows_5m 
+    CREATE MATERIALIZED VIEW IF NOT EXISTS flows_5m_view TO flows_5m
     AS
         SELECT
-            Date,
-            toStartOfFiveMinute(TimeReceived) AS Timeslot,
-            SrcAS,
-            DstAS,
+            date,
+            toStartOfFiveMinute(time_received) AS timeslot,
+            src_as,
+            dst_as,
 
-            [EType] AS \`ETypeMap.EType\`,
-            [Bytes] AS \`ETypeMap.Bytes\`,
-            [Packets] AS \`ETypeMap.Packets\`,
-            [Count] AS \`ETypeMap.Count\`,
+            [etype] AS \`etypeMap.etype\`,
+            [bytes] AS \`etypeMap.bytes\`,
+            [packets] AS \`etypeMap.packets\`,
+            [count] AS \`etypeMap.count\`,
 
-            sum(Bytes) AS Bytes,
-            sum(Packets) AS Packets,
-            count() AS Count
+            sum(bytes) AS bytes,
+            sum(packets) AS packets,
+            count() AS count
 
         FROM flows_raw
-        GROUP BY Date, Timeslot, SrcAS, DstAS, \`ETypeMap.EType\`;
-        
+        GROUP BY date, timeslot, src_as, dst_as, \`etypeMap.etype\`;
+
 EOSQL

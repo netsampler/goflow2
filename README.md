@@ -150,11 +150,48 @@ To partition the feed (any field of the protobuf is available), the following op
 -format.hash=SamplerAddress,DstAS
 ```
 
+By default, compression is disabled when sending data to Kafka.
+To change the kafka compression type of the producer side configure the following option:
+```
+-transport.kafka.compression.type=gzip
+```
+The list of codecs is available in the [Sarama documentation](https://pkg.go.dev/github.com/Shopify/sarama#CompressionCodec).
+
+
+By default, the collector will listen for IPFIX/NetFlow V9 on port 2055
+and sFlow on port 6343.
+To change the sockets binding, you can set the `-listen` argument and a URI
+for each protocol (`netflow`, `sflow` and `nfl` as scheme) separated by a comma.
+For instance, to create 4 parallel sockets of sFlow and one of NetFlow V5, you can use:
+
+```bash
+$ ./goflow2 -listen 'sflow://:6343?count=4,nfl://:2055'
+```
+
 ### Docker
 
 You can also run directly with a container:
 ```
 $ sudo docker run -p 6343:6343/udp -p 2055:2055/udp -ti netsampler/goflow2:latest
+```
+
+### Mapping extra fields
+
+In the case of exotic template fields or extra payload not supported by GoFlow2
+of out the box, it is possible to pass a mapping file using `-mapping mapping.yaml`.
+A [sample file](cmd/goflow2/mapping.yaml) is available in the `cmd/goflow2` directory.
+
+For instance, certain devices producing IPFIX use `ingressPhysicalInterface` (id: 252)
+and do not use `ingressInterface` (id: 10). Using the following you can have the interface mapped
+in the InIf protobuf field without changing the code.
+
+```yaml
+ipfix:
+  mapping:
+    - field: 252
+      destination: InIf
+    - field: 253
+      destination: OutIf
 ```
 
 ### Output format considerations

@@ -22,7 +22,12 @@ func (s *stopper) start() error {
 
 func (s *stopper) Shutdown() {
 	if s.stopCh != nil {
-		close(s.stopCh)
+		select {
+		case <-s.stopCh:
+		default:
+			close(s.stopCh)
+		}
+
 		s.stopCh = nil
 	}
 }

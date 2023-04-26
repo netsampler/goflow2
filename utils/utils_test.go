@@ -53,6 +53,7 @@ func TestCancelUDPRoutine(t *testing.T) {
 	require.Contains(t, []string{"message 1", "message 2", "message 3"}, readMessage())
 
 	dp.Shutdown()
+	time.Sleep(100 * time.Millisecond)
 
 	_ = sendMessage("no more messages should be processed")
 

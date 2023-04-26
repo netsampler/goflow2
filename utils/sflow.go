@@ -24,6 +24,10 @@ type StateSFlow struct {
 	configMapped *producer.ProducerConfigMapped
 }
 
+func NewStateSFlow() *StateSFlow {
+	return &StateSFlow{}
+}
+
 func (s *StateSFlow) DecodeFlow(msg interface{}) error {
 	pkt := msg.(BaseMessage)
 	buf := bytes.NewBuffer(pkt.Payload)
@@ -142,7 +146,10 @@ func (s *StateSFlow) DecodeFlow(msg interface{}) error {
 				s.Logger.Error(err)
 			}
 			if err == nil && s.Transport != nil {
-				s.Transport.Send(key, data)
+				err = s.Transport.Send(key, data)
+				if err != nil {
+					s.Logger.Error(err)
+				}
 			}
 		}
 	}

@@ -14,10 +14,12 @@ func ConvertNetFlowLegacyRecord(baseTime uint32, uptime uint32, record netflowle
 
 	flowMessage.Type = flowmessage.FlowMessage_NETFLOW_V5
 
-	timeDiffFirst := (uptime - record.First) / 1000
-	timeDiffLast := (uptime - record.Last) / 1000
-	flowMessage.TimeFlowStart = uint64(baseTime - timeDiffFirst)
-	flowMessage.TimeFlowEnd = uint64(baseTime - timeDiffLast)
+	timeDiffFirst := (uptime - record.First)
+	timeDiffLast := (uptime - record.Last)
+	flowMessage.TimeFlowStart = uint64(baseTime - timeDiffFirst/1000)
+	flowMessage.TimeFlowStartMs = uint64(baseTime)*1000 - uint64(timeDiffFirst)
+	flowMessage.TimeFlowEnd = uint64(baseTime - timeDiffLast/1000)
+	flowMessage.TimeFlowEndMs = uint64(baseTime)*1000 - uint64(timeDiffLast)
 
 	v := make(net.IP, 4)
 	binary.BigEndian.PutUint32(v, record.NextHop)
@@ -30,13 +32,13 @@ func ConvertNetFlowLegacyRecord(baseTime uint32, uptime uint32, record netflowle
 	flowMessage.DstAddr = v
 
 	flowMessage.Etype = 0x800
-	flowMessage.SrcAS = uint32(record.SrcAS)
-	flowMessage.DstAS = uint32(record.DstAS)
+	flowMessage.SrcAs = uint32(record.SrcAS)
+	flowMessage.DstAs = uint32(record.DstAS)
 	flowMessage.SrcNet = uint32(record.SrcMask)
 	flowMessage.DstNet = uint32(record.DstMask)
 	flowMessage.Proto = uint32(record.Proto)
-	flowMessage.TCPFlags = uint32(record.TCPFlags)
-	flowMessage.IPTos = uint32(record.Tos)
+	flowMessage.TcpFlags = uint32(record.TCPFlags)
+	flowMessage.IpTos = uint32(record.Tos)
 	flowMessage.InIf = uint32(record.Input)
 	flowMessage.OutIf = uint32(record.Output)
 	flowMessage.SrcPort = uint32(record.SrcPort)
@@ -48,7 +50,7 @@ func ConvertNetFlowLegacyRecord(baseTime uint32, uptime uint32, record netflowle
 }
 
 func SearchNetFlowLegacyRecords(baseTime uint32, uptime uint32, dataRecords []netflowlegacy.RecordsNetFlowV5) []*flowmessage.FlowMessage {
-	flowMessageSet := make([]*flowmessage.FlowMessage, 0)
+	var flowMessageSet []*flowmessage.FlowMessage
 	for _, record := range dataRecords {
 		fmsg := ConvertNetFlowLegacyRecord(baseTime, uptime, record)
 		if fmsg != nil {

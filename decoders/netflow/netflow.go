@@ -2,10 +2,12 @@ package netflow
 
 import (
 	"bytes"
+	"context"
 	"encoding/binary"
 	"fmt"
 	"sync"
 
+	"github.com/netsampler/goflow2/decoders/netflow/templates"
 	"github.com/netsampler/goflow2/decoders/utils"
 )
 
@@ -16,8 +18,35 @@ type NetFlowTemplateSystem interface {
 	AddTemplate(version uint16, obsDomainId uint32, template interface{})
 }
 
+// Transition structure to ease the conversion with the new template systems
+type TemplateWrapper struct {
+	Ctx   context.Context
+	Key   string
+	Inner templates.TemplateInterface
+}
+
+func (w *TemplateWrapper) getTemplateId(template interface{}) (templateId uint16) {
+	switch templateIdConv := template.(type) {
+	case IPFIXOptionsTemplateRecord:
+		templateId = templateIdConv.TemplateId
+	case NFv9OptionsTemplateRecord:
+		templateId = templateIdConv.TemplateId
+	case TemplateRecord:
+		templateId = templateIdConv.TemplateId
+	}
+	return templateId
+}
+
+func (w TemplateWrapper) GetTemplate(version uint16, obsDomainId uint32, templateId uint16) (interface{}, error) {
+	return w.Inner.GetTemplate(w.Ctx, &templates.TemplateKey{w.Key, version, obsDomainId, templateId})
+}
+
+func (w TemplateWrapper) AddTemplate(version uint16, obsDomainId uint32, template interface{}) {
+	w.Inner.AddTemplate(w.Ctx, &templates.TemplateKey{w.Key, version, obsDomainId, w.getTemplateId(template)}, template)
+}
+
 func DecodeNFv9OptionsTemplateSet(payload *bytes.Buffer) ([]NFv9OptionsTemplateRecord, error) {
-	records := make([]NFv9OptionsTemplateRecord, 0)
+	var records []NFv9OptionsTemplateRecord
 	var err error
 	for payload.Len() >= 4 {
 		optsTemplateRecord := NFv9OptionsTemplateRecord{}
@@ -68,7 +97,7 @@ func DecodeField(payload *bytes.Buffer, field *Field, pen bool) error {
 }
 
 func DecodeIPFIXOptionsTemplateSet(payload *bytes.Buffer) ([]IPFIXOptionsTemplateRecord, error) {
-	records := make([]IPFIXOptionsTemplateRecord, 0)
+	var records []IPFIXOptionsTemplateRecord
 	var err error
 	for payload.Len() >= 4 {
 		optsTemplateRecord := IPFIXOptionsTemplateRecord{}
@@ -108,7 +137,7 @@ func DecodeIPFIXOptionsTemplateSet(payload *bytes.Buffer) ([]IPFIXOptionsTemplat
 }
 
 func DecodeTemplateSet(version uint16, payload *bytes.Buffer) ([]TemplateRecord, error) {
-	records := make([]TemplateRecord, 0)
+	var records []TemplateRecord
 	var err error
 	for payload.Len() >= 4 {
 		templateRecord := TemplateRecord{}
@@ -145,7 +174,7 @@ func DecodeTemplateSet(version uint16, payload *bytes.Buffer) ([]TemplateRecord,
 func GetTemplateSize(version uint16, template []Field) int {
 	sum := 0
 	for _, templateField := range template {
-		if version == 10 && templateField.Length == 0xffff {
+		if templateField.Length == 0xffff {
 			continue
 		}
 
@@ -161,7 +190,7 @@ func DecodeDataSetUsingFields(version uint16, payload *bytes.Buffer, listFields 
 		for i, templateField := range listFields {
 
 			finalLength := int(templateField.Length)
-			if version == 10 && templateField.Length == 0xffff {
+			if templateField.Length == 0xffff {
 				var variableLen8 byte
 				var variableLen16 uint16
 				err := utils.BinaryDecoder(payload, &variableLen8)
@@ -214,7 +243,7 @@ func (e *ErrorTemplateNotFound) Error() string {
 }
 
 func DecodeOptionsDataSet(version uint16, payload *bytes.Buffer, listFieldsScopes, listFieldsOption []Field) ([]OptionsDataRecord, error) {
-	records := make([]OptionsDataRecord, 0)
+	var records []OptionsDataRecord
 
 	listFieldsScopesSize := GetTemplateSize(version, listFieldsScopes)
 	listFieldsOptionSize := GetTemplateSize(version, listFieldsOption)
@@ -234,7 +263,7 @@ func DecodeOptionsDataSet(version uint16, payload *bytes.Buffer, listFieldsScope
 }
 
 func DecodeDataSet(version uint16, payload *bytes.Buffer, listFields []Field) ([]DataRecord, error) {
-	records := make([]DataRecord, 0)
+	var records []DataRecord
 
 	listFieldsSize := GetTemplateSize(version, listFields)
 	for payload.Len() >= listFieldsSize {
@@ -309,6 +338,10 @@ func CreateTemplateSystem() *BasicTemplateSystem {
 }
 
 func DecodeMessage(payload *bytes.Buffer, templates NetFlowTemplateSystem) (interface{}, error) {
+	return DecodeMessageContext(context.Background(), payload, "", templates)
+}
+
+func DecodeMessageContext(ctx context.Context, payload *bytes.Buffer, templateKey string, tpli NetFlowTemplateSystem) (interface{}, error) {
 	var size uint16
 	packetNFv9 := NFv9Packet{}
 	packetIPFIX := IPFIXPacket{}
@@ -368,9 +401,10 @@ func DecodeMessage(payload *bytes.Buffer, templates NetFlowTemplateSystem) (inte
 
 			flowSet = templatefs
 
-			if templates != nil {
+			if tpli != nil {
 				for _, record := range records {
-					templates.AddTemplate(version, obsDomainId, record)
+					tpli.AddTemplate(version, obsDomainId, record)
+					//tpli.AddTemplate(ctx, templates.NewTemplateKey(templateKey, version, obsDomainId, record.TemplateId), record)
 				}
 			}
 
@@ -386,9 +420,10 @@ func DecodeMessage(payload *bytes.Buffer, templates NetFlowTemplateSystem) (inte
 			}
 			flowSet = optsTemplatefs
 
-			if templates != nil {
+			if tpli != nil {
 				for _, record := range records {
-					templates.AddTemplate(version, obsDomainId, record)
+					tpli.AddTemplate(version, obsDomainId, record)
+					//tpli.AddTemplate(ctx, templates.NewTemplateKey(templateKey, version, obsDomainId, record.TemplateId), record)
 				}
 			}
 
@@ -404,9 +439,10 @@ func DecodeMessage(payload *bytes.Buffer, templates NetFlowTemplateSystem) (inte
 			}
 			flowSet = templatefs
 
-			if templates != nil {
+			if tpli != nil {
 				for _, record := range records {
-					templates.AddTemplate(version, obsDomainId, record)
+					tpli.AddTemplate(version, obsDomainId, record)
+					//tpli.AddTemplate(ctx, templates.NewTemplateKey(templateKey, version, obsDomainId, record.TemplateId), record)
 				}
 			}
 
@@ -422,20 +458,22 @@ func DecodeMessage(payload *bytes.Buffer, templates NetFlowTemplateSystem) (inte
 			}
 			flowSet = optsTemplatefs
 
-			if templates != nil {
+			if tpli != nil {
 				for _, record := range records {
-					templates.AddTemplate(version, obsDomainId, record)
+					tpli.AddTemplate(version, obsDomainId, record)
+					//tpli.AddTemplate(ctx, templates.NewTemplateKey(templateKey, version, obsDomainId, record.TemplateId), record)
 				}
 			}
 
 		} else if fsheader.Id >= 256 {
 			dataReader := bytes.NewBuffer(payload.Next(nextrelpos))
 
-			if templates == nil {
+			if tpli == nil {
 				continue
 			}
 
-			template, err := templates.GetTemplate(version, obsDomainId, fsheader.Id)
+			template, err := tpli.GetTemplate(version, obsDomainId, fsheader.Id)
+			//template, err := tpli.GetTemplate(ctx, templates.NewTemplateKey(templateKey, version, obsDomainId, fsheader.Id))
 
 			if err == nil {
 				switch templatec := template.(type) {

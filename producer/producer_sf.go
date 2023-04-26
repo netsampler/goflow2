@@ -10,7 +10,7 @@ import (
 )
 
 func GetSFlowFlowSamples(packet *sflow.Packet) []interface{} {
-	flowSamples := make([]interface{}, 0)
+	var flowSamples []interface{}
 	for _, sample := range packet.Samples {
 		switch sample.(type) {
 		case sflow.FlowSample:
@@ -27,7 +27,7 @@ func ParseSampledHeader(flowMessage *flowmessage.FlowMessage, sampledHeader *sfl
 }
 
 func ParseEthernetHeader(flowMessage *flowmessage.FlowMessage, data []byte, config *SFlowMapper) {
-	var hasMPLS bool
+	var hasMpls bool
 	var countMpls uint32
 	var firstLabelMpls uint32
 	var firstTtlMpls uint8
@@ -58,7 +58,7 @@ func ParseEthernetHeader(flowMessage *flowmessage.FlowMessage, data []byte, conf
 
 	for _, configLayer := range GetSFlowConfigLayer(config, 0) {
 		extracted := GetBytes(data, configLayer.Offset, configLayer.Length)
-		MapCustom(flowMessage, extracted, configLayer.Destination)
+		MapCustom(flowMessage, extracted, configLayer.Destination, configLayer.Endian)
 	}
 
 	etherType := data[12:14]
@@ -81,7 +81,7 @@ func ParseEthernetHeader(flowMessage *flowmessage.FlowMessage, data []byte, conf
 
 		if etherType[0] == 0x88 && etherType[1] == 0x47 { // MPLS
 			iterateMpls := true
-			hasMPLS = true
+			hasMpls = true
 			for iterateMpls {
 				if len(data) < offset+5 {
 					iterateMpls = false
@@ -121,7 +121,7 @@ func ParseEthernetHeader(flowMessage *flowmessage.FlowMessage, data []byte, conf
 
 		for _, configLayer := range GetSFlowConfigLayer(config, 3) {
 			extracted := GetBytes(data, offset*8+configLayer.Offset, configLayer.Length)
-			MapCustom(flowMessage, extracted, configLayer.Destination)
+			MapCustom(flowMessage, extracted, configLayer.Destination, configLayer.Endian)
 		}
 
 		if etherType[0] == 0x8 && etherType[1] == 0x0 { // IPv4
@@ -159,7 +159,7 @@ func ParseEthernetHeader(flowMessage *flowmessage.FlowMessage, data []byte, conf
 
 		for _, configLayer := range GetSFlowConfigLayer(config, 4) {
 			extracted := GetBytes(data, offset*8+configLayer.Offset, configLayer.Length)
-			MapCustom(flowMessage, extracted, configLayer.Destination)
+			MapCustom(flowMessage, extracted, configLayer.Destination, configLayer.Endian)
 		}
 
 		appOffset := 0
@@ -187,26 +187,26 @@ func ParseEthernetHeader(flowMessage *flowmessage.FlowMessage, data []byte, conf
 		if appOffset > 0 {
 			for _, configLayer := range GetSFlowConfigLayer(config, 7) {
 				extracted := GetBytes(data, (offset+appOffset)*8+configLayer.Offset, configLayer.Length)
-				MapCustom(flowMessage, extracted, configLayer.Destination)
+				MapCustom(flowMessage, extracted, configLayer.Destination, configLayer.Endian)
 			}
 		}
 
 		iterations++
 	}
 
-	(*flowMessage).HasMPLS = hasMPLS
-	(*flowMessage).MPLSCount = countMpls
-	(*flowMessage).MPLS1Label = firstLabelMpls
-	(*flowMessage).MPLS1TTL = uint32(firstTtlMpls)
-	(*flowMessage).MPLS2Label = secondLabelMpls
-	(*flowMessage).MPLS2TTL = uint32(secondTtlMpls)
-	(*flowMessage).MPLS3Label = thirdLabelMpls
-	(*flowMessage).MPLS3TTL = uint32(thirdTtlMpls)
-	(*flowMessage).MPLSLastLabel = lastLabelMpls
-	(*flowMessage).MPLSLastTTL = uint32(lastTtlMpls)
+	(*flowMessage).HasMpls = hasMpls
+	(*flowMessage).MplsCount = countMpls
+	(*flowMessage).Mpls_1Label = firstLabelMpls
+	(*flowMessage).Mpls_1Ttl = uint32(firstTtlMpls)
+	(*flowMessage).Mpls_2Label = secondLabelMpls
+	(*flowMessage).Mpls_2Ttl = uint32(secondTtlMpls)
+	(*flowMessage).Mpls_3Label = thirdLabelMpls
+	(*flowMessage).Mpls_3Ttl = uint32(thirdTtlMpls)
+	(*flowMessage).MplsLastLabel = lastLabelMpls
+	(*flowMessage).MplsLastTtl = uint32(lastTtlMpls)
 
 	(*flowMessage).Etype = uint32(binary.BigEndian.Uint16(etherType[0:2]))
-	(*flowMessage).IPv6FlowLabel = flowLabel & 0xFFFFF
+	(*flowMessage).Ipv6FlowLabel = flowLabel & 0xFFFFF
 
 	(*flowMessage).SrcPort = uint32(srcPort)
 	(*flowMessage).DstPort = uint32(dstPort)
@@ -214,9 +214,9 @@ func ParseEthernetHeader(flowMessage *flowmessage.FlowMessage, data []byte, conf
 	(*flowMessage).SrcAddr = srcIP
 	(*flowMessage).DstAddr = dstIP
 	(*flowMessage).Proto = uint32(nextHeader)
-	(*flowMessage).IPTos = uint32(tos)
-	(*flowMessage).IPTTL = uint32(ttl)
-	(*flowMessage).TCPFlags = uint32(tcpflags)
+	(*flowMessage).IpTos = uint32(tos)
+	(*flowMessage).IpTtl = uint32(ttl)
+	(*flowMessage).TcpFlags = uint32(tcpflags)
 
 	(*flowMessage).FragmentId = uint32(identification)
 	(*flowMessage).FragmentOffset = uint32(fragOffset)
@@ -236,7 +236,7 @@ func SearchSFlowSamples(samples []interface{}) []*flowmessage.FlowMessage {
 }
 
 func SearchSFlowSamplesConfig(samples []interface{}, config *SFlowMapper) []*flowmessage.FlowMessage {
-	flowMessageSet := make([]*flowmessage.FlowMessage, 0)
+	var flowMessageSet []*flowmessage.FlowMessage
 
 	for _, flowSample := range samples {
 		var records []sflow.FlowRecord
@@ -275,7 +275,7 @@ func SearchSFlowSamplesConfig(samples []interface{}, config *SFlowMapper) []*flo
 				flowMessage.Proto = recordData.Base.Protocol
 				flowMessage.SrcPort = recordData.Base.SrcPort
 				flowMessage.DstPort = recordData.Base.DstPort
-				flowMessage.IPTos = recordData.Tos
+				flowMessage.IpTos = recordData.Tos
 				flowMessage.Etype = 0x800
 			case sflow.SampledIPv6:
 				ipSrc = recordData.Base.SrcIP
@@ -286,7 +286,7 @@ func SearchSFlowSamplesConfig(samples []interface{}, config *SFlowMapper) []*flo
 				flowMessage.Proto = recordData.Base.Protocol
 				flowMessage.SrcPort = recordData.Base.SrcPort
 				flowMessage.DstPort = recordData.Base.DstPort
-				flowMessage.IPTos = recordData.Priority
+				flowMessage.IpTos = recordData.Priority
 				flowMessage.Etype = 0x86dd
 			case sflow.ExtendedRouter:
 				ipNh = recordData.NextHop
@@ -295,14 +295,19 @@ func SearchSFlowSamplesConfig(samples []interface{}, config *SFlowMapper) []*flo
 				flowMessage.DstNet = recordData.DstMaskLen
 			case sflow.ExtendedGateway:
 				ipNh = recordData.NextHop
-				flowMessage.NextHop = ipNh
-				flowMessage.SrcAS = recordData.SrcAS
+				flowMessage.BgpNextHop = ipNh
+				flowMessage.BgpCommunities = recordData.Communities
+				flowMessage.AsPath = recordData.ASPath
 				if len(recordData.ASPath) > 0 {
-					flowMessage.DstAS = recordData.ASPath[len(recordData.ASPath)-1]
-					flowMessage.NextHopAS = recordData.ASPath[0]
-					flowMessage.SrcAS = recordData.AS
+					flowMessage.DstAs = recordData.ASPath[len(recordData.ASPath)-1]
+					flowMessage.NextHopAs = recordData.ASPath[0]
 				} else {
-					flowMessage.DstAS = recordData.AS
+					flowMessage.DstAs = recordData.AS
+				}
+				if recordData.SrcAS > 0 {
+					flowMessage.SrcAs = recordData.SrcAS
+				} else {
+					flowMessage.SrcAs = recordData.AS
 				}
 			case sflow.ExtendedSwitch:
 				flowMessage.SrcVlan = recordData.SrcVlan

@@ -13,7 +13,7 @@ jobs:
     - name: Set up Go 1.x
       uses: actions/setup-go@v2
       with:
-        go-version: ^1.17
+        go-version: ^1.18
 
     - name: Check out code into the Go module directory
       uses: actions/checkout@v1
@@ -34,6 +34,6 @@ jobs:
 
     - name: Build
       run: |
-        DOCKER_SUFFIX=-amd64 make docker push-docker
+        DOCKER_SUFFIX=-amd64 DOCKER_CMD='buildx build --push --platform linux/amd64' make docker
         DOCKER_SUFFIX=-arm64 DOCKER_CMD='buildx build --push --platform linux/arm64/v8' make docker
-        make docker-manifest
+        make docker-manifest-buildx
