@@ -3,6 +3,7 @@ package utils
 import (
 	"bytes"
 	"net"
+	"strconv"
 	"time"
 
 	"github.com/netsampler/goflow2/decoders/sflow"
@@ -22,6 +23,8 @@ type StateSFlow struct {
 
 	Config       *producer.ProducerConfig
 	configMapped *producer.ProducerConfigMapped
+
+	missingFlowsTracker *MissingFlowsTracker
 }
 
 func NewStateSFlow() *StateSFlow {
@@ -122,6 +125,26 @@ func (s *StateSFlow) DecodeFlow(msg interface{}) error {
 				Add(float64(countRec))
 		}
 
+		subAgentId := strconv.Itoa(int(msgDecConv.SubAgentId))
+		missingFlowsKey := key + "|" + agentStr + "|" + subAgentId
+		missingFlows := s.missingFlowsTracker.countMissing(missingFlowsKey, msgDecConv.SequenceNumber, uint16(msgDecConv.SamplesCount))
+
+		SFlowSamplesMissing.With(
+			prometheus.Labels{
+				"router":       key,
+				"agent":        agentStr,
+				"sub_agent_id": subAgentId,
+				"version":      "5",
+			}).
+			Set(float64(missingFlows))
+		SFlowSamplesSequence.With(
+			prometheus.Labels{
+				"router":       key,
+				"agent":        agentStr,
+				"sub_agent_id": subAgentId,
+				"version":      "5",
+			}).
+			Set(float64(msgDecConv.SequenceNumber))
 	}
 
 	var flowMessageSet []*flowmessage.FlowMessage
@@ -159,6 +182,7 @@ func (s *StateSFlow) DecodeFlow(msg interface{}) error {
 
 func (s *StateSFlow) initConfig() {
 	s.configMapped = producer.NewProducerConfigMapped(s.Config)
+	s.missingFlowsTracker = NewMissingFlowsTracker(MaxNegativePacketsSequenceDifference)
 }
 
 func (s *StateSFlow) FlowRoutine(workers int, addr string, port int, reuseport bool) error {

@@ -159,6 +159,20 @@ var (
 		},
 		[]string{"router", "agent", "version", "type"}, // data-template, data, opts...
 	)
+	SFlowSamplesMissing = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "flow_process_sf_samples_missing",
+			Help: "SFlows missing flows (mostly monotonic, but not always when packets in arrive unordered sequence).",
+		},
+		[]string{"router", "version", "agent", "sub_agent_id"},
+	)
+	SFlowSamplesSequence = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "flow_process_sf_samples_sequence",
+			Help: "SFlows last sequence number (can be used to detect sequence reset).",
+		},
+		[]string{"router", "version", "agent", "sub_agent_id"},
+	)
 )
 
 func init() {
@@ -186,6 +200,8 @@ func init() {
 	prometheus.MustRegister(SFlowErrors)
 	prometheus.MustRegister(SFlowSampleStatsSum)
 	prometheus.MustRegister(SFlowSampleRecordsStatsSum)
+	prometheus.MustRegister(SFlowSamplesMissing)
+	prometheus.MustRegister(SFlowSamplesSequence)
 }
 
 func DefaultAccountCallback(name string, id int, start, end time.Time) {
