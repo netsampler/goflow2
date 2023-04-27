@@ -13,6 +13,7 @@ func TestDecodeFlowExpandedSFlow(t *testing.T) {
 	}
 
 	s := &StateSFlow{}
+	s.initConfig()
 
 	assert.Nil(t, s.DecodeFlow(msg))
 }
