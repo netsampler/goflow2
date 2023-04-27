@@ -94,3 +94,53 @@ func TestMissingFlowsTracker_countMissingFlows(t *testing.T) {
 		})
 	}
 }
+
+func TestMissingFlowsTracker_unorderedPackets(t *testing.T) {
+	tracker := NewMissingFlowsTracker(1000)
+	key := "1.2.3.4|0|1" // a NetFlow5 key `samplerIp|engineType|engineId`
+
+	// We send 6 packets
+	//
+	// Packets sent by device:
+	// P1: seq=10, flows=10
+	// P2: seq=20, flows=10
+	// P3: seq=30, flows=10
+	// P4: seq=40, flows=10
+	// P5: seq=50, flows=10
+	// P6: seq=60, flows=10
+	//
+	// Packets Received by goflow2:
+	// P1: seq=10, flows=10
+	//                      // P2 has been lost
+	// P3: seq=30, flows=10
+	// P5: seq=50, flows=10 // P5 received before P4
+	// P4: seq=40, flows=10
+	// P6: seq=60, flows=10
+	//
+	// We expected to see 10 flows dropped at the end.
+
+	// P1
+	missing, reset := tracker.countMissing(key, 10, 10)
+	assert.Equal(t, int64(0), missing)
+	assert.Equal(t, 0, reset)
+
+	// P3
+	missing, reset = tracker.countMissing(key, 30, 10)
+	assert.Equal(t, int64(10), missing)
+	assert.Equal(t, 0, reset)
+
+	// P5
+	missing, reset = tracker.countMissing(key, 50, 10)
+	assert.Equal(t, int64(20), missing)
+	assert.Equal(t, 0, reset)
+
+	// P4
+	missing, reset = tracker.countMissing(key, 40, 10)
+	assert.Equal(t, int64(0), missing)
+	assert.Equal(t, 0, reset)
+
+	// P6
+	missing, reset = tracker.countMissing(key, 60, 10)
+	assert.Equal(t, int64(10), missing)
+	assert.Equal(t, 0, reset)
+}
