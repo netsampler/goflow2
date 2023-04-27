@@ -23,6 +23,7 @@ import (
 	// various formatters
 	"github.com/netsampler/goflow2/v2/format"
 	_ "github.com/netsampler/goflow2/v2/format/binary"
+	_ "github.com/netsampler/goflow2/v2/format/csv"
 	_ "github.com/netsampler/goflow2/v2/format/json"
 	_ "github.com/netsampler/goflow2/v2/format/text"
 

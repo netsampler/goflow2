@@ -82,11 +82,11 @@ func (m *ProtoProducerMessage) MarshalJSON() ([]byte, error) {
 }
 
 func (m *ProtoProducerMessage) FormatMessageReflectText(ext string) string {
-	return m.FormatMessageReflectCustom(ext, "", " ", "=", false)
+	return m.FormatMessageReflectCustom(ext, "", " ", "=", false, "")
 }
 
 func (m *ProtoProducerMessage) FormatMessageReflectJSON(ext string) string {
-	return fmt.Sprintf("{%s}", m.FormatMessageReflectCustom(ext, "\"", ",", ":", true))
+	return fmt.Sprintf("{%s}", m.FormatMessageReflectCustom(ext, "\"", ",", ":", true, ""))
 }
 
 func ExtractTag(name, original string, tag reflect.StructTag) string {
@@ -145,12 +145,17 @@ func (m *ProtoProducerMessage) mapUnknown() map[string]interface{} {
 	return unkMap
 }
 
-func (m *ProtoProducerMessage) FormatMessageReflectCustom(ext, quotes, sep, sign string, null bool) string {
+func (m *ProtoProducerMessage) FormatMessageReflectCustom(ext, quotes, sep, sign string, null bool, hdr string) string {
 	vfm := reflect.ValueOf(m)
 	vfm = reflect.Indirect(vfm)
 
 	var i int
-	fstr := make([]string, len(m.formatter.fields)) // todo: reuse with pool
+	fstr := make([]string, len(m.formatter.fields)+1) // todo: reuse with pool
+
+	if hdr != "" {
+		fstr[i] = hdr
+		i++
+	}
 
 	unkMap := m.mapUnknown()
 
@@ -161,6 +166,11 @@ func (m *ProtoProducerMessage) FormatMessageReflectCustom(ext, quotes, sep, sign
 		fieldFinalName := s
 		if fieldRename, ok := m.formatter.rename[s]; ok && fieldRename != "" {
 			fieldFinalName = fieldRename
+		}
+
+		// for CSV format, omit field name
+		if sign == "" {
+			fieldFinalName = ""
 		}
 
 		// get original name from structure
