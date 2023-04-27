@@ -227,22 +227,15 @@ func (s *StateNetFlow) DecodeFlow(msg interface{}) error {
 		}
 		obsDomainId := strconv.Itoa(int(msgDecConv.SourceId))
 		missingFlowsKey := key + "|" + obsDomainId
-		missingFlows := s.missingFlowsTracker.countMissing(missingFlowsKey, msgDecConv.SequenceNumber, 1)
-
-		NetFlowPacketsMissing.With(
-			prometheus.Labels{
-				"router":     key,
-				"version":    "9",
-				"obs_domain": obsDomainId,
-			}).
-			Set(float64(missingFlows))
-		NetFlowPacketsSequence.With(
-			prometheus.Labels{
-				"router":        key,
-				"version":       "9",
-				"obs_domain_id": obsDomainId,
-			}).
-			Set(float64(msgDecConv.SequenceNumber))
+		missingFlows, seqReset := s.missingFlowsTracker.countMissing(missingFlowsKey, msgDecConv.SequenceNumber, 1)
+		promLabels := prometheus.Labels{
+			"router":     key,
+			"version":    "9",
+			"obs_domain": obsDomainId,
+		}
+		NetFlowPacketsMissing.With(promLabels).Set(float64(missingFlows))
+		NetFlowPacketsSequence.With(promLabels).Set(float64(msgDecConv.SequenceNumber))
+		NetFlowPacketsSequenceReset.With(promLabels).Add(float64(seqReset))
 	case netflow.IPFIXPacket:
 		NetFlowStats.With(
 			prometheus.Labels{
@@ -339,22 +332,15 @@ func (s *StateNetFlow) DecodeFlow(msg interface{}) error {
 
 		obsDomainId := strconv.Itoa(int(msgDecConv.ObservationDomainId))
 		missingFlowsKey := key + "|" + obsDomainId
-		missingFlows := s.missingFlowsTracker.countMissing(missingFlowsKey, msgDecConv.SequenceNumber, 1)
-
-		NetFlowPacketsMissing.With(
-			prometheus.Labels{
-				"router":     key,
-				"version":    "10",
-				"obs_domain": obsDomainId,
-			}).
-			Set(float64(missingFlows))
-		NetFlowPacketsSequence.With(
-			prometheus.Labels{
-				"router":        key,
-				"version":       "10",
-				"obs_domain_id": obsDomainId,
-			}).
-			Set(float64(msgDecConv.SequenceNumber))
+		missingFlows, seqReset := s.missingFlowsTracker.countMissing(missingFlowsKey, msgDecConv.SequenceNumber, 1)
+		promLabels := prometheus.Labels{
+			"router":     key,
+			"version":    "10",
+			"obs_domain": obsDomainId,
+		}
+		NetFlowPacketsMissing.With(promLabels).Set(float64(missingFlows))
+		NetFlowPacketsSequence.With(promLabels).Set(float64(msgDecConv.SequenceNumber))
+		NetFlowPacketsSequenceReset.With(promLabels).Add(float64(seqReset))
 	}
 
 	timeTrackStop := time.Now()

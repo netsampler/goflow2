@@ -78,24 +78,16 @@ func (s *StateNFLegacy) DecodeFlow(msg interface{}) error {
 		engineType := strconv.Itoa(int(msgDecConv.EngineType))
 		engineId := strconv.Itoa(int(msgDecConv.EngineId))
 		missingFlowsKey := key + "|" + engineType + "|" + engineId
-		missingFlows := s.missingFlowsTracker.countMissing(missingFlowsKey, msgDecConv.FlowSequence, msgDecConv.Count)
-
-		NetFlowFlowsMissing.With(
-			prometheus.Labels{
-				"router":      key,
-				"version":     "5",
-				"engine_id":   engineId,
-				"engine_type": engineType,
-			}).
-			Set(float64(missingFlows))
-		NetFlowFlowsSequence.With(
-			prometheus.Labels{
-				"router":      key,
-				"version":     "5",
-				"engine_id":   engineId,
-				"engine_type": engineType,
-			}).
-			Set(float64(msgDecConv.FlowSequence))
+		missingFlows, seqReset := s.missingFlowsTracker.countMissing(missingFlowsKey, msgDecConv.FlowSequence, msgDecConv.Count)
+		promLabels := prometheus.Labels{
+			"router":      key,
+			"version":     "5",
+			"engine_id":   engineId,
+			"engine_type": engineType,
+		}
+		NetFlowFlowsMissing.With(promLabels).Set(float64(missingFlows))
+		NetFlowFlowsSequence.With(promLabels).Set(float64(msgDecConv.FlowSequence))
+		NetFlowFlowsSequenceReset.With(promLabels).Add(float64(seqReset))
 	}
 
 	var flowMessageSet []*flowmessage.FlowMessage

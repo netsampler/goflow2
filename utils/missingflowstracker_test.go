@@ -13,6 +13,7 @@ func TestMissingFlowsTracker_countMissingFlows(t *testing.T) {
 		flowCount               uint16
 		savedSeqTracker         map[string]int64
 		expectedMissingFlows    int64
+		expectedSeqReset        int
 		expectedSavedSeqTracker map[string]int64
 	}{
 		{
@@ -76,6 +77,7 @@ func TestMissingFlowsTracker_countMissingFlows(t *testing.T) {
 			seqnum:               2000,
 			flowCount:            100,
 			expectedMissingFlows: 0,
+			expectedSeqReset:     1,
 			expectedSavedSeqTracker: map[string]int64{
 				"127.0.01": 2000,
 			},
@@ -85,7 +87,9 @@ func TestMissingFlowsTracker_countMissingFlows(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			s := NewMissingFlowsTracker(1000)
 			s.counters = tt.savedSeqTracker
-			assert.Equal(t, tt.expectedMissingFlows, s.countMissing(tt.sequenceTrackerKey, tt.seqnum, tt.flowCount))
+			missingFlows, seqReset := s.countMissing(tt.sequenceTrackerKey, tt.seqnum, tt.flowCount)
+			assert.Equal(t, tt.expectedMissingFlows, missingFlows)
+			assert.Equal(t, tt.expectedSeqReset, seqReset)
 			assert.Equal(t, tt.expectedSavedSeqTracker, s.counters)
 		})
 	}

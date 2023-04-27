@@ -20,7 +20,7 @@ func NewMissingFlowsTracker(maxNegativeSequenceDifference int) *MissingFlowsTrac
 	}
 }
 
-func (s *MissingFlowsTracker) countMissing(key string, seqnum uint32, flows uint16) int64 {
+func (s *MissingFlowsTracker) countMissing(key string, seqnum uint32, flows uint16) (int64, int) {
 	s.countersMu.Lock()
 	defer s.countersMu.Unlock()
 
@@ -30,12 +30,14 @@ func (s *MissingFlowsTracker) countMissing(key string, seqnum uint32, flows uint
 		s.counters[key] += int64(flows)
 	}
 	missingElements := int64(seqnum) - s.counters[key]
+	sequenceReset := 0
 
 	// We assume there is a sequence number reset when the number of missing flows/packets is negative and high.
 	// When this happens, we reset the counter to the current sequence number.
 	if missingElements <= -int64(s.maxNegativeSequenceDifference) {
 		s.counters[key] = int64(seqnum)
 		missingElements = 0
+		sequenceReset = 1
 	}
-	return missingElements
+	return missingElements, sequenceReset
 }

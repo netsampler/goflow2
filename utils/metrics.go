@@ -113,7 +113,14 @@ var (
 	NetFlowFlowsSequence = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Name: "flow_process_nf_flows_sequence",
-			Help: "NetFlows last sequence number (can be used to detect sequence reset).",
+			Help: "NetFlows last sequence number.",
+		},
+		[]string{"router", "version", "engine_id", "engine_type"},
+	)
+	NetFlowFlowsSequenceReset = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "flow_process_nf_flows_sequence_reset_count",
+			Help: "NetFlows sequence reset count.",
 		},
 		[]string{"router", "version", "engine_id", "engine_type"},
 	)
@@ -127,7 +134,14 @@ var (
 	NetFlowPacketsSequence = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Name: "flow_process_nf_packets_sequence",
-			Help: "NetFlows last sequence number (can be used to detect sequence reset).",
+			Help: "NetFlows last sequence number.",
+		},
+		[]string{"router", "version", "obs_domain_id"},
+	)
+	NetFlowPacketsSequenceReset = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "flow_process_nf_packets_sequence_reset_count",
+			Help: "NetFlows sequence reset count.",
 		},
 		[]string{"router", "version", "obs_domain_id"},
 	)
@@ -169,7 +183,14 @@ var (
 	SFlowSamplesSequence = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Name: "flow_process_sf_samples_sequence",
-			Help: "SFlows last sequence number (can be used to detect sequence reset).",
+			Help: "SFlows last sequence number.",
+		},
+		[]string{"router", "version", "agent", "sub_agent_id"},
+	)
+	SFlowSamplesSequenceReset = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "flow_process_sf_samples_sequence_reset_count",
+			Help: "SFlows sequence reset count.",
 		},
 		[]string{"router", "version", "agent", "sub_agent_id"},
 	)
@@ -193,8 +214,10 @@ func init() {
 	prometheus.MustRegister(NetFlowTemplatesStats)
 	prometheus.MustRegister(NetFlowFlowsMissing)
 	prometheus.MustRegister(NetFlowFlowsSequence)
+	prometheus.MustRegister(NetFlowFlowsSequenceReset)
 	prometheus.MustRegister(NetFlowPacketsMissing)
 	prometheus.MustRegister(NetFlowPacketsSequence)
+	prometheus.MustRegister(NetFlowPacketsSequenceReset)
 
 	prometheus.MustRegister(SFlowStats)
 	prometheus.MustRegister(SFlowErrors)
@@ -202,6 +225,7 @@ func init() {
 	prometheus.MustRegister(SFlowSampleRecordsStatsSum)
 	prometheus.MustRegister(SFlowSamplesMissing)
 	prometheus.MustRegister(SFlowSamplesSequence)
+	prometheus.MustRegister(SFlowSamplesSequenceReset)
 }
 
 func DefaultAccountCallback(name string, id int, start, end time.Time) {

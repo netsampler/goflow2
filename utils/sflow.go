@@ -129,24 +129,16 @@ func (s *StateSFlow) DecodeFlow(msg interface{}) error {
 
 		subAgentId := strconv.Itoa(int(msgDecConv.SubAgentId))
 		missingFlowsKey := key + "|" + agentStr + "|" + subAgentId
-		missingFlows := s.missingFlowsTracker.countMissing(missingFlowsKey, msgDecConv.SequenceNumber, uint16(msgDecConv.SamplesCount))
-
-		SFlowSamplesMissing.With(
-			prometheus.Labels{
-				"router":       key,
-				"agent":        agentStr,
-				"sub_agent_id": subAgentId,
-				"version":      "5",
-			}).
-			Set(float64(missingFlows))
-		SFlowSamplesSequence.With(
-			prometheus.Labels{
-				"router":       key,
-				"agent":        agentStr,
-				"sub_agent_id": subAgentId,
-				"version":      "5",
-			}).
-			Set(float64(msgDecConv.SequenceNumber))
+		missingFlows, seqReset := s.missingFlowsTracker.countMissing(missingFlowsKey, msgDecConv.SequenceNumber, uint16(msgDecConv.SamplesCount))
+		promLabels := prometheus.Labels{
+			"router":       key,
+			"agent":        agentStr,
+			"sub_agent_id": subAgentId,
+			"version":      "5",
+		}
+		SFlowSamplesMissing.With(promLabels).Set(float64(missingFlows))
+		SFlowSamplesSequence.With(promLabels).Set(float64(msgDecConv.SequenceNumber))
+		SFlowSamplesSequenceReset.With(promLabels).Add(float64(seqReset))
 	}
 
 	var flowMessageSet []*flowmessage.FlowMessage
