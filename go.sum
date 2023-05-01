@@ -51,8 +51,8 @@ github.com/klauspost/compress v1.15.14/go.mod h1:QPwzmACJjUTFsnSHH934V6woptycfrD
 github.com/kr/pretty v0.3.1 h1:flRD4NNwYAUpkphVc1HcthR4KEIFJ65n8Mw5qdRn3LE=
 github.com/kr/text v0.2.0 h1:5Nx0Ya0ZqY2ygV366QzturHI13Jq95ApcVaJBhpS+AY=
 github.com/kr/text v0.2.0/go.mod h1:eLer722TekiGuMkidMxC/pM04lWEeraHUUmBw8l2grE=
-github.com/libp2p/go-reuseport v0.2.0 h1:18PRvIMlpY6ZK85nIAicSBuXXvrYoSw3dsBAR7zc560=
-github.com/libp2p/go-reuseport v0.2.0/go.mod h1:bvVho6eLMm6Bz5hmU0LYN3ixd3nPPvtIlaURZZgOY4k=
+github.com/libp2p/go-reuseport v0.3.0 h1:iiZslO5byUYZEg9iCwJGf5h+sf1Agmqx2V2FDjPyvUw=
+github.com/libp2p/go-reuseport v0.3.0/go.mod h1:laea40AimhtfEqysZ71UpYj4S+R9VpH8PgqLo7L+SwI=
 github.com/matttproud/golang_protobuf_extensions v1.0.4 h1:mmDVorXM7PCGKw94cs5zkfA9PSy5pEvNWRP0ET0TIVo=
 github.com/matttproud/golang_protobuf_extensions v1.0.4/go.mod h1:BSXmuO+STAnVfrANrmjBb36TMTDstsz7MSK+HVaYKv4=
 github.com/oschwald/geoip2-golang v1.8.0 h1:KfjYB8ojCEn/QLqsDU0AzrJ3R5Qa9vFlx3z6SLNcKTs=
