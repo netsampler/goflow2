@@ -343,9 +343,9 @@ func DecodeMessage(payload *bytes.Buffer, templates NetFlowTemplateSystem) (inte
 
 func DecodeMessageContext(ctx context.Context, payload *bytes.Buffer, templateKey string, tpli NetFlowTemplateSystem) (interface{}, error) {
 	var size uint16
+	var lastError error
 	packetNFv9 := NFv9Packet{}
 	packetIPFIX := IPFIXPacket{}
-	var returnItem interface{}
 
 	var version uint16
 	var obsDomainId uint32
@@ -360,7 +360,6 @@ func DecodeMessageContext(ctx context.Context, payload *bytes.Buffer, templateKe
 		}
 		size = packetNFv9.Count
 		packetNFv9.Version = version
-		returnItem = *(&packetNFv9)
 		obsDomainId = packetNFv9.SourceId
 	} else if version == 10 {
 		err := utils.BinaryDecoder(payload, &packetIPFIX.Length, &packetIPFIX.ExportTime, &packetIPFIX.SequenceNumber, &packetIPFIX.ObservationDomainId)
@@ -369,7 +368,6 @@ func DecodeMessageContext(ctx context.Context, payload *bytes.Buffer, templateKe
 		}
 		size = packetIPFIX.Length
 		packetIPFIX.Version = version
-		returnItem = *(&packetIPFIX)
 		obsDomainId = packetIPFIX.ObservationDomainId
 	} else {
 		return nil, fmt.Errorf("NetFlow/IPFIX version error: %d", version)
@@ -378,12 +376,12 @@ func DecodeMessageContext(ctx context.Context, payload *bytes.Buffer, templateKe
 	for i := 0; ((i < int(size) && version == 9) || version == 10) && payload.Len() > 0; i++ {
 		fsheader := FlowSetHeader{}
 		if err := utils.BinaryDecoder(payload, &fsheader); err != nil {
-			return returnItem, fmt.Errorf("Error decoding FlowSet header: %v", err)
+			return nil, fmt.Errorf("Error decoding FlowSet header: %v", err)
 		}
 
 		nextrelpos := int(fsheader.Length) - binary.Size(fsheader)
 		if nextrelpos < 0 {
-			return returnItem, fmt.Errorf("Error decoding packet: non-terminated stream")
+			return nil, fmt.Errorf("Error decoding packet: non-terminated stream")
 		}
 
 		var flowSet interface{}
@@ -392,7 +390,7 @@ func DecodeMessageContext(ctx context.Context, payload *bytes.Buffer, templateKe
 			templateReader := bytes.NewBuffer(payload.Next(nextrelpos))
 			records, err := DecodeTemplateSet(version, templateReader)
 			if err != nil {
-				return returnItem, fmt.Errorf("Error decoding FlowSet header: %v", err)
+				return nil, fmt.Errorf("Error decoding FlowSet header: %v", err)
 			}
 			templatefs := TemplateFlowSet{
 				FlowSetHeader: fsheader,
@@ -412,7 +410,7 @@ func DecodeMessageContext(ctx context.Context, payload *bytes.Buffer, templateKe
 			templateReader := bytes.NewBuffer(payload.Next(nextrelpos))
 			records, err := DecodeNFv9OptionsTemplateSet(templateReader)
 			if err != nil {
-				return returnItem, fmt.Errorf("Error decoding NetFlow OptionsTemplateSet: %v", err)
+				return nil, fmt.Errorf("Error decoding NetFlow OptionsTemplateSet: %v", err)
 			}
 			optsTemplatefs := NFv9OptionsTemplateFlowSet{
 				FlowSetHeader: fsheader,
@@ -431,7 +429,7 @@ func DecodeMessageContext(ctx context.Context, payload *bytes.Buffer, templateKe
 			templateReader := bytes.NewBuffer(payload.Next(nextrelpos))
 			records, err := DecodeTemplateSet(version, templateReader)
 			if err != nil {
-				return returnItem, fmt.Errorf("Error decoding IPFIX TemplateSet: %v", err)
+				return nil, fmt.Errorf("Error decoding IPFIX TemplateSet: %v", err)
 			}
 			templatefs := TemplateFlowSet{
 				FlowSetHeader: fsheader,
@@ -450,7 +448,7 @@ func DecodeMessageContext(ctx context.Context, payload *bytes.Buffer, templateKe
 			templateReader := bytes.NewBuffer(payload.Next(nextrelpos))
 			records, err := DecodeIPFIXOptionsTemplateSet(templateReader)
 			if err != nil {
-				return returnItem, fmt.Errorf("Error decoding IPFIX OptionsTemplateSet: %v", err)
+				return nil, fmt.Errorf("Error decoding IPFIX OptionsTemplateSet: %v", err)
 			}
 			optsTemplatefs := IPFIXOptionsTemplateFlowSet{
 				FlowSetHeader: fsheader,
@@ -474,47 +472,47 @@ func DecodeMessageContext(ctx context.Context, payload *bytes.Buffer, templateKe
 
 			template, err := tpli.GetTemplate(version, obsDomainId, fsheader.Id)
 			//template, err := tpli.GetTemplate(ctx, templates.NewTemplateKey(templateKey, version, obsDomainId, fsheader.Id))
+			if err != nil {
+				lastError = err
+				continue
+			}
 
-			if err == nil {
-				switch templatec := template.(type) {
-				case TemplateRecord:
-					records, err := DecodeDataSet(version, dataReader, templatec.Fields)
-					if err != nil {
-						return returnItem, fmt.Errorf("Error decoding DataSet: %v", err)
-					}
-					datafs := DataFlowSet{
-						FlowSetHeader: fsheader,
-						Records:       records,
-					}
-					flowSet = datafs
-				case IPFIXOptionsTemplateRecord:
-					records, err := DecodeOptionsDataSet(version, dataReader, templatec.Scopes, templatec.Options)
-					if err != nil {
-						return returnItem, fmt.Errorf("Error decoding DataSet: %v", err)
-					}
-
-					datafs := OptionsDataFlowSet{
-						FlowSetHeader: fsheader,
-						Records:       records,
-					}
-					flowSet = datafs
-				case NFv9OptionsTemplateRecord:
-					records, err := DecodeOptionsDataSet(version, dataReader, templatec.Scopes, templatec.Options)
-					if err != nil {
-						return returnItem, fmt.Errorf("Error decoding OptionDataSet: %v", err)
-					}
-
-					datafs := OptionsDataFlowSet{
-						FlowSetHeader: fsheader,
-						Records:       records,
-					}
-					flowSet = datafs
+			switch templatec := template.(type) {
+			case TemplateRecord:
+				records, err := DecodeDataSet(version, dataReader, templatec.Fields)
+				if err != nil {
+					return nil, fmt.Errorf("Error decoding DataSet: %v", err)
 				}
-			} else {
-				return returnItem, err
+				datafs := DataFlowSet{
+					FlowSetHeader: fsheader,
+					Records:       records,
+				}
+				flowSet = datafs
+			case IPFIXOptionsTemplateRecord:
+				records, err := DecodeOptionsDataSet(version, dataReader, templatec.Scopes, templatec.Options)
+				if err != nil {
+					return nil, fmt.Errorf("Error decoding DataSet: %v", err)
+				}
+
+				datafs := OptionsDataFlowSet{
+					FlowSetHeader: fsheader,
+					Records:       records,
+				}
+				flowSet = datafs
+			case NFv9OptionsTemplateRecord:
+				records, err := DecodeOptionsDataSet(version, dataReader, templatec.Scopes, templatec.Options)
+				if err != nil {
+					return nil, fmt.Errorf("Error decoding OptionDataSet: %v", err)
+				}
+
+				datafs := OptionsDataFlowSet{
+					FlowSetHeader: fsheader,
+					Records:       records,
+				}
+				flowSet = datafs
 			}
 		} else {
-			return returnItem, fmt.Errorf("Error with ID %d", fsheader.Id)
+			return nil, fmt.Errorf("Error with ID %d", fsheader.Id)
 		}
 
 		if version == 9 && flowSet != nil {
@@ -525,10 +523,10 @@ func DecodeMessageContext(ctx context.Context, payload *bytes.Buffer, templateKe
 	}
 
 	if version == 9 {
-		return packetNFv9, nil
+		return packetNFv9, lastError
 	} else if version == 10 {
-		return packetIPFIX, nil
+		return packetIPFIX, lastError
 	} else {
-		return returnItem, fmt.Errorf("Unknown version: %d", version)
+		return nil, fmt.Errorf("Unknown version: %d", version)
 	}
 }
