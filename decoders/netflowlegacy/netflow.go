@@ -39,7 +39,7 @@ func DecodeMessage(payload *bytes.Buffer) (interface{}, error) {
 			&(packet.FlowSequence),
 			&(packet.EngineType),
 			&(packet.EngineId),
-			&(packet.SamplingInterval),
+			&(packet.SamplingInterval & 0x3FFF),
 		)
 
 		packet.Records = make([]RecordsNetFlowV5, int(packet.Count))
