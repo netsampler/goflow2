@@ -8,7 +8,7 @@ require (
 	github.com/libp2p/go-reuseport v0.3.0
 	github.com/oschwald/geoip2-golang v1.8.0
 	github.com/prometheus/client_golang v1.15.1
-	github.com/sirupsen/logrus v1.9.2
+	github.com/sirupsen/logrus v1.9.3
 	github.com/stretchr/testify v1.8.4
 	github.com/xdg-go/scram v1.1.2
 	google.golang.org/protobuf v1.30.0
