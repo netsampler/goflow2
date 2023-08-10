@@ -1,7 +1,6 @@
 package format
 
 import (
-	"context"
 	"fmt"
 	"sync"
 )
@@ -9,14 +8,28 @@ import (
 var (
 	formatDrivers = make(map[string]FormatDriver)
 	lock          = &sync.RWMutex{}
+
+	ErrorFormat       = fmt.Errorf("format error")
+	ErrorNoSerializer = fmt.Errorf("message is not serializable")
 )
+
+type DriverFormatError struct {
+	Driver string
+	Err    error
+}
+
+func (e *DriverFormatError) Error() string {
+	return fmt.Sprintf("%s for %s format", e.Err.Error(), e.Driver)
+}
+
+func (e *DriverFormatError) Unwrap() []error {
+	return []error{ErrorFormat, e.Err}
+}
 
 type FormatDriver interface {
 	Prepare() error                                  // Prepare driver (eg: flag registration)
-	Init(context.Context) error                      // Initialize driver (eg: parse keying)
+	Init() error                                     // Initialize driver (eg: parse keying)
 	Format(data interface{}) ([]byte, []byte, error) // Send a message
-
-	//FormatInterface // set this and remove Format
 }
 
 type FormatInterface interface {
@@ -24,11 +37,19 @@ type FormatInterface interface {
 }
 
 type Format struct {
-	driver FormatDriver
+	FormatDriver
+	name string
 }
 
 func (t *Format) Format(data interface{}) ([]byte, []byte, error) {
-	return t.driver.Format(data)
+	key, text, err := t.FormatDriver.Format(data)
+	if err != nil {
+		err = &DriverFormatError{
+			t.name,
+			err,
+		}
+	}
+	return key, text, err
 }
 
 func RegisterFormatDriver(name string, t FormatDriver) {
@@ -41,16 +62,19 @@ func RegisterFormatDriver(name string, t FormatDriver) {
 	}
 }
 
-func FindFormat(ctx context.Context, name string) (*Format, error) {
+func FindFormat(name string) (*Format, error) {
 	lock.RLock()
 	t, ok := formatDrivers[name]
 	lock.RUnlock()
 	if !ok {
-		return nil, fmt.Errorf("Format %s not found", name)
+		return nil, fmt.Errorf("%w %s not found", ErrorFormat, name)
 	}
 
-	err := t.Init(ctx)
-	return &Format{t}, err
+	err := t.Init()
+	if err != nil {
+		err = &DriverFormatError{name, err}
+	}
+	return &Format{t, name}, err
 }
 
 func GetFormats() []string {
@@ -58,7 +82,7 @@ func GetFormats() []string {
 	defer lock.RUnlock()
 	t := make([]string, len(formatDrivers))
 	var i int
-	for k, _ := range formatDrivers {
+	for k := range formatDrivers {
 		t[i] = k
 		i++
 	}

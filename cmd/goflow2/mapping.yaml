@@ -1,31 +1,61 @@
+formatter:
+  fields: # list of fields to format in JSON
+    - type
+    - time_received_ns
+    - sequence_num
+    - sampling_rate
+    - flow_direction
+    - sampler_address
+    - time_flow_start_ns
+    - time_flow_end_ns
+    - bytes
+    - packets
+    - src_addr
+    - src_net
+    - dst_addr
+    - dst_net
+    - etype
+    - proto
+    - src_port
+    - dst_port
+    - in_if
+    - out_if
+    - src_mac
+    - dst_mac
+    # additional fields
+    - icmp_name # virtual column
+  key:
+    - sampler_address
+  protobuf: # manual protobuf fields addition
+    - name: flow_direction
+      index: 42
+      type: varint
+    - name: bi_flow_direction
+      index: 41
+      type: varint
+    - name: ingress_vrf_id
+      index: 39
+      type: varint
+    - name: egress_vrf_id
+      index: 40
+      type: varint
+# Decoder mappings
 ipfix:
   mapping:
-    - field: 7 # IPFIX_FIELD_sourceTransportPort
-      destination: CustomInteger1
-    - field: 11 # IPFIX_FIELD_destinationTransportPort
-      destination: CustomInteger2
-      # penprovided: false
-      # pen: 0
-    - field: 137
-      destination: CustomList_1
-      penprovided: true
-      pen: 2636
+    - field: 61
+      destination: flow_direction
+    - field: 239
+      destination: bi_flow_direction
+    - field: 234
+      destination: ingress_vrf_id
+    - field: 235
+      destination: egress_vrf_id
 netflowv9:
   mapping:
-    - field: 7
-      destination: CustomInteger1
-    - field: 11
-      destination: CustomInteger2
-    - field: 34 # samplingInterval
-      destination: SamplingRate
+    - field: 34 # samplingInterval provided within the template
+      destination: sampling_rate
       endian: little
+    - field: 61
+      destination: flow_direction
 sflow:
-  mapping:
-    - layer: 4 # Layer 4: TCP or UDP
-      offset: 0 # Source port
-      length: 16 # 2 bytes
-      destination: CustomInteger1
-    - layer: 4
-      offset: 16 # Destination port
-      length: 16 # 2 bytes
-      destination: CustomInteger2
+  mapping: []

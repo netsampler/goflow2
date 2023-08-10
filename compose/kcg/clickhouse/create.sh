@@ -17,8 +17,8 @@ clickhouse client -n <<-EOSQL
 
     CREATE TABLE IF NOT EXISTS flows
     (
-        time_received UInt64,
-        time_flow_start UInt64,
+        time_received_ns UInt64,
+        time_flow_start_ns UInt64,
 
         sequence_num UInt32,
         sampling_rate UInt64,
@@ -49,8 +49,9 @@ clickhouse client -n <<-EOSQL
     CREATE TABLE IF NOT EXISTS flows_raw
     (
         date Date,
-        time_received DateTime,
-        time_flow_start DateTime,
+        time_inserted_ns DateTime64(9),
+        time_received_ns DateTime64(9),
+        time_flow_start_ns DateTime64(9),
 
         sequence_num UInt32,
         sampling_rate UInt64,
@@ -72,12 +73,32 @@ clickhouse client -n <<-EOSQL
         packets UInt64
     ) ENGINE = MergeTree()
     PARTITION BY date
-    ORDER BY time_received;
+    ORDER BY time_received_ns;
 
     CREATE MATERIALIZED VIEW IF NOT EXISTS flows_raw_view TO flows_raw
     AS SELECT
-        toDate(time_received) AS date,
-        *
+        toDate(time_received_ns) AS date,
+        now() AS time_inserted_ns,
+        toDateTime64(time_received_ns/1000000000, 9) AS time_received_ns,
+        toDateTime64(time_flow_start_ns/1000000000, 9) AS time_flow_start_ns,
+        sequence_num,
+        sampling_rate,
+        sampler_address,
+
+        src_addr,
+        dst_addr,
+
+        src_as,
+        dst_as,
+
+        etype,
+        proto,
+
+        src_port,
+        dst_port,
+
+        bytes,
+        packets
        FROM flows;
 
     CREATE TABLE IF NOT EXISTS flows_5m
@@ -106,7 +127,7 @@ clickhouse client -n <<-EOSQL
     AS
         SELECT
             date,
-            toStartOfFiveMinute(time_received) AS timeslot,
+            toStartOfFiveMinute(time_received_ns) AS timeslot,
             src_as,
             dst_as,
 

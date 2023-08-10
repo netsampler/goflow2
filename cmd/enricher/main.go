@@ -2,35 +2,30 @@ package main
 
 import (
 	"bufio"
-	"bytes"
-	"context"
-	"encoding/binary"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
 	"net"
-	"net/http"
 	"os"
 	"strings"
 
-	"github.com/oschwald/geoip2-golang"
-
-	"github.com/golang/protobuf/proto"
-	flowmessage "github.com/netsampler/goflow2/cmd/enricher/pb"
+	flowmessage "github.com/netsampler/goflow2/v2/cmd/enricher/pb"
 
 	// import various formatters
-	"github.com/netsampler/goflow2/format"
-	_ "github.com/netsampler/goflow2/format/json"
-	_ "github.com/netsampler/goflow2/format/protobuf"
-	_ "github.com/netsampler/goflow2/format/text"
+	"github.com/netsampler/goflow2/v2/format"
+	_ "github.com/netsampler/goflow2/v2/format/binary"
+	_ "github.com/netsampler/goflow2/v2/format/json"
+	_ "github.com/netsampler/goflow2/v2/format/text"
 
 	// import various transports
-	"github.com/netsampler/goflow2/transport"
-	_ "github.com/netsampler/goflow2/transport/file"
-	_ "github.com/netsampler/goflow2/transport/kafka"
+	"github.com/netsampler/goflow2/v2/transport"
+	_ "github.com/netsampler/goflow2/v2/transport/file"
+	_ "github.com/netsampler/goflow2/v2/transport/kafka"
 
-	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"github.com/oschwald/geoip2-golang"
 	log "github.com/sirupsen/logrus"
+	"google.golang.org/protobuf/encoding/protodelim"
 )
 
 var (
@@ -49,18 +44,8 @@ var (
 	Format    = flag.String("format", "json", fmt.Sprintf("Choose the format (available: %s)", strings.Join(format.GetFormats(), ", ")))
 	Transport = flag.String("transport", "file", fmt.Sprintf("Choose the transport (available: %s)", strings.Join(transport.GetTransports(), ", ")))
 
-	MetricsAddr = flag.String("metrics.addr", ":8081", "Metrics address")
-	MetricsPath = flag.String("metrics.path", "/metrics", "Metrics path")
-
-	TemplatePath = flag.String("templates.path", "/templates", "NetFlow/IPFIX templates list")
-
 	Version = flag.Bool("v", false, "Print version")
 )
-
-func httpServer() {
-	http.Handle(*MetricsPath, promhttp.Handler())
-	log.Fatal(http.ListenAndServe(*MetricsAddr, nil))
-}
 
 func MapAsn(db *geoip2.Reader, addr []byte, dest *uint32) {
 	entry, err := db.ASN(net.IP(addr))
@@ -117,61 +102,31 @@ func main() {
 		defer dbCountry.Close()
 	}
 
-	ctx := context.Background()
-
-	formatter, err := format.FindFormat(ctx, *Format)
+	formatter, err := format.FindFormat(*Format)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	transporter, err := transport.FindTransport(ctx, *Transport)
+	transporter, err := transport.FindTransport(*Transport)
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer transporter.Close(ctx)
+	defer transporter.Close()
 
 	switch *LogFmt {
 	case "json":
 		log.SetFormatter(&log.JSONFormatter{})
 	}
 
-	log.Info("Starting enricher")
-
-	go httpServer()
+	log.Info("starting enricher")
 
 	rdr := bufio.NewReader(os.Stdin)
 
 	msg := &flowmessage.FlowMessageExt{}
-	lenBufSize := binary.MaxVarintLen64
 	for {
-		msgLen, err := rdr.Peek(lenBufSize)
-		if err != nil && err != io.EOF {
-			log.Error(err)
-			continue
-		}
-
-		l, vn := proto.DecodeVarint(msgLen)
-		if l == 0 {
-			continue
-		}
-
-		_, err = rdr.Discard(vn)
-		if err != nil {
-			log.Error(err)
-			continue
-		}
-
-		line := make([]byte, l)
-
-		_, err = io.ReadFull(rdr, line)
-		if err != nil && err != io.EOF {
-			log.Error(err)
-			continue
-		}
-		line = bytes.TrimSuffix(line, []byte("\n"))
-
-		err = proto.Unmarshal(line, msg)
-		if err != nil {
+		if err := protodelim.UnmarshalFrom(rdr, msg); err != nil && errors.Is(err, io.EOF) {
+			return
+		} else if err != nil {
 			log.Error(err)
 			continue
 		}

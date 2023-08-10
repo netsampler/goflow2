@@ -22,10 +22,9 @@ func TestDecodeNetFlowV9(t *testing.T) {
 		0x00, 0xea, 0x00, 0x04, 0x00, 0xeb, 0x00, 0x04,
 	}
 	buf := bytes.NewBuffer(template)
-	dec, err := DecodeMessage(buf, templates)
+	var decNfv9 NFv9Packet
+	err := DecodeMessageVersion(buf, templates, &decNfv9, nil)
 	assert.Nil(t, err)
-	assert.NotNil(t, dec)
-	decNfv9 := dec.(NFv9Packet)
 	assert.Equal(t,
 		NFv9Packet{
 			Version:        9,
@@ -206,10 +205,10 @@ func TestDecodeNetFlowV9(t *testing.T) {
 		0x28, 0x00, 0x40, 0x00, 0x01, 0x60, 0x00, 0x00, 0x02, 0x60, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 	}
 	buf = bytes.NewBuffer(data[:89]) // truncate: we don't want to test for everything
-	dec, err = DecodeMessage(buf, templates)
+	decNfv9 = NFv9Packet{}           // reset
+	err = DecodeMessageVersion(buf, templates, &decNfv9, nil)
+
 	assert.Nil(t, err)
-	assert.NotNil(t, dec)
-	decNfv9 = dec.(NFv9Packet)
 	assert.Equal(t,
 		NFv9Packet{
 			Version:        9,
