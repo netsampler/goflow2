@@ -231,6 +231,8 @@ func main() {
 			p = utils.NewSFlowPipe(cfgPipe)
 		} else if listenAddrUrl.Scheme == "netflow" {
 			p = utils.NewNetFlowPipe(cfgPipe)
+		} else if listenAddrUrl.Scheme == "flow" {
+			p = utils.NewFlowPipe(cfgPipe)
 		} else {
 			l.Errorf("scheme %s does not exist", listenAddrUrl.Scheme)
 			return
