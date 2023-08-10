@@ -186,7 +186,7 @@ func (p *NetFlowPipe) DecodeFlow(msg interface{}) error {
 			return &PipeMessageError{pkt, err}
 		}
 	default:
-		return &PipeMessageError{pkt, fmt.Errorf("Not a NetFlow packet")}
+		return &PipeMessageError{pkt, fmt.Errorf("not a NetFlow packet")}
 	}
 
 	var flowMessageSet []producer.ProducerMessage
@@ -259,5 +259,5 @@ func (p *AutoFlowPipe) DecodeFlow(msg interface{}) error {
 	} else if protoNetFlow == 5 || protoNetFlow == 9 || protoNetFlow == 10 {
 		return p.NetFlowPipe.DecodeFlow(msg)
 	}
-	return fmt.Errorf("Could not identify protocol %d", proto)
+	return fmt.Errorf("could not identify protocol %d", proto)
 }
