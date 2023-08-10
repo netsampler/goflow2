@@ -1,38 +1,35 @@
 package text
 
 import (
-	"context"
-	"fmt"
-	"github.com/golang/protobuf/proto"
-	"github.com/netsampler/goflow2/format"
-	"github.com/netsampler/goflow2/format/common"
+	"encoding"
+
+	"github.com/netsampler/goflow2/v2/format"
 )
 
 type TextDriver struct {
 }
 
 func (d *TextDriver) Prepare() error {
-	common.HashFlag()
-	common.SelectorFlag()
 	return nil
 }
 
-func (d *TextDriver) Init(context.Context) error {
-	err := common.ManualHashInit()
-	if err != nil {
-		return err
-	}
-	return common.ManualSelectorInit()
+func (d *TextDriver) Init() error {
+	return nil
 }
 
 func (d *TextDriver) Format(data interface{}) ([]byte, []byte, error) {
-	msg, ok := data.(proto.Message)
-	if !ok {
-		return nil, nil, fmt.Errorf("message is not protobuf")
+	var key []byte
+	if dataIf, ok := data.(interface{ Key() []byte }); ok {
+		key = dataIf.Key()
 	}
-
-	key := common.HashProtoLocal(msg)
-	return []byte(key), []byte(common.FormatMessageReflectText(msg, "")), nil
+	if dataIf, ok := data.(encoding.TextMarshaler); ok {
+		text, err := dataIf.MarshalText()
+		return key, text, err
+	}
+	if dataIf, ok := data.(interface{ String() string }); ok {
+		return key, []byte(dataIf.String()), nil
+	}
+	return key, nil, format.ErrorNoSerializer
 }
 
 func init() {

@@ -446,25 +446,25 @@ const (
 )
 
 type IPFIXPacket struct {
-	Version             uint16
-	Length              uint16
-	ExportTime          uint32
-	SequenceNumber      uint32
-	ObservationDomainId uint32
-	FlowSets            []interface{}
+	Version             uint16        `json:"version"`
+	Length              uint16        `json:"length"`
+	ExportTime          uint32        `json:"export-time"`
+	SequenceNumber      uint32        `json:"sequence-number"`
+	ObservationDomainId uint32        `json:"observation-domain-id"`
+	FlowSets            []interface{} `json:"flow-sets"`
 }
 
 type IPFIXOptionsTemplateFlowSet struct {
 	FlowSetHeader
-	Records []IPFIXOptionsTemplateRecord
+	Records []IPFIXOptionsTemplateRecord `json:"records"`
 }
 
 type IPFIXOptionsTemplateRecord struct {
-	TemplateId      uint16
-	FieldCount      uint16
-	ScopeFieldCount uint16
-	Options         []Field
-	Scopes          []Field
+	TemplateId      uint16  `json:"template-id"`
+	FieldCount      uint16  `json:"field-count"`
+	ScopeFieldCount uint16  `json:"scope-field-count"`
+	Options         []Field `json:"options"`
+	Scopes          []Field `json:"scopes"`
 }
 
 func IPFIXTypeToString(typeId uint16) string {

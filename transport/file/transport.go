@@ -1,10 +1,9 @@
 package file
 
 import (
-	"context"
 	"flag"
 	"fmt"
-	"github.com/netsampler/goflow2/transport"
+	"github.com/netsampler/goflow2/v2/transport"
 	"io"
 	"os"
 	"os/signal"
@@ -38,7 +37,7 @@ func (d *FileDriver) openFile() error {
 	return err
 }
 
-func (d *FileDriver) Init(context.Context) error {
+func (d *FileDriver) Init() error {
 	d.q = make(chan bool, 1)
 
 	if d.fileDestination == "" {
@@ -61,8 +60,11 @@ func (d *FileDriver) Init(context.Context) error {
 				case <-c:
 					d.lock.Lock()
 					d.file.Close()
-					d.openFile()
+					err := d.openFile()
 					d.lock.Unlock()
+					if err != nil {
+						return
+					}
 					// if there is an error, keeps using the old file
 				case <-d.q:
 					return
@@ -82,7 +84,7 @@ func (d *FileDriver) Send(key, data []byte) error {
 	return err
 }
 
-func (d *FileDriver) Close(context.Context) error {
+func (d *FileDriver) Close() error {
 	if d.fileDestination != "" {
 		d.lock.Lock()
 		d.file.Close()

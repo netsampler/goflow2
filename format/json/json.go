@@ -1,38 +1,29 @@
 package json
 
 import (
-	"context"
-	"fmt"
-	"github.com/golang/protobuf/proto"
-	"github.com/netsampler/goflow2/format"
-	"github.com/netsampler/goflow2/format/common"
+	"encoding/json"
+
+	"github.com/netsampler/goflow2/v2/format"
 )
 
 type JsonDriver struct {
 }
 
 func (d *JsonDriver) Prepare() error {
-	common.HashFlag()
-	common.SelectorFlag()
 	return nil
 }
 
-func (d *JsonDriver) Init(context.Context) error {
-	err := common.ManualHashInit()
-	if err != nil {
-		return err
-	}
-	return common.ManualSelectorInit()
+func (d *JsonDriver) Init() error {
+	return nil
 }
 
 func (d *JsonDriver) Format(data interface{}) ([]byte, []byte, error) {
-	msg, ok := data.(proto.Message)
-	if !ok {
-		return nil, nil, fmt.Errorf("message is not protobuf")
+	var key []byte
+	if dataIf, ok := data.(interface{ Key() []byte }); ok {
+		key = dataIf.Key()
 	}
-
-	key := common.HashProtoLocal(msg)
-	return []byte(key), []byte(common.FormatMessageReflectJSON(msg, "")), nil
+	output, err := json.Marshal(data)
+	return key, output, err
 }
 
 func init() {

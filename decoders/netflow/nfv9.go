@@ -102,26 +102,26 @@ const (
 )
 
 type NFv9Packet struct {
-	Version        uint16
-	Count          uint16
-	SystemUptime   uint32
-	UnixSeconds    uint32
-	SequenceNumber uint32
-	SourceId       uint32
-	FlowSets       []interface{}
+	Version        uint16        `json:"version"`
+	Count          uint16        `json:"count"`
+	SystemUptime   uint32        `json:"system-uptime"`
+	UnixSeconds    uint32        `json:"unix-seconds"`
+	SequenceNumber uint32        `json:"sequence-number"`
+	SourceId       uint32        `json:"source-id"`
+	FlowSets       []interface{} `json:"flow-sets"`
 }
 
 type NFv9OptionsTemplateFlowSet struct {
 	FlowSetHeader
-	Records []NFv9OptionsTemplateRecord
+	Records []NFv9OptionsTemplateRecord `json:"records"`
 }
 
 type NFv9OptionsTemplateRecord struct {
-	TemplateId   uint16
-	ScopeLength  uint16
-	OptionLength uint16
-	Scopes       []Field
-	Options      []Field
+	TemplateId   uint16  `json:"template-id"`
+	ScopeLength  uint16  `json:"scope-length"`
+	OptionLength uint16  `json:"option-length"`
+	Scopes       []Field `json:"scopes"`
+	Options      []Field `json:"options"`
 }
 
 func NFv9TypeToString(typeId uint16) string {

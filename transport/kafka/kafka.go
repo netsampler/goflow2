@@ -1,35 +1,31 @@
 package kafka
 
 import (
-	"context"
 	"crypto/tls"
 	"crypto/x509"
 	"errors"
 	"flag"
 	"fmt"
+	"net"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
-	sarama "github.com/Shopify/sarama"
-	"github.com/netsampler/goflow2/transport"
-	"github.com/netsampler/goflow2/utils"
+	"github.com/netsampler/goflow2/v2/transport"
 
-	log "github.com/sirupsen/logrus"
+	sarama "github.com/Shopify/sarama"
 )
 
 type KafkaDriver struct {
 	kafkaTLS            bool
 	kafkaSASL           string
-	kafkaSCRAM          string
 	kafkaTopic          string
 	kafkaSrv            string
 	kafkaBrk            string
 	kafkaMaxMsgBytes    int
 	kafkaFlushBytes     int
 	kafkaFlushFrequency time.Duration
-
-	kafkaLogErrors bool
 
 	kafkaHashing          bool
 	kafkaVersion          string
@@ -38,6 +34,20 @@ type KafkaDriver struct {
 	producer sarama.AsyncProducer
 
 	q chan bool
+
+	errors chan error
+}
+
+// Error specifically for inner Kafka errors
+type KafkaTransportError struct {
+	Err error
+}
+
+func (e *KafkaTransportError) Error() string {
+	return fmt.Sprintf("kafka transport %s", e.Err.Error())
+}
+func (e *KafkaTransportError) Unwrap() []error {
+	return []error{transport.ErrorTransport, e.Err}
 }
 
 type KafkaSASLAlgorithm string
@@ -85,17 +95,19 @@ func (d *KafkaDriver) Prepare() error {
 	flag.IntVar(&d.kafkaFlushBytes, "transport.kafka.flushbytes", int(sarama.MaxRequestSize), "Kafka flush bytes")
 	flag.DurationVar(&d.kafkaFlushFrequency, "transport.kafka.flushfreq", time.Second*5, "Kafka flush frequency")
 
-	flag.BoolVar(&d.kafkaLogErrors, "transport.kafka.log.err", false, "Log Kafka errors")
 	flag.BoolVar(&d.kafkaHashing, "transport.kafka.hashing", false, "Enable partition hashing")
 
-	//flag.StringVar(&d.kafkaKeying, "transport.kafka.key", "SamplerAddress,DstAS", "Kafka list of fields to do hashing on (partition) separated by commas")
 	flag.StringVar(&d.kafkaVersion, "transport.kafka.version", "2.8.0", "Kafka version")
 	flag.StringVar(&d.kafkaCompressionCodec, "transport.kafka.compression", "", "Kafka default compression")
 
 	return nil
 }
 
-func (d *KafkaDriver) Init(context.Context) error {
+func (d *KafkaDriver) Errors() <-chan error {
+	return d.errors
+}
+
+func (d *KafkaDriver) Init() error {
 	kafkaConfigVersion, err := sarama.ParseKafkaVersion(d.kafkaVersion)
 	if err != nil {
 		return err
@@ -104,7 +116,7 @@ func (d *KafkaDriver) Init(context.Context) error {
 	kafkaConfig := sarama.NewConfig()
 	kafkaConfig.Version = kafkaConfigVersion
 	kafkaConfig.Producer.Return.Successes = false
-	kafkaConfig.Producer.Return.Errors = d.kafkaLogErrors
+	kafkaConfig.Producer.Return.Errors = true
 	kafkaConfig.Producer.MaxMessageBytes = d.kafkaMaxMsgBytes
 	kafkaConfig.Producer.Flush.Bytes = d.kafkaFlushBytes
 	kafkaConfig.Producer.Flush.Frequency = d.kafkaFlushFrequency
@@ -122,7 +134,7 @@ func (d *KafkaDriver) Init(context.Context) error {
 		*/
 
 		if cc, ok := compressionCodecs[strings.ToLower(d.kafkaCompressionCodec)]; !ok {
-			return errors.New("compression codec does not exist")
+			return fmt.Errorf("compression codec does not exist")
 		} else {
 			kafkaConfig.Producer.Compression = cc
 		}
@@ -131,10 +143,13 @@ func (d *KafkaDriver) Init(context.Context) error {
 	if d.kafkaTLS {
 		rootCAs, err := x509.SystemCertPool()
 		if err != nil {
-			return errors.New(fmt.Sprintf("Error initializing TLS: %v", err))
+			return fmt.Errorf("error initializing TLS: %v", err)
 		}
 		kafkaConfig.Net.TLS.Enable = true
-		kafkaConfig.Net.TLS.Config = &tls.Config{RootCAs: rootCAs}
+		kafkaConfig.Net.TLS.Config = &tls.Config{
+			RootCAs:    rootCAs,
+			MinVersion: tls.VersionTLS12,
+		}
 	}
 
 	if d.kafkaHashing {
@@ -152,7 +167,7 @@ func (d *KafkaDriver) Init(context.Context) error {
 		kafkaConfig.Net.SASL.User = os.Getenv("KAFKA_SASL_USER")
 		kafkaConfig.Net.SASL.Password = os.Getenv("KAFKA_SASL_PASS")
 		if kafkaConfig.Net.SASL.User == "" && kafkaConfig.Net.SASL.Password == "" {
-			return errors.New("Kafka SASL config from environment was unsuccessful. KAFKA_SASL_USER and KAFKA_SASL_PASS need to be set.")
+			return fmt.Errorf("Kafka SASL config from environment was unsuccessful. KAFKA_SASL_USER and KAFKA_SASL_PASS need to be set.")
 		}
 
 		if kafkaSASL == KAFKA_SASL_SCRAM_SHA256 || kafkaSASL == KAFKA_SASL_SCRAM_SHA512 {
@@ -174,7 +189,7 @@ func (d *KafkaDriver) Init(context.Context) error {
 
 	var addrs []string
 	if d.kafkaSrv != "" {
-		addrs, _ = utils.GetServiceAddresses(d.kafkaSrv)
+		addrs, _ = GetServiceAddresses(d.kafkaSrv)
 	} else {
 		addrs = strings.Split(d.kafkaBrk, ",")
 	}
@@ -187,20 +202,27 @@ func (d *KafkaDriver) Init(context.Context) error {
 
 	d.q = make(chan bool)
 
-	if d.kafkaLogErrors {
-		go func() {
-			for {
+	go func() {
+		for {
+			select {
+			case msg := <-kafkaProducer.Errors():
+				var err error
+				if msg != nil {
+					err = &KafkaTransportError{msg}
+				}
 				select {
-				case msg := <-kafkaProducer.Errors():
-					//if log != nil {
-					log.Error(msg)
-					//}
-				case <-d.q:
+				case d.errors <- err:
+				default:
+				}
+
+				if msg == nil {
 					return
 				}
+			case <-d.q:
+				return
 			}
-		}()
-	}
+		}
+	}()
 
 	return err
 }
@@ -214,13 +236,27 @@ func (d *KafkaDriver) Send(key, data []byte) error {
 	return nil
 }
 
-func (d *KafkaDriver) Close(context.Context) error {
+func (d *KafkaDriver) Close() error {
 	d.producer.Close()
 	close(d.q)
 	return nil
 }
 
+// todo: deprecate?
+func GetServiceAddresses(srv string) (addrs []string, err error) {
+	_, srvs, err := net.LookupSRV("", "", srv)
+	if err != nil {
+		return nil, fmt.Errorf("service discovery: %v\n", err)
+	}
+	for _, srv := range srvs {
+		addrs = append(addrs, net.JoinHostPort(srv.Target, strconv.Itoa(int(srv.Port))))
+	}
+	return addrs, nil
+}
+
 func init() {
-	d := &KafkaDriver{}
+	d := &KafkaDriver{
+		errors: make(chan error),
+	}
 	transport.RegisterTransportDriver("kafka", d)
 }

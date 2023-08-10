@@ -30,17 +30,20 @@ Minimal changes in the decoding libraries.
 
 ## Modularity
 
-In order to enable load-balancing and optimizations, the GoFlow library has a `decoder` which converts
-the payload of a flow packet into a Go structure.
+In order to enable load-balancing and optimizations, the GoFlow2 library has a `decoder` which converts
+the payload of a flow packet into a structure.
 
-The `producer` functions (one per protocol) then converts those structures into a protobuf (`pb/flow.pb`)
-which contains the fields a network engineer is interested in.
-The flow packets usually contains multiples samples
-This acts as an abstraction of a sample.
+The `producer` converts the samples into another format.
+Out of the box, this repository provides a protobuf producer (`pb/flow.pb`)
+and a raw producer.
+In the case of the protobuf producer, the records in a single flow packet
+are extracted and made in their own protobuf. Custom mapping allows
+to add new fields without rebuilding the proto.
 
-The `format` directory offers various utilities to process the protobuf. It can convert
+The `format` directory offers various utilities to format a message. It calls specific
+functions to marshal as JSON or text for instance.
 
-The `transport` provides different way of processing the protobuf. Either sending it via Kafka or 
+The `transport` provides different way of processing the message. Either sending it via Kafka or 
 send it to a file (or stdout).
 
 GoFlow2 is a wrapper of all the functions and chains thems.
@@ -103,55 +106,47 @@ By default, the samples received will be printed in JSON format on the stdout.
 
 ```json
 {
-  "Type": "SFLOW_5",
-  "TimeFlowEnd": 1621820000,
-  "TimeFlowStart": 1621820000,
-  "TimeReceived": 1621820000,
-  "Bytes": 70,
-  "Packets": 1,
-  "SamplingRate": 100,
-  "SamplerAddress": "192.168.1.254",
-  "DstAddr": "10.0.0.1",
-  "DstMac": "ff:ff:ff:ff:ff:ff",
-  "SrcAddr": "192.168.1.1",
-  "SrcMac": "ff:ff:ff:ff:ff:ff",
-  "InIf": 1,
-  "OutIf": 2,
-  "Etype": 2048,
-  "EtypeName": "IPv4",
-  "Proto": 6,
-  "ProtoName": "TCP",
-  "SrcPort": 443,
-  "DstPort": 46344,
-  "FragmentId": 54044,
-  "FragmentOffset": 16384,
-  ...
-  "IPTTL": 64,
-  "IPTos": 0,
-  "TCPFlags": 16,
+    "type": "SFLOW_5",
+    "time_received_ns": 1681583295157626000,
+    "sequence_num": 2999,
+    "sampling_rate": 100,
+    "sampler_address": "192.168.0.1",
+    "time_flow_start_ns": 1681583295157626000,
+    "time_flow_end_ns": 1681583295157626000,
+    "bytes": 1500,
+    "packets": 1,
+    "src_addr": "fd01::1",
+    "dst_addr": "fd01::2",
+    "etype": "IPv6",
+    "proto": "TCP",
+    "src_port": 443,
+    "dst_port": 50001
 }
 ```
 
 If you are using a log integration (e.g: Loki with Promtail, Splunk, Fluentd, Google Cloud Logs, etc.),
 just send the output into a file.
+
 ```bash
 $ ./goflow2 -transport.file /var/logs/goflow2.log
 ```
 
 To enable Kafka and send protobuf, use the following arguments:
+
 ```bash
-$ ./goflow2 -transport=kafka -transport.kafka.brokers=localhost:9092 -transport.kafka.topic=flows -format=pb
+$ ./goflow2 -transport=kafka \
+  -transport.kafka.brokers=localhost:9092 \
+  -transport.kafka.topic=flows \
+  -format=bin
 ```
 
 By default, the distribution will be randomized.
-To partition the feed (any field of the protobuf is available), the following options can be used:
-```
--transport.kafka.hashing=true \
--format.hash=SamplerAddress,DstAS
-```
+In order to partition the field, you need to configure the `key`
+in the formatter.
 
 By default, compression is disabled when sending data to Kafka.
 To change the kafka compression type of the producer side configure the following option:
+
 ```
 -transport.kafka.compression.type=gzip
 ```
@@ -189,9 +184,9 @@ in the InIf protobuf field without changing the code.
 ipfix:
   mapping:
     - field: 252
-      destination: InIf
+      destination: in_if
     - field: 253
-      destination: OutIf
+      destination: out_if
 ```
 
 ### Output format considerations
@@ -218,7 +213,8 @@ with a database for Autonomous System Number and Country.
 Similar output options as GoFlow are provided.
 
 ```bash
-$ ./goflow2 -transport.file.sep= -format=pb -format.protobuf.fixedlen=true | ./enricher -db.asn path-to/GeoLite2-ASN.mmdb -db.country path-to/GeoLite2-Country.mmdb
+$ ./goflow2 -transport.file.sep= -format=bin | \
+  ./enricher -db.asn path-to/GeoLite2-ASN.mmdb -db.country path-to/GeoLite2-Country.mmdb
 ```
 
 For a more scalable production setting, Kafka and protobuf are recommended.
@@ -226,13 +222,18 @@ Stream operations (aggregation and filtering) can be done with stream-processor 
 For instance Flink, or the more recent Kafka Streams and kSQLdb.
 Direct storage can be done with data-warehouses like Clickhouse.
 
-In some cases, the consumer will require protobuf messages to be prefixed by
-length. To do this, use the flag `-format.protobuf.fixedlen=true`.
+Each protobuf message is prefixed by its varint length.
 
 This repository contains [examples of pipelines](./compose) with docker-compose.
 The available pipelines are:
 * [Kafka+Clickhouse+Grafana](./compose/kcg)
 * [Logstash+Elastic+Kibana](./compose/elk)
+
+## Security notes and assumptions
+
+By default, the buffer for UDP is 9000 bytes.
+Protections were added to avoid DOS on sFlow since the various length fields are 32 bits.
+There are assumptions on how many records and list items a sample can have (eg: AS-Path).
 
 ## User stories
 

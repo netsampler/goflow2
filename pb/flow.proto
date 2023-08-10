@@ -13,20 +13,18 @@ message FlowMessage {
   }
   FlowType type = 1;
 
-  uint64 time_received = 2;
+  uint64 time_received_ns = 110;
   uint32 sequence_num = 4;
   uint64 sampling_rate = 3;
 
-  uint32 flow_direction = 42;
+  //uint32 flow_direction = 42;
 
   // Sampler information
   bytes sampler_address = 11;
 
   // Found inside packet
-  uint64 time_flow_start = 38;
-  uint64 time_flow_end = 5;
-  uint64 time_flow_start_ms = 63;
-  uint64 time_flow_end_ms = 64;
+  uint64 time_flow_start_ns = 111;
+  uint64 time_flow_end_ns = 112;
 
   // Size of the sampled packet
   uint64 bytes = 9;
@@ -60,10 +58,6 @@ message FlowMessage {
   // 802.1q VLAN in sampled packet
   uint32 vlan_id = 29;
 
-  // VRF
-  uint32 ingress_vrf_id = 39;
-  uint32 egress_vrf_id = 40;
-
   // IP and TCP special flags
   uint32 ip_tos = 23;
   uint32 forwarding_status = 24;
@@ -75,7 +69,6 @@ message FlowMessage {
   // Fragments (IPv4/IPv6)
   uint32 fragment_id = 35;
   uint32 fragment_offset = 36;
-  uint32 bi_flow_direction = 41;
 
   // Autonomous system information
   uint32 src_as = 14;
@@ -94,38 +87,10 @@ message FlowMessage {
   repeated uint32 as_path = 102;
 
   // MPLS information
-  bool has_mpls = 53;
-  uint32 mpls_count = 54;
-  uint32 mpls_1_ttl = 55; // First TTL
-  uint32 mpls_1_label = 56; // First Label
-  uint32 mpls_2_ttl = 57; // Second TTL
-  uint32 mpls_2_label = 58; // Second Label
-  uint32 mpls_3_ttl = 59; // Third TTL
-  uint32 mpls_3_label = 60; // Third Label
-  uint32 mpls_last_ttl = 61; // Last TTL
-  uint32 mpls_last_label = 62; // Last Label
-  bytes mpls_label_ip = 65; // MPLS TOP Label IP 
+  repeated uint32 mpls_ttl = 80;
+  repeated uint32 mpls_label = 81;
+  repeated bytes mpls_ip = 82;
 
   uint32 observation_domain_id = 70;
   uint32 observation_point_id = 71;
-
-  // Custom fields: start after ID 1000:
-  // uint32 my_custom_field = 1000;
-
-
-  // Custom allocations
-  uint64 custom_integer_1 = 1001;
-  uint64 custom_integer_2 = 1002;
-  uint64 custom_integer_3 = 1003;
-  uint64 custom_integer_4 = 1004;
-  uint64 custom_integer_5 = 1005;
-
-  bytes custom_bytes_1 = 1011;
-  bytes custom_bytes_2 = 1012;
-  bytes custom_bytes_3 = 1013;
-  bytes custom_bytes_4 = 1014;
-  bytes custom_bytes_5 = 1015;
-
-  repeated uint32 custom_list_1 = 1021;
-
 }

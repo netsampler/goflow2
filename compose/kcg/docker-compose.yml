@@ -57,8 +57,7 @@ services:
     - -transport.kafka.brokers=kafka:9092
     - -transport=kafka
     - -transport.kafka.topic=flows
-    - -format=pb
-    - -format.protobuf.fixedlen=true
+    - -format=bin
   db:
     image: clickhouse/clickhouse-server:22.8.14.53-alpine
     ports:

@@ -11,10 +11,10 @@ type FlowSetHeader struct {
 	//    0 for TemplateFlowSet
 	//    1 for OptionsTemplateFlowSet
 	//    256-65535 for DataFlowSet (used as TemplateId)
-	Id uint16
+	Id uint16 `json:"id"`
 
 	// The total length of this FlowSet in bytes (including padding).
-	Length uint16
+	Length uint16 `json:"length"`
 }
 
 // TemplateFlowSet is a collection of templates that describe structure of Data
@@ -23,7 +23,7 @@ type TemplateFlowSet struct {
 	FlowSetHeader
 
 	// List of Template Records
-	Records []TemplateRecord
+	Records []TemplateRecord `json:"records"`
 }
 
 // DataFlowSet is a collection of Data Records (actual NetFlow data) and Options
@@ -31,13 +31,13 @@ type TemplateFlowSet struct {
 type DataFlowSet struct {
 	FlowSetHeader
 
-	Records []DataRecord
+	Records []DataRecord `json:"records"`
 }
 
 type OptionsDataFlowSet struct {
 	FlowSetHeader
 
-	Records []OptionsDataRecord
+	Records []OptionsDataRecord `json:"records"`
 }
 
 // TemplateRecord is a single template that describes structure of a Flow Record
@@ -47,30 +47,30 @@ type TemplateRecord struct {
 	// Template ID. This uniqueness is local to the Observation Domain that
 	// generated the Template ID. Template IDs of Data FlowSets are numbered
 	// from 256 to 65535.
-	TemplateId uint16
+	TemplateId uint16 `json:"template-id"`
 
 	// Number of fields in this Template Record. Because a Template FlowSet
 	// usually contains multiple Template Records, this field allows the
 	// Collector to determine the end of the current Template Record and
 	// the start of the next.
-	FieldCount uint16
+	FieldCount uint16 `json:"field-count"`
 
 	// List of fields in this Template Record.
-	Fields []Field
+	Fields []Field `json:"fields"`
 }
 
 type DataRecord struct {
-	Values []DataField
+	Values []DataField `json:"values"`
 }
 
 // OptionsDataRecord is meta data sent alongide actual NetFlow data. Combined
 // with OptionsTemplateRecord it can be decoded to a single data row.
 type OptionsDataRecord struct {
 	// List of Scope values stored in raw format as []byte
-	ScopesValues []DataField
+	ScopesValues []DataField `json:"scope-values"`
 
 	// List of Optons values stored in raw format as []byte
-	OptionsValues []DataField
+	OptionsValues []DataField `json:"option-values"`
 }
 
 // Field describes type and length of a single value in a Flow Data Record.
@@ -78,23 +78,23 @@ type OptionsDataRecord struct {
 // what record value will look like.
 type Field struct {
 	// A numeric value that represents the type of field.
-	PenProvided bool
-	Type        uint16
+	PenProvided bool   `json:"pen-provided"`
+	Type        uint16 `json:"type"`
 
 	// The length (in bytes) of the field.
-	Length uint16
+	Length uint16 `json:"length"`
 
-	Pen uint32
+	Pen uint32 `json:"pen"`
 }
 
 type DataField struct {
 	// A numeric value that represents the type of field.
-	PenProvided bool
-	Type        uint16
-	Pen         uint32
+	PenProvided bool   `json:"pen-provided"`
+	Type        uint16 `json:"type"`
+	Pen         uint32 `json:"pen"`
 
 	// The value (in bytes) of the field.
-	Value interface{}
+	Value interface{} `json:"value"`
 	//Value []byte
 }
 
