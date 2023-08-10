@@ -237,6 +237,8 @@ func NewFlowPipe(cfg *PipeConfig) *AutoFlowPipe {
 }
 
 func (p *AutoFlowPipe) Close() {
+	p.SFlowPipe.Close()
+	p.NetFlowPipe.Close()
 }
 
 func (p *AutoFlowPipe) DecodeFlow(msg interface{}) error {
