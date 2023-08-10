@@ -133,7 +133,7 @@ func ParseEthernetHeader(flowMessage *flowmessage.FlowMessage, data []byte, conf
 				ttl = data[offset+8]
 
 				identification = binary.BigEndian.Uint16(data[offset+4 : offset+6])
-				fragOffset = binary.BigEndian.Uint16(data[offset+6 : offset+8])
+				fragOffset = binary.BigEndian.Uint16(data[offset+6:offset+8]) & 8191
 
 				offset += 20
 			}
@@ -163,7 +163,7 @@ func ParseEthernetHeader(flowMessage *flowmessage.FlowMessage, data []byte, conf
 		}
 
 		appOffset := 0
-		if len(data) >= offset+4 && (nextHeader == 17 || nextHeader == 6) {
+		if len(data) >= offset+4 && (nextHeader == 17 || nextHeader == 6) && fragOffset&8191 == 0 {
 			srcPort = binary.BigEndian.Uint16(data[offset+0 : offset+2])
 			dstPort = binary.BigEndian.Uint16(data[offset+2 : offset+4])
 		}
