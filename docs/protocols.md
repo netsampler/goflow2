@@ -30,9 +30,9 @@ The mapping to the protobuf format is listed in the table below.
 |OutIf|Output interface|output|Included|OUTPUT_SNMP (14)|egressInterface (14)|
 |SrcMac|Source mac address| |Included|IN_SRC_MAC (56)|sourceMacAddress (56)|
 |DstMac|Destination mac address| |Included|OUT_DST_MAC (57)|postDestinationMacAddress (57)|
-|SrcVlan|Source VLAN ID| |From ExtendedSwitch|SRC_VLAN (59)|vlanId (58)|
+|SrcVlan|Source VLAN ID| |From ExtendedSwitch|SRC_VLAN (58)|vlanId (58)|
 |DstVlan|Destination VLAN ID| |From ExtendedSwitch|DST_VLAN (59)|postVlanId (59)|
-|VlanId|802.11q VLAN ID| |Included|SRC_VLAN (59)|postVlanId (59)|
+|VlanId|802.11q VLAN ID| |Included|SRC_VLAN (58)|vlanId (58)|
 |IngressVrfID|VRF ID| | | |ingressVRFID (234)| 
 |EgressVrfID|VRF ID| | | |egressVRFID (235)|
 |IPTos|IP Type of Service|tos|Included|SRC_TOS (5)|ipClassOfService (5)|

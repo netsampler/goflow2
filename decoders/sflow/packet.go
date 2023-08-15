@@ -63,6 +63,10 @@ type FlowRecord struct {
 	Data   interface{}
 }
 
+type FlowRecordRaw struct {
+	Data []byte
+}
+
 type CounterRecord struct {
 	Header RecordHeader
 	Data   interface{}

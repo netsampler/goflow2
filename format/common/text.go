@@ -220,6 +220,17 @@ func FormatMessageReflectCustom(msg interface{}, ext, quotes, sep, sign string, 
 				switch fieldValue.Kind() {
 				case reflect.String:
 					fstr[i] = fmt.Sprintf("%s%s%s%s%q", quotes, s, quotes, sign, fieldValue.Interface())
+				case reflect.Slice:
+					c := fieldValue.Len()
+					v := "["
+					for i := 0; i < c; i++ {
+						v += fmt.Sprintf("%v", fieldValue.Index(i).Interface())
+						if i < c-1 {
+							v += ","
+						}
+					}
+					v += "]"
+					fstr[i] = fmt.Sprintf("%s%s%s%s%s", quotes, s, quotes, sign, v)
 				default:
 					fstr[i] = fmt.Sprintf("%s%s%s%s%v", quotes, s, quotes, sign, fieldValue.Interface())
 				}

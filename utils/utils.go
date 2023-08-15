@@ -71,20 +71,20 @@ type Formatter interface {
 type DefaultLogTransport struct {
 }
 
-func (s *DefaultLogTransport) Publish(msgs []*flowmessage.FlowMessage) {
-	for _, msg := range msgs {
-		fmt.Printf("%v\n", FlowMessageToString(msg))
+	func (s *DefaultLogTransport) Publish(msgs []*flowmessage.FlowMessage) {
+		for _, msg := range msgs {
+			fmt.Printf("%v\n", FlowMessageToString(msg))
+		}
 	}
-}
 
 type DefaultJSONTransport struct {
 }
 
-func (s *DefaultJSONTransport) Publish(msgs []*flowmessage.FlowMessage) {
-	for _, msg := range msgs {
-		fmt.Printf("%v\n", FlowMessageToJSON(msg))
+	func (s *DefaultJSONTransport) Publish(msgs []*flowmessage.FlowMessage) {
+		for _, msg := range msgs {
+			fmt.Printf("%v\n", FlowMessageToJSON(msg))
+		}
 	}
-}
 */
 type DefaultErrorCallback struct {
 	Logger Logger

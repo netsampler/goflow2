@@ -126,4 +126,6 @@ message FlowMessage {
   bytes custom_bytes_4 = 1014;
   bytes custom_bytes_5 = 1015;
 
+  repeated uint32 custom_list_1 = 1021;
+
 }

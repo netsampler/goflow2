@@ -6,12 +6,19 @@ ipfix:
       destination: CustomInteger2
       # penprovided: false
       # pen: 0
+    - field: 137
+      destination: CustomList_1
+      penprovided: true
+      pen: 2636
 netflowv9:
   mapping:
     - field: 7
       destination: CustomInteger1
     - field: 11
       destination: CustomInteger2
+    - field: 34 # samplingInterval
+      destination: SamplingRate
+      endian: little
 sflow:
   mapping:
     - layer: 4 # Layer 4: TCP or UDP

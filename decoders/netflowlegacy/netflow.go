@@ -42,6 +42,8 @@ func DecodeMessage(payload *bytes.Buffer) (interface{}, error) {
 			&(packet.SamplingInterval),
 		)
 
+		packet.SamplingInterval = packet.SamplingInterval & 0x3FFF
+
 		packet.Records = make([]RecordsNetFlowV5, int(packet.Count))
 		for i := 0; i < int(packet.Count) && payload.Len() >= 48; i++ {
 			record := RecordsNetFlowV5{}

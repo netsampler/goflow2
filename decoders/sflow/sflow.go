@@ -128,7 +128,9 @@ func DecodeCounterRecord(header *RecordHeader, payload *bytes.Buffer) (CounterRe
 		}
 		counterRecord.Data = ethernetCounters
 	default:
-		return counterRecord, NewErrorDataFormat((*header).DataFormat)
+		counterRecord.Data = &FlowRecordRaw{
+			Data: payload.Next(int(header.Length)),
+		}
 	}
 
 	return counterRecord, nil
@@ -281,7 +283,10 @@ func DecodeFlowRecord(header *RecordHeader, payload *bytes.Buffer) (FlowRecord, 
 
 		flowRecord.Data = extendedGateway
 	default:
-		return flowRecord, errors.New(fmt.Sprintf("Unknown data format %v.", header.DataFormat))
+		//return flowRecord, errors.New(fmt.Sprintf("Unknown data format %v.", (*header).DataFormat))
+		flowRecord.Data = &FlowRecordRaw{
+			Data: payload.Next(int(header.Length)),
+		}
 	}
 	return flowRecord, nil
 }

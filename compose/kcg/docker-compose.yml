@@ -1,14 +1,14 @@
 version: "3"
 services:
   zookeeper:
-    image: bitnami/zookeeper:3.6.3
+    image: bitnami/zookeeper:3.7.1
     ports:
       - 2181:2181
     environment:
       - ALLOW_ANONYMOUS_LOGIN=yes
     restart: always
   kafka:
-    image: bitnami/kafka:2.8.0
+    image: bitnami/kafka:3.4.0
     ports:
       - 9092:9092
     environment:
@@ -19,10 +19,11 @@ services:
     depends_on:
       - zookeeper
   grafana:
-    image: grafana/grafana:9.1.7
+    image: grafana/grafana:9.4.3
     environment:
-      - GF_INSTALL_PLUGINS=grafana-clickhouse-datasource
-      - GF_PLUGINS_ALLOW_LOADING_UNSIGNED_PLUGINS=vertamedia-clickhouse-datasource
+      - GF_INSTALL_PLUGINS=vertamedia-clickhouse-datasource
+    #  - GF_INSTALL_PLUGINS=grafana-clickhouse-datasource
+    #  - GF_PLUGINS_ALLOW_LOADING_UNSIGNED_PLUGINS=vertamedia-clickhouse-datasource
     ports:
       - 3000:3000
     restart: always
@@ -31,7 +32,7 @@ services:
       - ./grafana/dashboards.yml:/etc/grafana/provisioning/dashboards/dashboards.yml
       - ./grafana/dashboards:/var/lib/grafana/dashboards
   prometheus:
-    image: prom/prometheus:v2.27.0
+    image: prom/prometheus:v2.37.6
     ports:
       - 9090:9090
     restart: always
@@ -41,6 +42,10 @@ services:
     build:
       context: ../../
       dockerfile: Dockerfile
+      args:
+        VERSION: compose
+        LDFLAGS: -X main.version=compose
+    image: netsampler/goflow2
     depends_on:
       - kafka
     ports:
@@ -55,7 +60,7 @@ services:
     - -format=pb
     - -format.protobuf.fixedlen=true
   db:
-    image: clickhouse/clickhouse-server:22.6.9.11-alpine
+    image: clickhouse/clickhouse-server:22.8.14.53-alpine
     ports:
       - 8123:8123
     volumes:

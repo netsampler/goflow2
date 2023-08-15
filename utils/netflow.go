@@ -2,13 +2,12 @@ package utils
 
 import (
 	"bytes"
-	"encoding/json"
-	"net/http"
-	"strconv"
+	"context"
 	"sync"
 	"time"
 
 	"github.com/netsampler/goflow2/decoders/netflow"
+	"github.com/netsampler/goflow2/decoders/netflow/templates"
 	"github.com/netsampler/goflow2/format"
 	flowmessage "github.com/netsampler/goflow2/pb"
 	"github.com/netsampler/goflow2/producer"
@@ -16,6 +15,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 )
 
+/*
 type TemplateSystem struct {
 	key       string
 	templates *netflow.BasicTemplateSystem
@@ -49,21 +49,34 @@ func (s *TemplateSystem) AddTemplate(version uint16, obsDomainId uint32, templat
 func (s *TemplateSystem) GetTemplate(version uint16, obsDomainId uint32, templateId uint16) (interface{}, error) {
 	return s.templates.GetTemplate(version, obsDomainId, templateId)
 }
+*/
 
 type StateNetFlow struct {
 	stopper
 
-	Format        format.FormatInterface
-	Transport     transport.TransportInterface
-	Logger        Logger
-	templateslock *sync.RWMutex
-	templates     map[string]*TemplateSystem
+	Format    format.FormatInterface
+	Transport transport.TransportInterface
+	Logger    Logger
+	/*templateslock *sync.RWMutex
+	templates     map[string]*TemplateSystem*/
 
 	samplinglock *sync.RWMutex
 	sampling     map[string]producer.SamplingRateSystem
 
 	Config       *producer.ProducerConfig
 	configMapped *producer.ProducerConfigMapped
+
+	TemplateSystem templates.TemplateInterface
+
+	ctx context.Context
+}
+
+func NewStateNetFlow() *StateNetFlow {
+	return &StateNetFlow{
+		ctx:          context.Background(),
+		samplinglock: &sync.RWMutex{},
+		sampling:     make(map[string]producer.SamplingRateSystem),
+	}
 }
 
 func (s *StateNetFlow) DecodeFlow(msg interface{}) error {
@@ -76,18 +89,6 @@ func (s *StateNetFlow) DecodeFlow(msg interface{}) error {
 		samplerAddress = samplerAddress.To4()
 	}
 
-	s.templateslock.RLock()
-	templates, ok := s.templates[key]
-	s.templateslock.RUnlock()
-	if !ok {
-		templates = &TemplateSystem{
-			templates: netflow.CreateTemplateSystem(),
-			key:       key,
-		}
-		s.templateslock.Lock()
-		s.templates[key] = templates
-		s.templateslock.Unlock()
-	}
 	s.samplinglock.RLock()
 	sampling, ok := s.sampling[key]
 	s.samplinglock.RUnlock()
@@ -104,7 +105,7 @@ func (s *StateNetFlow) DecodeFlow(msg interface{}) error {
 	}
 
 	timeTrackStart := time.Now()
-	msgDec, err := netflow.DecodeMessage(buf, templates)
+	msgDec, err := netflow.DecodeMessageContext(s.ctx, buf, key, netflow.TemplateWrapper{s.ctx, key, s.TemplateSystem})
 	if err != nil {
 		switch err.(type) {
 		case *netflow.ErrorTemplateNotFound:
@@ -340,6 +341,7 @@ func (s *StateNetFlow) DecodeFlow(msg interface{}) error {
 	return nil
 }
 
+/*
 func (s *StateNetFlow) ServeHTTPTemplates(w http.ResponseWriter, r *http.Request) {
 	tmp := make(map[string]map[uint16]map[uint32]map[uint16]interface{})
 	s.templateslock.RLock()
@@ -357,7 +359,7 @@ func (s *StateNetFlow) InitTemplates() {
 	s.templateslock = &sync.RWMutex{}
 	s.sampling = make(map[string]producer.SamplingRateSystem)
 	s.samplinglock = &sync.RWMutex{}
-}
+}*/
 
 func (s *StateNetFlow) initConfig() {
 	s.configMapped = producer.NewProducerConfigMapped(s.Config)
@@ -367,7 +369,9 @@ func (s *StateNetFlow) FlowRoutine(workers int, addr string, port int, reuseport
 	if err := s.start(); err != nil {
 		return err
 	}
-	s.InitTemplates()
+	//s.InitTemplates()
 	s.initConfig()
 	return UDPStoppableRoutine(s.stopCh, "NetFlow", s.DecodeFlow, workers, addr, port, reuseport, s.Logger)
 }
+
+// FlowRoutineCtx?

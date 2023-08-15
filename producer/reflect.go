@@ -8,6 +8,13 @@ import (
 	flowmessage "github.com/netsampler/goflow2/pb"
 )
 
+type EndianType string
+
+var (
+	BigEndian    EndianType = "big"
+	LittleEndian EndianType = "little"
+)
+
 func GetBytes(d []byte, offset int, length int) []byte {
 	if length == 0 {
 		return nil
@@ -41,6 +48,14 @@ func GetBytes(d []byte, offset int, length int) []byte {
 	return chunk
 }
 
+func IsUInt(k reflect.Kind) bool {
+	return k == reflect.Uint8 || k == reflect.Uint16 || k == reflect.Uint32 || k == reflect.Uint64
+}
+
+func IsInt(k reflect.Kind) bool {
+	return k == reflect.Int8 || k == reflect.Int16 || k == reflect.Int32 || k == reflect.Int64
+}
+
 func MapCustomNetFlow(flowMessage *flowmessage.FlowMessage, df netflow.DataField, mapper *NetFlowMapper) {
 	if mapper == nil {
 		return
@@ -48,11 +63,11 @@ func MapCustomNetFlow(flowMessage *flowmessage.FlowMessage, df netflow.DataField
 	mapped, ok := mapper.Map(df)
 	if ok {
 		v := df.Value.([]byte)
-		MapCustom(flowMessage, v, mapped.Destination)
+		MapCustom(flowMessage, v, mapped.Destination, mapped.Endian)
 	}
 }
 
-func MapCustom(flowMessage *flowmessage.FlowMessage, v []byte, destination string) {
+func MapCustom(flowMessage *flowmessage.FlowMessage, v []byte, destination string, endianness EndianType) {
 	vfm := reflect.ValueOf(flowMessage)
 	vfm = reflect.Indirect(vfm)
 
@@ -62,12 +77,44 @@ func MapCustom(flowMessage *flowmessage.FlowMessage, v []byte, destination strin
 		typeDest := fieldValue.Type()
 		fieldValueAddr := fieldValue.Addr()
 
-		if typeDest.Kind() == reflect.Slice && typeDest.Elem().Kind() == reflect.Uint8 {
-			fieldValue.SetBytes(v)
-		} else if fieldValueAddr.IsValid() && (typeDest.Kind() == reflect.Uint8 || typeDest.Kind() == reflect.Uint16 || typeDest.Kind() == reflect.Uint32 || typeDest.Kind() == reflect.Uint64) {
-			DecodeUNumber(v, fieldValueAddr.Interface())
-		} else if fieldValueAddr.IsValid() && (typeDest.Kind() == reflect.Int8 || typeDest.Kind() == reflect.Int16 || typeDest.Kind() == reflect.Int32 || typeDest.Kind() == reflect.Int64) {
-			DecodeNumber(v, fieldValueAddr.Interface())
+		if typeDest.Kind() == reflect.Slice {
+
+			if typeDest.Elem().Kind() == reflect.Uint8 {
+				fieldValue.SetBytes(v)
+			} else {
+				item := reflect.New(typeDest.Elem())
+
+				if IsUInt(typeDest.Elem().Kind()) {
+					if endianness == LittleEndian {
+						DecodeUNumberLE(v, item.Interface())
+					} else {
+						DecodeUNumber(v, item.Interface())
+					}
+				} else if IsUInt(typeDest.Elem().Kind()) {
+					if endianness == LittleEndian {
+						DecodeUNumberLE(v, item.Interface())
+					} else {
+						DecodeUNumber(v, item.Interface())
+					}
+				}
+
+				itemi := reflect.Indirect(item)
+				tmpFieldValue := reflect.Append(fieldValue, itemi)
+				fieldValue.Set(tmpFieldValue)
+			}
+
+		} else if fieldValueAddr.IsValid() && IsUInt(typeDest.Kind()) {
+			if endianness == LittleEndian {
+				DecodeUNumberLE(v, fieldValueAddr.Interface())
+			} else {
+				DecodeUNumber(v, fieldValueAddr.Interface())
+			}
+		} else if fieldValueAddr.IsValid() && IsInt(typeDest.Kind()) {
+			if endianness == LittleEndian {
+				DecodeUNumberLE(v, fieldValueAddr.Interface())
+			} else {
+				DecodeUNumber(v, fieldValueAddr.Interface())
+			}
 		}
 	}
 }
@@ -77,7 +124,8 @@ type NetFlowMapField struct {
 	Type        uint16 `json:"field" yaml:"field"`
 	Pen         uint32 `json:"pen" yaml:"pen"`
 
-	Destination string `json:"destination" yaml:"destination"`
+	Destination string     `json:"destination" yaml:"destination"`
+	Endian      EndianType `json:"endianness" yaml:"endianness"`
 	//DestinationLength uint8  `json:"dlen"` // could be used if populating a slice of uint16 that aren't in protobuf
 }
 
@@ -95,7 +143,8 @@ type SFlowMapField struct {
 	Offset int `json:"offset"` // offset in bits
 	Length int `json:"length"` // length in bits
 
-	Destination string `json:"destination"`
+	Destination string     `json:"destination" yaml:"destination"`
+	Endian      EndianType `json:"endianness" yaml:"endianness"`
 	//DestinationLength uint8  `json:"dlen"`
 }
 
@@ -113,6 +162,7 @@ type ProducerConfig struct {
 
 type DataMap struct {
 	Destination string
+	Endian      EndianType
 }
 
 type NetFlowMapper struct {
@@ -127,7 +177,7 @@ func (m *NetFlowMapper) Map(field netflow.DataField) (DataMap, bool) {
 func MapFieldsNetFlow(fields []NetFlowMapField) *NetFlowMapper {
 	ret := make(map[string]DataMap)
 	for _, field := range fields {
-		ret[fmt.Sprintf("%v-%d-%d", field.PenProvided, field.Pen, field.Type)] = DataMap{Destination: field.Destination}
+		ret[fmt.Sprintf("%v-%d-%d", field.PenProvided, field.Pen, field.Type)] = DataMap{Destination: field.Destination, Endian: field.Endian}
 	}
 	return &NetFlowMapper{ret}
 }
@@ -136,6 +186,7 @@ type DataMapLayer struct {
 	Offset      int
 	Length      int
 	Destination string
+	Endian      EndianType
 }
 
 type SFlowMapper struct {
@@ -156,6 +207,7 @@ func MapFieldsSFlow(fields []SFlowMapField) *SFlowMapper {
 			Offset:      field.Offset,
 			Length:      field.Length,
 			Destination: field.Destination,
+			Endian:      field.Endian,
 		}
 		retLayer := ret[field.Layer]
 		retLayer = append(retLayer, retLayerEntry)
