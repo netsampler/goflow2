@@ -8,6 +8,11 @@ import (
 	"reflect"
 )
 
+type BytesBuffer interface {
+	io.Reader
+	Next(int) []byte
+}
+
 func BinaryDecoder(payload *bytes.Buffer, dests ...interface{}) error {
 	for _, dest := range dests {
 		err := BinaryRead(payload, binary.BigEndian, dest)
@@ -17,8 +22,7 @@ func BinaryDecoder(payload *bytes.Buffer, dests ...interface{}) error {
 	}
 	return nil
 }
-
-func BinaryRead(payload *bytes.Buffer, order binary.ByteOrder, data any) error {
+func BinaryRead(payload BytesBuffer, order binary.ByteOrder, data any) error {
 	// Fast path for basic types and slices.
 	if n := intDataSize(data); n != 0 {
 		bs := payload.Next(n)
