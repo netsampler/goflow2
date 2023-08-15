@@ -166,14 +166,14 @@ func DecodeFlowRecord(header *RecordHeader, payload *bytes.Buffer) (FlowRecord, 
 	switch (*header).DataFormat {
 	case FORMAT_EXT_SWITCH:
 		extendedSwitch := ExtendedSwitch{}
-		err := utils.BinaryDecoder(payload, &(extendedSwitch.SrcVlan), &(extendedSwitch.SrcPriority), &(extendedSwitch.DstVlan), &(extendedSwitch.DstPriority))
+		err := utils.BinaryDecoder(payload, &extendedSwitch.SrcVlan, &extendedSwitch.SrcPriority, &extendedSwitch.DstVlan, &extendedSwitch.DstPriority)
 		if err != nil {
 			return flowRecord, err
 		}
 		flowRecord.Data = extendedSwitch
 	case FORMAT_RAW_PKT:
 		sampledHeader := SampledHeader{}
-		err := utils.BinaryDecoder(payload, &(sampledHeader.Protocol), &(sampledHeader.FrameLength), &(sampledHeader.Stripped), &(sampledHeader.OriginalLength))
+		err := utils.BinaryDecoder(payload, &sampledHeader.Protocol, &sampledHeader.FrameLength, &sampledHeader.Stripped, &sampledHeader.OriginalLength)
 		if err != nil {
 			return flowRecord, err
 		}
@@ -208,7 +208,7 @@ func DecodeFlowRecord(header *RecordHeader, payload *bytes.Buffer) (FlowRecord, 
 		sampledIPv6 := SampledIPv6{
 			Base: sampledIPBase,
 		}
-		err = utils.BinaryDecoder(payload, &(sampledIPv6.Priority))
+		err = utils.BinaryDecoder(payload, &sampledIPv6.Priority)
 		if err != nil {
 			return flowRecord, err
 		}
@@ -222,7 +222,7 @@ func DecodeFlowRecord(header *RecordHeader, payload *bytes.Buffer) (FlowRecord, 
 		}
 		extendedRouter.NextHopIPVersion = ipVersion
 		extendedRouter.NextHop = ip
-		err = utils.BinaryDecoder(payload, &(extendedRouter.SrcMaskLen), &(extendedRouter.DstMaskLen))
+		err = utils.BinaryDecoder(payload, &extendedRouter.SrcMaskLen, &extendedRouter.DstMaskLen)
 		if err != nil {
 			return flowRecord, err
 		}
@@ -235,14 +235,14 @@ func DecodeFlowRecord(header *RecordHeader, payload *bytes.Buffer) (FlowRecord, 
 		}
 		extendedGateway.NextHopIPVersion = ipVersion
 		extendedGateway.NextHop = ip
-		err = utils.BinaryDecoder(payload, &(extendedGateway.AS), &(extendedGateway.SrcAS), &(extendedGateway.SrcPeerAS),
-			&(extendedGateway.ASDestinations))
+		err = utils.BinaryDecoder(payload, &extendedGateway.AS, &extendedGateway.SrcAS, &extendedGateway.SrcPeerAS,
+			&extendedGateway.ASDestinations)
 		if err != nil {
 			return flowRecord, err
 		}
 		var asPath []uint32
 		if extendedGateway.ASDestinations != 0 {
-			err := utils.BinaryDecoder(payload, &(extendedGateway.ASPathType), &(extendedGateway.ASPathLength))
+			err := utils.BinaryDecoder(payload, &extendedGateway.ASPathType, &extendedGateway.ASPathLength)
 			if err != nil {
 				return flowRecord, err
 			}
@@ -259,7 +259,7 @@ func DecodeFlowRecord(header *RecordHeader, payload *bytes.Buffer) (FlowRecord, 
 		}
 		extendedGateway.ASPath = asPath
 
-		err = utils.BinaryDecoder(payload, &(extendedGateway.CommunitiesLength))
+		err = utils.BinaryDecoder(payload, &extendedGateway.CommunitiesLength)
 		if err != nil {
 			return flowRecord, err
 		}
@@ -273,7 +273,7 @@ func DecodeFlowRecord(header *RecordHeader, payload *bytes.Buffer) (FlowRecord, 
 				return flowRecord, err
 			}
 		}
-		err = utils.BinaryDecoder(payload, &(extendedGateway.LocalPref))
+		err = utils.BinaryDecoder(payload, &extendedGateway.LocalPref)
 		if err != nil {
 			return flowRecord, err
 		}
@@ -281,16 +281,16 @@ func DecodeFlowRecord(header *RecordHeader, payload *bytes.Buffer) (FlowRecord, 
 
 		flowRecord.Data = extendedGateway
 	default:
-		return flowRecord, errors.New(fmt.Sprintf("Unknown data format %v.", (*header).DataFormat))
+		return flowRecord, errors.New(fmt.Sprintf("Unknown data format %v.", header.DataFormat))
 	}
 	return flowRecord, nil
 }
 
 func DecodeSample(header *SampleHeader, payload *bytes.Buffer) (interface{}, error) {
-	format := (*header).Format
+	format := header.Format
 	var sample interface{}
 
-	err := utils.BinaryDecoder(payload, &((*header).SampleSequenceNumber))
+	err := utils.BinaryDecoder(payload, &header.SampleSequenceNumber)
 	if err != nil {
 		return sample, err
 	}
@@ -304,7 +304,7 @@ func DecodeSample(header *SampleHeader, payload *bytes.Buffer) (interface{}, err
 		(*header).SourceIdType = sourceId >> 24
 		(*header).SourceIdValue = sourceId & 0x00ffffff
 	} else if format == FORMAT_IPV4 || format == FORMAT_IPV6 {
-		err = utils.BinaryDecoder(payload, &((*header).SourceIdType), &((*header).SourceIdValue))
+		err = utils.BinaryDecoder(payload, &header.SourceIdType, &header.SourceIdValue)
 		if err != nil {
 			return sample, err
 		}
@@ -320,8 +320,8 @@ func DecodeSample(header *SampleHeader, payload *bytes.Buffer) (interface{}, err
 		flowSample = FlowSample{
 			Header: *header,
 		}
-		err = utils.BinaryDecoder(payload, &(flowSample.SamplingRate), &(flowSample.SamplePool),
-			&(flowSample.Drops), &(flowSample.Input), &(flowSample.Output), &(flowSample.FlowRecordsCount))
+		err = utils.BinaryDecoder(payload, &flowSample.SamplingRate, &flowSample.SamplePool,
+			&flowSample.Drops, &flowSample.Input, &flowSample.Output, &flowSample.FlowRecordsCount)
 		if err != nil {
 			return sample, err
 		}
@@ -343,9 +343,9 @@ func DecodeSample(header *SampleHeader, payload *bytes.Buffer) (interface{}, err
 		expandedFlowSample = ExpandedFlowSample{
 			Header: *header,
 		}
-		err = utils.BinaryDecoder(payload, &(expandedFlowSample.SamplingRate), &(expandedFlowSample.SamplePool),
-			&(expandedFlowSample.Drops), &(expandedFlowSample.InputIfFormat), &(expandedFlowSample.InputIfValue),
-			&(expandedFlowSample.OutputIfFormat), &(expandedFlowSample.OutputIfValue), &(expandedFlowSample.FlowRecordsCount))
+		err = utils.BinaryDecoder(payload, &expandedFlowSample.SamplingRate, &expandedFlowSample.SamplePool,
+			&expandedFlowSample.Drops, &expandedFlowSample.InputIfFormat, &expandedFlowSample.InputIfValue,
+			&expandedFlowSample.OutputIfFormat, &expandedFlowSample.OutputIfValue, &expandedFlowSample.FlowRecordsCount)
 		if err != nil {
 			return sample, err
 		}
@@ -355,7 +355,7 @@ func DecodeSample(header *SampleHeader, payload *bytes.Buffer) (interface{}, err
 	}
 	for i := 0; i < int(recordsCount) && payload.Len() >= 8; i++ {
 		recordHeader := RecordHeader{}
-		err = utils.BinaryDecoder(payload, &(recordHeader.DataFormat), &(recordHeader.Length))
+		err = utils.BinaryDecoder(payload, &recordHeader.DataFormat, &recordHeader.Length)
 		if err != nil {
 			return sample, err
 		}
@@ -415,7 +415,7 @@ func DecodeMessage(payload *bytes.Buffer) (interface{}, error) {
 		}
 
 		packetV5.AgentIP = ip
-		err = utils.BinaryDecoder(payload, &(packetV5.SubAgentId), &(packetV5.SequenceNumber), &(packetV5.Uptime), &(packetV5.SamplesCount))
+		err = utils.BinaryDecoder(payload, &packetV5.SubAgentId, &packetV5.SequenceNumber, &packetV5.Uptime, &packetV5.SamplesCount)
 		if err != nil {
 			return packetV5, err
 		}
