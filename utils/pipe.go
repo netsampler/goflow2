@@ -186,7 +186,7 @@ func (p *NetFlowPipe) DecodeFlow(msg interface{}) error {
 			return &PipeMessageError{pkt, err}
 		}
 	default:
-		return &PipeMessageError{pkt, fmt.Errorf("Not a NetFlow packet")}
+		return &PipeMessageError{pkt, fmt.Errorf("not a NetFlow packet")}
 	}
 
 	var flowMessageSet []producer.ProducerMessage
@@ -221,4 +221,43 @@ func (p *NetFlowPipe) DecodeFlow(msg interface{}) error {
 }
 
 func (p *NetFlowPipe) Close() {
+}
+
+type AutoFlowPipe struct {
+	*SFlowPipe
+	*NetFlowPipe
+}
+
+func NewFlowPipe(cfg *PipeConfig) *AutoFlowPipe {
+	p := &AutoFlowPipe{
+		SFlowPipe:   NewSFlowPipe(cfg),
+		NetFlowPipe: NewNetFlowPipe(cfg),
+	}
+	return p
+}
+
+func (p *AutoFlowPipe) Close() {
+	p.SFlowPipe.Close()
+	p.NetFlowPipe.Close()
+}
+
+func (p *AutoFlowPipe) DecodeFlow(msg interface{}) error {
+	pkt, ok := msg.(*Message)
+	if !ok {
+		return fmt.Errorf("flow is not *Message")
+	}
+	buf := bytes.NewBuffer(pkt.Payload)
+
+	var proto uint32
+	if err := utils.BinaryDecoder(buf, &proto); err != nil {
+		return &PipeMessageError{pkt, err}
+	}
+
+	protoNetFlow := (proto & 0xFFFF0000) >> 16
+	if proto == 5 {
+		return p.SFlowPipe.DecodeFlow(msg)
+	} else if protoNetFlow == 5 || protoNetFlow == 9 || protoNetFlow == 10 {
+		return p.NetFlowPipe.DecodeFlow(msg)
+	}
+	return fmt.Errorf("could not identify protocol %d", proto)
 }
