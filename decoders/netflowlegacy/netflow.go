@@ -7,6 +7,10 @@ import (
 	"github.com/netsampler/goflow2/decoders/utils"
 )
 
+const (
+	MAX_COUNT = 1536
+)
+
 type ErrorVersion struct {
 	version uint16
 }
@@ -43,6 +47,10 @@ func DecodeMessage(payload *bytes.Buffer) (interface{}, error) {
 		)
 
 		packet.SamplingInterval = packet.SamplingInterval & 0x3FFF
+
+		if packet.Count > MAX_COUNT {
+			return nil, fmt.Errorf("Too many samples (%d > %d) in packet", packet.Count, MAX_COUNT)
+		}
 
 		packet.Records = make([]RecordsNetFlowV5, int(packet.Count))
 		for i := 0; i < int(packet.Count) && payload.Len() >= 48; i++ {
