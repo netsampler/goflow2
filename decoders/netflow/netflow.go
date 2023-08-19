@@ -42,7 +42,11 @@ func DecodeNFv9OptionsTemplateSet(payload *bytes.Buffer) ([]NFv9OptionsTemplateR
 	var err error
 	for payload.Len() >= 4 {
 		optsTemplateRecord := NFv9OptionsTemplateRecord{}
-		err = utils.BinaryDecoder(payload, &optsTemplateRecord.TemplateId, &optsTemplateRecord.ScopeLength, &optsTemplateRecord.OptionLength)
+		err = utils.BinaryDecoder(payload,
+			&optsTemplateRecord.TemplateId,
+			&optsTemplateRecord.ScopeLength,
+			&optsTemplateRecord.OptionLength,
+		)
 		if err != nil {
 			return records, err
 		}
@@ -80,12 +84,17 @@ func DecodeNFv9OptionsTemplateSet(payload *bytes.Buffer) ([]NFv9OptionsTemplateR
 }
 
 func DecodeField(payload *bytes.Buffer, field *Field, pen bool) error {
-	if err := utils.BinaryDecoder(payload, &field.Type, &field.Length); err != nil {
+	if err := utils.BinaryDecoder(payload,
+		&field.Type,
+		&field.Length,
+	); err != nil {
 		return err
 	}
 	if pen && field.Type&0x8000 != 0 {
 		field.PenProvided = true
-		return utils.BinaryDecoder(payload, &field.Pen)
+		return utils.BinaryDecoder(payload,
+			&field.Pen,
+		)
 	}
 	return nil
 }
@@ -138,7 +147,10 @@ func DecodeTemplateSet(version uint16, payload *bytes.Buffer) ([]TemplateRecord,
 	var err error
 	for payload.Len() >= 4 {
 		templateRecord := TemplateRecord{}
-		err = utils.BinaryDecoder(payload, &templateRecord.TemplateId, &templateRecord.FieldCount)
+		err = utils.BinaryDecoder(payload,
+			&templateRecord.TemplateId,
+			&templateRecord.FieldCount,
+		)
 		if err != nil {
 			return records, fmt.Errorf("TemplateSet: reading header [%w]", err)
 		}
@@ -150,13 +162,18 @@ func DecodeTemplateSet(version uint16, payload *bytes.Buffer) ([]TemplateRecord,
 		fields := make([]Field, int(templateRecord.FieldCount)) // max 65532 which would be 589KB
 		for i := 0; i < int(templateRecord.FieldCount); i++ {
 			field := Field{}
-			if err := utils.BinaryDecoder(payload, &field.Type, &field.Length); err != nil {
+			if err := utils.BinaryDecoder(payload,
+				&field.Type,
+				&field.Length,
+			); err != nil {
 				return records, fmt.Errorf("TemplateSet: reading field [%w]", err)
 			}
 			if version == 10 && field.Type&0x8000 != 0 {
 				field.PenProvided = true
 				field.Type = field.Type ^ 0x8000
-				if err := utils.BinaryDecoder(payload, &field.Pen); err != nil {
+				if err := utils.BinaryDecoder(payload,
+					&field.Pen,
+				); err != nil {
 					return records, fmt.Errorf("TemplateSet: reading enterprise field [%w]", err)
 				}
 			}
@@ -190,11 +207,15 @@ func DecodeDataSetUsingFields(version uint16, payload *bytes.Buffer, listFields 
 			if templateField.Length == 0xffff {
 				var variableLen8 byte
 				var variableLen16 uint16
-				if err := utils.BinaryDecoder(payload, &variableLen8); err != nil {
+				if err := utils.BinaryDecoder(payload,
+					&variableLen8,
+				); err != nil {
 					return nil, err
 				}
 				if variableLen8 == 0xff {
-					if err := utils.BinaryDecoder(payload, &variableLen16); err != nil {
+					if err := utils.BinaryDecoder(payload,
+						&variableLen16,
+					); err != nil {
 						return nil, err
 					}
 					finalLength = int(variableLen16)
@@ -266,7 +287,10 @@ func DecodeMessageCommon(payload *bytes.Buffer, templates NetFlowTemplateSystem,
 
 	for i := 0; ((i < int(size) && version == 9) || version == 10) && payload.Len() > 0; i++ {
 		fsheader := FlowSetHeader{}
-		if err := utils.BinaryDecoder(payload, &fsheader); err != nil {
+		if err := utils.BinaryDecoder(payload,
+			&fsheader.Id,
+			&fsheader.Length,
+		); err != nil {
 			return flowSet, fmt.Errorf("header [%w]", err)
 		}
 
@@ -418,7 +442,8 @@ func DecodeMessageNetFlow(payload *bytes.Buffer, templates NetFlowTemplateSystem
 		&packetNFv9.SystemUptime,
 		&packetNFv9.UnixSeconds,
 		&packetNFv9.SequenceNumber,
-		&packetNFv9.SourceId); err != nil {
+		&packetNFv9.SourceId,
+	); err != nil {
 		return &DecoderError{"NetFlowV9 header", err}
 	}
 	/*size = packetNFv9.Count
@@ -438,7 +463,8 @@ func DecodeMessageIPFIX(payload *bytes.Buffer, templates NetFlowTemplateSystem, 
 		&packetIPFIX.Length,
 		&packetIPFIX.ExportTime,
 		&packetIPFIX.SequenceNumber,
-		&packetIPFIX.ObservationDomainId); err != nil {
+		&packetIPFIX.ObservationDomainId,
+	); err != nil {
 		return &DecoderError{"IPFIX header", err}
 	}
 	/*size = packetIPFIX.Length
@@ -455,7 +481,9 @@ func DecodeMessageIPFIX(payload *bytes.Buffer, templates NetFlowTemplateSystem, 
 func DecodeMessageVersion(payload *bytes.Buffer, templates NetFlowTemplateSystem, packetNFv9 *NFv9Packet, packetIPFIX *IPFIXPacket) error {
 	var version uint16
 
-	if err := utils.BinaryDecoder(payload, &version); err != nil {
+	if err := utils.BinaryDecoder(payload,
+		&version,
+	); err != nil {
 		return &DecoderError{"IPFIX/NetFlowV9 version", err}
 	}
 
