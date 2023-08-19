@@ -47,7 +47,28 @@ func DecodeMessage(payload *bytes.Buffer) (interface{}, error) {
 		packet.Records = make([]RecordsNetFlowV5, int(packet.Count))
 		for i := 0; i < int(packet.Count) && payload.Len() >= 48; i++ {
 			record := RecordsNetFlowV5{}
-			err := utils.BinaryDecoder(payload, &record)
+			err := utils.BinaryDecoder(payload,
+				&record.SrcAddr,
+				&record.DstAddr,
+				&record.NextHop,
+				&record.Input,
+				&record.Output,
+				&record.DPkts,
+				&record.DOctets,
+				&record.First,
+				&record.Last,
+				&record.SrcPort,
+				&record.DstPort,
+				&record.Pad1,
+				&record.TCPFlags,
+				&record.Proto,
+				&record.Tos,
+				&record.SrcAS,
+				&record.DstAS,
+				&record.SrcMask,
+				&record.DstMask,
+				&record.Pad2,
+			)
 			if err != nil {
 				return packet, err
 			}

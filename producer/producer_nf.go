@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/netsampler/goflow2/decoders/netflow"
+	"github.com/netsampler/goflow2/decoders/utils"
 	flowmessage "github.com/netsampler/goflow2/pb"
 )
 
@@ -79,18 +80,18 @@ func NetFlowPopulate(dataFields []netflow.DataField, typeId uint16, addr interfa
 	exists, value := NetFlowLookFor(dataFields, typeId)
 	if exists && value != nil {
 		valueBytes, ok := value.([]byte)
-		valueReader := bytes.NewReader(valueBytes)
+		valueReader := bytes.NewBuffer(valueBytes)
 		if ok {
 			switch addrt := addr.(type) {
 			case *(net.IP):
 				*addrt = valueBytes
 			case *(time.Time):
 				t := uint64(0)
-				binary.Read(valueReader, binary.BigEndian, &t)
+				utils.BinaryRead(valueReader, binary.BigEndian, &t)
 				t64 := int64(t / 1000)
 				*addrt = time.Unix(t64, 0)
 			default:
-				binary.Read(valueReader, binary.BigEndian, addr)
+				utils.BinaryRead(valueReader, binary.BigEndian, addr)
 			}
 		}
 	}

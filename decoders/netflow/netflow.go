@@ -349,7 +349,7 @@ func DecodeMessageContext(ctx context.Context, payload *bytes.Buffer, templateKe
 
 	var version uint16
 	var obsDomainId uint32
-	if err := binary.Read(payload, binary.BigEndian, &version); err != nil {
+	if err := utils.BinaryRead(payload, binary.BigEndian, &version); err != nil {
 		return nil, fmt.Errorf("Error decoding version: %v", err)
 	}
 
@@ -377,7 +377,7 @@ func DecodeMessageContext(ctx context.Context, payload *bytes.Buffer, templateKe
 
 	for i := 0; ((i < int(size) && version == 9) || version == 10) && payload.Len() > 0; i++ {
 		fsheader := FlowSetHeader{}
-		if err := utils.BinaryDecoder(payload, &fsheader); err != nil {
+		if err := utils.BinaryDecoder(payload, &fsheader.Id, &fsheader.Length); err != nil {
 			return returnItem, fmt.Errorf("Error decoding FlowSet header: %v", err)
 		}
 
