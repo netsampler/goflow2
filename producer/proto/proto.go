@@ -28,7 +28,7 @@ func (p *ProtoProducer) enrich(flowMessageSet []producer.ProducerMessage, cb fun
 }
 
 func (p *ProtoProducer) getSamplingRateSystem(args *producer.ProduceArgs) SamplingRateSystem {
-	key := args.Src.String()
+	key := args.Src.Addr().String()
 	p.samplinglock.RLock()
 	sampling, ok := p.sampling[key]
 	p.samplinglock.RUnlock()
