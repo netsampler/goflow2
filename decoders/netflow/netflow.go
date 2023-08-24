@@ -182,7 +182,7 @@ func GetTemplateSize(version uint16, template []Field) int {
 
 func DecodeDataSetUsingFields(version uint16, payload *bytes.Buffer, listFields []Field) ([]DataField, error) {
 	dataFields := make([]DataField, len(listFields))
-	for payload.Len() >= GetTemplateSize(version, listFields) {
+	if payload.Len() >= GetTemplateSize(version, listFields) {
 
 		for i, templateField := range listFields {
 
