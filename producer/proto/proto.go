@@ -50,6 +50,7 @@ func (p *ProtoProducer) Produce(msg interface{}, args *producer.ProduceArgs) (fl
 		flowMessageSet, err = ProcessMessageNetFlowLegacy(msgConv)
 
 		p.enrich(flowMessageSet, func(fmsg *ProtoProducerMessage) {
+			fmsg.TimeReceivedNs = tr
 			fmsg.SamplerAddress = sa
 		})
 	case *netflow.NFv9Packet:
