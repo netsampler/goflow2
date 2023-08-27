@@ -37,6 +37,7 @@ var (
 		"DstAddr":        IPRenderer,
 		"SamplerAddress": IPRenderer,
 		"NextHop":        IPRenderer,
+		"BgpNextHop":     IPRenderer,
 		"MplsLabelIp":    IPRenderer,
 		"Etype":          EtypeRenderer,
 		"Proto":          ProtoRenderer,
