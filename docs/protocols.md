@@ -162,7 +162,7 @@ There is a support for virtual columns (eg: `icmp_name`).
 Renderers are a special handling of fields:
 
 ```yaml
-formatter
+formatter:
   render:
     src_mac: mac
     dst_mac: mac
