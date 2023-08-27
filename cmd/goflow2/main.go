@@ -193,7 +193,7 @@ func main() {
 			numSockets = 1
 		}
 
-		numWorkers := 0
+		var numWorkers int
 		if listenAddrUrl.Query().Has("workers") {
 			if numWorkersTmp, err := strconv.ParseUint(listenAddrUrl.Query().Get("workers"), 10, 64); err != nil {
 				log.Fatal(err)
@@ -205,14 +205,14 @@ func main() {
 			numWorkers = numSockets * 2
 		}
 
-		isBlocking := false
+		var isBlocking bool
 		if listenAddrUrl.Query().Has("blocking") {
 			if isBlocking, err = strconv.ParseBool(listenAddrUrl.Query().Get("blocking")); err != nil {
 				log.Fatal(err)
 			}
 		}
 
-		queueSize := 0
+		var queueSize int
 		if listenAddrUrl.Query().Has("queue_size") {
 			if queueSizeTmp, err := strconv.ParseUint(listenAddrUrl.Query().Get("queue_size"), 10, 64); err != nil {
 				log.Fatal(err)
