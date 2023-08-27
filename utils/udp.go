@@ -73,7 +73,7 @@ func NewUDPReceiver(cfg *UDPReceiverConfig) (*UDPReceiver, error) {
 		}
 
 		if cfg.Workers <= 0 {
-			cfg.Workers = cfg.Sockets * 2
+			cfg.Workers = cfg.Sockets
 		}
 
 		r.sockets = cfg.Sockets
