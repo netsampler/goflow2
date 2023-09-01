@@ -260,5 +260,5 @@ func TestProcessIPv4Fragment(t *testing.T) {
 	assert.Equal(t, uint32(0), flowMessage.IpFlags)
 	assert.Equal(t, uint32(64), flowMessage.IpTtl)
 	assert.Equal(t, uint32(24025), flowMessage.FragmentId)
-	assert.Equal(t, uint32(0), flowMessage.FragmentOffset)
+	assert.Equal(t, uint32(185), flowMessage.FragmentOffset)
 }
