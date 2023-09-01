@@ -62,6 +62,7 @@ message FlowMessage {
   uint32 ip_tos = 23;
   uint32 forwarding_status = 24;
   uint32 ip_ttl = 25;
+  uint32 ip_flags = 38;
   uint32 tcp_flags = 26;
   uint32 icmp_type = 31;
   uint32 icmp_code = 32;

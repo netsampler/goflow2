@@ -485,13 +485,13 @@ func ConvertNetFlowDataSet(flowMessage *ProtoProducerMessage, version uint16, ba
 			if err := DecodeUNumber(v, &fragOffset); err != nil {
 				return err
 			}
-			flowMessage.FragmentOffset |= fragOffset
+			flowMessage.FragmentOffset = fragOffset
 		case netflow.IPFIX_FIELD_fragmentFlags:
 			var ipFlags uint32
 			if err := DecodeUNumber(v, &ipFlags); err != nil {
 				return err
 			}
-			flowMessage.FragmentOffset |= ipFlags
+			flowMessage.IpFlags = ipFlags
 		case netflow.NFV9_FIELD_IPV6_FLOW_LABEL:
 			if err := DecodeUNumber(v, &(flowMessage.Ipv6FlowLabel)); err != nil {
 				return err

@@ -27,7 +27,7 @@ var (
 )
 
 func GetBytes(d []byte, offset int, length int) []byte {
-	if length == 0 {
+	if length == 0 || offset < 0 {
 		return nil
 	}
 	leftBytes := offset / 8
