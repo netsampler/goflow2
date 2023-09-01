@@ -99,7 +99,7 @@ func ParseIPv4(offset int, flowMessage *ProtoProducerMessage, data []byte) (next
 		fragOffset := binary.BigEndian.Uint16(data[offset+6 : offset+8]) // also includes flag
 
 		flowMessage.FragmentId = uint32(identification)
-		flowMessage.FragmentOffset = uint32(fragOffset) & 57344
+		flowMessage.FragmentOffset = uint32(fragOffset) & 8191
 		flowMessage.IpFlags = uint32(fragOffset) >> 13
 
 		offset += 20
