@@ -491,7 +491,7 @@ func ConvertNetFlowDataSet(flowMessage *ProtoProducerMessage, version uint16, ba
 			if err := DecodeUNumber(v, &ipFlags); err != nil {
 				return err
 			}
-			flowMessage.IpFlags = ipFlags
+			flowMessage.IpFlags = ipFlags >> 5
 		case netflow.NFV9_FIELD_IPV6_FLOW_LABEL:
 			if err := DecodeUNumber(v, &(flowMessage.Ipv6FlowLabel)); err != nil {
 				return err
