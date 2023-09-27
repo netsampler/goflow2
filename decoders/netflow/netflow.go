@@ -284,7 +284,6 @@ func DecodeDataSet(version uint16, payload *bytes.Buffer, listFields []Field) ([
 
 func DecodeMessageCommon(payload *bytes.Buffer, templates NetFlowTemplateSystem, obsDomainId uint32, size, version uint16) ([]interface{}, error) {
 	var flowSets []interface{}
-	var flowSet interface{}
 
 	for i := 0; ((i < int(size) && version == 9) || version == 10) && payload.Len() > 0; i++ {
 		fsheader := FlowSetHeader{}
@@ -299,6 +298,8 @@ func DecodeMessageCommon(payload *bytes.Buffer, templates NetFlowTemplateSystem,
 		if nextrelpos < 0 {
 			return flowSets, fmt.Errorf("negative length")
 		}
+
+		var flowSet interface{}
 
 		if fsheader.Id == 0 && version == 9 {
 			templateReader := bytes.NewBuffer(payload.Next(nextrelpos))
