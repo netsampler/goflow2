@@ -6,7 +6,7 @@ require (
 	github.com/Shopify/sarama v1.38.1
 	github.com/libp2p/go-reuseport v0.4.0
 	github.com/oschwald/geoip2-golang v1.9.0
-	github.com/prometheus/client_golang v1.16.0
+	github.com/prometheus/client_golang v1.17.0
 	github.com/sirupsen/logrus v1.9.3
 	github.com/stretchr/testify v1.8.4
 	github.com/xdg-go/scram v1.1.2
@@ -37,16 +37,15 @@ require (
 	github.com/oschwald/maxminddb-golang v1.11.0 // indirect
 	github.com/pierrec/lz4/v4 v4.1.17 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
-	github.com/prometheus/client_model v0.3.0 // indirect
-	github.com/prometheus/common v0.42.0 // indirect
-	github.com/prometheus/procfs v0.10.1 // indirect
+	github.com/prometheus/client_model v0.4.1-0.20230718164431-9a2bf3000d16 // indirect
+	github.com/prometheus/common v0.44.0 // indirect
+	github.com/prometheus/procfs v0.11.1 // indirect
 	github.com/rcrowley/go-metrics v0.0.0-20201227073835-cf1acfcdf475 // indirect
-	github.com/rogpeppe/go-internal v1.10.0 // indirect
 	github.com/xdg-go/pbkdf2 v1.0.0 // indirect
 	github.com/xdg-go/stringprep v1.0.4 // indirect
 	golang.org/x/crypto v0.0.0-20220722155217-630584e8d5aa // indirect
-	golang.org/x/net v0.7.0 // indirect
-	golang.org/x/sys v0.9.0 // indirect
-	golang.org/x/text v0.7.0 // indirect
+	golang.org/x/net v0.10.0 // indirect
+	golang.org/x/sys v0.11.0 // indirect
+	golang.org/x/text v0.9.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
