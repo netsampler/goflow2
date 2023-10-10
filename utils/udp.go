@@ -4,11 +4,60 @@ import (
 	"fmt"
 	"net"
 	"net/netip"
+	"strconv"
 	"sync"
 	"time"
 
 	reuseport "github.com/libp2p/go-reuseport"
+	"github.com/prometheus/client_golang/prometheus"
 )
+
+const (
+	NAMESPACE = "goflow2"
+)
+
+var (
+	MetricUdpPacketDropped = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name:      "udp_packets_dropped",
+			Help:      "UDP Packets dropped",
+			Namespace: NAMESPACE,
+		},
+		[]string{"addr", "port"},
+	)
+	MetricUdpPacketReceived = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name:      "udp_packets_received",
+			Help:      "UDP Packets received",
+			Namespace: NAMESPACE,
+		},
+		[]string{"addr", "port"},
+	)
+	MetricUdpPacketError = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name:      "udp_packets_error",
+			Help:      "UDP Packets error",
+			Namespace: NAMESPACE,
+		},
+		[]string{"addr", "port"},
+	)
+	MetricUdpPacketInvalid = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name:      "udp_packets_invalid",
+			Help:      "UDP Packets invalid",
+			Namespace: NAMESPACE,
+		},
+		[]string{"addr", "port"},
+	)
+)
+
+func init() {
+	prometheus.MustRegister(MetricUdpPacketDropped)
+	prometheus.MustRegister(MetricUdpPacketReceived)
+	prometheus.MustRegister(MetricUdpPacketError)
+	prometheus.MustRegister(MetricUdpPacketInvalid)
+
+}
 
 // Callback used to decode a UDP message
 type DecoderFunc func(msg interface{}) error
@@ -148,12 +197,23 @@ func (r *UDPReceiver) receive(addr string, port int, started chan bool) error {
 		pkt.size, pkt.src, err = udpconn.ReadFromUDP(pkt.payload)
 		if err != nil {
 			packetPool.Put(pkt)
+			MetricUdpPacketError.With(
+				prometheus.Labels{
+					"addr": addr,
+					"port": strconv.Itoa(port),
+				},
+			).Inc()
 			return err
 		}
 		pkt.dst = localAddr
 		pkt.received = time.Now().UTC()
 		if pkt.size == 0 {
-			// error
+			MetricUdpPacketInvalid.With(
+				prometheus.Labels{
+					"addr": addr,
+					"port": strconv.Itoa(port),
+				},
+			).Inc()
 			continue
 		}
 
@@ -162,17 +222,34 @@ func (r *UDPReceiver) receive(addr string, port int, started chan bool) error {
 			// if combined with synchronous mode
 			select {
 			case r.dispatch <- pkt:
+				MetricUdpPacketReceived.With(
+					prometheus.Labels{
+						"addr": addr,
+						"port": strconv.Itoa(port),
+					},
+				).Inc()
 			case <-r.q:
 				return nil
 			}
 		} else {
 			select {
 			case r.dispatch <- pkt:
+				MetricUdpPacketReceived.With(
+					prometheus.Labels{
+						"addr": addr,
+						"port": strconv.Itoa(port),
+					},
+				).Inc()
 			case <-r.q:
 				return nil
 			default:
 				packetPool.Put(pkt)
-				// increase counter
+				MetricUdpPacketDropped.With(
+					prometheus.Labels{
+						"addr": addr,
+						"port": strconv.Itoa(port),
+					},
+				).Inc()
 			}
 		}
 
