@@ -19,7 +19,7 @@ const (
 var (
 	MetricUdpPacketDropped = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
-			Name:      "udp_packets_dropped",
+			Name:      "udp_packets_dropped_total",
 			Help:      "UDP Packets dropped",
 			Namespace: NAMESPACE,
 		},
@@ -27,7 +27,7 @@ var (
 	)
 	MetricUdpPacketError = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
-			Name:      "udp_packets_error",
+			Name:      "udp_packets_error_total",
 			Help:      "UDP Packets error",
 			Namespace: NAMESPACE,
 		},
@@ -35,7 +35,7 @@ var (
 	)
 	MetricUdpPacketInvalid = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
-			Name:      "udp_packets_invalid",
+			Name:      "udp_packets_invalid_total",
 			Help:      "UDP Packets invalid",
 			Namespace: NAMESPACE,
 		},
