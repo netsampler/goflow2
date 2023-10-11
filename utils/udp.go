@@ -25,14 +25,6 @@ var (
 		},
 		[]string{"addr", "port"},
 	)
-	MetricUdpPacketReceived = prometheus.NewCounterVec(
-		prometheus.CounterOpts{
-			Name:      "udp_packets_received",
-			Help:      "UDP Packets received",
-			Namespace: NAMESPACE,
-		},
-		[]string{"addr", "port"},
-	)
 	MetricUdpPacketError = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Name:      "udp_packets_error",
@@ -53,7 +45,6 @@ var (
 
 func init() {
 	prometheus.MustRegister(MetricUdpPacketDropped)
-	prometheus.MustRegister(MetricUdpPacketReceived)
 	prometheus.MustRegister(MetricUdpPacketError)
 	prometheus.MustRegister(MetricUdpPacketInvalid)
 
@@ -222,24 +213,12 @@ func (r *UDPReceiver) receive(addr string, port int, started chan bool) error {
 			// if combined with synchronous mode
 			select {
 			case r.dispatch <- pkt:
-				MetricUdpPacketReceived.With(
-					prometheus.Labels{
-						"addr": addr,
-						"port": strconv.Itoa(port),
-					},
-				).Inc()
 			case <-r.q:
 				return nil
 			}
 		} else {
 			select {
 			case r.dispatch <- pkt:
-				MetricUdpPacketReceived.With(
-					prometheus.Labels{
-						"addr": addr,
-						"port": strconv.Itoa(port),
-					},
-				).Inc()
 			case <-r.q:
 				return nil
 			default:
