@@ -47,7 +47,6 @@ func init() {
 	prometheus.MustRegister(MetricUdpPacketDropped)
 	prometheus.MustRegister(MetricUdpPacketError)
 	prometheus.MustRegister(MetricUdpPacketInvalid)
-
 }
 
 // Callback used to decode a UDP message
