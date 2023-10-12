@@ -120,7 +120,7 @@ func IPRenderer(msg *ProtoProducerMessage, fieldName string, data interface{}) i
 
 func DateTimeRenderer(msg *ProtoProducerMessage, fieldName string, data interface{}) interface{} {
 	if dataC, ok := data.(uint64); ok {
-		return time.UnixMicro(int64(dataC / 1000)).Format(time.RFC3339)
+		return time.UnixMicro(int64(dataC / 1000)).Format(time.RFC3339Nano)
 	}
 	return NilRenderer(msg, fieldName, data)
 }
