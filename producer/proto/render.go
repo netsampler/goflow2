@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"encoding/gob"
 	"encoding/hex"
+	"fmt"
 	"net"
 	"net/netip"
 	"time"
@@ -119,6 +120,8 @@ func IPRenderer(msg *ProtoProducerMessage, fieldName string, data interface{}) i
 	err := enc.Encode(data)
 	if err != nil {
 		return RenderIP(buf.Bytes())
+	} else {
+		fmt.Printf("eror is %s\n", err)
 	}
 	return NilRenderer(msg, fieldName, data)
 }
