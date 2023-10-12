@@ -120,8 +120,13 @@ func (m *ProtoProducerMessage) mapUnknown() map[string]interface{} {
 				v, _ := protowire.ConsumeVarint(data)
 				value = v
 			} else if dataType == protowire.BytesType {
-				v, _ := protowire.ConsumeString(data)
-				value = hex.EncodeToString([]byte(v))
+				if strings.Compare(pbField.Type, string(ProtoString)) == 0 {
+					v, _ := protowire.ConsumeString(data)
+					value = hex.EncodeToString([]byte(v))
+				} else {
+					v, _ := protowire.ConsumeBytes(data)
+					value = v
+				}
 			} else {
 				continue
 			}

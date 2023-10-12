@@ -18,11 +18,12 @@ var (
 
 	ProtoString ProtoType = "string"
 	ProtoVarint ProtoType = "varint"
+	ProtoBytes  ProtoType = "bytes"
 
 	ProtoTypeMap = map[string]ProtoType{
 		string(ProtoString): ProtoString,
 		string(ProtoVarint): ProtoVarint,
-		"bytes":             ProtoString,
+		string(ProtoBytes):  ProtoBytes,
 	}
 )
 
@@ -199,6 +200,9 @@ func MapCustom(flowMessage *ProtoProducerMessage, v []byte, cfg MapConfigBase) e
 		} else if cfg.ProtoType == ProtoString {
 			unk = protowire.AppendTag(unk, protowire.Number(cfg.ProtoIndex), protowire.BytesType)
 			unk = protowire.AppendString(unk, string(v))
+		} else if cfg.ProtoType == ProtoBytes {
+			unk = protowire.AppendTag(unk, protowire.Number(cfg.ProtoIndex), protowire.BytesType)
+			unk = protowire.AppendBytes(unk, v)
 		} else {
 			return fmt.Errorf("could not insert into protobuf unknown")
 		}
