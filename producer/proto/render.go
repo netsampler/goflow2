@@ -1,7 +1,9 @@
 package protoproducer
 
 import (
+	"bytes"
 	"encoding/binary"
+	"encoding/gob"
 	"encoding/hex"
 	"net"
 	"net/netip"
@@ -112,8 +114,11 @@ func RenderIP(addr []byte) string {
 }
 
 func IPRenderer(msg *ProtoProducerMessage, fieldName string, data interface{}) interface{} {
-	if dataC, ok := data.([]byte); ok {
-		return RenderIP(dataC)
+	var buf bytes.Buffer
+	enc := gob.NewEncoder(&buf)
+	err := enc.Encode(data)
+	if err != nil {
+		return RenderIP(buf.Bytes())
 	}
 	return NilRenderer(msg, fieldName, data)
 }
