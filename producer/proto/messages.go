@@ -2,6 +2,7 @@ package protoproducer
 
 import (
 	"bytes"
+	"encoding/hex"
 	"fmt"
 	"hash"
 	"hash/fnv"
@@ -119,8 +120,13 @@ func (m *ProtoProducerMessage) mapUnknown() map[string]interface{} {
 				v, _ := protowire.ConsumeVarint(data)
 				value = v
 			} else if dataType == protowire.BytesType {
-				v, _ := protowire.ConsumeBytes(data)
-				value = v
+				if pbField.Type == string(ProtoString) {
+					v, _ := protowire.ConsumeString(data)
+					value = hex.EncodeToString([]byte(v))
+				} else {
+					v, _ := protowire.ConsumeBytes(data)
+					value = v
+				}
 			} else {
 				continue
 			}
