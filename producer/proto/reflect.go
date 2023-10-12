@@ -23,7 +23,7 @@ var (
 	ProtoTypeMap = map[string]ProtoType{
 		string(ProtoString): ProtoString,
 		string(ProtoVarint): ProtoVarint,
-		string(ProtoBytes):  ProtoString,
+		string(ProtoBytes):  ProtoBytes,
 	}
 )
 
