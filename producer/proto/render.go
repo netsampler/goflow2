@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"net"
 	"net/netip"
+	"time"
 )
 
 type RenderFunc func(msg *ProtoProducerMessage, fieldName string, data interface{}) interface{}
@@ -12,22 +13,24 @@ type RenderFunc func(msg *ProtoProducerMessage, fieldName string, data interface
 type RendererID string
 
 const (
-	RendererNone    RendererID = "none"
-	RendererIP      RendererID = "ip"
-	RendererMac     RendererID = "mac"
-	RendererEtype   RendererID = "etype"
-	RendererProto   RendererID = "proto"
-	RendererType    RendererID = "type"
-	RendererNetwork RendererID = "network"
+	RendererNone     RendererID = "none"
+	RendererIP       RendererID = "ip"
+	RendererMac      RendererID = "mac"
+	RendererEtype    RendererID = "etype"
+	RendererProto    RendererID = "proto"
+	RendererDateTime RendererID = "datetime"
+	RendererType     RendererID = "type"
+	RendererNetwork  RendererID = "network"
 )
 
 var (
 	renderers = map[RendererID]RenderFunc{
-		RendererNone:  NilRenderer,
-		RendererIP:    IPRenderer,
-		RendererMac:   MacRenderer,
-		RendererEtype: EtypeRenderer,
-		RendererProto: ProtoRenderer,
+		RendererNone:     NilRenderer,
+		RendererIP:       IPRenderer,
+		RendererDateTime: DateTimeRenderer,
+		RendererMac:      MacRenderer,
+		RendererEtype:    EtypeRenderer,
+		RendererProto:    ProtoRenderer,
 	}
 
 	defaultRenderers = map[string]RenderFunc{
@@ -111,6 +114,13 @@ func RenderIP(addr []byte) string {
 func IPRenderer(msg *ProtoProducerMessage, fieldName string, data interface{}) interface{} {
 	if dataC, ok := data.([]byte); ok {
 		return RenderIP(dataC)
+	}
+	return NilRenderer(msg, fieldName, data)
+}
+
+func DateTimeRenderer(msg *ProtoProducerMessage, fieldName string, data interface{}) interface{} {
+	if dataC, ok := data.(uint64); ok {
+		return time.UnixMicro(int64(dataC / 1000)).Format(time.RFC3339)
 	}
 	return NilRenderer(msg, fieldName, data)
 }
