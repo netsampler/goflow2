@@ -200,7 +200,7 @@ func MapCustom(flowMessage *ProtoProducerMessage, v []byte, cfg MapConfigBase) e
 		} else if cfg.ProtoType == ProtoString {
 			unk = protowire.AppendTag(unk, protowire.Number(cfg.ProtoIndex), protowire.BytesType)
 			unk = protowire.AppendString(unk, string(v))
-		} else if cfg.ProtoType == ProtoString {
+		} else if cfg.ProtoType == ProtoBytes {
 			unk = protowire.AppendTag(unk, protowire.Number(cfg.ProtoIndex), protowire.BytesType)
 			unk = protowire.AppendBytes(unk, v)
 		} else {
