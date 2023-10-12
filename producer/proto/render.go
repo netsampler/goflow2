@@ -13,24 +13,26 @@ type RenderFunc func(msg *ProtoProducerMessage, fieldName string, data interface
 type RendererID string
 
 const (
-	RendererNone     RendererID = "none"
-	RendererIP       RendererID = "ip"
-	RendererMac      RendererID = "mac"
-	RendererEtype    RendererID = "etype"
-	RendererProto    RendererID = "proto"
-	RendererDateTime RendererID = "datetime"
-	RendererType     RendererID = "type"
-	RendererNetwork  RendererID = "network"
+	RendererNone          RendererID = "none"
+	RendererIP            RendererID = "ip"
+	RendererMac           RendererID = "mac"
+	RendererEtype         RendererID = "etype"
+	RendererProto         RendererID = "proto"
+	RendererDateTime      RendererID = "datetime"
+	RendererLocalDateTime RendererID = "localdatetime"
+	RendererType          RendererID = "type"
+	RendererNetwork       RendererID = "network"
 )
 
 var (
 	renderers = map[RendererID]RenderFunc{
-		RendererNone:     NilRenderer,
-		RendererIP:       IPRenderer,
-		RendererDateTime: DateTimeRenderer,
-		RendererMac:      MacRenderer,
-		RendererEtype:    EtypeRenderer,
-		RendererProto:    ProtoRenderer,
+		RendererNone:          NilRenderer,
+		RendererIP:            IPRenderer,
+		RendererDateTime:      DateTimeRenderer,
+		RendererLocalDateTime: LocalDateTimeRenderer,
+		RendererMac:           MacRenderer,
+		RendererEtype:         EtypeRenderer,
+		RendererProto:         ProtoRenderer,
 	}
 
 	defaultRenderers = map[string]RenderFunc{
@@ -121,6 +123,13 @@ func IPRenderer(msg *ProtoProducerMessage, fieldName string, data interface{}) i
 func DateTimeRenderer(msg *ProtoProducerMessage, fieldName string, data interface{}) interface{} {
 	if dataC, ok := data.(uint64); ok {
 		return time.UnixMicro(int64(dataC / 1000)).Format(time.RFC3339Nano)
+	}
+	return NilRenderer(msg, fieldName, data)
+}
+
+func LocalDateTimeRenderer(msg *ProtoProducerMessage, fieldName string, data interface{}) interface{} {
+	if dataC, ok := data.(uint64); ok {
+		return time.UnixMicro(int64(dataC / 1000)).Format("2006-01-02T15:04:05.999999999")
 	}
 	return NilRenderer(msg, fieldName, data)
 }
