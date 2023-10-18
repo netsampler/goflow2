@@ -24,6 +24,7 @@ formatter:
     - dst_mac
     # additional fields
     - icmp_name # virtual column
+    - csum # udp checksum
   key:
     - sampler_address
   protobuf: # manual protobuf fields addition
@@ -38,6 +39,9 @@ formatter:
       type: varint
     - name: egress_vrf_id
       index: 40
+      type: varint
+    - name: csum
+      index: 999
       type: varint
 # Decoder mappings
 ipfix:
@@ -58,4 +62,12 @@ netflowv9:
     - field: 61
       destination: flow_direction
 sflow:
-  mapping: []
+  mapping:
+    - layer: "udp"
+      offset: 48
+      length: 16
+      destination: csum
+    - layer: "tcp"
+      offset: 128
+      length: 16
+      destination: csum
