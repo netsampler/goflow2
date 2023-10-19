@@ -244,10 +244,11 @@ func main() {
 		l.Info("starting collection")
 
 		cfg := &utils.UDPReceiverConfig{
-			Sockets:   numSockets,
-			Workers:   numWorkers,
-			QueueSize: queueSize,
-			Blocking:  isBlocking,
+			Sockets:          numSockets,
+			Workers:          numWorkers,
+			QueueSize:        queueSize,
+			Blocking:         isBlocking,
+			ReceiverCallback: metrics.NewReceiverMetric(),
 		}
 		recv, err := utils.NewUDPReceiver(cfg)
 		if err != nil {

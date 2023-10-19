@@ -10,6 +10,10 @@ import (
 	reuseport "github.com/libp2p/go-reuseport"
 )
 
+type ReceiverCallback interface {
+	Dropped(msg Message)
+}
+
 // Callback used to decode a UDP message
 type DecoderFunc func(msg interface{}) error
 
@@ -48,6 +52,8 @@ type UDPReceiver struct {
 
 	workers int
 	sockets int
+
+	cb ReceiverCallback
 }
 
 type UDPReceiverConfig struct {
@@ -55,6 +61,8 @@ type UDPReceiverConfig struct {
 	Sockets   int
 	Blocking  bool
 	QueueSize int
+
+	ReceiverCallback ReceiverCallback
 }
 
 func NewUDPReceiver(cfg *UDPReceiverConfig) (*UDPReceiver, error) {
@@ -80,6 +88,7 @@ func NewUDPReceiver(cfg *UDPReceiverConfig) (*UDPReceiver, error) {
 		r.workers = cfg.Workers
 		dispatchSize = cfg.QueueSize
 		r.blocking = cfg.Blocking
+		r.cb = cfg.ReceiverCallback
 	}
 
 	if dispatchSize == 0 {
@@ -171,6 +180,14 @@ func (r *UDPReceiver) receive(addr string, port int, started chan bool) error {
 			case <-r.q:
 				return nil
 			default:
+				if r.cb != nil {
+					r.cb.Dropped(Message{
+						Src:      pkt.src.AddrPort(),
+						Dst:      pkt.dst.AddrPort(),
+						Payload:  pkt.payload[0:pkt.size],
+						Received: pkt.received,
+					})
+				}
 				packetPool.Put(pkt)
 				// increase counter
 			}
