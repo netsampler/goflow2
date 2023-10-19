@@ -102,6 +102,12 @@ func DateTimeRenderer(msg *ProtoProducerMessage, fieldName string, data interfac
 	} else if dataC, ok := data.(int64); ok {
 		ts := time.Unix(dataC, 0).UTC()
 		return ts.Format(time.RFC3339Nano)
+	} else if dataC, ok := data.(uint32); ok {
+		ts := time.Unix(int64(dataC), 0).UTC()
+		return ts.Format(time.RFC3339Nano)
+	} else if dataC, ok := data.(int32); ok {
+		ts := time.Unix(int64(dataC), 0).UTC()
+		return ts.Format(time.RFC3339Nano)
 	}
 	return NilRenderer(msg, fieldName, data)
 }
