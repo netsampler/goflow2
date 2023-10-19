@@ -43,6 +43,8 @@ formatter:
     - name: csum
       index: 999
       type: varint
+  render:
+    time_received_ns: datetimenano
 # Decoder mappings
 ipfix:
   mapping:
