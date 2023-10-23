@@ -63,8 +63,8 @@ func (ts *BasicTemplateSystem) GetTemplate(version uint16, obsDomainId uint32, t
 }
 
 func (ts *BasicTemplateSystem) RemoveTemplate(version uint16, obsDomainId uint32, templateId uint16) (interface{}, error) {
-	ts.templateslock.RLock()
-	defer ts.templateslock.RUnlock()
+	ts.templateslock.Lock()
+	defer ts.templateslock.Unlock()
 	if templatesVersion, ok := ts.templates[version]; ok {
 		if templatesObsDom, ok := templatesVersion[obsDomainId]; ok {
 			if template, ok := templatesObsDom[templateId]; ok {
