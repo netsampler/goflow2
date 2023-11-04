@@ -14,7 +14,7 @@ import (
 
 	"github.com/netsampler/goflow2/v2/transport"
 
-	sarama "github.com/Shopify/sarama"
+	sarama "github.com/IBM/sarama"
 )
 
 type KafkaDriver struct {
