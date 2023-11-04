@@ -71,7 +71,7 @@ func (ts *BasicTemplateSystem) RemoveTemplate(version uint16, obsDomainId uint32
 
 type BasicTemplateSystem struct {
 	templates     FlowBaseTemplateSet
-	templateslock sync.RWMutex
+	templateslock *sync.RWMutex
 }
 
 // Creates a basic store for NetFlow and IPFIX templates.
@@ -79,7 +79,7 @@ type BasicTemplateSystem struct {
 func CreateTemplateSystem() NetFlowTemplateSystem {
 	ts := &BasicTemplateSystem{
 		templates:     make(FlowBaseTemplateSet),
-		templateslock: sync.RWMutex{},
+		templateslock: &sync.RWMutex{},
 	}
 	return ts
 }
