@@ -157,6 +157,15 @@ func ParseEthernetHeader(flowMessage *flowmessage.FlowMessage, data []byte, conf
 			return errors.New(fmt.Sprintf("Unknown EtherType: %v\n", etherType))
 		} */
 
+		// Check if this IPv4 header represents IPIP protocol encapsulation.
+		// If so, then set srcIP and dstIP from next IPv4 header representing TCP protocol.
+		if nextHeader == 0x04 { // IPv4 IPIP protocol
+			nextHeader = data[offset+9]
+			srcIP = data[offset+12 : offset+16]
+			dstIP = data[offset+16 : offset+20]
+			offset += 20
+		}
+
 		for _, configLayer := range GetSFlowConfigLayer(config, 4) {
 			extracted := GetBytes(data, offset*8+configLayer.Offset, configLayer.Length)
 			MapCustom(flowMessage, extracted, configLayer.Destination)
