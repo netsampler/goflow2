@@ -308,7 +308,7 @@ func ParseEthernetHeader(flowMessage *ProtoProducerMessage, data []byte, config 
 		var appOffset int // keeps track of the user payload
 
 		// Transport protocols
-		if nextHeader == 17 || nextHeader == 6 || nextHeader == 1 || nextHeader == 58 {
+		if nextHeader == 17 || nextHeader == 6 || nextHeader == 1 || nextHeader == 58 || nextHeader == 4 {
 			prevOffset := offset
 			if flowMessage.FragmentOffset == 0 {
 				if nextHeader == 17 { // UDP
