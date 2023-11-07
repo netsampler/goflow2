@@ -3,6 +3,7 @@ package netflow
 import (
 	"bytes"
 	"encoding/binary"
+	"errors"
 	"fmt"
 
 	"github.com/netsampler/goflow2/v2/decoders/utils"
@@ -284,10 +285,13 @@ func DecodeDataSet(version uint16, payload *bytes.Buffer, listFields []Field) ([
 
 func DecodeMessageCommon(payload *bytes.Buffer, templates NetFlowTemplateSystem, obsDomainId uint32, size, version uint16) (flowSets []interface{}, err error) {
 	for i := 0; ((i < int(size) && version == 9) || version == 10) && payload.Len() > 0; i++ {
-		if flowSet, err := DecodeMessageCommonFlowSet(payload, templates, obsDomainId, version); err != nil {
-			return flowSets, err
+		if flowSet, lerr := DecodeMessageCommonFlowSet(payload, templates, obsDomainId, version); lerr != nil && !errors.Is(lerr, ErrorTemplateNotFound) {
+			return flowSets, lerr
 		} else {
 			flowSets = append(flowSets, flowSet)
+			if lerr != nil {
+				err = errors.Join(err, lerr)
+			}
 		}
 	}
 	return flowSets, err
