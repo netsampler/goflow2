@@ -352,9 +352,6 @@ func ParseEthernetHeader(flowMessage *ProtoProducerMessage, data []byte, config 
 						}
 					}
 				} else if nextHeader == 4 { // IPIP
-					if offset, err = ParseICMPv6(offset, flowMessage, data); err != nil {
-						return err
-					}
 					for _, configLayer := range GetSFlowConfigLayer(config, "ipip") {
 						extracted := GetBytes(data, prevOffset*8+configLayer.Offset, configLayer.Length)
 						if err := MapCustom(flowMessage, extracted, configLayer.MapConfigBase); err != nil {
