@@ -977,6 +977,9 @@ func (p IPFIXPacket) String() string {
 		case DataFlowSet:
 			str += fmt.Sprintf("    - DataFlowSet %v:\n", i)
 			str += flowSet.String(IPFIXTypeToString)
+		case RawFlowSet:
+			str += fmt.Sprintf("    - RawFlowSet %v:\n", i)
+			str += flowSet.String()
 		case OptionsDataFlowSet:
 			str += fmt.Sprintf("    - OptionsDataFlowSet %v:\n", i)
 			str += flowSet.String(IPFIXTypeToString, IPFIXTypeToString)

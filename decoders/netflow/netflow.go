@@ -393,7 +393,12 @@ func DecodeMessageCommonFlowSet(payload *bytes.Buffer, templates NetFlowTemplate
 		}
 
 	} else if fsheader.Id >= 256 {
-		dataReader := bytes.NewBuffer(payload.Next(nextrelpos))
+		rawfs := RawFlowSet{
+			FlowSetHeader: fsheader,
+			Records:       payload.Next(nextrelpos),
+		}
+		flowSet = rawfs
+		dataReader := bytes.NewBuffer(rawfs.Records)
 
 		if templates == nil {
 			return flowSet, &FlowError{version, "Templates", obsDomainId, fsheader.Id, fmt.Errorf("No templates")}
