@@ -374,8 +374,10 @@ func DecodeMessageContext(ctx context.Context, payload *bytes.Buffer, templateKe
 	} else {
 		return nil, fmt.Errorf("NetFlow/IPFIX version error: %d", version)
 	}
+	read := 16
+	startSize := payload.Len()
 
-	for i := 0; ((i < int(size) && version == 9) || version == 10) && payload.Len() > 0; i++ {
+	for i := 0; ((i < int(size) && version == 9) || (uint16(read) < size && version == 10)) && payload.Len() > 0; i++ {
 		fsheader := FlowSetHeader{}
 		if err := utils.BinaryDecoder(payload, &fsheader.Id, &fsheader.Length); err != nil {
 			return returnItem, fmt.Errorf("Error decoding FlowSet header: %v", err)
@@ -522,6 +524,7 @@ func DecodeMessageContext(ctx context.Context, payload *bytes.Buffer, templateKe
 		} else if version == 10 && flowSet != nil {
 			packetIPFIX.FlowSets = append(packetIPFIX.FlowSets, flowSet)
 		}
+		read = startSize - payload.Len() + 16
 	}
 
 	if version == 9 {
