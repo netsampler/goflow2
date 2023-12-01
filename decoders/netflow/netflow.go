@@ -283,12 +283,15 @@ func DecodeDataSet(version uint16, payload *bytes.Buffer, listFields []Field) ([
 }
 
 func DecodeMessageCommon(payload *bytes.Buffer, templates NetFlowTemplateSystem, obsDomainId uint32, size, version uint16) (flowSets []interface{}, err error) {
-	for i := 0; ((i < int(size) && version == 9) || version == 10) && payload.Len() > 0; i++ {
+	var read int
+	startSize := payload.Len()
+	for i := 0; ((i < int(size) && version == 9) || (uint16(read) < size && version == 10)) && payload.Len() > 0; i++ {
 		if flowSet, err := DecodeMessageCommonFlowSet(payload, templates, obsDomainId, version); err != nil {
 			return flowSets, err
 		} else {
 			flowSets = append(flowSets, flowSet)
 		}
+		read = startSize - payload.Len()
 	}
 	return flowSets, err
 }
@@ -476,7 +479,7 @@ func DecodeMessageIPFIX(payload *bytes.Buffer, templates NetFlowTemplateSystem, 
 	/*size = packetIPFIX.Length
 	packetIPFIX.Version = version
 	obsDomainId = packetIPFIX.ObservationDomainId*/
-	flowSets, err := DecodeMessageCommon(payload, templates, packetIPFIX.ObservationDomainId, packetIPFIX.Length, 10)
+	flowSets, err := DecodeMessageCommon(payload, templates, packetIPFIX.ObservationDomainId, packetIPFIX.Length-16, 10)
 	packetIPFIX.FlowSets = flowSets
 	if err != nil {
 		return &DecoderError{"IPFIX", err}
