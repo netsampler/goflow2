@@ -78,6 +78,7 @@
           "intervalFactor": 1,
           "metricColumn": "none",
           "query": "SELECT\n    t,\n    sum(sumbytes) AS sumbytes\nFROM (\n    SELECT\n        $timeSeries AS t,\n        sum(bytes*sampling_rate) as sumbytes\n    FROM $table\n    WHERE $timeFilter\n    GROUP BY t\n\n    UNION ALL\n\n    SELECT\n        toInt64(intDiv($from+number*$interval, $interval)*$interval*1000) AS t,\n        0 AS sumbytes\n    FROM numbers(intDiv($to-$from, $interval))\n)\nGROUP BY t\nORDER BY t",
+          "refId": "A",
           "round": "0s",
           "select": [
             [
