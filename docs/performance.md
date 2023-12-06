@@ -39,6 +39,7 @@ In GoFlow2 you can set the `count` option to define the number of sockets.
 Each socket will put the packet in a queue to be decoded.
 
 The number of `workers` should ideally match the number of CPUs available.
+By default, the number is set to twice the amount of open sockets.
 
 `Blocking` mode forces GoFlow2 to operate in real-time instead of buffered. A packet is only decoded if
 a worker is available and storage depends on the kernel UDP buffer.
@@ -73,3 +74,6 @@ will not require extra RAM during peaks.
 
 Furthermore, `HorizontalPodScalers` can be used to create additional GoFlow2 instances and route the packets when a metric crosses a threshold.
 This is not recommended with NetFlow/IPFIX without having a shared template system due to cold-starts.
+
+Another item to take into account, make sure the MTU of the machines where the collector are hosted match
+the MTU of the sampling routers. This can cause some issues when tunnelling or on certain cloud providers. 
