@@ -60,6 +60,9 @@ var (
 	Format    = flag.String("format", "json", fmt.Sprintf("Choose the format (available: %s)", strings.Join(format.GetFormats(), ", ")))
 	Transport = flag.String("transport", "file", fmt.Sprintf("Choose the transport (available: %s)", strings.Join(transport.GetTransports(), ", ")))
 
+	TransportErrCt  = flag.Int("transport.err", 10, "Maximum transport errors per batch")
+	TransportErrInt = flag.Duration("transport.int", time.Second*10, "Maximum transport errors interval")
+
 	Addr = flag.String("addr", ":8080", "HTTP server address")
 
 	TemplatePath = flag.String("templates.path", "/templates", "NetFlow/IPFIX templates list")
@@ -335,6 +338,10 @@ func main() {
 			transportErr = transportErrorFct.Errors()
 		}
 
+		var trErrCtr int
+		lastTrErr := time.Now().UTC()
+		maxTrErrLog := *TransportErrCt
+
 		for {
 			select {
 			case <-q:
@@ -343,8 +350,21 @@ func main() {
 				if err == nil {
 					return
 				}
-				l := log.WithError(err)
-				l.Error("transport error")
+
+				curTime := time.Now().UTC()
+				if *TransportErrInt > 0 && curTime.Sub(lastTrErr) > *TransportErrInt {
+					lastTrErr = curTime
+					trErrCtr = 0
+				}
+				trErrCtr += 1
+
+				if trErrCtr == maxTrErrLog {
+					log.Warn("too many transport errors, muting")
+				} else if trErrCtr < maxTrErrLog || maxTrErrLog == 0 {
+					l := log.WithError(err)
+					l.Error("transport error")
+				}
+
 			}
 		}
 	}()
