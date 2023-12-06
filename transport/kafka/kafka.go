@@ -120,6 +120,7 @@ func (d *KafkaDriver) Init() error {
 	kafkaConfig.Producer.MaxMessageBytes = d.kafkaMaxMsgBytes
 	kafkaConfig.Producer.Flush.Bytes = d.kafkaFlushBytes
 	kafkaConfig.Producer.Flush.Frequency = d.kafkaFlushFrequency
+	kafkaConfig.Producer.Partitioner = sarama.NewRoundRobinPartitioner
 
 	if d.kafkaCompressionCodec != "" {
 		/*
