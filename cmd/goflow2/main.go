@@ -60,8 +60,8 @@ var (
 	Format    = flag.String("format", "json", fmt.Sprintf("Choose the format (available: %s)", strings.Join(format.GetFormats(), ", ")))
 	Transport = flag.String("transport", "file", fmt.Sprintf("Choose the transport (available: %s)", strings.Join(transport.GetTransports(), ", ")))
 
-	TransportErrCt  = flag.Int("transport.err", 10, "Maximum transport errors per batch")
-	TransportErrInt = flag.Duration("transport.int", time.Second*10, "Maximum transport errors interval")
+	TransportErrCt  = flag.Int("transport.err.cnt", 10, "Maximum transport errors per batch")
+	TransportErrInt = flag.Duration("transport.err.int", time.Second*10, "Maximum transport errors interval")
 
 	Addr = flag.String("addr", ":8080", "HTTP server address")
 
