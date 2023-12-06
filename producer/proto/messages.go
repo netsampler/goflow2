@@ -39,9 +39,6 @@ func (m *ProtoProducerMessage) MarshalText() ([]byte, error) {
 }
 
 func (m *ProtoProducerMessage) baseKey(h hash.Hash) {
-	if m.formatter == nil || len(m.formatter.key) == 0 {
-		return
-	}
 	vfm := reflect.ValueOf(m)
 	vfm = reflect.Indirect(vfm)
 
@@ -72,6 +69,9 @@ func (m *ProtoProducerMessage) baseKey(h hash.Hash) {
 }
 
 func (m *ProtoProducerMessage) Key() []byte {
+	if m.formatter == nil || len(m.formatter.key) == 0 {
+		return nil
+	}
 	h := fnv.New32()
 	m.baseKey(h)
 	return h.Sum(nil)
