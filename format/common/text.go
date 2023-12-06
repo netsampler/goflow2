@@ -186,7 +186,10 @@ func FormatMessageReflectCustom(msg interface{}, ext, quotes, sep, sign string, 
 		}
 		fieldValue := vfm.FieldByName(fieldName)
 		// todo: replace s by json mapping of protobuf
-		if fieldValue.IsValid() {
+		if renderer, ok := RenderExtras[fieldName]; ok {
+			fstr[i] = fmt.Sprintf("%s%s%s%s%q", quotes, s, quotes, sign, renderer(msg))
+			i++
+		} else if fieldValue.IsValid() {
 
 			if fieldType, ok := TextFields[fieldName]; ok {
 				switch fieldType {
@@ -213,8 +216,6 @@ func FormatMessageReflectCustom(msg interface{}, ext, quotes, sep, sign string, 
 
 					}
 				}
-			} else if renderer, ok := RenderExtras[fieldName]; ok {
-				fstr[i] = fmt.Sprintf("%s%s%s%s%q", quotes, s, quotes, sign, renderer(msg))
 			} else {
 				// handle specific types here
 				switch fieldValue.Kind() {
