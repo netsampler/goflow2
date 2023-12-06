@@ -238,6 +238,10 @@ func ParseEthernetHeader(flowMessage *ProtoProducerMessage, data []byte, config 
 		return err
 	}
 
+	if len(etherType) != 2 {
+		return nil
+	}
+
 	encap := true
 	iterations := 0
 	for encap && iterations <= 1 {
