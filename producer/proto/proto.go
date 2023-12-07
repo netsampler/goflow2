@@ -43,6 +43,14 @@ func (p *ProtoProducer) getSamplingRateSystem(args *producer.ProduceArgs) Sampli
 }
 
 func (p *ProtoProducer) Produce(msg interface{}, args *producer.ProduceArgs) (flowMessageSet []producer.ProducerMessage, err error) {
+
+	defer func() {
+		pErr := recover()
+		if pErr != nil {
+			err = fmt.Errorf("produce panic %v %v", pErr, msg)
+		}
+	}()
+
 	tr := uint64(args.TimeReceived.UnixNano())
 	sa, _ := args.SamplerAddress.Unmap().MarshalBinary()
 	switch msgConv := msg.(type) {
