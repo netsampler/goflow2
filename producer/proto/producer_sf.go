@@ -200,22 +200,37 @@ func ParseICMPv6(offset int, flowMessage *ProtoProducerMessage, data []byte) (ne
 }
 
 func IsMPLS(etherType []byte) bool {
+	if len(etherType) != 2 {
+		return false
+	}
 	return etherType[0] == 0x88 && etherType[1] == 0x47
 }
 
 func Is8021Q(etherType []byte) bool {
+	if len(etherType) != 2 {
+		return false
+	}
 	return etherType[0] == 0x81 && etherType[1] == 0x0
 }
 
 func IsIPv4(etherType []byte) bool {
+	if len(etherType) != 2 {
+		return false
+	}
 	return etherType[0] == 0x8 && etherType[1] == 0x0
 }
 
 func IsIPv6(etherType []byte) bool {
+	if len(etherType) != 2 {
+		return false
+	}
 	return etherType[0] == 0x86 && etherType[1] == 0xdd
 }
 
 func IsARP(etherType []byte) bool {
+	if len(etherType) != 2 {
+		return false
+	}
 	return etherType[0] == 0x8 && etherType[1] == 0x6
 }
 
