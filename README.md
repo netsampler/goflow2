@@ -131,6 +131,14 @@ just send the output into a file.
 $ ./goflow2 -transport.file /var/logs/goflow2.log
 ```
 
+You can filter the output using the `-format.selector` flag. Only the listed fields will be forwarded:
+
+(This also allows you to add some additional fields: EtypeName, ProtoName, IcmpName)
+
+```bash
+$ ./goflow2 -format.selector TimeReceived,TimeFlowStartMs,TimeFlowEndMs,Bytes,EtypeName,ProtoName,SrcAddr,DstAddr,SrcPort,DstPort
+```
+
 To enable Kafka and send protobuf, use the following arguments:
 
 ```bash
