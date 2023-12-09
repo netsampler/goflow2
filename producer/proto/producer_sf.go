@@ -390,7 +390,9 @@ func ParseEthernetHeader(flowMessage *ProtoProducerMessage, data []byte, config 
 		iterations++
 	}
 
-	flowMessage.Etype = uint32(binary.BigEndian.Uint16(etherType[0:2]))
+	if len(etherType) >= 2 {
+		flowMessage.Etype = uint32(binary.BigEndian.Uint16(etherType[0:2]))
+	}
 	flowMessage.Proto = uint32(nextHeader)
 
 	return nil
