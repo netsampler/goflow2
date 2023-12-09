@@ -56,37 +56,22 @@ $ nprobe -i eth0 -n 10.0.0.1:2055 -V 10
 
 Run with
 ```bash
-/usr/sbin/softflowd -i 'any' -P 'udp' -n '127.0.0.1:2055' -v 9 -T 'full' -m 8192 -t general='15s' -t maxlife='60s'
+/usr/sbin/softflowd -i 'any' -P 'udp' -n '127.0.0.1:2055' -v 9 -T 'full' -t general='15s' -t maxlife='60s'
 ```
 
 #### Service
 
-Single-instance Systemd service:
+1. Add config
 
-```text
-# /etc/systemd/system/softflowd@.service.d/override.conf
+   ```ini
+   # /etc/softflowd/goflow2.conf
+   interface='any'
+   options='-P udp -n 127.0.0.1:2055 -v 9 -T full -t general=15s -t maxlife=60s'
+   ```
 
-[Unit]
-Documentation=https://github.com/irino/softflowd
+2. Enable & Start service instance
 
-After=<goflow2>.service
-PartOf=<goflow2>.service
-
-[Service]
-ExecStart=
-ExecStart=/usr/sbin/softflowd -i 'any' -p '/run/softflowd/%I.pid' -c '/run/softflowd/%I.ctl' -P 'udp' -n '127.0.0.1:2055' -v 9 -T 'full' -m 8192 -t general='15s' -t maxlife='60s'
-
-Restart=on-failure
-RestartSec=10s
-
-StandardOutput=journal
-StandardError=journal
-SyslogIdentifier=netflow
-```
-
-```bash
-systemctl enable softflowd@goflow2.service
-systemctl start softflowd@goflow2.service
-```
-
-On how to run multiple softflowd systemd-instances - read into the manpage linked above.
+   ```bash
+   systemctl enable softflowd@goflow2.service
+   systemctl start softflowd@goflow2.service
+   ```
