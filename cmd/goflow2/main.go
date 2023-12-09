@@ -128,6 +128,8 @@ func main() {
 		log.Fatalf("producer %s does not exist", *Produce)
 	}
 
+	// intercept panic and generate an error
+	flowProducer = producer.WrapPanicProducer(flowProducer)
 	// wrap producer with Prometheus metrics
 	flowProducer = metrics.WrapPromProducer(flowProducer)
 
@@ -293,6 +295,15 @@ func main() {
 						l := l.WithError(err)
 						if errors.Is(err, netflow.ErrorTemplateNotFound) {
 							l.Warn("template error")
+						} else if errors.Is(err, producer.ProducerError) {
+							var pErrMsg *producer.ProducerErrorMessage
+							if errors.As(err, &pErrMsg) {
+								l = l.WithFields(log.Fields{
+									"message": pErrMsg.Msg,
+									"stacktrace": string(pErrMsg.Stacktrace),
+								})
+							}
+							l.Error("producer error")
 						} else if errors.Is(err, net.ErrClosed) {
 							l.Info("closed receiver")
 						} else {
