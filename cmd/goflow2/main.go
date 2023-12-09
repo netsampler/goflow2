@@ -60,8 +60,8 @@ var (
 	Format    = flag.String("format", "json", fmt.Sprintf("Choose the format (available: %s)", strings.Join(format.GetFormats(), ", ")))
 	Transport = flag.String("transport", "file", fmt.Sprintf("Choose the transport (available: %s)", strings.Join(transport.GetTransports(), ", ")))
 
-	TransportErrCt  = flag.Int("transport.err.cnt", 10, "Maximum transport errors per batch")
-	TransportErrInt = flag.Duration("transport.err.int", time.Second*10, "Maximum transport errors interval")
+	ErrCnt = flag.Int("err.cnt", 10, "Maximum errors per batch for muting")
+	ErrInt = flag.Duration("err.int", time.Second*10, "Maximum errors interval for muting")
 
 	Addr = flag.String("addr", ":8080", "HTTP server address")
 
@@ -338,9 +338,7 @@ func main() {
 			transportErr = transportErrorFct.Errors()
 		}
 
-		var trErrCtr int
-		lastTrErr := time.Now().UTC()
-		maxTrErrLog := *TransportErrCt
+		bm := utils.NewBatchMute(*ErrInt, *ErrCnt)
 
 		for {
 			select {
@@ -351,16 +349,12 @@ func main() {
 					return
 				}
 
-				curTime := time.Now().UTC()
-				if *TransportErrInt > 0 && curTime.Sub(lastTrErr) > *TransportErrInt {
-					lastTrErr = curTime
-					trErrCtr = 0
-				}
-				trErrCtr += 1
-
-				if trErrCtr == maxTrErrLog {
+				muted, skipped := bm.Increment()
+				if muted && skipped == 0 {
 					log.Warn("too many transport errors, muting")
-				} else if trErrCtr < maxTrErrLog || maxTrErrLog == 0 {
+				} else if !muted && skipped > 0 {
+					log.Warnf("skipped %d transport errors", skipped)
+				} else if !muted {
 					l := log.WithError(err)
 					l.Error("transport error")
 				}
