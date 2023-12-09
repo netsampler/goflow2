@@ -50,9 +50,11 @@ Run with
 $ nprobe -i eth0 -n 10.0.0.1:2055 -V 10
 ```
 
-### Softflowd
+### softflowd
 
 [Documentation](https://man.freebsd.org/cgi/man.cgi?query=softflowd) | [Repository](https://github.com/irino/softflowd)
+
+softflowd listens promiscuously on a network interface and semi-statefully tracks network flows.
 
 Run with
 ```bash
