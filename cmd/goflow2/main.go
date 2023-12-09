@@ -39,6 +39,7 @@ import (
 	// core libraries
 	"github.com/netsampler/goflow2/v2/metrics"
 	"github.com/netsampler/goflow2/v2/utils"
+	"github.com/netsampler/goflow2/v2/utils/debug"
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	log "github.com/sirupsen/logrus"
@@ -129,7 +130,7 @@ func main() {
 	}
 
 	// intercept panic and generate an error
-	flowProducer = producer.WrapPanicProducer(flowProducer)
+	flowProducer = debug.WrapPanicProducer(flowProducer)
 	// wrap producer with Prometheus metrics
 	flowProducer = metrics.WrapPromProducer(flowProducer)
 
@@ -275,7 +276,12 @@ func main() {
 			l.Errorf("scheme %s does not exist", listenAddrUrl.Scheme)
 			return
 		}
-		decodeFunc = metrics.PromDecoderWrapper(p.DecodeFlow, listenAddrUrl.Scheme)
+
+		decodeFunc = p.DecodeFlow
+		// intercept panic and generate error
+		decodeFunc = debug.PanicDecoderWrapper(decodeFunc)
+		// wrap decoder with Prometheus metrics
+		decodeFunc = metrics.PromDecoderWrapper(decodeFunc, listenAddrUrl.Scheme)
 		pipes = append(pipes, p)
 
 		// starts receivers
@@ -295,15 +301,15 @@ func main() {
 						l := l.WithError(err)
 						if errors.Is(err, netflow.ErrorTemplateNotFound) {
 							l.Warn("template error")
-						} else if errors.Is(err, producer.ProducerError) {
-							var pErrMsg *producer.ProducerErrorMessage
+						} else if errors.Is(err, debug.PanicError) {
+							var pErrMsg *debug.PanicErrorMessage
 							if errors.As(err, &pErrMsg) {
 								l = l.WithFields(log.Fields{
-									"message": pErrMsg.Msg,
+									"message":    pErrMsg.Msg,
 									"stacktrace": string(pErrMsg.Stacktrace),
 								})
 							}
-							l.Error("producer error")
+							l.Error("intercepted panic")
 						} else if errors.Is(err, net.ErrClosed) {
 							l.Info("closed receiver")
 						} else {
