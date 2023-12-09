@@ -56,22 +56,23 @@ $ nprobe -i eth0 -n 10.0.0.1:2055 -V 10
 
 Run with
 ```bash
-/usr/sbin/softflowd -i 'any' -P 'udp' -n '127.0.0.1:2055' -v 9 -T 'full' -t general='15s' -t maxlife='60s'
+$ softflowd -i 'any' -n '127.0.0.1:2055' -P 'udp' -v 9
 ```
+
+To lower the flow-export intervals you can tweak its timeouts.
 
 #### Service
 
-1. Add config
+1. Add config: /etc/softflowd/goflow2.conf
 
    ```ini
-   # /etc/softflowd/goflow2.conf
    interface='any'
-   options='-P udp -n 127.0.0.1:2055 -v 9 -T full -t general=15s -t maxlife=60s'
+   options='-n 127.0.0.1:2055 -P udp -v 9'
    ```
 
 2. Enable & Start service instance
 
    ```bash
-   systemctl enable softflowd@goflow2.service
-   systemctl start softflowd@goflow2.service
+   $ systemctl enable softflowd@goflow2.service
+   $ systemctl start softflowd@goflow2.service
    ```
