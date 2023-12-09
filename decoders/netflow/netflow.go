@@ -3,6 +3,7 @@ package netflow
 import (
 	"bytes"
 	"encoding/binary"
+	"errors"
 	"fmt"
 
 	"github.com/netsampler/goflow2/v2/decoders/utils"
@@ -286,10 +287,13 @@ func DecodeMessageCommon(payload *bytes.Buffer, templates NetFlowTemplateSystem,
 	var read int
 	startSize := payload.Len()
 	for i := 0; ((i < int(size) && version == 9) || (uint16(read) < size && version == 10)) && payload.Len() > 0; i++ {
-		if flowSet, err := DecodeMessageCommonFlowSet(payload, templates, obsDomainId, version); err != nil {
-			return flowSets, err
+		if flowSet, lerr := DecodeMessageCommonFlowSet(payload, templates, obsDomainId, version); lerr != nil && !errors.Is(lerr, ErrorTemplateNotFound) {
+			return flowSets, lerr
 		} else {
 			flowSets = append(flowSets, flowSet)
+			if lerr != nil {
+				err = errors.Join(err, lerr)
+			}
 		}
 		read = startSize - payload.Len()
 	}
@@ -392,7 +396,12 @@ func DecodeMessageCommonFlowSet(payload *bytes.Buffer, templates NetFlowTemplate
 		}
 
 	} else if fsheader.Id >= 256 {
-		dataReader := bytes.NewBuffer(payload.Next(nextrelpos))
+		rawfs := RawFlowSet{
+			FlowSetHeader: fsheader,
+			Records:       payload.Next(nextrelpos),
+		}
+		flowSet = rawfs
+		dataReader := bytes.NewBuffer(rawfs.Records)
 
 		if templates == nil {
 			return flowSet, &FlowError{version, "Templates", obsDomainId, fsheader.Id, fmt.Errorf("No templates")}

@@ -306,6 +306,9 @@ func (p NFv9Packet) String() string {
 		case DataFlowSet:
 			str += fmt.Sprintf("    - DataFlowSet %v:\n", i)
 			str += flowSet.String(NFv9TypeToString)
+		case RawFlowSet:
+			str += fmt.Sprintf("    - RawFlowSet %v:\n", i)
+			str += flowSet.String()
 		case OptionsDataFlowSet:
 			str += fmt.Sprintf("    - OptionsDataFlowSet %v:\n", i)
 			str += flowSet.String(NFv9TypeToString, NFv9ScopeToString)

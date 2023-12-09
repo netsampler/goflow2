@@ -34,6 +34,13 @@ type DataFlowSet struct {
 	Records []DataRecord `json:"records"`
 }
 
+// RawFlowSet is a a set that could not be decoded due to the absence of a template
+type RawFlowSet struct {
+	FlowSetHeader
+
+	Records []byte `json:"records"`
+}
+
 type OptionsDataFlowSet struct {
 	FlowSetHeader
 
@@ -96,6 +103,14 @@ type DataField struct {
 	// The value (in bytes) of the field.
 	Value interface{} `json:"value"`
 	//Value []byte
+}
+
+func (flowSet RawFlowSet) String() string {
+	str := fmt.Sprintf("       Id %v\n", flowSet.Id)
+	str += fmt.Sprintf("       Length: %v\n", len(flowSet.Records))
+	str += fmt.Sprintf("       Records: %v\n", flowSet.Records)
+
+	return str
 }
 
 func (flowSet OptionsDataFlowSet) String(TypeToString func(uint16) string, ScopeToString func(uint16) string) string {
