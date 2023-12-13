@@ -53,8 +53,9 @@ var (
 
 	ListenAddresses = flag.String("listen", "sflow://:6343,netflow://:2055", "listen addresses")
 
-	LogLevel = flag.String("loglevel", "info", "Log level")
-	LogFmt   = flag.String("logfmt", "normal", "Log formatter")
+	LogStream = flag.String("logstream", "stdout", "Log output stream (stdout or stderr)")
+	LogLevel  = flag.String("loglevel", "info", "Log level")
+	LogFmt    = flag.String("logfmt", "normal", "Log formatter")
 
 	Produce   = flag.String("produce", "sample", "Producer method (sample or raw)")
 	Format    = flag.String("format", "json", fmt.Sprintf("Choose the format (available: %s)", strings.Join(format.GetFormats(), ", ")))
@@ -86,6 +87,13 @@ func main() {
 
 	lvl, _ := log.ParseLevel(*LogLevel)
 	log.SetLevel(lvl)
+
+	switch *LogStream {
+	case "stdout":
+		log.SetOutput(os.Stdout)
+	case "stderr":
+		log.SetOutput(os.Stderr)
+	}
 
 	switch *LogFmt {
 	case "json":
