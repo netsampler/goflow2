@@ -200,22 +200,37 @@ func ParseICMPv6(offset int, flowMessage *ProtoProducerMessage, data []byte) (ne
 }
 
 func IsMPLS(etherType []byte) bool {
+	if len(etherType) != 2 {
+		return false
+	}
 	return etherType[0] == 0x88 && etherType[1] == 0x47
 }
 
 func Is8021Q(etherType []byte) bool {
+	if len(etherType) != 2 {
+		return false
+	}
 	return etherType[0] == 0x81 && etherType[1] == 0x0
 }
 
 func IsIPv4(etherType []byte) bool {
+	if len(etherType) != 2 {
+		return false
+	}
 	return etherType[0] == 0x8 && etherType[1] == 0x0
 }
 
 func IsIPv6(etherType []byte) bool {
+	if len(etherType) != 2 {
+		return false
+	}
 	return etherType[0] == 0x86 && etherType[1] == 0xdd
 }
 
 func IsARP(etherType []byte) bool {
+	if len(etherType) != 2 {
+		return false
+	}
 	return etherType[0] == 0x8 && etherType[1] == 0x6
 }
 
@@ -236,6 +251,10 @@ func ParseEthernetHeader(flowMessage *ProtoProducerMessage, data []byte, config 
 
 	if etherType, offset, err = ParseEthernet(offset, flowMessage, data); err != nil {
 		return err
+	}
+
+	if len(etherType) != 2 {
+		return nil
 	}
 
 	encap := true
@@ -371,7 +390,9 @@ func ParseEthernetHeader(flowMessage *ProtoProducerMessage, data []byte, config 
 		iterations++
 	}
 
-	flowMessage.Etype = uint32(binary.BigEndian.Uint16(etherType[0:2]))
+	if len(etherType) >= 2 {
+		flowMessage.Etype = uint32(binary.BigEndian.Uint16(etherType[0:2]))
+	}
 	flowMessage.Proto = uint32(nextHeader)
 
 	return nil
