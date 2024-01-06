@@ -49,3 +49,14 @@ Run with
 ```bash
 $ nprobe -i eth0 -n 10.0.0.1:2055 -V 10
 ```
+
+### softflowd
+
+[Documentation](https://github.com/irino/softflowd/blob/master/softflowd.md)
+
+Sample packets using pcap. Uses NetFlow or IPFIX.
+
+Run with
+```bash
+$ softflowd -i eth0 -n '10.0.0.1:2055' -P 'udp' -v 10
+```
