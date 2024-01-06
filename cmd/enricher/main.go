@@ -7,6 +7,8 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"log"
+	"log/slog"
 	"net"
 	"os"
 	"strings"
@@ -25,7 +27,6 @@ import (
 	_ "github.com/netsampler/goflow2/v2/transport/kafka"
 
 	"github.com/oschwald/geoip2-golang"
-	log "github.com/sirupsen/logrus"
 	"google.golang.org/protobuf/encoding/protodelim"
 )
 
@@ -92,15 +93,30 @@ func main() {
 		os.Exit(0)
 	}
 
-	lvl, _ := log.ParseLevel(*LogLevel)
-	log.SetLevel(lvl)
+	var loglevel slog.Level
+	if err := loglevel.UnmarshalText([]byte(*LogLevel)); err != nil {
+		log.Fatal("error parsing log level")
+	}
+
+	lo := slog.HandlerOptions{
+		Level: loglevel,
+	}
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &lo))
+
+	switch *LogFmt {
+	case "json":
+		logger = slog.New(slog.NewJSONHandler(os.Stderr, &lo))
+	}
+
+	slog.SetDefault(logger)
 
 	var dbAsn, dbCountry *geoip2.Reader
 	var err error
 	if *DbAsn != "" {
 		dbAsn, err = geoip2.Open(*DbAsn)
 		if err != nil {
-			log.Fatal(err)
+			slog.Error("error opening asn db", slog.String("error", err.Error()))
+			os.Exit(1)
 		}
 		defer dbAsn.Close()
 	}
@@ -108,7 +124,8 @@ func main() {
 	if *DbCountry != "" {
 		dbCountry, err = geoip2.Open(*DbCountry)
 		if err != nil {
-			log.Fatal(err)
+			slog.Error("error opening country db", slog.String("error", err.Error()))
+			os.Exit(1)
 		}
 		defer dbCountry.Close()
 	}
@@ -120,16 +137,12 @@ func main() {
 
 	transporter, err := transport.FindTransport(*Transport)
 	if err != nil {
-		log.Fatal(err)
+		slog.Error("error transporter", slog.String("error", err.Error()))
+		os.Exit(1)
 	}
 	defer transporter.Close()
 
-	switch *LogFmt {
-	case "json":
-		log.SetFormatter(&log.JSONFormatter{})
-	}
-
-	log.Info("starting enricher")
+	logger.Info("starting enricher")
 
 	rdr := bufio.NewReader(os.Stdin)
 
@@ -138,7 +151,7 @@ func main() {
 		if err := protodelim.UnmarshalFrom(rdr, &msg); err != nil && errors.Is(err, io.EOF) {
 			return
 		} else if err != nil {
-			log.Error(err)
+			slog.Error("error unmarshalling message", slog.String("error", err.Error()))
 			continue
 		}
 
@@ -150,13 +163,13 @@ func main() {
 
 		key, data, err := formatter.Format(&msg)
 		if err != nil {
-			log.Error(err)
+			slog.Error("error formatting message", slog.String("error", err.Error()))
 			continue
 		}
 
 		err = transporter.Send(key, data)
 		if err != nil {
-			log.Error(err)
+			slog.Error("error sending message", slog.String("error", err.Error()))
 			continue
 		}
 
