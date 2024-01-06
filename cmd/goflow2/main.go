@@ -60,6 +60,9 @@ var (
 	Format    = flag.String("format", "json", fmt.Sprintf("Choose the format (available: %s)", strings.Join(format.GetFormats(), ", ")))
 	Transport = flag.String("transport", "file", fmt.Sprintf("Choose the transport (available: %s)", strings.Join(transport.GetTransports(), ", ")))
 
+	ErrCnt = flag.Int("err.cnt", 10, "Maximum errors per batch for muting")
+	ErrInt = flag.Duration("err.int", time.Second*10, "Maximum errors interval for muting")
+
 	Addr = flag.String("addr", ":8080", "HTTP server address")
 
 	TemplatePath = flag.String("templates.path", "/templates", "NetFlow/IPFIX templates list")
@@ -285,6 +288,8 @@ func main() {
 		decodeFunc = metrics.PromDecoderWrapper(decodeFunc, listenAddrUrl.Scheme)
 		pipes = append(pipes, p)
 
+		bm := utils.NewBatchMute(*ErrInt, *ErrCnt)
+
 		// starts receivers
 		// the function either returns an error
 		if err := recv.Start(hostname, int(port), decodeFunc); err != nil {
@@ -299,22 +304,33 @@ func main() {
 					case <-q:
 						return
 					case err := <-recv.Errors():
-						l := l.WithError(err)
-						if errors.Is(err, netflow.ErrorTemplateNotFound) {
-							l.Warn("template error")
-						} else if errors.Is(err, debug.PanicError) {
-							var pErrMsg *debug.PanicErrorMessage
-							if errors.As(err, &pErrMsg) {
-								l = l.WithFields(log.Fields{
-									"message":    pErrMsg.Msg,
-									"stacktrace": string(pErrMsg.Stacktrace),
-								})
-							}
-							l.Error("intercepted panic")
-						} else if errors.Is(err, net.ErrClosed) {
+						if errors.Is(err, net.ErrClosed) {
 							l.Info("closed receiver")
-						} else {
+							continue
+						} else if !errors.Is(err, netflow.ErrorTemplateNotFound) && !errors.Is(err, debug.PanicError) {
 							l.Error("error")
+							continue
+						}
+
+						muted, skipped := bm.Increment()
+						if muted && skipped == 0 {
+							log.Warn("too many receiver messages, muting")
+						} else if !muted && skipped > 0 {
+							log.Warnf("skipped %d receiver messages", skipped)
+						} else if !muted {
+							l := l.WithError(err)
+							if errors.Is(err, netflow.ErrorTemplateNotFound) {
+								l.Warn("template error")
+							} else if errors.Is(err, debug.PanicError) {
+								var pErrMsg *debug.PanicErrorMessage
+								if errors.As(err, &pErrMsg) {
+									l = l.WithFields(log.Fields{
+										"message":    pErrMsg.Msg,
+										"stacktrace": string(pErrMsg.Stacktrace),
+									})
+								}
+								l.Error("intercepted panic")
+							}
 						}
 
 					}
@@ -336,6 +352,8 @@ func main() {
 			transportErr = transportErrorFct.Errors()
 		}
 
+		bm := utils.NewBatchMute(*ErrInt, *ErrCnt)
+
 		for {
 			select {
 			case <-q:
@@ -344,8 +362,17 @@ func main() {
 				if err == nil {
 					return
 				}
-				l := log.WithError(err)
-				l.Error("transport error")
+
+				muted, skipped := bm.Increment()
+				if muted && skipped == 0 {
+					log.Warn("too many transport errors, muting")
+				} else if !muted && skipped > 0 {
+					log.Warnf("skipped %d transport errors", skipped)
+				} else if !muted {
+					l := log.WithError(err)
+					l.Error("transport error")
+				}
+
 			}
 		}
 	}()
