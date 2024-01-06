@@ -226,6 +226,10 @@ func main() {
 			queueSize = 1000000
 		}
 
+		if queueSize == 0 {
+			isBlocking = true
+		}
+
 		hostname := listenAddrUrl.Hostname()
 		port, err := strconv.ParseUint(listenAddrUrl.Port(), 10, 64)
 		if err != nil {
