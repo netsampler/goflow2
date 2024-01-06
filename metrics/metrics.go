@@ -9,6 +9,22 @@ const (
 )
 
 var (
+	MetricReceivedDroppedPackets = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name:      "flow_dropped_packets_total",
+			Help:      "Packets dropped before processing.",
+			Namespace: NAMESPACE,
+		},
+		[]string{"remote_ip", "local_ip", "local_port"},
+	)
+	MetricReceivedDroppedBytes = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name:      "flow_dropped_bytes_total",
+			Help:      "Bytes dropped before processing.",
+			Namespace: NAMESPACE,
+		},
+		[]string{"remote_ip", "local_ip", "local_port"},
+	)
 	MetricTrafficBytes = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Name:      "flow_traffic_bytes_total",
@@ -114,6 +130,9 @@ var (
 )
 
 func init() {
+	prometheus.MustRegister(MetricReceivedDroppedPackets)
+	prometheus.MustRegister(MetricReceivedDroppedBytes)
+
 	prometheus.MustRegister(MetricTrafficBytes)
 	prometheus.MustRegister(MetricTrafficPackets)
 	prometheus.MustRegister(MetricPacketSizeSum)
