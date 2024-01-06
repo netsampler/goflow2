@@ -1,26 +1,16 @@
 package sflow
 
-import (
-	"fmt"
-	"net/netip"
-)
+import "github.com/netsampler/goflow2/v2/decoders/utils"
 
 type Packet struct {
-	Version        uint32        `json:"version"`
-	IPVersion      uint32        `json:"ip-version"`
-	AgentIP        IPAddress     `json:"agent-ip"`
-	SubAgentId     uint32        `json:"sub-agent-id"`
-	SequenceNumber uint32        `json:"sequence-number"`
-	Uptime         uint32        `json:"uptime"`
-	SamplesCount   uint32        `json:"samples-count"`
-	Samples        []interface{} `json:"samples"`
-}
-
-type IPAddress []byte // purely for the formatting purpose
-
-func (s IPAddress) MarshalJSON() ([]byte, error) {
-	ip, _ := netip.AddrFromSlice([]byte(s))
-	return []byte(fmt.Sprintf("\"%s\"", ip.String())), nil
+	Version        uint32          `json:"version"`
+	IPVersion      uint32          `json:"ip-version"`
+	AgentIP        utils.IPAddress `json:"agent-ip"`
+	SubAgentId     uint32          `json:"sub-agent-id"`
+	SequenceNumber uint32          `json:"sequence-number"`
+	Uptime         uint32          `json:"uptime"`
+	SamplesCount   uint32          `json:"samples-count"`
+	Samples        []interface{}   `json:"samples"`
 }
 
 type SampleHeader struct {
