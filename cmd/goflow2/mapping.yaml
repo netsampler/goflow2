@@ -25,6 +25,8 @@ formatter:
     # additional fields
     - icmp_name # virtual column
     - csum # udp checksum
+    # ipfix extra fields from ovs 
+    - virtual_obs_id
   key:
     - sampler_address
   protobuf: # manual protobuf fields addition
@@ -43,8 +45,12 @@ formatter:
     - name: csum
       index: 999
       type: varint
+    - name: virtual_obs_id
+      index: 1000
+      type: string
   render:
     time_received_ns: datetimenano
+    virtual_obs_id: hexa
 # Decoder mappings
 ipfix:
   mapping:
@@ -56,6 +62,10 @@ ipfix:
       destination: ingress_vrf_id
     - field: 235
       destination: egress_vrf_id
+    - field: 898
+      destination: virtual_obs_id
+      penprovided: true # has an enterprise number
+      pen: 6876 #  Vmware enterprise
 netflowv9:
   mapping:
     - field: 34 # samplingInterval provided within the template

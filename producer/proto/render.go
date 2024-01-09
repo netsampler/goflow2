@@ -22,6 +22,7 @@ const (
 	RendererNetwork      RendererID = "network"
 	RendererDateTime     RendererID = "datetime"
 	RendererDateTimeNano RendererID = "datetimenano"
+	RendererHexa         RendererID = "hexa"
 )
 
 var (
@@ -33,6 +34,7 @@ var (
 		RendererProto:        ProtoRenderer,
 		RendererDateTime:     DateTimeRenderer,
 		RendererDateTimeNano: DateTimeNanoRenderer,
+		RendererHexa:         HexaRenderer,
 	}
 
 	defaultRenderers = map[string]RenderFunc{
@@ -82,6 +84,15 @@ var (
 		134: "RouterAdvertisement",
 	}
 )
+
+func HexaRenderer(msg *ProtoProducerMessage, fieldName string, data interface{}) interface{} {
+	if dataC, ok := data.(string); ok {
+		value, _ := hex.DecodeString(dataC)
+		return string(value)
+	}
+	return NilRenderer(msg, fieldName, data)
+}
+
 
 func NilRenderer(msg *ProtoProducerMessage, fieldName string, data interface{}) interface{} {
 	if dataIf, ok := data.(interface {
