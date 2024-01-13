@@ -151,6 +151,8 @@ func IPRenderer(msg *ProtoProducerMessage, fieldName string, data interface{}) i
 func EtypeRenderer(msg *ProtoProducerMessage, fieldName string, data interface{}) interface{} {
 	if dataC, ok := data.(uint32); ok {
 		return etypeName[dataC]
+	} else if dataC, ok := data.(uint64); ok { // supports protobuf mapped fields
+		return etypeName[uint32(dataC)]
 	}
 	return "unknown"
 }
@@ -158,6 +160,8 @@ func EtypeRenderer(msg *ProtoProducerMessage, fieldName string, data interface{}
 func ProtoRenderer(msg *ProtoProducerMessage, fieldName string, data interface{}) interface{} {
 	if dataC, ok := data.(uint32); ok {
 		return protoName[dataC]
+	} else if dataC, ok := data.(uint64); ok {
+		return protoName[uint32(dataC)]
 	}
 	return "unknown"
 }
