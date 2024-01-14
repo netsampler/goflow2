@@ -181,7 +181,7 @@ Here is an example to send data to OpenObserve `json` endpoint:
 
 This will allow you to visualize the data in OpenObserve:
 
-![OpenObserve](/screenshots/netflow-top-items.png)
+![OpenObserve](/graphics/netflow-top-items.png)
 
 
 ### Docker
