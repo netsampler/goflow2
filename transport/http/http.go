@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"flag"
-	"fmt"
 	"net/http"
 	"sync"
 
@@ -18,7 +17,7 @@ type HTTPDriver struct {
 	lock                *sync.RWMutex
 	q                   chan bool
 	batchSize           int
-	batchData           [][]byte
+	batchData           []map[string]interface{}
 }
 
 func (d *HTTPDriver) Prepare() error {
@@ -36,36 +35,30 @@ func (d *HTTPDriver) Prepare() error {
 
 func (d *HTTPDriver) Init() error {
 	d.q = make(chan bool, 1)
-	d.batchData = make([][]byte, 0, d.batchSize)
+	d.batchData = make([]map[string]interface{}, 0, d.batchSize)
 	return nil
 }
 
 func (d *HTTPDriver) Send(key, data []byte) error {
-	d.lock.RLock()
-	httpDestination := d.httpDestination
-	httpAuthHeader := d.httpAuthHeader
-	httpAuthCredentials := d.httpAuthCredentials
-	d.lock.RUnlock()
-
-	d.batchData = append(d.batchData, data)
-	fmt.Println("batchData len:", len(d.batchData))
+	batchData := make(map[string]interface{})
+	err := json.Unmarshal(data, &batchData)
+	if err != nil {
+		return err
+	}
+	d.batchData = append(d.batchData, batchData)
 	if len(d.batchData) >= d.batchSize {
 		jsonData, err := json.Marshal(d.batchData)
 		if err != nil {
 			return err
 		}
 
-		fmt.Println("jsonData:", string(jsonData))
-
-		req, err := http.NewRequest("POST", httpDestination, bytes.NewBuffer(jsonData))
+		req, err := http.NewRequest("POST", d.httpDestination, bytes.NewBuffer(jsonData))
 		if err != nil {
 			return err
 		}
 
 		req.Header.Set("Content-Type", "application/json")
-		fmt.Println("httpAuthHeader:", httpAuthHeader)
-		fmt.Println("httpAuthCredentials:", httpAuthCredentials)
-		req.Header.Set(httpAuthHeader, httpAuthCredentials)
+		req.Header.Set(d.httpAuthHeader, d.httpAuthCredentials)
 
 		client := &http.Client{}
 		resp, err := client.Do(req)
