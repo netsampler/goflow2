@@ -4,6 +4,8 @@ import (
 	"testing"
 
 	"google.golang.org/protobuf/encoding/protowire"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func TestMarshalJSON(t *testing.T) {
@@ -30,7 +32,7 @@ func TestMarshalJSON(t *testing.T) {
 			102: ProtobufFormatterConfig{
 				Name:  "test3",
 				Index: 102,
-				Type:  "string",
+				Type:  "bytes",
 				Array: false,
 			},
 		},
@@ -38,7 +40,7 @@ func TestMarshalJSON(t *testing.T) {
 			"Etype": EtypeRenderer,
 			"test1": EtypeRenderer,
 			"test2": NilRenderer,
-			//"test3": nil,
+			"test3": StringRenderer,
 		},
 	}
 
@@ -54,10 +56,12 @@ func TestMarshalJSON(t *testing.T) {
 	unk = protowire.AppendString(unk, string("testing"))
 
 	unk = protowire.AppendTag(unk, protowire.Number(102), protowire.BytesType)
-	unk = protowire.AppendString(unk, string("testing"))
+	unk = protowire.AppendString(unk, string([]byte{0x74, 0x65, 0x73, 0x74, 0x69, 0x6e, 0x67}))
 
 	fmr.SetUnknown(unk)
 
 	out, err := m.MarshalJSON()
-	t.Log(string(out), err)
+	assert.Nil(t, err)
+	t.Log(string(out))
+	assert.Equal(t, "{\"etype\":\"IPv6\",\"test1\":\"IPv6\",\"test2\":\"74657374696e67\",\"test3\":\"testing\"}", string(out))
 }

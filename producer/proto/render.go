@@ -22,6 +22,7 @@ const (
 	RendererNetwork      RendererID = "network"
 	RendererDateTime     RendererID = "datetime"
 	RendererDateTimeNano RendererID = "datetimenano"
+	RendererString       RendererID = "string"
 )
 
 var (
@@ -33,6 +34,7 @@ var (
 		RendererProto:        ProtoRenderer,
 		RendererDateTime:     DateTimeRenderer,
 		RendererDateTimeNano: DateTimeNanoRenderer,
+		RendererString:       StringRenderer,
 	}
 
 	defaultRenderers = map[string]RenderFunc{
@@ -93,6 +95,15 @@ func NilRenderer(msg *ProtoProducerMessage, fieldName string, data interface{}) 
 		return hex.EncodeToString(dataC)
 	}
 	return data
+}
+
+func StringRenderer(msg *ProtoProducerMessage, fieldName string, data interface{}) interface{} {
+	if dataC, ok := data.([]byte); ok {
+		return string(dataC)
+	} else if dataC, ok := data.(string); ok {
+		return string(dataC)
+	} // maybe should support uint64?
+	return NilRenderer(msg, fieldName, data)
 }
 
 func DateTimeRenderer(msg *ProtoProducerMessage, fieldName string, data interface{}) interface{} {

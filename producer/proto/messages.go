@@ -2,7 +2,6 @@ package protoproducer
 
 import (
 	"bytes"
-	"encoding/hex"
 	"fmt"
 	"hash"
 	"hash/fnv"
@@ -121,7 +120,8 @@ func (m *ProtoProducerMessage) mapUnknown() map[string]interface{} {
 				value = v
 			} else if dataType == protowire.BytesType {
 				v, _ := protowire.ConsumeString(data)
-				value = hex.EncodeToString([]byte(v))
+				//value = hex.EncodeToString([]byte(v)) // removed, this conversion is left to the renderer
+				value = []byte(v)
 			} else {
 				continue
 			}
