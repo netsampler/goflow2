@@ -22,6 +22,7 @@ import (
 	// import various transports
 	"github.com/netsampler/goflow2/v2/transport"
 	_ "github.com/netsampler/goflow2/v2/transport/file"
+	_ "github.com/netsampler/goflow2/v2/transport/http"
 	_ "github.com/netsampler/goflow2/v2/transport/kafka"
 
 	"github.com/oschwald/geoip2-golang"
