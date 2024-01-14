@@ -21,13 +21,15 @@ type HTTPDriver struct {
 }
 
 func (d *HTTPDriver) Prepare() error {
+	defaultBatchSize := 1000
+
 	flag.StringVar(&d.httpDestination, "transport.http.destination", "", "HTTP endpoint for output")
 	flag.StringVar(&d.httpAuthHeader, "transport.http.auth.header", "", "HTTP header to set for credentials")
 	flag.StringVar(&d.httpAuthCredentials, "transport.http.auth.credentials", "", "credentials for the header")
-	flag.IntVar(&d.batchSize, "transport.http.batchSize", 1000, "Batch size for sending records")
+	flag.IntVar(&d.batchSize, "transport.http.batchSize", defaultBatchSize, "Batch size for sending records")
 
 	if d.batchSize <= 0 {
-		d.batchSize = 1000 // default batch size
+		d.batchSize = defaultBatchSize // default batch size
 	}
 
 	return nil
