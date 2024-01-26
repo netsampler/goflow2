@@ -46,6 +46,7 @@ var (
 		"NextHop":        IPRenderer,
 		"BgpNextHop":     IPRenderer,
 		"MplsLabelIp":    IPRenderer,
+		"MplsIp":         IPRenderer,
 		"Etype":          EtypeRenderer,
 		"Proto":          ProtoRenderer,
 		"SrcNet":         NetworkRenderer,
@@ -155,6 +156,12 @@ func RenderIP(addr []byte) string {
 func IPRenderer(msg *ProtoProducerMessage, fieldName string, data interface{}) interface{} {
 	if dataC, ok := data.([]byte); ok {
 		return RenderIP(dataC)
+	} else if dataC, ok := data.([][]byte); ok {
+		var ipList []string
+		for _, ip := range dataC {
+			ipList = append(ipList, RenderIP(ip))
+		}
+		return ipList
 	}
 	return NilRenderer(msg, fieldName, data)
 }
