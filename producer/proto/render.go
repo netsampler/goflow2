@@ -157,9 +157,9 @@ func IPRenderer(msg *ProtoProducerMessage, fieldName string, data interface{}) i
 	if dataC, ok := data.([]byte); ok {
 		return RenderIP(dataC)
 	} else if dataC, ok := data.([][]byte); ok {
-		var ipList []string
-		for _, ip := range dataC {
-			ipList = append(ipList, RenderIP(ip))
+		ipList := make([]string, len(dataC))
+		for i, ip := range dataC {
+			ipList[i] = RenderIP(ip)
 		}
 		return ipList
 	}
