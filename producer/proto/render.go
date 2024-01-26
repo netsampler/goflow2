@@ -156,12 +156,6 @@ func RenderIP(addr []byte) string {
 func IPRenderer(msg *ProtoProducerMessage, fieldName string, data interface{}) interface{} {
 	if dataC, ok := data.([]byte); ok {
 		return RenderIP(dataC)
-	} else if dataC, ok := data.([][]byte); ok {
-		ipList := make([]string, len(dataC))
-		for i, ip := range dataC {
-			ipList[i] = RenderIP(ip)
-		}
-		return ipList
 	}
 	return NilRenderer(msg, fieldName, data)
 }
