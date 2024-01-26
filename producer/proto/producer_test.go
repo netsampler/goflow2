@@ -28,6 +28,16 @@ func TestProcessMessageNetFlow(t *testing.T) {
 					// 218432192
 					Value: []byte{0x0d, 0x05, 0x02, 0xc0},
 				},
+				netflow.DataField{
+					Type: netflow.NFV9_FIELD_MPLS_LABEL_1,
+					// 24041
+					Value: []byte{0x05, 0xde, 0x94},
+				},
+				netflow.DataField{
+					Type: netflow.NFV9_FIELD_MPLS_LABEL_2,
+					// 211992
+					Value: []byte{0x33, 0xc1, 0x85},
+				},
 			},
 		},
 	}
@@ -49,6 +59,7 @@ func TestProcessMessageNetFlow(t *testing.T) {
 		if assert.True(t, ok) {
 			assert.Equal(t, msg.TimeFlowStartNs, uint64(1705732882176000000))
 			assert.Equal(t, msg.TimeFlowEndNs, uint64(1705732882192000000))
+			assert.Equal(t, msg.MplsLabel, []uint32{24041, 211992})
 		}
 	}
 
