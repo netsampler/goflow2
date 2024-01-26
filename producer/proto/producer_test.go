@@ -18,6 +18,16 @@ func TestProcessMessageNetFlow(t *testing.T) {
 					Type:  netflow.NFV9_FIELD_IPV4_SRC_ADDR,
 					Value: []byte{10, 0, 0, 1},
 				},
+				netflow.DataField{
+					Type: netflow.NFV9_FIELD_FIRST_SWITCHED,
+					// 218432176
+					Value: []byte{0x0d, 0x05, 0x02, 0xb0},
+				},
+				netflow.DataField{
+					Type: netflow.NFV9_FIELD_LAST_SWITCHED,
+					// 218432192
+					Value: []byte{0x0d, 0x05, 0x02, 0xc0},
+				},
 			},
 		},
 	}
@@ -28,11 +38,19 @@ func TestProcessMessageNetFlow(t *testing.T) {
 	}
 
 	pktnf9 := netflow.NFv9Packet{
-		FlowSets: dfs,
+		SystemUptime: 218432000,
+		UnixSeconds:  1705732882,
+		FlowSets:     dfs,
 	}
 	testsr := &SingleSamplingRateSystem{1}
-	_, err := ProcessMessageNetFlowV9Config(&pktnf9, testsr, nil)
-	assert.Nil(t, err)
+	msgs, err := ProcessMessageNetFlowV9Config(&pktnf9, testsr, nil)
+	if assert.Nil(t, err) && assert.Len(t, msgs, 1) {
+		msg, ok := msgs[0].(*ProtoProducerMessage)
+		if assert.True(t, ok) {
+			assert.Equal(t, msg.TimeFlowStartNs, uint64(1705732882176000000))
+			assert.Equal(t, msg.TimeFlowEndNs, uint64(1705732882192000000))
+		}
+	}
 
 	pktipfix := netflow.IPFIXPacket{
 		FlowSets: dfs,

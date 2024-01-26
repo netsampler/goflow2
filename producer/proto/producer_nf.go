@@ -544,15 +544,15 @@ func ConvertNetFlowDataSet(flowMessage *ProtoProducerMessage, version uint16, ba
 					if err := DecodeUNumber(v, &timeFirstSwitched); err != nil {
 						return err
 					}
-					timeDiff := (uptime - timeFirstSwitched)
-					flowMessage.TimeFlowStartNs = baseTimeNs - uint64(timeDiff)*1000000000
+					timeDiff := (int64(uptime) - int64(timeFirstSwitched))
+					flowMessage.TimeFlowStartNs = uint64(int64(baseTime)*1000-timeDiff) * 1000000
 				case netflow.NFV9_FIELD_LAST_SWITCHED:
 					var timeLastSwitched uint32
 					if err := DecodeUNumber(v, &timeLastSwitched); err != nil {
 						return err
 					}
-					timeDiff := (uptime - timeLastSwitched)
-					flowMessage.TimeFlowEndNs = baseTimeNs - uint64(timeDiff)*1000000000
+					timeDiff := (int64(uptime) - int64(timeLastSwitched))
+					flowMessage.TimeFlowEndNs = uint64(int64(baseTime)*1000-timeDiff) * 1000000
 				}
 			} else if version == 10 {
 				switch df.Type {
