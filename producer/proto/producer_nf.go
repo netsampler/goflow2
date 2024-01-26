@@ -791,6 +791,7 @@ func ProcessMessageNetFlowV9Config(packet *netflow.NFv9Packet, samplingRateSys S
 		}
 		fmsg.SequenceNum = seqnum
 		fmsg.SamplingRate = uint64(samplingRate)
+		fmsg.ObservationDomainId = obsDomainId
 	}
 	return flowMessageSet, nil
 }
