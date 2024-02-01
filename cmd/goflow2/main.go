@@ -6,6 +6,8 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"log"
+	"log/slog"
 	"net"
 	"net/http"
 	"net/url"
@@ -42,7 +44,6 @@ import (
 	"github.com/netsampler/goflow2/v2/utils/debug"
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
-	log "github.com/sirupsen/logrus"
 	"gopkg.in/yaml.v2"
 )
 
@@ -87,22 +88,33 @@ func main() {
 		os.Exit(0)
 	}
 
-	lvl, _ := log.ParseLevel(*LogLevel)
-	log.SetLevel(lvl)
+	var loglevel slog.Level
+	if err := loglevel.UnmarshalText([]byte(*LogLevel)); err != nil {
+		log.Fatal("error parsing log level")
+	}
+
+	lo := slog.HandlerOptions{
+		Level: loglevel,
+	}
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &lo))
 
 	switch *LogFmt {
 	case "json":
-		log.SetFormatter(&log.JSONFormatter{})
+		logger = slog.New(slog.NewJSONHandler(os.Stderr, &lo))
 	}
+
+	slog.SetDefault(logger)
 
 	formatter, err := format.FindFormat(*Format)
 	if err != nil {
-		log.Fatal(err)
+		slog.Error("error formatter", slog.String("error", err.Error()))
+		os.Exit(1)
 	}
 
 	transporter, err := transport.FindTransport(*Transport)
 	if err != nil {
-		log.Fatal(err)
+		slog.Error("error transporter", slog.String("error", err.Error()))
+		os.Exit(1)
 	}
 
 	var flowProducer producer.ProducerInterface
@@ -113,23 +125,27 @@ func main() {
 		if *MappingFile != "" {
 			f, err := os.Open(*MappingFile)
 			if err != nil {
-				log.Fatal(err)
+				slog.Error("error opening mapping", slog.String("error", err.Error()))
+				os.Exit(1)
 			}
 			cfgProducer, err = LoadMapping(f)
 			f.Close()
 			if err != nil {
-				log.Fatal(err)
+				slog.Error("error loading mapping", slog.String("error", err.Error()))
+				os.Exit(1)
 			}
 		}
 
 		flowProducer, err = protoproducer.CreateProtoProducer(cfgProducer, protoproducer.CreateSamplingSystem)
 		if err != nil {
-			log.Fatal(err)
+			slog.Error("error producer", slog.String("error", err.Error()))
+			os.Exit(1)
 		}
 	} else if *Produce == "raw" {
 		flowProducer = &rawproducer.RawProducer{}
 	} else {
-		log.Fatalf("producer %s does not exist", *Produce)
+		slog.Error("producer does not exist", slog.String("error", err.Error()), slog.String("producer", *Produce))
+		os.Exit(1)
 	}
 
 	// intercept panic and generate an error
@@ -145,12 +161,13 @@ func main() {
 		if !collecting {
 			wr.WriteHeader(http.StatusServiceUnavailable)
 			if _, err := wr.Write([]byte("Not OK\n")); err != nil {
-				log.WithError(err).Error("error writing HTTP")
+				slog.Error("error writing HTTP", slog.String("error", err.Error()))
 			}
 		} else {
 			wr.WriteHeader(http.StatusOK)
 			if _, err := wr.Write([]byte("OK\n")); err != nil {
-				log.WithError(err).Error("error writing HTTP")
+				slog.Error("error writing HTTP", slog.String("error", err.Error()))
+
 			}
 		}
 	})
@@ -162,18 +179,17 @@ func main() {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			l := log.WithFields(log.Fields{
-				"http": *Addr,
-			})
+			logger := logger.With(slog.String("http", *Addr))
 			err := srv.ListenAndServe()
 			if err != nil && !errors.Is(err, http.ErrServerClosed) {
-				l.WithError(err).Fatal("HTTP server error")
+				slog.Error("HTTP server error", slog.String("error", err.Error()))
+				os.Exit(1)
 			}
-			l.Info("closed HTTP server")
+			logger.Info("closed HTTP server")
 		}()
 	}
 
-	log.Info("starting GoFlow2")
+	logger.Info("starting GoFlow2")
 
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
@@ -185,12 +201,14 @@ func main() {
 	for _, listenAddress := range strings.Split(*ListenAddresses, ",") {
 		listenAddrUrl, err := url.Parse(listenAddress)
 		if err != nil {
-			log.Fatal(err)
+			logger.Error("error parsing address", slog.String("error", err.Error()))
+			os.Exit(1)
 		}
 		numSockets := 1
 		if listenAddrUrl.Query().Has("count") {
 			if numSocketsTmp, err := strconv.ParseUint(listenAddrUrl.Query().Get("count"), 10, 64); err != nil {
-				log.Fatal(err)
+				slog.Error("error parsing count of sockets in URL", slog.String("error", err.Error()))
+				os.Exit(1)
 			} else {
 				numSockets = int(numSocketsTmp)
 			}
@@ -202,7 +220,8 @@ func main() {
 		var numWorkers int
 		if listenAddrUrl.Query().Has("workers") {
 			if numWorkersTmp, err := strconv.ParseUint(listenAddrUrl.Query().Get("workers"), 10, 64); err != nil {
-				log.Fatal(err)
+				slog.Error("error parsing workers in URL", slog.String("error", err.Error()))
+				os.Exit(1)
 			} else {
 				numWorkers = int(numWorkersTmp)
 			}
@@ -214,14 +233,16 @@ func main() {
 		var isBlocking bool
 		if listenAddrUrl.Query().Has("blocking") {
 			if isBlocking, err = strconv.ParseBool(listenAddrUrl.Query().Get("blocking")); err != nil {
-				log.Fatal(err)
+				slog.Error("error parsing blocking in URL", slog.String("error", err.Error()))
+				os.Exit(1)
 			}
 		}
 
 		var queueSize int
 		if listenAddrUrl.Query().Has("queue_size") {
 			if queueSizeTmp, err := strconv.ParseUint(listenAddrUrl.Query().Get("queue_size"), 10, 64); err != nil {
-				log.Fatal(err)
+				slog.Error("error parsing queue_size in URL", slog.String("error", err.Error()))
+				os.Exit(1)
 			} else {
 				queueSize = int(queueSizeTmp)
 			}
@@ -232,22 +253,21 @@ func main() {
 		hostname := listenAddrUrl.Hostname()
 		port, err := strconv.ParseUint(listenAddrUrl.Port(), 10, 64)
 		if err != nil {
-			log.Errorf("Port %s could not be converted to integer", listenAddrUrl.Port())
-			return
+			slog.Error("port could not be converted to integer", slog.String("port", listenAddrUrl.Port()))
+			os.Exit(1)
 		}
 
-		logFields := log.Fields{
-			"scheme":     listenAddrUrl.Scheme,
-			"hostname":   hostname,
-			"port":       port,
-			"count":      numSockets,
-			"workers":    numWorkers,
-			"blocking":   isBlocking,
-			"queue_size": queueSize,
+		logAttr := []any{
+			slog.String("scheme", listenAddrUrl.Scheme),
+			slog.String("hostname", hostname),
+			slog.Int64("port", int64(port)),
+			slog.Int("count", numSockets),
+			slog.Int64("workers", int64(numWorkers)),
+			slog.Bool("blocking", isBlocking),
+			slog.Int64("queue_size", int64(queueSize)),
 		}
-		l := log.WithFields(logFields)
-
-		l.Info("starting collection")
+		logger := logger.With(logAttr...)
+		logger.Info("starting collection")
 
 		cfg := &utils.UDPReceiverConfig{
 			Sockets:          numSockets,
@@ -258,7 +278,8 @@ func main() {
 		}
 		recv, err := utils.NewUDPReceiver(cfg)
 		if err != nil {
-			log.WithError(err).Fatal("error creating UDP receiver")
+			logger.Error("error creating UDP receiver", slog.String("error", err.Error()))
+			os.Exit(1)
 		}
 
 		cfgPipe := &utils.PipeConfig{
@@ -277,8 +298,8 @@ func main() {
 		} else if listenAddrUrl.Scheme == "flow" {
 			p = utils.NewFlowPipe(cfgPipe)
 		} else {
-			l.Errorf("scheme %s does not exist", listenAddrUrl.Scheme)
-			return
+			logger.Error("scheme does not exist", slog.String("error", listenAddrUrl.Scheme))
+			os.Exit(1)
 		}
 
 		decodeFunc = p.DecodeFlow
@@ -293,7 +314,8 @@ func main() {
 		// starts receivers
 		// the function either returns an error
 		if err := recv.Start(hostname, int(port), decodeFunc); err != nil {
-			l.Fatal(err)
+			logger.Error("error starting", slog.String("error", listenAddrUrl.Scheme))
+			os.Exit(1)
 		} else {
 			wg.Add(1)
 			go func() {
@@ -305,31 +327,34 @@ func main() {
 						return
 					case err := <-recv.Errors():
 						if errors.Is(err, net.ErrClosed) {
-							l.Info("closed receiver")
+							logger.Info("closed receiver")
 							continue
 						} else if !errors.Is(err, netflow.ErrorTemplateNotFound) && !errors.Is(err, debug.PanicError) {
-							l.Error("error")
+							logger.Info("error", slog.String("error", err.Error()))
 							continue
 						}
 
 						muted, skipped := bm.Increment()
 						if muted && skipped == 0 {
-							log.Warn("too many receiver messages, muting")
+							logger.Warn("too many receiver messages, muting")
 						} else if !muted && skipped > 0 {
-							log.Warnf("skipped %d receiver messages", skipped)
+							logger.Warn("skipped receiver messages", slog.Int("count", skipped))
 						} else if !muted {
-							l := l.WithError(err)
+							attrs := []any{
+								slog.String("error", err.Error()),
+							}
+
 							if errors.Is(err, netflow.ErrorTemplateNotFound) {
-								l.Warn("template error")
+								logger.Warn("template error")
 							} else if errors.Is(err, debug.PanicError) {
 								var pErrMsg *debug.PanicErrorMessage
 								if errors.As(err, &pErrMsg) {
-									l = l.WithFields(log.Fields{
-										"message":    pErrMsg.Msg,
-										"stacktrace": string(pErrMsg.Stacktrace),
-									})
+									attrs = append(attrs,
+										slog.Any("message", pErrMsg.Msg),
+										slog.String("stacktrace", string(pErrMsg.Stacktrace)),
+									)
 								}
-								l.Error("intercepted panic")
+								logger.Error("intercepted panic", attrs...)
 							}
 						}
 
@@ -362,15 +387,13 @@ func main() {
 				if err == nil {
 					return
 				}
-
 				muted, skipped := bm.Increment()
 				if muted && skipped == 0 {
-					log.Warn("too many transport errors, muting")
+					logger.Warn("too many transport errors, muting")
 				} else if !muted && skipped > 0 {
-					log.Warnf("skipped %d transport errors", skipped)
+					logger.Warn("skipped transport errors", slog.Int("count", skipped))
 				} else if !muted {
-					l := log.WithError(err)
-					l.Error("transport error")
+					logger.Error("transport error", slog.String("error", err.Error()))
 				}
 
 			}
@@ -386,7 +409,7 @@ func main() {
 	// stops receivers first, udp sockets will be down
 	for _, recv := range receivers {
 		if err := recv.Stop(); err != nil {
-			log.WithError(err).Error("error stopping receiver")
+			logger.Error("error stopping receiver", slog.String("error", err.Error()))
 		}
 	}
 	// then stop pipe
@@ -397,11 +420,11 @@ func main() {
 	flowProducer.Close()
 	// close transporter (eg: flushes message to Kafka)
 	transporter.Close()
-	log.Info("closed transporter")
+	logger.Info("transporter closed")
 	// close http server (prometheus + health check)
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
 	if err := srv.Shutdown(ctx); err != nil {
-		log.WithError(err).Error("error shutting-down HTTP server")
+		logger.Error("error shutting-down HTTP server", slog.String("error", err.Error()))
 	}
 	cancel()
 	close(q) // close errors
