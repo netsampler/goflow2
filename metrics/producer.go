@@ -92,23 +92,11 @@ func (p *PromProducerWrapper) Produce(msg interface{}, args *producer.ProduceArg
 			Add(float64(packet.Count))
 
 	case *netflow.NFv9Packet:
-		NetFlowStats.With(
-			prometheus.Labels{
-				"router":  key,
-				"version": "9",
-			}).
-			Inc()
 		recordCommonNetFlowMetrics(9, key, packet.FlowSets)
 		nfvariant = true
 		versionStr = "9"
 
 	case *netflow.IPFIXPacket:
-		NetFlowStats.With(
-			prometheus.Labels{
-				"router":  key,
-				"version": "10",
-			}).
-			Inc()
 		recordCommonNetFlowMetrics(10, key, packet.FlowSets)
 		nfvariant = true
 		versionStr = "10"
