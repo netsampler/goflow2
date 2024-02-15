@@ -518,7 +518,9 @@ func ConvertNetFlowDataSet(flowMessage *ProtoProducerMessage, version uint16, ba
 				return err
 			}
 			if len(flowMessage.MplsLabel) < 2 {
-				flowMessage.MplsLabel = make([]uint32, 2)
+				tmpLabels := make([]uint32, 2)
+				copy(tmpLabels, flowMessage.MplsLabel)
+				flowMessage.MplsLabel = tmpLabels
 			}
 			flowMessage.MplsLabel[1] = uint32(mplsLabel >> 4)
 		case netflow.IPFIX_FIELD_mplsLabelStackSection3:
@@ -527,7 +529,9 @@ func ConvertNetFlowDataSet(flowMessage *ProtoProducerMessage, version uint16, ba
 				return err
 			}
 			if len(flowMessage.MplsLabel) < 3 {
-				flowMessage.MplsLabel = make([]uint32, 3)
+				tmpLabels := make([]uint32, 3)
+				copy(tmpLabels, flowMessage.MplsLabel)
+				flowMessage.MplsLabel = tmpLabels
 			}
 			flowMessage.MplsLabel[2] = uint32(mplsLabel >> 4)
 		case netflow.IPFIX_FIELD_mplsTopLabelIPv4Address:
@@ -544,15 +548,15 @@ func ConvertNetFlowDataSet(flowMessage *ProtoProducerMessage, version uint16, ba
 					if err := DecodeUNumber(v, &timeFirstSwitched); err != nil {
 						return err
 					}
-					timeDiff := (uptime - timeFirstSwitched)
-					flowMessage.TimeFlowStartNs = baseTimeNs - uint64(timeDiff)*1000000000
+					timeDiff := (int64(uptime) - int64(timeFirstSwitched))
+					flowMessage.TimeFlowStartNs = uint64(int64(baseTime)*1000-timeDiff) * 1000000
 				case netflow.NFV9_FIELD_LAST_SWITCHED:
 					var timeLastSwitched uint32
 					if err := DecodeUNumber(v, &timeLastSwitched); err != nil {
 						return err
 					}
-					timeDiff := (uptime - timeLastSwitched)
-					flowMessage.TimeFlowEndNs = baseTimeNs - uint64(timeDiff)*1000000000
+					timeDiff := (int64(uptime) - int64(timeLastSwitched))
+					flowMessage.TimeFlowEndNs = uint64(int64(baseTime)*1000-timeDiff) * 1000000
 				}
 			} else if version == 10 {
 				switch df.Type {
@@ -791,6 +795,7 @@ func ProcessMessageNetFlowV9Config(packet *netflow.NFv9Packet, samplingRateSys S
 		}
 		fmsg.SequenceNum = seqnum
 		fmsg.SamplingRate = uint64(samplingRate)
+		fmsg.ObservationDomainId = obsDomainId
 	}
 	return flowMessageSet, nil
 }
