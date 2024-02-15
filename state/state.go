@@ -8,7 +8,7 @@ import (
 )
 
 var (
-	SupportedStates  = []string{"memory", "badger", "redis"}
+	SupportedSchemes = []string{"memory", "badger", "redis"}
 	ErrorKeyNotFound = fmt.Errorf("key not found")
 )
 
@@ -42,7 +42,7 @@ func NewState[K comparable, V any](rawUrl string) (State[K, V], error) {
 		} else {
 			return bd, nil
 		}
-	case "redis":
+	case "redis", "rediss":
 		ctx, cancel := context.WithCancel(context.Background())
 		rd := &redisState[K, V]{
 			memory:    memory,

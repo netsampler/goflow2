@@ -5,6 +5,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"github.com/netsampler/goflow2/v2/state"
 	"io"
 	"net"
 	"net/http"
@@ -121,8 +122,12 @@ func main() {
 				log.Fatal(err)
 			}
 		}
-
-		flowProducer, err = protoproducer.CreateProtoProducer(cfgProducer, protoproducer.CreateSamplingSystem)
+		err = state.InitSamplingRate()
+		if err != nil {
+			log.Fatal(err)
+		}
+		defer state.CloseSamplingRate()
+		flowProducer, err = protoproducer.CreateProtoProducer(cfgProducer, state.CreateSamplingSystem)
 		if err != nil {
 			log.Fatal(err)
 		}

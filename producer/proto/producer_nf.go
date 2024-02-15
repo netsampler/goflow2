@@ -28,7 +28,7 @@ type basicSamplingRateSystem struct {
 	samplinglock *sync.RWMutex
 }
 
-func CreateSamplingSystem() SamplingRateSystem {
+func CreateSamplingSystem(key string) SamplingRateSystem {
 	ts := &basicSamplingRateSystem{
 		sampling:     make(map[basicSamplingRateKey]uint32),
 		samplinglock: &sync.RWMutex{},

@@ -14,7 +14,7 @@ type ProtoProducer struct {
 	cfgMapped          *producerConfigMapped
 	samplinglock       *sync.RWMutex
 	sampling           map[string]SamplingRateSystem
-	samplingRateSystem func() SamplingRateSystem
+	samplingRateSystem func(key string) SamplingRateSystem
 }
 
 func (p *ProtoProducer) enrich(flowMessageSet []producer.ProducerMessage, cb func(msg *ProtoProducerMessage)) {
@@ -33,7 +33,7 @@ func (p *ProtoProducer) getSamplingRateSystem(args *producer.ProduceArgs) Sampli
 	sampling, ok := p.sampling[key]
 	p.samplinglock.RUnlock()
 	if !ok {
-		sampling = p.samplingRateSystem()
+		sampling = p.samplingRateSystem(key)
 		p.samplinglock.Lock()
 		p.sampling[key] = sampling
 		p.samplinglock.Unlock()
@@ -95,7 +95,7 @@ func (p *ProtoProducer) Commit(flowMessageSet []producer.ProducerMessage) {
 
 func (p *ProtoProducer) Close() {}
 
-func CreateProtoProducer(cfg *ProducerConfig, samplingRateSystem func() SamplingRateSystem) (producer.ProducerInterface, error) {
+func CreateProtoProducer(cfg *ProducerConfig, samplingRateSystem func(key string) SamplingRateSystem) (producer.ProducerInterface, error) {
 	cfgMapped, err := mapConfig(cfg)
 	return &ProtoProducer{
 		cfgMapped:          cfgMapped,
