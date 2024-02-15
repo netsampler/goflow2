@@ -5,7 +5,6 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"github.com/netsampler/goflow2/v2/state"
 	"io"
 	"net"
 	"net/http"
@@ -39,6 +38,7 @@ import (
 
 	// core libraries
 	"github.com/netsampler/goflow2/v2/metrics"
+	"github.com/netsampler/goflow2/v2/state"
 	"github.com/netsampler/goflow2/v2/utils"
 	"github.com/netsampler/goflow2/v2/utils/debug"
 
