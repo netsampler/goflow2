@@ -1,10 +1,10 @@
 package metrics
 
 import (
-	"github.com/netsampler/goflow2/v2/state"
 	"strconv"
 
 	"github.com/netsampler/goflow2/v2/decoders/netflow"
+	"github.com/netsampler/goflow2/v2/state"
 
 	"github.com/prometheus/client_golang/prometheus"
 )
