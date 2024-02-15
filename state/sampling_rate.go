@@ -51,7 +51,9 @@ func InitSamplingRate() error {
 		return err
 	}
 	if !samplingUrl.Query().Has("prefix") {
-		samplingUrl.Query().Set("prefix", "goflow2:sampling_rate:")
+		q := samplingUrl.Query()
+		q.Set("prefix", "goflow2:sampling_rate:")
+		samplingUrl.RawQuery = q.Encode()
 	}
 	samplingRateDB, err = NewState[samplingRateKey, uint32](samplingUrl.String())
 	return err

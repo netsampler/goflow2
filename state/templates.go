@@ -150,7 +150,9 @@ func InitTemplates() error {
 		return err
 	}
 	if !templatesUrl.Query().Has("prefix") {
-		templatesUrl.Query().Set("prefix", "goflow2:nf_templates:")
+		q := templatesUrl.Query()
+		q.Set("prefix", "goflow2:nf_templates:")
+		templatesUrl.RawQuery = q.Encode()
 	}
 	templatesDB, err = NewState[templatesKey, templatesValue](templatesUrl.String())
 	return err

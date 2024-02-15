@@ -29,7 +29,7 @@ const (
 )
 
 func (r *redisState[K, V]) populate() error {
-	iter := r.db.Scan(r.ctx, 0, "*", 0).Iterator()
+	iter := r.db.Scan(r.ctx, 0, fmt.Sprintf("%s*", r.rPrefix), 0).Iterator()
 	for iter.Next(r.ctx) {
 		kRaw := iter.Val()
 		res := r.db.Get(r.ctx, kRaw)
@@ -57,20 +57,28 @@ func (r *redisState[K, V]) populate() error {
 }
 
 func (r *redisState[K, V]) init() error {
-	r.rPrefix = r.urlParsed.Query().Get("prefix")
+	q := r.urlParsed.Query()
+	r.rPrefix = q.Get("prefix")
 	if r.rPrefix == "" {
 		return fmt.Errorf("'prefix' name is required on redis state engine, place it on your URL query string")
+	}
+	q.Del("prefix")
+	interval := q.Get("interval")
+	if interval == "" {
+		interval = "900"
+	}
+	q.Del("interval")
+	r.urlParsed.RawQuery = q.Encode()
+	var err error
+	r.refreshInterval, err = strconv.Atoi(interval)
+	if err != nil {
+		return err
 	}
 	opts, err := redis.ParseURL(r.urlParsed.String())
 	if err != nil {
 		return err
 	}
 	r.db = redis.NewClient(opts)
-	interval := r.urlParsed.Query().Get("interval")
-	if interval == "" {
-		interval = "900"
-	}
-	r.refreshInterval, err = strconv.Atoi(interval)
 	if err != nil {
 		return err
 	}
