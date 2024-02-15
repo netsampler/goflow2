@@ -5,10 +5,11 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"github.com/netsampler/goflow2/v2/decoders/netflow"
 	"net/url"
 	"reflect"
 	"strings"
+
+	"github.com/netsampler/goflow2/v2/decoders/netflow"
 )
 
 var StateTemplates = flag.String("state.netflow.templates", "memory://", fmt.Sprintf("Define state templates engine URL (available schemes: %s)", strings.Join(SupportedSchemes, ", ")))

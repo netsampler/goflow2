@@ -3,9 +3,10 @@ package state
 import (
 	"flag"
 	"fmt"
-	"github.com/netsampler/goflow2/v2/producer/proto"
 	"net/url"
 	"strings"
+
+	"github.com/netsampler/goflow2/v2/producer/proto"
 )
 
 var StateSampling = flag.String("state.sampling", "memory://", fmt.Sprintf("Define state sampling rate engine URL (available schemes: %s)", strings.Join(SupportedSchemes, ", ")))
