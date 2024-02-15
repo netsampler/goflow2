@@ -122,11 +122,6 @@ func main() {
 				log.Fatal(err)
 			}
 		}
-		err = state.InitSamplingRate()
-		if err != nil {
-			log.Fatal(err)
-		}
-		defer state.CloseSamplingRate()
 		flowProducer, err = protoproducer.CreateProtoProducer(cfgProducer, state.CreateSamplingSystem)
 		if err != nil {
 			log.Fatal(err)
@@ -182,6 +177,17 @@ func main() {
 
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
+
+	err = state.InitSamplingRate()
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer state.CloseSamplingRate()
+	err = state.InitTemplates()
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer state.CloseTemplates()
 
 	var receivers []*utils.UDPReceiver
 	var pipes []utils.FlowPipe
