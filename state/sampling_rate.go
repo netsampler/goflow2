@@ -5,12 +5,14 @@ import (
 	"fmt"
 	"net/url"
 	"strings"
+	"sync"
 
 	"github.com/netsampler/goflow2/v2/producer/proto"
 )
 
 var StateSampling = flag.String("state.sampling", "memory://", fmt.Sprintf("Define state sampling rate engine URL (available schemes: %s)", strings.Join(SupportedSchemes, ", ")))
 var samplingRateDB State[samplingRateKey, uint32]
+var samplingRateInitLock = new(sync.Mutex)
 
 type samplingRateKey struct {
 	Key         string `json:"key"`
@@ -46,6 +48,11 @@ func CreateSamplingSystem(key string) protoproducer.SamplingRateSystem {
 }
 
 func InitSamplingRate() error {
+	samplingRateInitLock.Lock()
+	defer samplingRateInitLock.Unlock()
+	if samplingRateDB != nil {
+		return nil
+	}
 	samplingUrl, err := url.Parse(*StateSampling)
 	if err != nil {
 		return err
@@ -60,5 +67,12 @@ func InitSamplingRate() error {
 }
 
 func CloseSamplingRate() error {
-	return samplingRateDB.Close()
+	samplingRateInitLock.Lock()
+	defer samplingRateInitLock.Unlock()
+	if samplingRateDB == nil {
+		return nil
+	}
+	err := samplingRateDB.Close()
+	samplingRateDB = nil
+	return err
 }

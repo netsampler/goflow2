@@ -8,12 +8,14 @@ import (
 	"net/url"
 	"reflect"
 	"strings"
+	"sync"
 
 	"github.com/netsampler/goflow2/v2/decoders/netflow"
 )
 
 var StateTemplates = flag.String("state.netflow.templates", "memory://", fmt.Sprintf("Define state templates engine URL (available schemes: %s)", strings.Join(SupportedSchemes, ", ")))
 var templatesDB State[templatesKey, templatesValue]
+var templatesInitLock = new(sync.Mutex)
 
 type templatesKey struct {
 	Key         string `json:"key"`
@@ -23,6 +25,7 @@ type templatesKey struct {
 }
 
 const (
+	templateTypeTest                       = 0
 	templateTypeTemplateRecord             = 1
 	templateTypeIPFIXOptionsTemplateRecord = 2
 	templateTypeNFv9OptionsTemplateRecord  = 3
@@ -46,6 +49,13 @@ func (t *templatesValue) UnmarshalJSON(bytes []byte) error {
 	}
 	t.TemplateType = v.TemplateType
 	switch v.TemplateType {
+	case templateTypeTest:
+		var data int
+		err = json.Unmarshal(v.Data, &data)
+		if err != nil {
+			return err
+		}
+		t.Data = data
 	case templateTypeTemplateRecord:
 		var data netflow.TemplateRecord
 		err = json.Unmarshal(v.Data, &data)
@@ -131,6 +141,11 @@ func (t *TemplateSystem) AddTemplate(version uint16, obsDomainId uint32, templat
 			TemplateType: templateTypeNFv9OptionsTemplateRecord,
 			Data:         templatec,
 		})
+	case int:
+		err = templatesDB.Add(k, templatesValue{
+			TemplateType: templateTypeTest,
+			Data:         templatec,
+		})
 	default:
 		return fmt.Errorf("unknown template type: %s", reflect.TypeOf(template).String())
 	}
@@ -145,6 +160,11 @@ func CreateTemplateSystem(key string) netflow.NetFlowTemplateSystem {
 }
 
 func InitTemplates() error {
+	templatesInitLock.Lock()
+	defer templatesInitLock.Unlock()
+	if templatesDB != nil {
+		return nil
+	}
 	templatesUrl, err := url.Parse(*StateTemplates)
 	if err != nil {
 		return err
@@ -159,5 +179,12 @@ func InitTemplates() error {
 }
 
 func CloseTemplates() error {
-	return templatesDB.Close()
+	templatesInitLock.Lock()
+	defer templatesInitLock.Unlock()
+	if templatesDB == nil {
+		return nil
+	}
+	err := templatesDB.Close()
+	templatesDB = nil
+	return err
 }
