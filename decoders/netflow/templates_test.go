@@ -12,14 +12,14 @@ func benchTemplatesAdd(ts NetFlowTemplateSystem, obs uint32, N int, b *testing.B
 
 func BenchmarkTemplatesAdd(b *testing.B) {
 	InitTemplates()
-	ts := CreateTemplateSystem("1")
+	ts := CreateTemplateSystem("BenchmarkTemplatesAdd")
 	b.Log("Creating", b.N, "templates")
 	benchTemplatesAdd(ts, uint32(b.N)%0xffff+1, b.N, b)
 }
 
 func BenchmarkTemplatesAddGet(b *testing.B) {
 	InitTemplates()
-	ts := CreateTemplateSystem("2")
+	ts := CreateTemplateSystem("BenchmarkTemplatesAddGet")
 	templates := 1000
 	b.Log("Adding", templates, "templates")
 	benchTemplatesAdd(ts, 1, templates, b)
