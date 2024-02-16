@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
-	"sync"
 	"time"
 
 	"github.com/netsampler/goflow2/v2/decoders/netflow"
@@ -16,46 +15,6 @@ import (
 type SamplingRateSystem interface {
 	GetSamplingRate(version uint16, obsDomainId uint32) (uint32, error)
 	AddSamplingRate(version uint16, obsDomainId uint32, samplingRate uint32)
-}
-
-type basicSamplingRateKey struct {
-	version     uint16
-	obsDomainId uint32
-}
-
-type basicSamplingRateSystem struct {
-	sampling     map[basicSamplingRateKey]uint32
-	samplinglock *sync.RWMutex
-}
-
-func CreateSamplingSystem(key string) SamplingRateSystem {
-	ts := &basicSamplingRateSystem{
-		sampling:     make(map[basicSamplingRateKey]uint32),
-		samplinglock: &sync.RWMutex{},
-	}
-	return ts
-}
-
-func (s *basicSamplingRateSystem) AddSamplingRate(version uint16, obsDomainId uint32, samplingRate uint32) {
-	s.samplinglock.Lock()
-	defer s.samplinglock.Unlock()
-	s.sampling[basicSamplingRateKey{
-		version:     version,
-		obsDomainId: obsDomainId,
-	}] = samplingRate
-}
-
-func (s *basicSamplingRateSystem) GetSamplingRate(version uint16, obsDomainId uint32) (uint32, error) {
-	s.samplinglock.RLock()
-	defer s.samplinglock.RUnlock()
-	if samplingRate, ok := s.sampling[basicSamplingRateKey{
-		version:     version,
-		obsDomainId: obsDomainId,
-	}]; ok {
-		return samplingRate, nil
-	}
-
-	return 0, fmt.Errorf("sampling rate not found")
 }
 
 type SingleSamplingRateSystem struct {
