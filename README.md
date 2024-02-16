@@ -173,6 +173,7 @@ When you have multiple GoFlow2 instances, it's important to enable external stat
 ```bash
 $ ./goflow2 -state.netflow.templates redis://127.0.0.1:6379/0?prefix=nftemplate -state.sampling redis://127.0.0.1:6379/0?prefix=nfsampling
 ```
+Details available on [State page](/docs/state_storage.md).
 
 ### Docker
 
