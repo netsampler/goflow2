@@ -1,11 +1,10 @@
-package state
+package netflow
 
 import (
-	"github.com/netsampler/goflow2/v2/decoders/netflow"
 	"testing"
 )
 
-func benchTemplatesAdd(ts netflow.NetFlowTemplateSystem, obs uint32, N int, b *testing.B) {
+func benchTemplatesAdd(ts NetFlowTemplateSystem, obs uint32, N int, b *testing.B) {
 	for n := 0; n <= N; n++ {
 		ts.AddTemplate(10, obs, uint16(n), n)
 	}

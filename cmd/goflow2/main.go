@@ -38,7 +38,6 @@ import (
 
 	// core libraries
 	"github.com/netsampler/goflow2/v2/metrics"
-	"github.com/netsampler/goflow2/v2/state"
 	"github.com/netsampler/goflow2/v2/utils"
 	"github.com/netsampler/goflow2/v2/utils/debug"
 
@@ -122,7 +121,7 @@ func main() {
 				log.Fatal(err)
 			}
 		}
-		flowProducer, err = protoproducer.CreateProtoProducer(cfgProducer, state.CreateSamplingSystem)
+		flowProducer, err = protoproducer.CreateProtoProducer(cfgProducer, protoproducer.CreateSamplingSystem)
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -178,16 +177,16 @@ func main() {
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
 
-	err = state.InitSamplingRate()
+	err = protoproducer.InitSamplingRate()
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer state.CloseSamplingRate()
-	err = state.InitTemplates()
+	defer protoproducer.CloseSamplingRate()
+	err = netflow.InitTemplates()
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer state.CloseTemplates()
+	defer netflow.CloseTemplates()
 
 	var receivers []*utils.UDPReceiver
 	var pipes []utils.FlowPipe

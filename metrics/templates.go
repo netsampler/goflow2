@@ -4,7 +4,6 @@ import (
 	"strconv"
 
 	"github.com/netsampler/goflow2/v2/decoders/netflow"
-	"github.com/netsampler/goflow2/v2/state"
 
 	"github.com/prometheus/client_golang/prometheus"
 )
@@ -16,7 +15,7 @@ type PromTemplateSystem struct {
 
 // A default Prometheus template generator function to be used by a pipe
 func NewDefaultPromTemplateSystem(key string) netflow.NetFlowTemplateSystem {
-	return NewPromTemplateSystem(key, state.CreateTemplateSystem(key))
+	return NewPromTemplateSystem(key, netflow.CreateTemplateSystem(key))
 }
 
 // Creates a Prometheus template system that wraps another template system.
