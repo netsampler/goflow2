@@ -15,7 +15,7 @@ type PromTemplateSystem struct {
 
 // A default Prometheus template generator function to be used by a pipe
 func NewDefaultPromTemplateSystem(key string) netflow.NetFlowTemplateSystem {
-	return NewPromTemplateSystem(key, netflow.CreateTemplateSystem())
+	return NewPromTemplateSystem(key, netflow.CreateTemplateSystem(key))
 }
 
 // Creates a Prometheus template system that wraps another template system.

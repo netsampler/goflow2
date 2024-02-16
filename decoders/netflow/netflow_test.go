@@ -8,7 +8,9 @@ import (
 )
 
 func TestDecodeNetFlowV9(t *testing.T) {
-	templates := CreateTemplateSystem()
+	err := InitTemplates()
+	assert.NoError(t, err)
+	templates := CreateTemplateSystem("TestDecodeNetFlowV9")
 
 	// Decode a template
 	template := []byte{
@@ -23,7 +25,7 @@ func TestDecodeNetFlowV9(t *testing.T) {
 	}
 	buf := bytes.NewBuffer(template)
 	var decNfv9 NFv9Packet
-	err := DecodeMessageVersion(buf, templates, &decNfv9, nil)
+	err = DecodeMessageVersion(buf, templates, &decNfv9, nil)
 	assert.Nil(t, err)
 	assert.Equal(t,
 		NFv9Packet{

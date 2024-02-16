@@ -3,7 +3,10 @@ package protoproducer
 import (
 	"bytes"
 	"encoding/binary"
+	"flag"
 	"fmt"
+	"net/url"
+	"strings"
 	"sync"
 	"time"
 
@@ -11,51 +14,12 @@ import (
 	"github.com/netsampler/goflow2/v2/decoders/utils"
 	flowmessage "github.com/netsampler/goflow2/v2/pb"
 	"github.com/netsampler/goflow2/v2/producer"
+	"github.com/netsampler/goflow2/v2/state"
 )
 
 type SamplingRateSystem interface {
 	GetSamplingRate(version uint16, obsDomainId uint32) (uint32, error)
 	AddSamplingRate(version uint16, obsDomainId uint32, samplingRate uint32)
-}
-
-type basicSamplingRateKey struct {
-	version     uint16
-	obsDomainId uint32
-}
-
-type basicSamplingRateSystem struct {
-	sampling     map[basicSamplingRateKey]uint32
-	samplinglock *sync.RWMutex
-}
-
-func CreateSamplingSystem() SamplingRateSystem {
-	ts := &basicSamplingRateSystem{
-		sampling:     make(map[basicSamplingRateKey]uint32),
-		samplinglock: &sync.RWMutex{},
-	}
-	return ts
-}
-
-func (s *basicSamplingRateSystem) AddSamplingRate(version uint16, obsDomainId uint32, samplingRate uint32) {
-	s.samplinglock.Lock()
-	defer s.samplinglock.Unlock()
-	s.sampling[basicSamplingRateKey{
-		version:     version,
-		obsDomainId: obsDomainId,
-	}] = samplingRate
-}
-
-func (s *basicSamplingRateSystem) GetSamplingRate(version uint16, obsDomainId uint32) (uint32, error) {
-	s.samplinglock.RLock()
-	defer s.samplinglock.RUnlock()
-	if samplingRate, ok := s.sampling[basicSamplingRateKey{
-		version:     version,
-		obsDomainId: obsDomainId,
-	}]; ok {
-		return samplingRate, nil
-	}
-
-	return 0, fmt.Errorf("sampling rate not found")
 }
 
 type SingleSamplingRateSystem struct {
@@ -67,6 +31,75 @@ func (s *SingleSamplingRateSystem) AddSamplingRate(version uint16, obsDomainId u
 
 func (s *SingleSamplingRateSystem) GetSamplingRate(version uint16, obsDomainId uint32) (uint32, error) {
 	return s.Sampling, nil
+}
+
+var (
+	StateSampling        = flag.String("state.sampling", "memory://", fmt.Sprintf("Define state sampling rate engine URL (available schemes: %s)", strings.Join(state.SupportedSchemes, ", ")))
+	samplingRateDB       state.State[samplingRateKey, uint32]
+	samplingRateInitLock = new(sync.Mutex)
+)
+
+type samplingRateKey struct {
+	Key         string `json:"key"`
+	Version     uint16 `json:"ver"`
+	ObsDomainId uint32 `json:"obs"`
+}
+
+type SamplingRate struct {
+	key string
+}
+
+func (s *SamplingRate) GetSamplingRate(version uint16, obsDomainId uint32) (uint32, error) {
+	return samplingRateDB.Get(samplingRateKey{
+		Key:         s.key,
+		Version:     version,
+		ObsDomainId: obsDomainId,
+	})
+}
+
+func (s *SamplingRate) AddSamplingRate(version uint16, obsDomainId uint32, samplingRate uint32) {
+	_ = samplingRateDB.Add(samplingRateKey{
+		Key:         s.key,
+		Version:     version,
+		ObsDomainId: obsDomainId,
+	}, samplingRate)
+}
+
+func CreateSamplingSystem(key string) SamplingRateSystem {
+	ts := &SamplingRate{
+		key: key,
+	}
+	return ts
+}
+
+func InitSamplingRate() error {
+	samplingRateInitLock.Lock()
+	defer samplingRateInitLock.Unlock()
+	if samplingRateDB != nil {
+		return nil
+	}
+	samplingUrl, err := url.Parse(*StateSampling)
+	if err != nil {
+		return err
+	}
+	if !samplingUrl.Query().Has("prefix") {
+		q := samplingUrl.Query()
+		q.Set("prefix", "goflow2:sampling_rate:")
+		samplingUrl.RawQuery = q.Encode()
+	}
+	samplingRateDB, err = state.NewState[samplingRateKey, uint32](samplingUrl.String())
+	return err
+}
+
+func CloseSamplingRate() error {
+	samplingRateInitLock.Lock()
+	defer samplingRateInitLock.Unlock()
+	if samplingRateDB == nil {
+		return nil
+	}
+	err := samplingRateDB.Close()
+	samplingRateDB = nil
+	return err
 }
 
 func NetFlowLookFor(dataFields []netflow.DataField, typeId uint16) (bool, interface{}) {

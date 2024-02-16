@@ -46,6 +46,9 @@ functions to marshal as JSON or text for instance.
 The `transport` provides different way of processing the message. Either sending it via Kafka or 
 send it to a file (or stdout).
 
+The `state` supports external storage for a way of synchronizing templates across multiple GoFlow2
+instances.
+
 GoFlow2 is a wrapper of all the functions and chains thems.
 
 You can build your own collector using this base and replace parts:
@@ -53,6 +56,7 @@ You can build your own collector using this base and replace parts:
 * Convert to another format (e.g: Cap'n Proto, Avro, instead of protobuf)
 * Decode different samples (e.g: not only IP networks, add MPLS)
 * Different metrics system (e.g: [OpenTelemetry](https://opentelemetry.io/))
+* Other external state storage (e.g: RDBMS, MongoDB, memcached)
 
 ### Protocol difference
 
@@ -85,8 +89,8 @@ Production:
 * Convert to protobuf or json
 * Prints to the console/file
 * Sends to Kafka and partition
-
-Monitoring via Prometheus metrics
+* Set up multiple GoFlow2 instances backed by the same external state storage
+* Monitoring via Prometheus metrics
 
 ## Get started
 
@@ -164,6 +168,12 @@ $ ./goflow2 -listen 'sflow://:6343?count=4,nfl://:2055'
 ```
 
 More information about workers and resource usage is avaialble on the [Performance page](/docs/performance.md).
+
+When you have multiple GoFlow2 instances, it's important to enable external state storage.
+```bash
+$ ./goflow2 -state.netflow.templates redis://127.0.0.1:6379/0?prefix=nftemplate -state.sampling redis://127.0.0.1:6379/0?prefix=nfsampling
+```
+Details available on [State page](/docs/state_storage.md).
 
 ### Docker
 
