@@ -46,7 +46,7 @@ functions to marshal as JSON or text for instance.
 The `transport` provides different way of processing the message. Either sending it via Kafka or 
 send it to a file (or stdout).
 
-GoFlow2 is a wrapper of all the functions and chains thems.
+GoFlow2 is a wrapper of all the functions and chains them.
 
 You can build your own collector using this base and replace parts:
 * Use different transport (e.g: RabbitMQ instead of Kafka)
