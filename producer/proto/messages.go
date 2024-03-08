@@ -8,6 +8,7 @@ import (
 	"reflect"
 	"strings"
 	"sync"
+	"sync/atomic"
 
 	"google.golang.org/protobuf/encoding/protodelim"
 	"google.golang.org/protobuf/encoding/protowire"
@@ -18,7 +19,8 @@ import (
 type ProtoProducerMessage struct {
 	flowmessage.FlowMessage
 
-	formatter *FormatterConfigMapper
+	formatter     *FormatterConfigMapper
+	unknownFields atomic.Pointer[map[string]interface{}] // thread safe
 }
 
 var protoMessagePool = sync.Pool{
@@ -41,7 +43,7 @@ func (m *ProtoProducerMessage) baseKey(h hash.Hash) {
 	vfm := reflect.ValueOf(m)
 	vfm = reflect.Indirect(vfm)
 
-	unkMap := m.mapUnknown() // todo: should be able to reuse if set in structure
+	unkMap := m.MapUnknown()
 
 	for _, s := range m.formatter.key {
 		fieldName := s
@@ -65,6 +67,10 @@ func (m *ProtoProducerMessage) baseKey(h hash.Hash) {
 		}
 		h.Write([]byte(fmt.Sprintf("%v", fieldValue.Interface())))
 	}
+}
+
+func (m *ProtoProducerMessage) GetFormatter() *FormatterConfigMapper {
+	return m.formatter
 }
 
 func (m *ProtoProducerMessage) Key() []byte {
@@ -97,7 +103,12 @@ func ExtractTag(name, original string, tag reflect.StructTag) string {
 	return before
 }
 
-func (m *ProtoProducerMessage) mapUnknown() map[string]interface{} {
+func (m *ProtoProducerMessage) MapUnknown() map[string]interface{} {
+	unknownFields := m.unknownFields.Load()
+	if unknownFields != nil {
+		return *unknownFields
+	}
+
 	unkMap := make(map[string]interface{})
 
 	fmr := m.ProtoReflect()
@@ -142,6 +153,8 @@ func (m *ProtoProducerMessage) mapUnknown() map[string]interface{} {
 
 		}
 	}
+
+	m.unknownFields.Store(&unkMap)
 	return unkMap
 }
 
@@ -152,7 +165,7 @@ func (m *ProtoProducerMessage) FormatMessageReflectCustom(ext, quotes, sep, sign
 	var i int
 	fstr := make([]string, len(m.formatter.fields)) // todo: reuse with pool
 
-	unkMap := m.mapUnknown()
+	unkMap := m.MapUnknown()
 
 	// iterate through the fields requested by the user
 	for _, s := range m.formatter.fields {

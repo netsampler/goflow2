@@ -80,6 +80,38 @@ type FormatterConfigMapper struct {
 	isSlice map[string]bool
 }
 
+func (m *FormatterConfigMapper) GetFields() []string {
+	return m.fields
+}
+
+func (m *FormatterConfigMapper) GetKey() []string {
+	return m.key
+}
+
+func (m *FormatterConfigMapper) GetReMap() map[string]string {
+	return m.reMap
+}
+
+func (m *FormatterConfigMapper) GetRenameMap() map[string]string {
+	return m.rename
+}
+
+func (m *FormatterConfigMapper) GetRenderers() map[string]RenderFunc {
+	return m.render
+}
+
+func (m *FormatterConfigMapper) GetPbMap() map[string]ProtobufFormatterConfig {
+	return m.pbMap
+}
+
+func (m *FormatterConfigMapper) GetNumToPbMap() map[int32]ProtobufFormatterConfig {
+	return m.numToPb
+}
+
+func (m *FormatterConfigMapper) GetIsSliceMap() map[string]bool {
+	return m.isSlice
+}
+
 type NetFlowMapper struct {
 	data map[string]DataMap // maps field to destination
 }
