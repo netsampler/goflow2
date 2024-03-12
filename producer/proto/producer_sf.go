@@ -327,7 +327,7 @@ func ParseEthernetHeader(flowMessage *ProtoProducerMessage, data []byte, config 
 		var appOffset int // keeps track of the user payload
 
 		// Transport protocols
-		if nextHeader == 17 || nextHeader == 6 || nextHeader == 1 || nextHeader == 58 {
+		if nextHeader == 17 || nextHeader == 6 || nextHeader == 1 || nextHeader == 58 || nextHeader == 4 {
 			prevOffset := offset
 			if flowMessage.FragmentOffset == 0 {
 				if nextHeader == 17 { // UDP
@@ -365,6 +365,13 @@ func ParseEthernetHeader(flowMessage *ProtoProducerMessage, data []byte, config 
 						return err
 					}
 					for _, configLayer := range GetSFlowConfigLayer(config, "icmp6") {
+						extracted := GetBytes(data, prevOffset*8+configLayer.Offset, configLayer.Length)
+						if err := MapCustom(flowMessage, extracted, configLayer.MapConfigBase); err != nil {
+							return err
+						}
+					}
+				} else if nextHeader == 4 { // IPIP
+					for _, configLayer := range GetSFlowConfigLayer(config, "ipip") {
 						extracted := GetBytes(data, prevOffset*8+configLayer.Offset, configLayer.Length)
 						if err := MapCustom(flowMessage, extracted, configLayer.MapConfigBase); err != nil {
 							return err
