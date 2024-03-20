@@ -126,7 +126,7 @@ func (p *PromProducerWrapper) Produce(msg interface{}, args *producer.ProduceArg
 					"router":  key,
 					"version": versionStr,
 				}).
-				Observe(float64(timeDiff))
+				Observe(float64(timeDiff) / 1e9)
 		}
 	}
 
