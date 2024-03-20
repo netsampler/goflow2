@@ -117,7 +117,7 @@ func (p *PromProducerWrapper) Produce(msg interface{}, args *producer.ProduceArg
 	if nfvariant {
 		for _, msg := range flowMessageSet {
 			fmsg, ok := msg.(*protoproducer.ProtoProducerMessage)
-			if !ok {
+			if !ok || fmsg.TimeReceivedNs < fmsg.TimeFlowEndNs {
 				continue
 			}
 			timeDiff := fmsg.TimeReceivedNs - fmsg.TimeFlowEndNs
