@@ -6,8 +6,8 @@ import (
 	"github.com/netsampler/goflow2/v2/decoders/netflow"
 	"github.com/netsampler/goflow2/v2/decoders/netflowlegacy"
 	"github.com/netsampler/goflow2/v2/decoders/sflow"
-	flowmessage "github.com/netsampler/goflow2/v2/pb"
 	"github.com/netsampler/goflow2/v2/producer"
+	"github.com/netsampler/goflow2/v2/producer/proto"
 
 	"github.com/prometheus/client_golang/prometheus"
 )
@@ -116,7 +116,7 @@ func (p *PromProducerWrapper) Produce(msg interface{}, args *producer.ProduceArg
 
 	if nfvariant {
 		for _, msg := range flowMessageSet {
-			fmsg, ok := msg.(*flowmessage.FlowMessage)
+			fmsg, ok := msg.(*protoproducer.ProtoProducerMessage)
 			if !ok {
 				continue
 			}
