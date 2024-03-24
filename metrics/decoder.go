@@ -86,12 +86,6 @@ func PromDecoderWrapper(wrapped utils.DecoderFunc, name string) utils.DecoderFun
 
 func recordCommonNetFlowMetrics(version uint16, key string, flowSets []interface{}) {
 	versionStr := fmt.Sprintf("%d", version)
-	NetFlowStats.With(
-		prometheus.Labels{
-			"router":  key,
-			"version": versionStr,
-		}).
-		Inc()
 
 	for _, fs := range flowSets {
 		switch fsConv := fs.(type) {
