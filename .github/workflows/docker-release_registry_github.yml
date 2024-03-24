@@ -44,4 +44,4 @@ jobs:
         DOCKER_SUFFIX=-amd64 DOCKER_CMD='buildx build --push --platform linux/amd64' make docker
         DOCKER_SUFFIX=-arm64 DOCKER_CMD='buildx build --push --platform linux/arm64/v8' make docker
         make docker-manifest-release-buildx
-        VERSION=latest make docker-manifest-buildx
+        export VERSION=latest && make docker-manifest-buildx
