@@ -2,11 +2,24 @@ package protoproducer
 
 import (
 	"encoding/binary"
+	"fmt"
 
 	"github.com/netsampler/goflow2/v2/decoders/sflow"
 	flowmessage "github.com/netsampler/goflow2/v2/pb"
 	"github.com/netsampler/goflow2/v2/producer"
 )
+
+// IANA registered IPv6 extension headers
+// 0	IPv6 Hop-by-Hop Option	[RFC8200]
+// 43	Routing Header for IPv6	[RFC8200][RFC5095]
+// 44	Fragment Header for IPv6	[RFC8200]
+// 50	Encapsulating Security Payload	[RFC4303]
+// 51	Authentication Header	[RFC4302]
+// 60	Destination Options for IPv6	[RFC8200]
+// 135	Mobility Header	[RFC6275]
+// 139	Host Identity Protocol	[RFC7401]
+// 140	Shim6 Protocol	[RFC5533]
+var Ipv6ExtHeaderCode = []uint8{0, 43, 44, 50, 51, 60, 135, 139, 140}
 
 func GetSFlowFlowSamples(packet *sflow.Packet) []interface{} {
 	var flowSamples []interface{}
@@ -129,21 +142,77 @@ func ParseIPv6(offset int, flowMessage *ProtoProducerMessage, data []byte) (next
 }
 
 func ParseIPv6Headers(nextHeader byte, offset int, flowMessage *ProtoProducerMessage, data []byte) (newNextHeader byte, newOffset int, err error) {
+	// IPV6 Extention headers to extract (if present)
+	//   43: Routing Header for IPv6 (SRH srv6)
+	//   44: Fragment header
+	// These headers are present before upper-layer-header - so we need to stop once we find out a next-header different of one of the list above
+	iteration := 10
 	for {
-		if nextHeader == 44 && len(data) >= offset+8 {
-			nextHeader = data[offset]
-
-			fragOffset := binary.BigEndian.Uint16(data[offset+2 : offset+4]) // also includes flag
-			identification := binary.BigEndian.Uint32(data[offset+4 : offset+8])
-
-			flowMessage.FragmentId = identification
-			flowMessage.FragmentOffset = uint32(fragOffset) >> 3
-			flowMessage.IpFlags = uint32(fragOffset) & 7
-
-			offset += 8
-		} else {
+		// limit the maximum number of loop to avoid infinit loop
+		if iteration <= 0 {
 			break
 		}
+		// check if nextHeader is matching a known IPv6 extented header
+		found := false
+		fmt.Printf("Extension Header: %d\n", int(nextHeader))
+		for _, code := range Ipv6ExtHeaderCode {
+			if nextHeader == code {
+				found = true
+				break
+			}
+		}
+		if found {
+			if nextHeader == 43 && len(data) >= (offset+8+(int(data[offset+1])*8)) { // Routing Header
+				nextHeader = data[offset]
+				fmt.Printf("Extension Header - Next header: %d\n", int(nextHeader))
+				// Check if Routing Type is SRH
+				if data[offset+2] == 4 {
+					fmt.Printf("SRH header\n")
+					// Here we decode SRH
+					segLeft := uint32(data[offset+3])
+					lastEntry := uint32(data[offset+4])
+					flags := uint32(data[offset+5])
+					tag := uint32(binary.BigEndian.Uint16(data[offset+6 : offset+8]))
+
+					flowMessage.SrhSegmentsIPv6Left = segLeft
+					flowMessage.SrhLastEntryIPv6 = lastEntry
+					flowMessage.SrhFlagsIPv6 = flags
+					flowMessage.SrhTagIPv6 = tag
+
+					// Now from offset+9 you should have lastEntry+1 IPv6 in the Segment list
+					numSeg := 0
+					for {
+						flowMessage.SrhSegmentIPv6BasicList = append(flowMessage.SrhSegmentIPv6BasicList, data[offset+9+(numSeg*16):offset+25+(numSeg*16)])
+
+						if numSeg == int(lastEntry) {
+							break
+						}
+						numSeg++
+					}
+				}
+				offset += 8 + int(data[offset+1])*8
+			} else if nextHeader == 44 && len(data) >= offset+8 { // Decode Fragment ext Header
+				nextHeader = data[offset]
+				fmt.Printf("Extension Header - Next header: %d\n", int(nextHeader))
+				fragOffset := binary.BigEndian.Uint16(data[offset+2 : offset+4]) // also includes flag
+				identification := binary.BigEndian.Uint32(data[offset+4 : offset+8])
+
+				flowMessage.FragmentId = identification
+				flowMessage.FragmentOffset = uint32(fragOffset) >> 3
+				flowMessage.IpFlags = uint32(fragOffset) & 7
+
+				offset += 8
+			} else if len(data) >= (offset + 8 + (int(data[offset+1]) * 8)) { // Don't decode any other IPv4 Extension Header
+
+				nextHeader = data[offset]
+				fmt.Printf("Extension Header - Next header: %d\n", int(nextHeader))
+				offset += 8 + int(data[offset+1])*8
+			}
+		} else {
+			// exit you reach the upper-layer-header
+			break
+		}
+		iteration--
 	}
 	return nextHeader, offset, err
 }

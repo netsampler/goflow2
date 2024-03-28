@@ -94,4 +94,13 @@ message FlowMessage {
 
   uint32 observation_domain_id = 70;
   uint32 observation_point_id = 71;
+
+  // SRH SRv6 Header
+  uint32 srhSegmentsIPv6Left = 150;
+  uint32 srhLastEntryIPv6 = 151; 
+  uint32 srhFlagsIPv6 = 152; 
+  uint32 srhTagIPv6 = 153;
+  repeated bytes srhSegmentIPv6BasicList = 154;
+
+
 }
