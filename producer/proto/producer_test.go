@@ -225,14 +225,14 @@ func TestProcessIPv6Headers(t *testing.T) {
 		"8000f96508a4" // icmpv6
 	data, _ := hex.DecodeString(dataStr)
 	var flowMessage ProtoProducerMessage
-	nextHeader, offset, err := ParseIPv6(0, &flowMessage, data)
+	nextHeader, offset, err := ParseIPv6(0, &flowMessage, data, false)
 	assert.Nil(t, err)
 	assert.Equal(t, byte(0), nextHeader)
-	nextHeader, offset, err = ParseIPv6Headers(nextHeader, offset, &flowMessage, data)
+	nextHeader, offset, err = ParseIPv6Headers(nextHeader, offset, &flowMessage, data, false)
 	assert.Nil(t, err)
 	assert.Equal(t, byte(58), nextHeader)
 
-	offset, err = ParseICMPv6(offset, &flowMessage, data)
+	offset, err = ParseICMPv6(offset, &flowMessage, data, false)
 	assert.Nil(t, err)
 
 	b, _ := json.Marshal(flowMessage.FlowMessage)
@@ -258,7 +258,7 @@ func TestProcessIPv4Fragment(t *testing.T) {
 		"0809" // continued payload
 	data, _ := hex.DecodeString(dataStr)
 	var flowMessage ProtoProducerMessage
-	nextHeader, offset, err := ParseIPv4(0, &flowMessage, data)
+	nextHeader, offset, err := ParseIPv4(0, &flowMessage, data, false)
 	assert.Nil(t, err)
 	assert.Equal(t, byte(1), nextHeader)
 

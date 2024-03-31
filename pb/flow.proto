@@ -95,12 +95,28 @@ message FlowMessage {
   uint32 observation_domain_id = 70;
   uint32 observation_point_id = 71;
 
-  // SRH SRv6 Header
+  // SRH SRv6 Header - fields decoding
   uint32 srhSegmentsIPv6Left = 150;
   uint32 srhLastEntryIPv6 = 151; 
   uint32 srhFlagsIPv6 = 152; 
   uint32 srhTagIPv6 = 153;
   repeated bytes srhSegmentIPv6BasicList = 154;
 
+  // Tunnel IP - inner frame fields decoding
+  bytes innerFrame_src_addr = 160;
+  bytes innerFrame_dst_addr = 161;
+  uint32 innerFrame_proto = 162;
+  uint32 innerFrame_src_port = 163;
+  uint32 innerFrame_dst_port = 164;
+  uint32 innerFrame_ipv6_flow_label = 165;
+  uint32 innerFrame_ip_tos = 166;
+  uint32 innerFrame_ip_ttl = 167;
+  uint32 innerFrame_ip_flags = 168;
+  uint32 innerFrame_tcp_flags = 169;
+  uint32 innerFrame_fragment_id = 170;
+  uint32 innerFrame_fragment_offset = 171;
+  uint32 innerFrame_icmp_type = 172;
+  uint32 innerFrame_icmp_code = 173;
+  uint32 innerFrame_payload_len = 174;
 
 }
