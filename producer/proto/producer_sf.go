@@ -106,6 +106,9 @@ func ParseIPv4(offset int, flowMessage *ProtoProducerMessage, data []byte, inner
 
 		// Check if you decoded inner or outer IPv4 frame
 		if innerFrame {
+			totalLen := binary.BigEndian.Uint16(data[offset+2 : offset+4])
+
+			flowMessage.InnerFamily = 0
 			flowMessage.InnerFrameIpTos = uint32(tos)
 			flowMessage.InnerFrameIpTtl = uint32(ttl)
 			flowMessage.InnerFrameSrcAddr = data[offset+12 : offset+16]
@@ -113,6 +116,7 @@ func ParseIPv4(offset int, flowMessage *ProtoProducerMessage, data []byte, inner
 			flowMessage.InnerFrameFragmentId = uint32(identification)
 			flowMessage.InnerFrameFragmentOffset = uint32(fragOffset) & 8191
 			flowMessage.InnerFrameIpFlags = uint32(fragOffset) >> 13
+			flowMessage.InnerFramePayloadLen = uint32(totalLen)
 		} else {
 			flowMessage.IpTos = uint32(tos)
 			flowMessage.IpTtl = uint32(ttl)
@@ -139,11 +143,15 @@ func ParseIPv6(offset int, flowMessage *ProtoProducerMessage, data []byte, inner
 
 		// Check if you decoded inner or outer IPv6 frame
 		if innerFrame {
+			totalLen := binary.BigEndian.Uint16(data[offset+4 : offset+6])
+
+			flowMessage.InnerFamily = 1
 			flowMessage.InnerFrameSrcAddr = data[offset+8 : offset+24]
 			flowMessage.InnerFrameDstAddr = data[offset+24 : offset+40]
 			flowMessage.InnerFrameIpTos = uint32(tos)
 			flowMessage.InnerFrameIpTtl = uint32(ttl)
 			flowMessage.InnerFrameIpv6FlowLabel = flowLabel & 0xFFFFF
+			flowMessage.InnerFramePayloadLen = uint32(totalLen)
 		} else {
 			flowMessage.SrcAddr = data[offset+8 : offset+24]
 			flowMessage.DstAddr = data[offset+24 : offset+40]
