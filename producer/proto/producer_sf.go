@@ -2,6 +2,7 @@ package protoproducer
 
 import (
 	"encoding/binary"
+	"encoding/json"
 	"fmt"
 
 	"github.com/netsampler/goflow2/v2/decoders/sflow"
@@ -409,12 +410,15 @@ func ParseEthernetHeader(flowMessage *ProtoProducerMessage, data []byte, config 
 		} else if IsIPv6(etherType) { // IPv6
 			prevOffset := offset
 			if nextHeader, offset, err = ParseIPv6(offset, flowMessage, data, isTunnel); err != nil {
+				fmt.Println("Ceci est une erreur 1")
 				return err
 			}
 			if nextHeader, offset, err = ParseIPv6Headers(nextHeader, offset, flowMessage, data, isTunnel); err != nil {
-				fmt.Println(err)
+				fmt.Println("Ceci est une erreur 2")
 				return err
 			}
+			b, _ := json.Marshal(flowMessage.FlowMessage)
+			fmt.Println(string(b))
 
 			for _, configLayer := range GetSFlowConfigLayer(config, "ipv6") {
 				extracted := GetBytes(data, prevOffset*8+configLayer.Offset, configLayer.Length)
