@@ -130,6 +130,8 @@ func ParseIPv4(offset int, flowMessage *ProtoProducerMessage, data []byte, inner
 		}
 
 		offset += 20
+	} else {
+		fmt.Println("IPv4 is trunctaed")
 	}
 	return nextHeader, offset, err
 }
