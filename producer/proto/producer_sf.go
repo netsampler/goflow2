@@ -131,7 +131,7 @@ func ParseIPv4(offset int, flowMessage *ProtoProducerMessage, data []byte, inner
 
 		offset += 20
 	} else {
-		fmt.Println("IPv4 is trunctaed")
+		fmt.Println("IPv4 is truncated")
 	}
 	return nextHeader, offset, err
 }
@@ -165,6 +165,8 @@ func ParseIPv6(offset int, flowMessage *ProtoProducerMessage, data []byte, inner
 		}
 
 		offset += 40
+	} else {
+		fmt.Println("IPv6 is truncated")
 	}
 	return nextHeader, offset, err
 }
@@ -443,6 +445,7 @@ func ParseEthernetHeader(flowMessage *ProtoProducerMessage, data []byte, config 
 		}
 
 		flowMessage.Proto = uint32(nextHeader)
+
 		// Check if IP tunnel is present
 		if nextHeader == 4 || nextHeader == 41 {
 			isTunnel = true
@@ -477,6 +480,8 @@ func ParseEthernetHeader(flowMessage *ProtoProducerMessage, data []byte, config 
 				}
 			}
 		}
+		fmt.Printf("Next header is: %d", nextHeader)
+
 		b, _ := json.Marshal(flowMessage.FlowMessage)
 		fmt.Println(string(b))
 		var appOffset int // keeps track of the user payload
@@ -550,7 +555,7 @@ func ParseEthernetHeader(flowMessage *ProtoProducerMessage, data []byte, config 
 	if isTunnel {
 		flowMessage.InnerFrameProto = uint32(nextHeader)
 	}
-
+	fmt.Println("We quit here fine")
 	return nil
 }
 
