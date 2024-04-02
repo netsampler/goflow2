@@ -434,6 +434,7 @@ func ParseEthernetHeader(flowMessage *ProtoProducerMessage, data []byte, config 
 				return err
 			}
 		}
+		flowMessage.Proto = uint32(nextHeader)
 
 		// Check if IP tunnel is present
 		if nextHeader == 4 || nextHeader == 46 {
@@ -538,7 +539,9 @@ func ParseEthernetHeader(flowMessage *ProtoProducerMessage, data []byte, config 
 	if len(etherType) >= 2 {
 		flowMessage.Etype = uint32(binary.BigEndian.Uint16(etherType[0:2]))
 	}
-	flowMessage.Proto = uint32(nextHeader)
+	if isTunnel {
+		flowMessage.InnerFrameProto = uint32(nextHeader)
+	}
 
 	return nil
 }
