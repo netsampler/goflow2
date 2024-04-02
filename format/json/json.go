@@ -24,7 +24,7 @@ func (d *JsonDriver) Format(data interface{}) ([]byte, []byte, error) {
 		key = dataIf.Key()
 	}
 	output, err := json.Marshal(data)
-	fmt.Printf("Json render: %v", err)
+	fmt.Printf("Json render: %v", data)
 	return key, output, err
 }
 
