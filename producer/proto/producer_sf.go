@@ -502,8 +502,6 @@ func ParseEthernetHeader(flowMessage *ProtoProducerMessage, data []byte, config 
 		}
 		fmt.Printf("Next header is: %d", nextHeader)
 
-		b, _ := json.Marshal(flowMessage.FlowMessage)
-		fmt.Println(string(b))
 		var appOffset int // keeps track of the user payload
 		// Transport protocols
 		if nextHeader == 17 || nextHeader == 6 || nextHeader == 1 || nextHeader == 58 {
@@ -575,6 +573,9 @@ func ParseEthernetHeader(flowMessage *ProtoProducerMessage, data []byte, config 
 	if isTunnel {
 		flowMessage.InnerFrameProto = uint32(nextHeader)
 	}
+
+	b, _ := json.Marshal(flowMessage.FlowMessage)
+	fmt.Println(string(b))
 	fmt.Println("We quit here fine")
 	return nil
 }
