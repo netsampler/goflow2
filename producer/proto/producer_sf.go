@@ -2,6 +2,7 @@ package protoproducer
 
 import (
 	"encoding/binary"
+	"fmt"
 
 	"github.com/netsampler/goflow2/v2/decoders/sflow"
 	flowmessage "github.com/netsampler/goflow2/v2/pb"
@@ -190,6 +191,7 @@ func ParseIPv6Headers(nextHeader byte, offset int, flowMessage *ProtoProducerMes
 
 				// Check if Routing Type is SRH
 				if data[offset+2] == 4 {
+					fmt.Println("Found SRH")
 					// Here we decode SRH
 					segLeft := uint32(data[offset+3])
 					lastEntry := uint32(data[offset+4])
@@ -410,6 +412,7 @@ func ParseEthernetHeader(flowMessage *ProtoProducerMessage, data []byte, config 
 				return err
 			}
 			if nextHeader, offset, err = ParseIPv6Headers(nextHeader, offset, flowMessage, data, isTunnel); err != nil {
+				fmt.Println(err)
 				return err
 			}
 
