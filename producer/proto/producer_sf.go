@@ -417,8 +417,6 @@ func ParseEthernetHeader(flowMessage *ProtoProducerMessage, data []byte, config 
 				fmt.Println("Ceci est une erreur 2")
 				return err
 			}
-			b, _ := json.Marshal(flowMessage.FlowMessage)
-			fmt.Println(string(b))
 
 			for _, configLayer := range GetSFlowConfigLayer(config, "ipv6") {
 				extracted := GetBytes(data, prevOffset*8+configLayer.Offset, configLayer.Length)
@@ -477,7 +475,8 @@ func ParseEthernetHeader(flowMessage *ProtoProducerMessage, data []byte, config 
 				}
 			}
 		}
-
+		b, _ := json.Marshal(flowMessage.FlowMessage)
+		fmt.Println(string(b))
 		var appOffset int // keeps track of the user payload
 		// Transport protocols
 		if nextHeader == 17 || nextHeader == 6 || nextHeader == 1 || nextHeader == 58 {
