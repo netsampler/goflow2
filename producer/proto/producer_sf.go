@@ -500,7 +500,7 @@ func ParseEthernetHeader(flowMessage *ProtoProducerMessage, data []byte, config 
 				}
 			}
 		}
-		fmt.Printf("Next header is: %d", nextHeader)
+		fmt.Printf("Next header is: %d\n", nextHeader)
 
 		var appOffset int // keeps track of the user payload
 		// Transport protocols
