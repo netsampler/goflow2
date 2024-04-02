@@ -434,10 +434,10 @@ func ParseEthernetHeader(flowMessage *ProtoProducerMessage, data []byte, config 
 				return err
 			}
 		}
-		flowMessage.Proto = uint32(nextHeader)
 
+		flowMessage.Proto = uint32(nextHeader)
 		// Check if IP tunnel is present
-		if nextHeader == 4 || nextHeader == 46 {
+		if nextHeader == 4 || nextHeader == 41 {
 			isTunnel = true
 			switch nextHeader {
 			// IPv4 is inner frame
