@@ -108,7 +108,7 @@ func ParseIPv4(offset int, flowMessage *ProtoProducerMessage, data []byte, inner
 		if innerFrame {
 			totalLen := binary.BigEndian.Uint16(data[offset+2 : offset+4])
 
-			flowMessage.InnerFamily = 0
+			flowMessage.InnerFamily = flowmessage.FlowMessage_InnerFamily(0)
 			flowMessage.InnerFrameIpTos = uint32(tos)
 			flowMessage.InnerFrameIpTtl = uint32(ttl)
 			flowMessage.InnerFrameSrcAddr = data[offset+12 : offset+16]
@@ -145,7 +145,7 @@ func ParseIPv6(offset int, flowMessage *ProtoProducerMessage, data []byte, inner
 		if innerFrame {
 			totalLen := binary.BigEndian.Uint16(data[offset+4 : offset+6])
 
-			flowMessage.InnerFamily = 1
+			flowMessage.InnerFamily = flowmessage.FlowMessage_InnerFamily(1)
 			flowMessage.InnerFrameSrcAddr = data[offset+8 : offset+24]
 			flowMessage.InnerFrameDstAddr = data[offset+24 : offset+40]
 			flowMessage.InnerFrameIpTos = uint32(tos)
@@ -453,7 +453,7 @@ func ParseEthernetHeader(flowMessage *ProtoProducerMessage, data []byte, config 
 					}
 				}
 			// IPv6 is inner frame
-			case 46:
+			case 41:
 				prevOffset := offset
 				if nextHeader, offset, err = ParseIPv6(offset, flowMessage, data, isTunnel); err != nil {
 					return err
