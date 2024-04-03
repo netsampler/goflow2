@@ -237,10 +237,10 @@ func ParseIPv6Headers(nextHeader byte, offset int, flowMessage *ProtoProducerMes
 						fmt.Printf("-%s-", IPRenderer(flowMessage, "ip", seg))
 						flowMessage.SrhSegmentIPv6BasicList = append(flowMessage.SrhSegmentIPv6BasicList, data[offset+8+(numSeg*16):offset+24+(numSeg*16)])
 
-						if numSeg == int(lastEntry) {
-							break
-						}
-						numSeg++
+						//if numSeg == int(lastEntry) {
+						break
+						//}
+						//numSeg++
 					}
 				}
 				offset += 8 + int(data[offset+1])*8
