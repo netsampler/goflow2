@@ -2,8 +2,6 @@ package protoproducer
 
 import (
 	"encoding/binary"
-	"encoding/json"
-	"fmt"
 
 	"github.com/netsampler/goflow2/v2/decoders/sflow"
 	flowmessage "github.com/netsampler/goflow2/v2/pb"
@@ -166,12 +164,6 @@ func ParseIPv6(offset int, flowMessage *ProtoProducerMessage, data []byte, inner
 			flowMessage.InnerFramePayloadLen = uint32(totalLen)
 		} else {
 			flowMessage.SrcAddr = data[offset+8 : offset+24]
-			if !isValidUTF8(flowMessage.SrcAddr) {
-				fmt.Println("Outer IP is invalid")
-			} else {
-				fmt.Println("Outer IP is valid")
-			}
-
 			flowMessage.DstAddr = data[offset+24 : offset+40]
 			flowMessage.IpTos = uint32(tos)
 			flowMessage.IpTtl = uint32(ttl)
@@ -191,37 +183,6 @@ func ParseIPv6(offset int, flowMessage *ProtoProducerMessage, data []byte, inner
 		}
 	}
 	return nextHeader, offset, err
-}
-
-func isValidUTF8(data []byte) bool {
-	for i := 0; i < len(data); {
-		if data[i]&0x80 == 0 {
-			// Single-byte UTF-8 character
-			i++
-		} else if data[i]&0xe0 == 0xc0 {
-			// Two-byte UTF-8 character
-			if i+1 >= len(data) || data[i+1]&0xc0 != 0x80 {
-				return false
-			}
-			i += 2
-		} else if data[i]&0xf0 == 0xe0 {
-			// Three-byte UTF-8 character
-			if i+2 >= len(data) || data[i+1]&0xc0 != 0x80 || data[i+2]&0xc0 != 0x80 {
-				return false
-			}
-			i += 3
-		} else if data[i]&0xf8 == 0xf0 {
-			// Four-byte UTF-8 character
-			if i+3 >= len(data) || data[i+1]&0xc0 != 0x80 || data[i+2]&0xc0 != 0x80 || data[i+3]&0xc0 != 0x80 {
-				return false
-			}
-			i += 4
-		} else {
-			// Invalid UTF-8 sequence
-			return false
-		}
-	}
-	return true
 }
 
 func ParseIPv6Headers(nextHeader byte, offset int, flowMessage *ProtoProducerMessage, data []byte, innerFrame bool) (newNextHeader byte, newOffset int, err error) {
@@ -263,14 +224,6 @@ func ParseIPv6Headers(nextHeader byte, offset int, flowMessage *ProtoProducerMes
 					// Now from offset+9 you should have lastEntry+1 IPv6 in the Segment list
 					numSeg := 0
 					for {
-						seg := data[offset+8+(numSeg*16) : offset+24+(numSeg*16)]
-						fmt.Println("Seg : ")
-						if !isValidUTF8(seg) {
-							fmt.Printf("-%s-  UTF INVALID\n", IPRenderer(flowMessage, "ip", seg))
-						} else {
-							fmt.Printf("-%s-  UTF VALID\n", IPRenderer(flowMessage, "ip", seg))
-						}
-
 						flowMessage.SrhSegmentIPv6BasicList = append(flowMessage.SrhSegmentIPv6BasicList, data[offset+8+(numSeg*16):offset+24+(numSeg*16)])
 
 						if numSeg == int(lastEntry) {
@@ -474,11 +427,9 @@ func ParseEthernetHeader(flowMessage *ProtoProducerMessage, data []byte, config 
 		} else if IsIPv6(etherType) { // IPv6
 			prevOffset := offset
 			if nextHeader, offset, err = ParseIPv6(offset, flowMessage, data, isTunnel); err != nil {
-				fmt.Println("Ceci est une erreur 1")
 				return err
 			}
 			if nextHeader, offset, err = ParseIPv6Headers(nextHeader, offset, flowMessage, data, isTunnel); err != nil {
-				fmt.Println("Ceci est une erreur 2")
 				return err
 			}
 
@@ -540,7 +491,6 @@ func ParseEthernetHeader(flowMessage *ProtoProducerMessage, data []byte, config 
 				}
 			}
 		}
-		fmt.Printf("Next header is: %d\n", nextHeader)
 
 		var appOffset int // keeps track of the user payload
 		// Transport protocols
@@ -614,9 +564,6 @@ func ParseEthernetHeader(flowMessage *ProtoProducerMessage, data []byte, config 
 		flowMessage.InnerFrameProto = uint32(nextHeader)
 	}
 
-	b, _ := json.Marshal(flowMessage.FlowMessage)
-	fmt.Println(string(b))
-	fmt.Println("We quit here fine")
 	return nil
 }
 
