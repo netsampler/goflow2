@@ -232,11 +232,12 @@ func mapFormat(cfg *ProducerConfig) (*FormatterConfigMapper, error) {
 	formatterMapped.render = make(map[string]RenderFunc)
 	formatterMapped.rename = make(map[string]string)
 	formatterMapped.isSlice = map[string]bool{
-		"BgpCommunities": true,
-		"AsPath":         true,
-		"MplsIp":         true,
-		"MplsLabel":      true,
-		"MplsTtl":        true,
+		"BgpCommunities":          true,
+		"AsPath":                  true,
+		"MplsIp":                  true,
+		"MplsLabel":               true,
+		"MplsTtl":                 true,
+		"SrhSegmentIPv6BasicList": true,
 	} // todo: improve this with defaults
 	for k, v := range defaultRenderers {
 		formatterMapped.render[k] = v
