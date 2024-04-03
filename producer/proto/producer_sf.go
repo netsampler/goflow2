@@ -1,10 +1,10 @@
 package protoproducer
 
 import (
-	"encoding/base64"
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
+	"net/netip"
 
 	"github.com/netsampler/goflow2/v2/decoders/sflow"
 	flowmessage "github.com/netsampler/goflow2/v2/pb"
@@ -232,8 +232,9 @@ func ParseIPv6Headers(nextHeader byte, offset int, flowMessage *ProtoProducerMes
 					// Now from offset+9 you should have lastEntry+1 IPv6 in the Segment list
 					numSeg := 0
 					for {
-						fmt.Printf("Segment before appending: %s\n", base64.StdEncoding.EncodeToString(data[offset+9+(numSeg*16):offset+25+(numSeg*16)]))
-
+						seg := data[offset+9+(numSeg*16) : offset+25+(numSeg*16)]
+						ip, _ := netip.AddrFromSlice(seg)
+						fmt.Println(ip.String())
 						flowMessage.SrhSegmentIPv6BasicList = append(flowMessage.SrhSegmentIPv6BasicList, data[offset+9+(numSeg*16):offset+25+(numSeg*16)])
 
 						if numSeg == int(lastEntry) {
