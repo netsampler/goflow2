@@ -167,6 +167,12 @@ func ParseIPv6(offset int, flowMessage *ProtoProducerMessage, data []byte, inner
 			flowMessage.InnerFramePayloadLen = uint32(totalLen)
 		} else {
 			flowMessage.SrcAddr = data[offset+8 : offset+24]
+			if !utf8.Valid(flowMessage.SrcAddr) {
+				fmt.Println("Outer IP is invalid")
+			} else {
+				fmt.Println("Outer IP is valid")
+			}
+
 			flowMessage.DstAddr = data[offset+24 : offset+40]
 			flowMessage.IpTos = uint32(tos)
 			flowMessage.IpTtl = uint32(ttl)
