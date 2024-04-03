@@ -2,8 +2,6 @@ package protoproducer
 
 import (
 	"encoding/binary"
-	"encoding/json"
-	"fmt"
 
 	"github.com/netsampler/goflow2/v2/decoders/sflow"
 	flowmessage "github.com/netsampler/goflow2/v2/pb"
@@ -170,8 +168,6 @@ func ParseIPv6(offset int, flowMessage *ProtoProducerMessage, data []byte, inner
 		} else {
 			flowMessage.SrcAddr = data[offset+8 : offset+24]
 			flowMessage.DstAddr = data[offset+24 : offset+40]
-			fmt.Println("IP : ")
-			fmt.Println(IPRenderer(flowMessage, "ip", flowMessage.SrcAddr))
 			flowMessage.IpTos = uint32(tos)
 			flowMessage.IpTtl = uint32(ttl)
 			flowMessage.Ipv6FlowLabel = flowLabel & 0xFFFFF
@@ -218,7 +214,6 @@ func ParseIPv6Headers(nextHeader byte, offset int, flowMessage *ProtoProducerMes
 
 				// Check if Routing Type is SRH
 				if data[offset+2] == 4 {
-					fmt.Println("Found SRH")
 					// Here we decode SRH
 					segLeft := uint32(data[offset+3])
 					lastEntry := uint32(data[offset+4])
@@ -233,10 +228,8 @@ func ParseIPv6Headers(nextHeader byte, offset int, flowMessage *ProtoProducerMes
 					// Now from offset+9 you should have lastEntry+1 IPv6 in the Segment list
 					numSeg := 0
 					for {
-						seg := data[offset+8+(numSeg*16) : offset+24+(numSeg*16)]
-						fmt.Println("Seg : ")
-						fmt.Println(IPRenderer(flowMessage, "ip", seg))
-						flowMessage.SrhSegmentIPv6BasicList = append(flowMessage.SrhSegmentIPv6BasicList, data[offset+9+(numSeg*16):offset+25+(numSeg*16)])
+
+						flowMessage.SrhSegmentIPv6BasicList = append(flowMessage.SrhSegmentIPv6BasicList, data[offset+8+(numSeg*16):offset+24+(numSeg*16)])
 
 						if numSeg == int(lastEntry) {
 							break
@@ -439,11 +432,9 @@ func ParseEthernetHeader(flowMessage *ProtoProducerMessage, data []byte, config 
 		} else if IsIPv6(etherType) { // IPv6
 			prevOffset := offset
 			if nextHeader, offset, err = ParseIPv6(offset, flowMessage, data, isTunnel); err != nil {
-				fmt.Println("Ceci est une erreur 1")
 				return err
 			}
 			if nextHeader, offset, err = ParseIPv6Headers(nextHeader, offset, flowMessage, data, isTunnel); err != nil {
-				fmt.Println("Ceci est une erreur 2")
 				return err
 			}
 
@@ -505,7 +496,6 @@ func ParseEthernetHeader(flowMessage *ProtoProducerMessage, data []byte, config 
 				}
 			}
 		}
-		fmt.Printf("Next header is: %d\n", nextHeader)
 
 		var appOffset int // keeps track of the user payload
 		// Transport protocols
@@ -579,9 +569,6 @@ func ParseEthernetHeader(flowMessage *ProtoProducerMessage, data []byte, config 
 		flowMessage.InnerFrameProto = uint32(nextHeader)
 	}
 
-	b, _ := json.Marshal(flowMessage.FlowMessage)
-	fmt.Println(string(b))
-	fmt.Println("We quit here fine")
 	return nil
 }
 
