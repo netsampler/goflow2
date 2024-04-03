@@ -230,18 +230,18 @@ func ParseIPv6Headers(nextHeader byte, offset int, flowMessage *ProtoProducerMes
 					flowMessage.SrhTagIPv6 = tag
 
 					// Now from offset+9 you should have lastEntry+1 IPv6 in the Segment list
-					/*numSeg := 0
+					numSeg := 0
 					for {
 						seg := data[offset+8+(numSeg*16) : offset+24+(numSeg*16)]
 						fmt.Println("Seg : ")
-						fmt.Printf("-%s-",IPRenderer(flowMessage, "ip", seg))
+						fmt.Printf("-%s-\n", IPRenderer(flowMessage, "ip", seg))
 						flowMessage.SrhSegmentIPv6BasicList = append(flowMessage.SrhSegmentIPv6BasicList, data[offset+8+(numSeg*16):offset+24+(numSeg*16)])
 
 						if numSeg == int(lastEntry) {
 							break
 						}
 						numSeg++
-					}*/
+					}
 				}
 				offset += 8 + int(data[offset+1])*8
 			} else if nextHeader == 44 && len(data) >= offset+8 { // Decode Fragment ext Header
