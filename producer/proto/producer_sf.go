@@ -127,18 +127,6 @@ func ParseIPv4(offset int, flowMessage *ProtoProducerMessage, data []byte, inner
 		}
 
 		offset += 20
-	} else {
-		// Clear all field in case of truncated frame
-		if innerFrame {
-			flowMessage.InnerFrameIpTos = uint32(0)
-			flowMessage.InnerFrameIpTtl = uint32(0)
-			flowMessage.InnerFrameSrcAddr = []byte{}
-			flowMessage.InnerFrameDstAddr = []byte{}
-			flowMessage.InnerFrameFragmentId = uint32(0)
-			flowMessage.InnerFrameFragmentOffset = uint32(0)
-			flowMessage.InnerFrameIpFlags = uint32(0)
-			flowMessage.InnerFramePayloadLen = uint32(0)
-		}
 	}
 	return nextHeader, offset, err
 }
@@ -171,16 +159,6 @@ func ParseIPv6(offset int, flowMessage *ProtoProducerMessage, data []byte, inner
 		}
 
 		offset += 40
-	} else {
-		// Clear all field in case of truncated frame
-		if innerFrame {
-			flowMessage.InnerFrameSrcAddr = []byte{}
-			flowMessage.InnerFrameDstAddr = []byte{}
-			flowMessage.InnerFrameIpTos = uint32(0)
-			flowMessage.InnerFrameIpTtl = uint32(0)
-			flowMessage.InnerFrameIpv6FlowLabel = uint32(0)
-			flowMessage.InnerFramePayloadLen = uint32(0)
-		}
 	}
 	return nextHeader, offset, err
 }
