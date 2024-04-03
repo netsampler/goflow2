@@ -77,6 +77,7 @@ func (m *ProtoProducerMessage) Key() []byte {
 }
 
 func (m *ProtoProducerMessage) MarshalJSON() ([]byte, error) {
+	fmt.Println("on passe ici")
 	return []byte(m.FormatMessageReflectJSON("")), nil
 }
 
