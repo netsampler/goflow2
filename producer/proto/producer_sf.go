@@ -110,7 +110,6 @@ func ParseIPv4(offset int, flowMessage *ProtoProducerMessage, data []byte, inner
 		if innerFrame {
 			totalLen := binary.BigEndian.Uint16(data[offset+2 : offset+4])
 
-			flowMessage.InnerFamily = flowmessage.FlowMessage_InnerFamily(0)
 			flowMessage.InnerFrameIpTos = uint32(tos)
 			flowMessage.InnerFrameIpTtl = uint32(ttl)
 			flowMessage.InnerFrameSrcAddr = data[offset+12 : offset+16]
@@ -133,7 +132,6 @@ func ParseIPv4(offset int, flowMessage *ProtoProducerMessage, data []byte, inner
 	} else {
 		// Clear all field in case of truncated frame
 		if innerFrame {
-			flowMessage.InnerFamily = flowmessage.FlowMessage_InnerFamily(0)
 			flowMessage.InnerFrameIpTos = uint32(0)
 			flowMessage.InnerFrameIpTtl = uint32(0)
 			flowMessage.InnerFrameSrcAddr = []byte{}
@@ -160,7 +158,6 @@ func ParseIPv6(offset int, flowMessage *ProtoProducerMessage, data []byte, inner
 		if innerFrame {
 			totalLen := binary.BigEndian.Uint16(data[offset+4 : offset+6])
 
-			flowMessage.InnerFamily = flowmessage.FlowMessage_InnerFamily(1)
 			flowMessage.InnerFrameSrcAddr = data[offset+8 : offset+24]
 			flowMessage.InnerFrameDstAddr = data[offset+24 : offset+40]
 			flowMessage.InnerFrameIpTos = uint32(tos)
@@ -170,8 +167,6 @@ func ParseIPv6(offset int, flowMessage *ProtoProducerMessage, data []byte, inner
 		} else {
 			flowMessage.SrcAddr = data[offset+8 : offset+24]
 			flowMessage.DstAddr = data[offset+24 : offset+40]
-			fmt.Println("IP : ")
-			fmt.Println(IPRenderer(flowMessage, "ip", flowMessage.SrcAddr))
 			flowMessage.IpTos = uint32(tos)
 			flowMessage.IpTtl = uint32(ttl)
 			flowMessage.Ipv6FlowLabel = flowLabel & 0xFFFFF
@@ -181,7 +176,6 @@ func ParseIPv6(offset int, flowMessage *ProtoProducerMessage, data []byte, inner
 	} else {
 		// Clear all field in case of truncated frame
 		if innerFrame {
-			flowMessage.InnerFamily = flowmessage.FlowMessage_InnerFamily(1)
 			flowMessage.InnerFrameSrcAddr = []byte{}
 			flowMessage.InnerFrameDstAddr = []byte{}
 			flowMessage.InnerFrameIpTos = uint32(0)

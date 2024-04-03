@@ -12,11 +12,6 @@ message FlowMessage {
     IPFIX = 4;
   }
   
-  enum InnerFamily {
-    IPV4 = 0;
-    IPV6 = 1;
-  }
-  
   FlowType type = 1;
 
   uint64 time_received_ns = 110;
@@ -109,21 +104,20 @@ message FlowMessage {
   repeated bytes srhSegmentIPv6BasicList = 154;
 
   // Tunnel IP - inner frame fields decoding
-  InnerFamily innerFamily = 160;
-  bytes innerFrame_src_addr = 161;
-  bytes innerFrame_dst_addr = 162;
-  uint32 innerFrame_proto = 163;
-  uint32 innerFrame_src_port = 164;
-  uint32 innerFrame_dst_port = 165;
-  uint32 innerFrame_ipv6_flow_label = 166;
-  uint32 innerFrame_ip_tos = 167;
-  uint32 innerFrame_ip_ttl = 168;
-  uint32 innerFrame_ip_flags = 169;
-  uint32 innerFrame_tcp_flags = 170;
-  uint32 innerFrame_fragment_id = 171;
-  uint32 innerFrame_fragment_offset = 172;
-  uint32 innerFrame_icmp_type = 173;
-  uint32 innerFrame_icmp_code = 174;
-  uint32 innerFrame_payload_len = 175;
+  bytes innerFrame_src_addr = 160;
+  bytes innerFrame_dst_addr = 161;
+  uint32 innerFrame_proto = 162;
+  uint32 innerFrame_src_port = 163;
+  uint32 innerFrame_dst_port = 164;
+  uint32 innerFrame_ipv6_flow_label = 165;
+  uint32 innerFrame_ip_tos = 166;
+  uint32 innerFrame_ip_ttl = 167;
+  uint32 innerFrame_ip_flags = 168;
+  uint32 innerFrame_tcp_flags = 169;
+  uint32 innerFrame_fragment_id = 170;
+  uint32 innerFrame_fragment_offset = 171;
+  uint32 innerFrame_icmp_type = 172;
+  uint32 innerFrame_icmp_code = 173;
+  uint32 innerFrame_payload_len = 174;
 
 }

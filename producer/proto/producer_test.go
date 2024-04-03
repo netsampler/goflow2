@@ -7,7 +7,6 @@ import (
 
 	"github.com/netsampler/goflow2/v2/decoders/netflow"
 	"github.com/netsampler/goflow2/v2/decoders/sflow"
-	flowpb "github.com/netsampler/goflow2/v2/pb"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -258,7 +257,6 @@ func TestProcessIPv6Headers(t *testing.T) {
 	assert.Equal(t, 3, len(flowMessage.SrhSegmentIPv6BasicList))
 
 	// Inner Frame
-	assert.Equal(t, flowpb.FlowMessage_InnerFamily(1), flowMessage.InnerFamily)
 	assert.Equal(t, []byte{0x20, 0x01, 0x66, 0x66, 0x00, 0x01, 0x00, 0xfb, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01}, flowMessage.InnerFrameSrcAddr)
 	assert.Equal(t, []byte{0x20, 0x01, 0x55, 0x55, 0x00, 0x01, 0x00, 0xfb, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01}, flowMessage.InnerFrameDstAddr)
 	assert.Equal(t, uint32(250), flowMessage.InnerFrameIpTos)
