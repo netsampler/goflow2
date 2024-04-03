@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
+	"unicode/utf8"
 
 	"github.com/netsampler/goflow2/v2/decoders/sflow"
 	flowmessage "github.com/netsampler/goflow2/v2/pb"
@@ -228,7 +229,12 @@ func ParseIPv6Headers(nextHeader byte, offset int, flowMessage *ProtoProducerMes
 					for {
 						seg := data[offset+8+(numSeg*16) : offset+24+(numSeg*16)]
 						fmt.Println("Seg : ")
-						fmt.Printf("-%s-\n", IPRenderer(flowMessage, "ip", seg))
+						if !utf8.Valid(seg) {
+							fmt.Printf("-%s-  UTF INVALID\n", IPRenderer(flowMessage, "ip", seg))
+						} else {
+							fmt.Printf("-%s-  UTF VALID\n", IPRenderer(flowMessage, "ip", seg))
+						}
+
 						flowMessage.SrhSegmentIPv6BasicList = append(flowMessage.SrhSegmentIPv6BasicList, data[offset+8+(numSeg*16):offset+24+(numSeg*16)])
 
 						if numSeg == int(lastEntry) {
