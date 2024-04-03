@@ -234,7 +234,7 @@ func ParseIPv6Headers(nextHeader byte, offset int, flowMessage *ProtoProducerMes
 					for {
 						seg := data[offset+9+(numSeg*16) : offset+25+(numSeg*16)]
 						ip, _ := netip.AddrFromSlice(seg)
-						fmt.Println(ip.String())
+						fmt.Println("-" + ip.String() + "-")
 						flowMessage.SrhSegmentIPv6BasicList = append(flowMessage.SrhSegmentIPv6BasicList, data[offset+9+(numSeg*16):offset+25+(numSeg*16)])
 
 						if numSeg == int(lastEntry) {
