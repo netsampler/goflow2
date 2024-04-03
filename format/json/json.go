@@ -2,7 +2,6 @@ package json
 
 import (
 	"encoding/json"
-	"fmt"
 
 	"github.com/netsampler/goflow2/v2/format"
 )
@@ -25,7 +24,6 @@ func (d *JsonDriver) Format(data interface{}) ([]byte, []byte, error) {
 	}
 
 	output, err := json.Marshal(data)
-	fmt.Println(err)
 	return key, output, err
 }
 
