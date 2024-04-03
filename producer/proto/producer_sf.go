@@ -4,7 +4,6 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
-	"net/netip"
 
 	"github.com/netsampler/goflow2/v2/decoders/sflow"
 	flowmessage "github.com/netsampler/goflow2/v2/pb"
@@ -171,6 +170,8 @@ func ParseIPv6(offset int, flowMessage *ProtoProducerMessage, data []byte, inner
 		} else {
 			flowMessage.SrcAddr = data[offset+8 : offset+24]
 			flowMessage.DstAddr = data[offset+24 : offset+40]
+			fmt.Println("IP : ")
+			fmt.Println(IPRenderer(flowMessage, "ip", flowMessage.SrcAddr))
 			flowMessage.IpTos = uint32(tos)
 			flowMessage.IpTtl = uint32(ttl)
 			flowMessage.Ipv6FlowLabel = flowLabel & 0xFFFFF
@@ -233,8 +234,8 @@ func ParseIPv6Headers(nextHeader byte, offset int, flowMessage *ProtoProducerMes
 					numSeg := 0
 					for {
 						seg := data[offset+9+(numSeg*16) : offset+25+(numSeg*16)]
-						ip, _ := netip.AddrFromSlice(seg)
-						fmt.Println("-" + ip.String() + "-")
+						fmt.Println("Seg : ")
+						fmt.Println(IPRenderer(flowMessage, "ip", seg))
 						flowMessage.SrhSegmentIPv6BasicList = append(flowMessage.SrhSegmentIPv6BasicList, data[offset+9+(numSeg*16):offset+25+(numSeg*16)])
 
 						if numSeg == int(lastEntry) {
