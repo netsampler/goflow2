@@ -4,7 +4,6 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
-	"unicode/utf8"
 
 	"github.com/netsampler/goflow2/v2/decoders/sflow"
 	flowmessage "github.com/netsampler/goflow2/v2/pb"
@@ -167,7 +166,7 @@ func ParseIPv6(offset int, flowMessage *ProtoProducerMessage, data []byte, inner
 			flowMessage.InnerFramePayloadLen = uint32(totalLen)
 		} else {
 			flowMessage.SrcAddr = data[offset+8 : offset+24]
-			if !utf8.Valid(flowMessage.SrcAddr) {
+			if !isValidUTF8(flowMessage.SrcAddr) {
 				fmt.Println("Outer IP is invalid")
 			} else {
 				fmt.Println("Outer IP is valid")
@@ -192,6 +191,37 @@ func ParseIPv6(offset int, flowMessage *ProtoProducerMessage, data []byte, inner
 		}
 	}
 	return nextHeader, offset, err
+}
+
+func isValidUTF8(data []byte) bool {
+	for i := 0; i < len(data); {
+		if data[i]&0x80 == 0 {
+			// Single-byte UTF-8 character
+			i++
+		} else if data[i]&0xe0 == 0xc0 {
+			// Two-byte UTF-8 character
+			if i+1 >= len(data) || data[i+1]&0xc0 != 0x80 {
+				return false
+			}
+			i += 2
+		} else if data[i]&0xf0 == 0xe0 {
+			// Three-byte UTF-8 character
+			if i+2 >= len(data) || data[i+1]&0xc0 != 0x80 || data[i+2]&0xc0 != 0x80 {
+				return false
+			}
+			i += 3
+		} else if data[i]&0xf8 == 0xf0 {
+			// Four-byte UTF-8 character
+			if i+3 >= len(data) || data[i+1]&0xc0 != 0x80 || data[i+2]&0xc0 != 0x80 || data[i+3]&0xc0 != 0x80 {
+				return false
+			}
+			i += 4
+		} else {
+			// Invalid UTF-8 sequence
+			return false
+		}
+	}
+	return true
 }
 
 func ParseIPv6Headers(nextHeader byte, offset int, flowMessage *ProtoProducerMessage, data []byte, innerFrame bool) (newNextHeader byte, newOffset int, err error) {
@@ -235,7 +265,7 @@ func ParseIPv6Headers(nextHeader byte, offset int, flowMessage *ProtoProducerMes
 					for {
 						seg := data[offset+8+(numSeg*16) : offset+24+(numSeg*16)]
 						fmt.Println("Seg : ")
-						if !utf8.Valid(seg) {
+						if !isValidUTF8(seg) {
 							fmt.Printf("-%s-  UTF INVALID\n", IPRenderer(flowMessage, "ip", seg))
 						} else {
 							fmt.Printf("-%s-  UTF VALID\n", IPRenderer(flowMessage, "ip", seg))
