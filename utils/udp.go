@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net"
 	"net/netip"
+	"strconv"
 	"sync"
 	"time"
 
@@ -129,7 +130,7 @@ func (r *UDPReceiver) Errors() <-chan error {
 }
 
 func (r *UDPReceiver) receive(addr string, port int, started chan bool) error {
-	pconn, err := reuseport.ListenPacket("udp", fmt.Sprintf("%s:%d", addr, port))
+	pconn, err := reuseport.ListenPacket("udp", net.JoinHostPort(addr, strconv.Itoa(port)))
 	close(started)
 	if err != nil {
 		return err
