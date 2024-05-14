@@ -44,7 +44,7 @@ The `format` directory offers various utilities to format a message. It calls sp
 functions to marshal as JSON or text for instance.
 
 The `transport` provides different way of processing the message. Either sending it via Kafka or 
-send it to a file (or stdout).
+send it to a file (or stdout), or send it via HTTP.
 
 GoFlow2 is a wrapper of all the functions and chains them.
 
@@ -85,6 +85,7 @@ Production:
 * Convert to protobuf or json
 * Prints to the console/file
 * Sends to Kafka and partition
+* Sends to HTTP endpoint
 
 Monitoring via Prometheus metrics
 
@@ -152,6 +153,15 @@ To change the kafka compression type of the producer side configure the followin
 ```
 The list of codecs is available in the [Sarama documentation](https://pkg.go.dev/github.com/Shopify/sarama#CompressionCodec).
 
+If you are using http endpoint(e.g: Fluent Bit HTTP input plugin), use the following arguments:
+
+```bash
+$ ./goflow2 -transport=http \
+  -transport.http.server=localhost \
+  -transport.http.port=4739 \
+  -format=json \
+  -transport.http.tag=tagname
+```
 
 By default, the collector will listen for IPFIX/NetFlow V9 on port 2055
 and sFlow on port 6343.
