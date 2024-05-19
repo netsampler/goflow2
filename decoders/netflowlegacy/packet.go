@@ -30,7 +30,7 @@ type RecordsNetFlowV5 struct {
 	SrcPort  uint16    `json:"src-port"`
 	DstPort  uint16    `json:"dst-port"`
 	Pad1     byte      `json:"pad1"`
-	TCPFlags uint8     `json:"tcp-flgas"`
+	TCPFlags uint8     `json:"tcp-flags"`
 	Proto    uint8     `json:"proto"`
 	Tos      uint8     `json:"tos"`
 	SrcAS    uint16    `json:"src-as"`
