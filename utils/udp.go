@@ -148,7 +148,7 @@ func (r *UDPReceiver) receive(addr string, port int, started chan bool) error {
 
 	udpconn, ok := pconn.(*net.UDPConn)
 	if !ok {
-		return err
+		return fmt.Errorf("not a udp connection")
 	}
 
 	return r.receiveRoutine(udpconn)
