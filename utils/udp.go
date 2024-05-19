@@ -150,6 +150,11 @@ func (r *UDPReceiver) receive(addr string, port int, started chan bool) error {
 	if !ok {
 		return err
 	}
+
+	return r.receiveRoutine(udpconn)
+}
+
+func (r *UDPReceiver) receiveRoutine(udpconn *net.UDPConn) (err error) {
 	localAddr, _ := udpconn.LocalAddr().(*net.UDPAddr)
 
 	for {
