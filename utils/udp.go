@@ -271,7 +271,7 @@ func (r *UDPReceiver) Start(addr string, port int, decodeFunc DecoderFunc) error
 	if err := r.decoders(r.workers, decodeFunc); err != nil {
 		return err
 	}
-	if err := r.receivers(r.workers, addr, port); err != nil {
+	if err := r.receivers(r.sockets, addr, port); err != nil {
 		return err
 	}
 	return nil
