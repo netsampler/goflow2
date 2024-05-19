@@ -264,6 +264,10 @@ func TestProcessIPv4Fragment(t *testing.T) {
 }
 
 func TestNetFlowV9Time(t *testing.T) {
+	// This test ensures the NetFlow v9 timestamps are properly calculated.
+	// It passes a baseTime = 2024-01-01 00:00:00 (in seconds) and an uptime of 2 seconds  (in milliseconds).
+	// The flow record was logged at 1 second of uptime (in milliseconds).
+	// The calculation is the following: baseTime - uptime + flowUptime.
 	var flowMessage ProtoProducerMessage
 	err := ConvertNetFlowDataSet(&flowMessage, 9, 1704067200, 2000, []netflow.DataField{
 		netflow.DataField{
