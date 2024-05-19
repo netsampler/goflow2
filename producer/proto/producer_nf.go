@@ -547,7 +547,6 @@ func ConvertNetFlowDataSet(flowMessage *ProtoProducerMessage, version uint16, ba
 					}
 					timeDiff := (uptimeNs - uint64(timeFirstSwitched)*1e6)
 					flowMessage.TimeFlowStartNs = baseTimeNs - timeDiff
-
 				case netflow.NFV9_FIELD_LAST_SWITCHED:
 					var timeLastSwitched uint32
 					if err := DecodeUNumber(v, &timeLastSwitched); err != nil {
