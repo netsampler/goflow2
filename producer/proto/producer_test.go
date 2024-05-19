@@ -262,3 +262,16 @@ func TestProcessIPv4Fragment(t *testing.T) {
 	assert.Equal(t, uint32(24025), flowMessage.FragmentId)
 	assert.Equal(t, uint32(185), flowMessage.FragmentOffset)
 }
+
+func TestNetFlowV9Time(t *testing.T) {
+	var flowMessage ProtoProducerMessage
+	err := ConvertNetFlowDataSet(&flowMessage, 9, 1704067200, 2000, []netflow.DataField{
+		netflow.DataField{
+			Type:  netflow.NFV9_FIELD_FIRST_SWITCHED,
+			Value: []byte{0x0, 0x0, 0x03, 0xe8}, // 1000
+		},
+	}, nil, nil)
+	assert.Nil(t, err)
+	assert.Equal(t, uint64(1704067199)*1e9, flowMessage.TimeFlowStartNs)
+
+}

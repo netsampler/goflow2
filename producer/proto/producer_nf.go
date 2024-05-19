@@ -538,7 +538,7 @@ func ConvertNetFlowDataSet(flowMessage *ProtoProducerMessage, version uint16, ba
 		default:
 			if version == 9 {
 				// NetFlow v9 time works with a differential based on router's uptime
-				uptimeNs := uint64(uptime * 1e6) // uptime is in milliseconds in NetFlow v9, converts to nanoseconds
+				uptimeNs := uint64(uptime) * 1e6 // uptime is in milliseconds in NetFlow v9, converts to nanoseconds
 				switch df.Type {
 				case netflow.NFV9_FIELD_FIRST_SWITCHED:
 					var timeFirstSwitched uint32
@@ -547,6 +547,7 @@ func ConvertNetFlowDataSet(flowMessage *ProtoProducerMessage, version uint16, ba
 					}
 					timeDiff := (uptimeNs - uint64(timeFirstSwitched)*1e6)
 					flowMessage.TimeFlowStartNs = baseTimeNs - timeDiff
+
 				case netflow.NFV9_FIELD_LAST_SWITCHED:
 					var timeLastSwitched uint32
 					if err := DecodeUNumber(v, &timeLastSwitched); err != nil {
