@@ -130,10 +130,10 @@ func (r *UDPReceiver) Errors() <-chan error {
 
 func (r *UDPReceiver) receive(addr string, port int, started chan bool) error {
 	pconn, err := reuseport.ListenPacket("udp", fmt.Sprintf("%s:%d", addr, port))
-	close(started)
 	if err != nil {
 		return err
 	}
+	close(started) // indicates receiver is setup
 
 	q := make(chan bool)
 	// function to quit
@@ -243,20 +243,34 @@ func (r *UDPReceiver) decoders(workers int, decodeFunc DecoderFunc) error {
 }
 
 // Starts the UDP receiving workers
-func (r *UDPReceiver) receivers(sockets int, addr string, port int) error {
+func (r *UDPReceiver) receivers(sockets int, addr string, port int) (rErr error) {
 	for i := 0; i < sockets; i++ {
+		if rErr != nil { // do not instanciate the rest of the receivers
+			break
+		}
+
 		r.wg.Add(1)
-		started := make(chan bool)
+		started := make(chan bool) // indicates receiver setup is complete
 		go func() {
 			defer r.wg.Done()
 			if err := r.receive(addr, port, started); err != nil {
-				r.logError(&ReceiverError{err})
+				err = &ReceiverError{err}
+
+				select {
+				case <-started:
+				default: // in case the receiver is not started yet
+					rErr = err
+					close(started)
+					return
+				}
+
+				r.logError(err)
 			}
 		}()
 		<-started
 	}
 
-	return nil
+	return rErr
 }
 
 // Start UDP receivers and the processing routines
@@ -269,9 +283,11 @@ func (r *UDPReceiver) Start(addr string, port int, decodeFunc DecoderFunc) error
 	}
 
 	if err := r.decoders(r.workers, decodeFunc); err != nil {
+		r.Stop()
 		return err
 	}
 	if err := r.receivers(r.workers, addr, port); err != nil {
+		r.Stop()
 		return err
 	}
 	return nil
