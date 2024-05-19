@@ -291,7 +291,7 @@ func (r *UDPReceiver) Start(addr string, port int, decodeFunc DecoderFunc) error
 		r.Stop()
 		return err
 	}
-	if err := r.receivers(r.workers, addr, port); err != nil {
+	if err := r.receivers(r.sockets, addr, port); err != nil {
 		r.Stop()
 		return err
 	}
