@@ -273,5 +273,4 @@ func TestNetFlowV9Time(t *testing.T) {
 	}, nil, nil)
 	assert.Nil(t, err)
 	assert.Equal(t, uint64(1704067199)*1e9, flowMessage.TimeFlowStartNs)
-
 }
