@@ -262,3 +262,19 @@ func TestProcessIPv4Fragment(t *testing.T) {
 	assert.Equal(t, uint32(24025), flowMessage.FragmentId)
 	assert.Equal(t, uint32(185), flowMessage.FragmentOffset)
 }
+
+func TestNetFlowV9Time(t *testing.T) {
+	// This test ensures the NetFlow v9 timestamps are properly calculated.
+	// It passes a baseTime = 2024-01-01 00:00:00 (in seconds) and an uptime of 2 seconds  (in milliseconds).
+	// The flow record was logged at 1 second of uptime (in milliseconds).
+	// The calculation is the following: baseTime - uptime + flowUptime.
+	var flowMessage ProtoProducerMessage
+	err := ConvertNetFlowDataSet(&flowMessage, 9, 1704067200, 2000, []netflow.DataField{
+		netflow.DataField{
+			Type:  netflow.NFV9_FIELD_FIRST_SWITCHED,
+			Value: []byte{0x0, 0x0, 0x03, 0xe8}, // 1000
+		},
+	}, nil, nil)
+	assert.Nil(t, err)
+	assert.Equal(t, uint64(1704067199)*1e9, flowMessage.TimeFlowStartNs)
+}
