@@ -45,20 +45,6 @@ const (
 	COUNTER_TYPE_CPU       = 1001
 )
 
-// Deprecated: These definitions are mixing sample-format, flow-data type and
-// counter-data type definitions and are left here for compatibility only.
-//
-// Use the sample-format or flow/counter type definitions instead!
-const (
-	FORMAT_EXT_SWITCH  = 1001
-	FORMAT_EXT_ROUTER  = 1002
-	FORMAT_EXT_GATEWAY = 1003
-	FORMAT_RAW_PKT     = 1
-	FORMAT_ETH         = 2
-	FORMAT_IPV4        = 3
-	FORMAT_IPV6        = 4
-)
-
 type DecoderError struct {
 	Err error
 }
