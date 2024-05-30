@@ -216,23 +216,32 @@ func TestProcessEthernet(t *testing.T) {
 }
 
 func TestProcessIPv6Headers(t *testing.T) {
-	dataStr := "6000000004d82c40" +
+	dataStr := "6000000004d80040" +
 		"fd010000000000000000000000000001" + // src
 		"fd010000000000000000000000000002" + // dst
-		"3a000001a7882ea9" + // fragment header
-		"8000f96508a4" // icmpv6
+		"2c010000000000000000000000000000" + // hop by hop issue that shouldn't be taken into accound
+		"2b000001a7882ea9" + // fragment header
+		"29060401020300102001baba0002e00200000000000000002001baba0001000000000000000000002001baba0003e0070000000000000000" + //Srh with 3 IPv6 in seg List
+		"6fa00100058a063f20016666000100fb000000000000000120015555000100fb0000000000000001" + // IPv6
+		"bd220050000000000000000050000000fa780000" // TCP
+
 	data, _ := hex.DecodeString(dataStr)
 	var flowMessage ProtoProducerMessage
-	nextHeader, offset, err := ParseIPv6(0, &flowMessage, data)
+	nextHeader, offset, err := ParseIPv6(0, &flowMessage, data, false)
 	assert.Nil(t, err)
-	assert.Equal(t, byte(44), nextHeader)
-	nextHeader, offset, err = ParseIPv6Headers(nextHeader, offset, &flowMessage, data)
+	assert.Equal(t, byte(0), nextHeader)
+	nextHeader, offset, err = ParseIPv6Headers(nextHeader, offset, &flowMessage, data, false)
 	assert.Nil(t, err)
-	assert.Equal(t, byte(58), nextHeader)
+	assert.Equal(t, byte(41), nextHeader)
 
-	offset, err = ParseICMPv6(offset, &flowMessage, data)
+	nextHeader, offset, err = ParseIPv6(offset, &flowMessage, data, true)
 	assert.Nil(t, err)
+	assert.Equal(t, byte(6), nextHeader)
+	nextHeader, offset, err = ParseIPv6Headers(nextHeader, offset, &flowMessage, data, true)
+	assert.Nil(t, err)
+	assert.Equal(t, byte(6), nextHeader)
 
+	offset, err = ParseTCP(offset, &flowMessage, data, true)
 	b, _ := json.Marshal(flowMessage.FlowMessage)
 	t.Log(string(b), nextHeader, offset)
 
@@ -240,7 +249,23 @@ func TestProcessIPv6Headers(t *testing.T) {
 	assert.Equal(t, uint32(64), flowMessage.IpTtl)
 	assert.Equal(t, uint32(2810719913), flowMessage.FragmentId)
 	assert.Equal(t, uint32(0), flowMessage.FragmentOffset)
-	assert.Equal(t, uint32(128), flowMessage.IcmpType)
+
+	// SRH specific check
+	assert.Equal(t, uint32(1), flowMessage.SrhSegmentsIPv6Left)
+	assert.Equal(t, uint32(2), flowMessage.SrhLastEntryIPv6)
+	assert.Equal(t, uint32(3), flowMessage.SrhFlagsIPv6)
+	assert.Equal(t, 3, len(flowMessage.SrhSegmentIPv6BasicList))
+
+	// Inner Frame
+	assert.Equal(t, []byte{0x20, 0x01, 0x66, 0x66, 0x00, 0x01, 0x00, 0xfb, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01}, flowMessage.InnerFrameSrcAddr)
+	assert.Equal(t, []byte{0x20, 0x01, 0x55, 0x55, 0x00, 0x01, 0x00, 0xfb, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01}, flowMessage.InnerFrameDstAddr)
+	assert.Equal(t, uint32(250), flowMessage.InnerFrameIpTos)
+	assert.Equal(t, uint32(63), flowMessage.InnerFrameIpTtl)
+	assert.Equal(t, uint32(256), flowMessage.InnerFrameIpv6FlowLabel)
+	assert.Equal(t, uint32(1418), flowMessage.InnerFramePayloadLen)
+
+	assert.Equal(t, uint32(48418), flowMessage.InnerFrameSrcPort)
+	assert.Equal(t, uint32(80), flowMessage.InnerFrameDstPort)
 }
 
 func TestProcessIPv4Fragment(t *testing.T) {
@@ -250,7 +275,7 @@ func TestProcessIPv4Fragment(t *testing.T) {
 		"0809" // continued payload
 	data, _ := hex.DecodeString(dataStr)
 	var flowMessage ProtoProducerMessage
-	nextHeader, offset, err := ParseIPv4(0, &flowMessage, data)
+	nextHeader, offset, err := ParseIPv4(0, &flowMessage, data, false)
 	assert.Nil(t, err)
 	assert.Equal(t, byte(1), nextHeader)
 

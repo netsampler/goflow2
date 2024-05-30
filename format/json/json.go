@@ -22,6 +22,7 @@ func (d *JsonDriver) Format(data interface{}) ([]byte, []byte, error) {
 	if dataIf, ok := data.(interface{ Key() []byte }); ok {
 		key = dataIf.Key()
 	}
+
 	output, err := json.Marshal(data)
 	return key, output, err
 }

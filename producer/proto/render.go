@@ -38,18 +38,22 @@ var (
 	}
 
 	defaultRenderers = map[string]RenderFunc{
-		"SrcMac":         MacRenderer,
-		"DstMac":         MacRenderer,
-		"SrcAddr":        IPRenderer,
-		"DstAddr":        IPRenderer,
-		"SamplerAddress": IPRenderer,
-		"NextHop":        IPRenderer,
-		"BgpNextHop":     IPRenderer,
-		"MplsLabelIp":    IPRenderer,
-		"Etype":          EtypeRenderer,
-		"Proto":          ProtoRenderer,
-		"SrcNet":         NetworkRenderer,
-		"DstNet":         NetworkRenderer,
+		"SrcMac":                  MacRenderer,
+		"DstMac":                  MacRenderer,
+		"SrcAddr":                 IPRenderer,
+		"DstAddr":                 IPRenderer,
+		"InnerFrameSrcAddr":       IPRenderer,
+		"InnerFrameDstAddr":       IPRenderer,
+		"SrhSegmentIPv6BasicList": IPRenderer,
+		"SamplerAddress":          IPRenderer,
+		"NextHop":                 IPRenderer,
+		"BgpNextHop":              IPRenderer,
+		"MplsLabelIp":             IPRenderer,
+		"Etype":                   EtypeRenderer,
+		"Proto":                   ProtoRenderer,
+		"InnerFrameProto":         ProtoRenderer,
+		"SrcNet":                  NetworkRenderer,
+		"DstNet":                  NetworkRenderer,
 
 		"icmp_name": ICMPRenderer,
 	}
@@ -61,8 +65,10 @@ var (
 	}
 	protoName = map[uint32]string{
 		1:   "ICMP",
+		4:   "IPV4",
 		6:   "TCP",
 		17:  "UDP",
+		41:  "IPV6",
 		58:  "ICMPv6",
 		132: "SCTP",
 	}
