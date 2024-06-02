@@ -46,6 +46,7 @@ var (
 		"NextHop":        IPRenderer,
 		"BgpNextHop":     IPRenderer,
 		"MplsLabelIp":    IPRenderer,
+		"MplsIp":         IPRenderer,
 		"Etype":          EtypeRenderer,
 		"Proto":          ProtoRenderer,
 		"SrcNet":         NetworkRenderer,
