@@ -55,6 +55,18 @@ type ExpandedFlowSample struct {
 	Records          []FlowRecord `json:"records"`
 }
 
+// DropSample data structure according to https://sflow.org/sflow_drops.txt
+type DropSample struct {
+	Header SampleHeader `json:"header"`
+
+	Drops            uint32       `json:"drops"`
+	Input            uint32       `json:"input"`
+	Output           uint32       `json:"output"`
+	Reason           uint32       `json:"reason"`
+	FlowRecordsCount uint32       `json:"flow-records-count"`
+	Records          []FlowRecord `json:"records"`
+}
+
 type RecordHeader struct {
 	DataFormat uint32 `json:"data-format"`
 	Length     uint32 `json:"length"`

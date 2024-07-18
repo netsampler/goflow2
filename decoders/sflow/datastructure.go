@@ -66,6 +66,20 @@ type ExtendedGateway struct {
 	LocalPref         uint32          `json:"local-pref"`
 }
 
+type EgressQueue struct {
+	Queue uint32 `json:"queue"`
+}
+
+type ExtendedACL struct {
+	Number    uint32 `json:"number"`
+	Name      string `json:"name"`
+	Direction uint32 `json:"direction"` // 0:unknown, 1:ingress, 2:egress
+}
+
+type ExtendedFunction struct {
+	Symbol string `json:"symbol"`
+}
+
 type IfCounters struct {
 	IfIndex            uint32 `json:"if-index"`
 	IfType             uint32 `json:"if-type"`
