@@ -8,6 +8,18 @@ import (
 	"github.com/netsampler/goflow2/v2/producer"
 )
 
+// IANA registered IPv6 extension headers
+// 0	IPv6 Hop-by-Hop Option	[RFC8200]
+// 43	Routing Header for IPv6	[RFC8200][RFC5095]
+// 44	Fragment Header for IPv6	[RFC8200]
+// 50	Encapsulating Security Payload	[RFC4303]
+// 51	Authentication Header	[RFC4302]
+// 60	Destination Options for IPv6	[RFC8200]
+// 135	Mobility Header	[RFC6275]
+// 139	Host Identity Protocol	[RFC7401]
+// 140	Shim6 Protocol	[RFC5533]
+var Ipv6ExtHeaderCode = []uint8{0, 43, 44, 50, 51, 60, 135, 139, 140}
+
 func GetSFlowFlowSamples(packet *sflow.Packet) []interface{} {
 	var flowSamples []interface{}
 	for _, sample := range packet.Samples {
@@ -83,117 +95,213 @@ func ParseMPLS(offset int, flowMessage *ProtoProducerMessage, data []byte) (ethe
 	return etherType, offset, err
 }
 
-func ParseIPv4(offset int, flowMessage *ProtoProducerMessage, data []byte) (nextHeader byte, newOffset int, err error) {
+func ParseIPv4(offset int, flowMessage *ProtoProducerMessage, data []byte, innerFrame bool) (nextHeader byte, newOffset int, err error) {
 	if len(data) >= offset+20 {
 		nextHeader = data[offset+9]
-		flowMessage.SrcAddr = data[offset+12 : offset+16]
-		flowMessage.DstAddr = data[offset+16 : offset+20]
 
 		tos := data[offset+1]
 		ttl := data[offset+8]
-
-		flowMessage.IpTos = uint32(tos)
-		flowMessage.IpTtl = uint32(ttl)
-
 		identification := binary.BigEndian.Uint16(data[offset+4 : offset+6])
 		fragOffset := binary.BigEndian.Uint16(data[offset+6 : offset+8]) // also includes flag
 
-		flowMessage.FragmentId = uint32(identification)
-		flowMessage.FragmentOffset = uint32(fragOffset) & 8191
-		flowMessage.IpFlags = uint32(fragOffset) >> 13
+		// Check if you decoded inner or outer IPv4 frame
+		if innerFrame {
+			totalLen := binary.BigEndian.Uint16(data[offset+2 : offset+4])
+
+			flowMessage.InnerFrameIpTos = uint32(tos)
+			flowMessage.InnerFrameIpTtl = uint32(ttl)
+			flowMessage.InnerFrameSrcAddr = data[offset+12 : offset+16]
+			flowMessage.InnerFrameDstAddr = data[offset+16 : offset+20]
+			flowMessage.InnerFrameFragmentId = uint32(identification)
+			flowMessage.InnerFrameFragmentOffset = uint32(fragOffset) & 8191
+			flowMessage.InnerFrameIpFlags = uint32(fragOffset) >> 13
+			flowMessage.InnerFramePayloadLen = uint32(totalLen)
+		} else {
+			flowMessage.IpTos = uint32(tos)
+			flowMessage.IpTtl = uint32(ttl)
+			flowMessage.SrcAddr = data[offset+12 : offset+16]
+			flowMessage.DstAddr = data[offset+16 : offset+20]
+			flowMessage.FragmentId = uint32(identification)
+			flowMessage.FragmentOffset = uint32(fragOffset) & 8191
+			flowMessage.IpFlags = uint32(fragOffset) >> 13
+		}
 
 		offset += 20
 	}
 	return nextHeader, offset, err
 }
 
-func ParseIPv6(offset int, flowMessage *ProtoProducerMessage, data []byte) (nextHeader byte, newOffset int, err error) {
+func ParseIPv6(offset int, flowMessage *ProtoProducerMessage, data []byte, innerFrame bool) (nextHeader byte, newOffset int, err error) {
 	if len(data) >= offset+40 {
 		nextHeader = data[offset+6]
-		flowMessage.SrcAddr = data[offset+8 : offset+24]
-		flowMessage.DstAddr = data[offset+24 : offset+40]
 
 		tostmp := uint32(binary.BigEndian.Uint16(data[offset : offset+2]))
 		tos := uint8(tostmp & 0x0ff0 >> 4)
 		ttl := data[offset+7]
-
-		flowMessage.IpTos = uint32(tos)
-		flowMessage.IpTtl = uint32(ttl)
-
 		flowLabel := binary.BigEndian.Uint32(data[offset : offset+4])
-		flowMessage.Ipv6FlowLabel = flowLabel & 0xFFFFF
+
+		// Check if you decoded inner or outer IPv6 frame
+		if innerFrame {
+			totalLen := binary.BigEndian.Uint16(data[offset+4 : offset+6])
+
+			flowMessage.InnerFrameSrcAddr = data[offset+8 : offset+24]
+			flowMessage.InnerFrameDstAddr = data[offset+24 : offset+40]
+			flowMessage.InnerFrameIpTos = uint32(tos)
+			flowMessage.InnerFrameIpTtl = uint32(ttl)
+			flowMessage.InnerFrameIpv6FlowLabel = flowLabel & 0xFFFFF
+			flowMessage.InnerFramePayloadLen = uint32(totalLen)
+		} else {
+			flowMessage.SrcAddr = data[offset+8 : offset+24]
+			flowMessage.DstAddr = data[offset+24 : offset+40]
+			flowMessage.IpTos = uint32(tos)
+			flowMessage.IpTtl = uint32(ttl)
+			flowMessage.Ipv6FlowLabel = flowLabel & 0xFFFFF
+		}
 
 		offset += 40
 	}
 	return nextHeader, offset, err
 }
 
-func ParseIPv6Headers(nextHeader byte, offset int, flowMessage *ProtoProducerMessage, data []byte) (newNextHeader byte, newOffset int, err error) {
+func ParseIPv6Headers(nextHeader byte, offset int, flowMessage *ProtoProducerMessage, data []byte, innerFrame bool) (newNextHeader byte, newOffset int, err error) {
+	// IPV6 Extention headers to extract (if present)
+	//   43: Routing Header for IPv6 (SRH srv6)
+	//   44: Fragment header
+	// These headers are present before upper-layer-header - so we need to stop once we find out a next-header different of one of the list above
+	iteration := 10
 	for {
-		if nextHeader == 44 && len(data) >= offset+8 {
-			nextHeader = data[offset]
-
-			fragOffset := binary.BigEndian.Uint16(data[offset+2 : offset+4]) // also includes flag
-			identification := binary.BigEndian.Uint32(data[offset+4 : offset+8])
-
-			flowMessage.FragmentId = identification
-			flowMessage.FragmentOffset = uint32(fragOffset) >> 3
-			flowMessage.IpFlags = uint32(fragOffset) & 7
-
-			offset += 8
-		} else {
+		// limit the maximum number of loop to avoid infinit loop
+		if iteration <= 0 {
 			break
 		}
+		// check if nextHeader is matching a known IPv6 extented header
+		found := false
+		for _, code := range Ipv6ExtHeaderCode {
+			if nextHeader == code {
+				found = true
+				break
+			}
+		}
+		if found {
+			if nextHeader == 43 && len(data) >= (offset+8+(int(data[offset+1])*8)) { // Routing Header
+				nextHeader = data[offset]
+
+				// Check if Routing Type is SRH
+				if data[offset+2] == 4 {
+					// Here we decode SRH
+					segLeft := uint32(data[offset+3])
+					lastEntry := uint32(data[offset+4])
+					flags := uint32(data[offset+5])
+					tag := uint32(binary.BigEndian.Uint16(data[offset+6 : offset+8]))
+
+					flowMessage.SrhSegmentsIPv6Left = segLeft
+					flowMessage.SrhLastEntryIPv6 = lastEntry
+					flowMessage.SrhFlagsIPv6 = flags
+					flowMessage.SrhTagIPv6 = tag
+
+					// Now from offset+9 you should have lastEntry+1 IPv6 in the Segment list
+					numSeg := 0
+					for {
+						flowMessage.SrhSegmentIPv6BasicList = append(flowMessage.SrhSegmentIPv6BasicList, data[offset+8+(numSeg*16):offset+24+(numSeg*16)])
+
+						if numSeg == int(lastEntry) {
+							break
+						}
+						numSeg++
+					}
+				}
+				offset += 8 + int(data[offset+1])*8
+			} else if nextHeader == 44 && len(data) >= offset+8 { // Decode Fragment ext Header
+				nextHeader = data[offset]
+				fragOffset := binary.BigEndian.Uint16(data[offset+2 : offset+4]) // also includes flag
+				identification := binary.BigEndian.Uint32(data[offset+4 : offset+8])
+
+				if innerFrame {
+					flowMessage.InnerFrameFragmentId = identification
+					flowMessage.InnerFrameFragmentOffset = uint32(fragOffset) >> 3
+					flowMessage.InnerFrameIpFlags = uint32(fragOffset) & 7
+				} else {
+					flowMessage.FragmentId = identification
+					flowMessage.FragmentOffset = uint32(fragOffset) >> 3
+					flowMessage.IpFlags = uint32(fragOffset) & 7
+				}
+
+				offset += 8
+			} else if len(data) >= (offset + 8 + (int(data[offset+1]) * 8)) { // Don't decode any other IPv4 Extension Header
+				nextHeader = data[offset]
+				offset += 8 + int(data[offset+1])*8
+			}
+		} else {
+			// exit you reach the upper-layer-header
+			break
+		}
+		iteration--
 	}
 	return nextHeader, offset, err
 }
 
-func ParseTCP(offset int, flowMessage *ProtoProducerMessage, data []byte) (newOffset int, err error) {
+func ParseTCP(offset int, flowMessage *ProtoProducerMessage, data []byte, innerFrame bool) (newOffset int, err error) {
 	if len(data) >= offset+13 {
 		srcPort := binary.BigEndian.Uint16(data[offset+0 : offset+2])
 		dstPort := binary.BigEndian.Uint16(data[offset+2 : offset+4])
-
-		flowMessage.SrcPort = uint32(srcPort)
-		flowMessage.DstPort = uint32(dstPort)
-
 		tcpflags := data[offset+13]
-		flowMessage.TcpFlags = uint32(tcpflags)
 
+		if innerFrame {
+			flowMessage.InnerFrameSrcPort = uint32(srcPort)
+			flowMessage.InnerFrameDstPort = uint32(dstPort)
+			flowMessage.InnerFrameTcpFlags = uint32(tcpflags)
+		} else {
+			flowMessage.SrcPort = uint32(srcPort)
+			flowMessage.DstPort = uint32(dstPort)
+			flowMessage.TcpFlags = uint32(tcpflags)
+		}
 		length := int(data[13]>>4) * 4
-
 		offset += length
 	}
 	return offset, err
 }
 
-func ParseUDP(offset int, flowMessage *ProtoProducerMessage, data []byte) (newOffset int, err error) {
+func ParseUDP(offset int, flowMessage *ProtoProducerMessage, data []byte, innerFrame bool) (newOffset int, err error) {
 	if len(data) >= offset+4 {
 		srcPort := binary.BigEndian.Uint16(data[offset+0 : offset+2])
 		dstPort := binary.BigEndian.Uint16(data[offset+2 : offset+4])
 
-		flowMessage.SrcPort = uint32(srcPort)
-		flowMessage.DstPort = uint32(dstPort)
-
+		if innerFrame {
+			flowMessage.InnerFrameSrcPort = uint32(srcPort)
+			flowMessage.InnerFrameDstPort = uint32(dstPort)
+		} else {
+			flowMessage.SrcPort = uint32(srcPort)
+			flowMessage.DstPort = uint32(dstPort)
+		}
 		offset += 8
 	}
 	return offset, err
 }
 
-func ParseICMP(offset int, flowMessage *ProtoProducerMessage, data []byte) (newOffset int, err error) {
+func ParseICMP(offset int, flowMessage *ProtoProducerMessage, data []byte, innerFrame bool) (newOffset int, err error) {
 	if len(data) >= offset+2 {
-		flowMessage.IcmpType = uint32(data[offset+0])
-		flowMessage.IcmpCode = uint32(data[offset+1])
 
+		if innerFrame {
+			flowMessage.InnerFrameIcmpType = uint32(data[offset+0])
+			flowMessage.InnerFrameIcmpCode = uint32(data[offset+1])
+		} else {
+			flowMessage.IcmpType = uint32(data[offset+0])
+			flowMessage.IcmpCode = uint32(data[offset+1])
+		}
 		offset += 8
 	}
 	return offset, err
 }
 
-func ParseICMPv6(offset int, flowMessage *ProtoProducerMessage, data []byte) (newOffset int, err error) {
+func ParseICMPv6(offset int, flowMessage *ProtoProducerMessage, data []byte, innerFrame bool) (newOffset int, err error) {
 	if len(data) >= offset+2 {
-		flowMessage.IcmpType = uint32(data[offset+0])
-		flowMessage.IcmpCode = uint32(data[offset+1])
-
+		if innerFrame {
+			flowMessage.InnerFrameIcmpType = uint32(data[offset+0])
+			flowMessage.InnerFrameIcmpType = uint32(data[offset+1])
+		} else {
+			flowMessage.IcmpType = uint32(data[offset+0])
+			flowMessage.IcmpCode = uint32(data[offset+1])
+		}
 		offset += 8
 	}
 	return offset, err
@@ -259,6 +367,7 @@ func ParseEthernetHeader(flowMessage *ProtoProducerMessage, data []byte, config 
 
 	encap := true
 	iterations := 0
+	isTunnel := false
 	for encap && iterations <= 1 {
 		encap = false
 
@@ -283,7 +392,7 @@ func ParseEthernetHeader(flowMessage *ProtoProducerMessage, data []byte, config 
 
 		if IsIPv4(etherType) { // IPv4
 			prevOffset := offset
-			if nextHeader, offset, err = ParseIPv4(offset, flowMessage, data); err != nil {
+			if nextHeader, offset, err = ParseIPv4(offset, flowMessage, data, isTunnel); err != nil {
 				return err
 			}
 
@@ -295,10 +404,10 @@ func ParseEthernetHeader(flowMessage *ProtoProducerMessage, data []byte, config 
 			}
 		} else if IsIPv6(etherType) { // IPv6
 			prevOffset := offset
-			if nextHeader, offset, err = ParseIPv6(offset, flowMessage, data); err != nil {
+			if nextHeader, offset, err = ParseIPv6(offset, flowMessage, data, isTunnel); err != nil {
 				return err
 			}
-			if nextHeader, offset, err = ParseIPv6Headers(nextHeader, offset, flowMessage, data); err != nil {
+			if nextHeader, offset, err = ParseIPv6Headers(nextHeader, offset, flowMessage, data, isTunnel); err != nil {
 				return err
 			}
 
@@ -324,14 +433,50 @@ func ParseEthernetHeader(flowMessage *ProtoProducerMessage, data []byte, config 
 			}
 		}
 
-		var appOffset int // keeps track of the user payload
+		flowMessage.Proto = uint32(nextHeader)
 
+		// Check if IP tunnel is present
+		if nextHeader == 4 || nextHeader == 41 {
+			isTunnel = true
+			switch nextHeader {
+			// IPv4 is inner frame
+			case 4:
+				prevOffset := offset
+				if nextHeader, offset, err = ParseIPv4(offset, flowMessage, data, isTunnel); err != nil {
+					return err
+				}
+				for _, configLayer := range GetSFlowConfigLayer(config, "ipv4") {
+					extracted := GetBytes(data, prevOffset*8+configLayer.Offset, configLayer.Length)
+					if err := MapCustom(flowMessage, extracted, configLayer.MapConfigBase); err != nil {
+						return err
+					}
+				}
+			// IPv6 is inner frame
+			case 41:
+				prevOffset := offset
+				if nextHeader, offset, err = ParseIPv6(offset, flowMessage, data, isTunnel); err != nil {
+					return err
+				}
+				if nextHeader, offset, err = ParseIPv6Headers(nextHeader, offset, flowMessage, data, isTunnel); err != nil {
+					return err
+				}
+
+				for _, configLayer := range GetSFlowConfigLayer(config, "ipv6") {
+					extracted := GetBytes(data, prevOffset*8+configLayer.Offset, configLayer.Length)
+					if err := MapCustom(flowMessage, extracted, configLayer.MapConfigBase); err != nil {
+						return err
+					}
+				}
+			}
+		}
+
+		var appOffset int // keeps track of the user payload
 		// Transport protocols
 		if nextHeader == 17 || nextHeader == 6 || nextHeader == 1 || nextHeader == 58 {
 			prevOffset := offset
 			if flowMessage.FragmentOffset == 0 {
 				if nextHeader == 17 { // UDP
-					if offset, err = ParseUDP(offset, flowMessage, data); err != nil {
+					if offset, err = ParseUDP(offset, flowMessage, data, isTunnel); err != nil {
 						return err
 					}
 					for _, configLayer := range GetSFlowConfigLayer(config, "udp") {
@@ -341,7 +486,7 @@ func ParseEthernetHeader(flowMessage *ProtoProducerMessage, data []byte, config 
 						}
 					}
 				} else if nextHeader == 6 { // TCP
-					if offset, err = ParseTCP(offset, flowMessage, data); err != nil {
+					if offset, err = ParseTCP(offset, flowMessage, data, isTunnel); err != nil {
 						return err
 					}
 					for _, configLayer := range GetSFlowConfigLayer(config, "tcp") {
@@ -351,7 +496,7 @@ func ParseEthernetHeader(flowMessage *ProtoProducerMessage, data []byte, config 
 						}
 					}
 				} else if nextHeader == 1 { // ICMP
-					if offset, err = ParseICMP(offset, flowMessage, data); err != nil {
+					if offset, err = ParseICMP(offset, flowMessage, data, isTunnel); err != nil {
 						return err
 					}
 					for _, configLayer := range GetSFlowConfigLayer(config, "icmp") {
@@ -361,7 +506,7 @@ func ParseEthernetHeader(flowMessage *ProtoProducerMessage, data []byte, config 
 						}
 					}
 				} else if nextHeader == 58 { // ICMPv6
-					if offset, err = ParseICMPv6(offset, flowMessage, data); err != nil {
+					if offset, err = ParseICMPv6(offset, flowMessage, data, isTunnel); err != nil {
 						return err
 					}
 					for _, configLayer := range GetSFlowConfigLayer(config, "icmp6") {
@@ -393,7 +538,9 @@ func ParseEthernetHeader(flowMessage *ProtoProducerMessage, data []byte, config 
 	if len(etherType) >= 2 {
 		flowMessage.Etype = uint32(binary.BigEndian.Uint16(etherType[0:2]))
 	}
-	flowMessage.Proto = uint32(nextHeader)
+	if isTunnel {
+		flowMessage.InnerFrameProto = uint32(nextHeader)
+	}
 
 	return nil
 }
