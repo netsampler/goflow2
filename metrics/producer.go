@@ -117,10 +117,11 @@ func (p *PromProducerWrapper) Produce(msg interface{}, args *producer.ProduceArg
 	if nfvariant {
 		for _, msg := range flowMessageSet {
 			fmsg, ok := msg.(*protoproducer.ProtoProducerMessage)
-			if !ok || fmsg.TimeReceivedNs < fmsg.TimeFlowEndNs {
+			if !ok {
 				continue
 			}
 			timeDiff := fmsg.TimeReceivedNs - fmsg.TimeFlowEndNs
+
 			NetFlowTimeStatsSum.With(
 				prometheus.Labels{
 					"router":  key,
