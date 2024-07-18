@@ -191,6 +191,20 @@ func DecodeFlowRecord(header *RecordHeader, payload *bytes.Buffer) (FlowRecord, 
 		}
 		sampledHeader.HeaderData = payload.Bytes()
 		flowRecord.Data = sampledHeader
+	case FLOW_TYPE_ETH:
+		sampledEth := SampledEthernet{
+			SrcMac: make([]byte, 6),
+			DstMac: make([]byte, 6),
+		}
+		if err := utils.BinaryDecoder(payload,
+			&sampledEth.Length,
+			sampledEth.SrcMac,
+			sampledEth.DstMac,
+			&sampledEth.EthType,
+		); err != nil {
+			return flowRecord, &RecordError{header.DataFormat, err}
+		}
+		flowRecord.Data = sampledEth
 	case FLOW_TYPE_IPV4:
 		sampledIP := SampledIPv4{
 			SampledIPBase: SampledIPBase{
@@ -373,6 +387,7 @@ func DecodeSample(header *SampleHeader, payload *bytes.Buffer) (interface{}, err
 	var counterSample CounterSample
 	var expandedFlowSample ExpandedFlowSample
 	var dropSample DropSample
+
 	switch format {
 	case SAMPLE_FORMAT_FLOW:
 		flowSample.Header = *header
