@@ -7,14 +7,42 @@ import (
 	"github.com/netsampler/goflow2/v2/decoders/utils"
 )
 
+// Opaque sample_data types according to https://sflow.org/SFLOW-DATAGRAM5.txt
 const (
-	FORMAT_EXT_SWITCH  = 1001
-	FORMAT_EXT_ROUTER  = 1002
-	FORMAT_EXT_GATEWAY = 1003
-	FORMAT_RAW_PKT     = 1
-	FORMAT_ETH         = 2
-	FORMAT_IPV4        = 3
-	FORMAT_IPV6        = 4
+	SAMPLE_FORMAT_FLOW             = 1
+	SAMPLE_FORMAT_COUNTER          = 2
+	SAMPLE_FORMAT_EXPANDED_FLOW    = 3
+	SAMPLE_FORMAT_EXPANDED_COUNTER = 4
+)
+
+// Opaque flow_data types according to https://sflow.org/SFLOW-STRUCTS5.txt
+const (
+	FLOW_TYPE_RAW              = 1
+	FLOW_TYPE_ETH              = 2
+	FLOW_TYPE_IPV4             = 3
+	FLOW_TYPE_IPV6             = 4
+	FLOW_TYPE_EXT_SWITCH       = 1001
+	FLOW_TYPE_EXT_ROUTER       = 1002
+	FLOW_TYPE_EXT_GATEWAY      = 1003
+	FLOW_TYPE_EXT_USER         = 1004
+	FLOW_TYPE_EXT_URL          = 1005
+	FLOW_TYPE_EXT_MPLS         = 1006
+	FLOW_TYPE_EXT_NAT          = 1007
+	FLOW_TYPE_EXT_MPLS_TUNNEL  = 1008
+	FLOW_TYPE_EXT_MPLS_VC      = 1009
+	FLOW_TYPE_EXT_MPLS_FEC     = 1010
+	FLOW_TYPE_EXT_MPLS_LVP_FEC = 1011
+	FLOW_TYPE_EXT_VLAN_TUNNEL  = 1012
+)
+
+// Opaque counter_data types according to https://sflow.org/SFLOW-STRUCTS5.txt
+const (
+	COUNTER_TYPE_IF        = 1
+	COUNTER_TYPE_ETH       = 2
+	COUNTER_TYPE_TOKENRING = 3
+	COUNTER_TYPE_VG        = 4
+	COUNTER_TYPE_VLAN      = 5
+	COUNTER_TYPE_CPU       = 1001
 )
 
 type DecoderError struct {
@@ -84,7 +112,7 @@ func DecodeCounterRecord(header *RecordHeader, payload *bytes.Buffer) (CounterRe
 		Header: *header,
 	}
 	switch header.DataFormat {
-	case 1:
+	case COUNTER_TYPE_IF:
 		var ifCounters IfCounters
 		if err := utils.BinaryDecoder(payload,
 			&ifCounters.IfIndex,
@@ -110,7 +138,7 @@ func DecodeCounterRecord(header *RecordHeader, payload *bytes.Buffer) (CounterRe
 			return counterRecord, &RecordError{header.DataFormat, err}
 		}
 		counterRecord.Data = ifCounters
-	case 2:
+	case COUNTER_TYPE_ETH:
 		var ethernetCounters EthernetCounters
 		if err := utils.BinaryDecoder(payload,
 			&ethernetCounters.Dot3StatsAlignmentErrors,
@@ -145,14 +173,7 @@ func DecodeFlowRecord(header *RecordHeader, payload *bytes.Buffer) (FlowRecord, 
 	}
 	var err error
 	switch header.DataFormat {
-	case FORMAT_EXT_SWITCH:
-		extendedSwitch := ExtendedSwitch{}
-		err := utils.BinaryDecoder(payload, &extendedSwitch.SrcVlan, &extendedSwitch.SrcPriority, &extendedSwitch.DstVlan, &extendedSwitch.DstPriority)
-		if err != nil {
-			return flowRecord, &RecordError{header.DataFormat, err}
-		}
-		flowRecord.Data = extendedSwitch
-	case FORMAT_RAW_PKT:
+	case FLOW_TYPE_RAW:
 		sampledHeader := SampledHeader{}
 		if err := utils.BinaryDecoder(payload,
 			&sampledHeader.Protocol,
@@ -164,7 +185,7 @@ func DecodeFlowRecord(header *RecordHeader, payload *bytes.Buffer) (FlowRecord, 
 		}
 		sampledHeader.HeaderData = payload.Bytes()
 		flowRecord.Data = sampledHeader
-	case FORMAT_IPV4:
+	case FLOW_TYPE_IPV4:
 		sampledIP := SampledIPv4{
 			SampledIPBase: SampledIPBase{
 				SrcIP: make([]byte, 4),
@@ -184,7 +205,7 @@ func DecodeFlowRecord(header *RecordHeader, payload *bytes.Buffer) (FlowRecord, 
 			return flowRecord, &RecordError{header.DataFormat, err}
 		}
 		flowRecord.Data = sampledIP
-	case FORMAT_IPV6:
+	case FLOW_TYPE_IPV6:
 		sampledIP := SampledIPv6{
 			SampledIPBase: SampledIPBase{
 				SrcIP: make([]byte, 16),
@@ -204,7 +225,14 @@ func DecodeFlowRecord(header *RecordHeader, payload *bytes.Buffer) (FlowRecord, 
 			return flowRecord, &RecordError{header.DataFormat, err}
 		}
 		flowRecord.Data = sampledIP
-	case FORMAT_EXT_ROUTER:
+	case FLOW_TYPE_EXT_SWITCH:
+		extendedSwitch := ExtendedSwitch{}
+		err := utils.BinaryDecoder(payload, &extendedSwitch.SrcVlan, &extendedSwitch.SrcPriority, &extendedSwitch.DstVlan, &extendedSwitch.DstPriority)
+		if err != nil {
+			return flowRecord, &RecordError{header.DataFormat, err}
+		}
+		flowRecord.Data = extendedSwitch
+	case FLOW_TYPE_EXT_ROUTER:
 		extendedRouter := ExtendedRouter{}
 		if extendedRouter.NextHopIPVersion, extendedRouter.NextHop, err = DecodeIP(payload); err != nil {
 			return flowRecord, &RecordError{header.DataFormat, err}
@@ -216,7 +244,7 @@ func DecodeFlowRecord(header *RecordHeader, payload *bytes.Buffer) (FlowRecord, 
 			return flowRecord, &RecordError{header.DataFormat, err}
 		}
 		flowRecord.Data = extendedRouter
-	case FORMAT_EXT_GATEWAY:
+	case FLOW_TYPE_EXT_GATEWAY:
 		extendedGateway := ExtendedGateway{}
 		if extendedGateway.NextHopIPVersion, extendedGateway.NextHop, err = DecodeIP(payload); err != nil {
 			return flowRecord, &RecordError{header.DataFormat, err}
@@ -295,7 +323,9 @@ func DecodeSample(header *SampleHeader, payload *bytes.Buffer) (interface{}, err
 		return sample, fmt.Errorf("header seq [%w]", err)
 	}
 	seq := header.SampleSequenceNumber
-	if format == FORMAT_RAW_PKT || format == FORMAT_ETH {
+	switch format {
+	case SAMPLE_FORMAT_FLOW, SAMPLE_FORMAT_COUNTER:
+		// Interlaced data-source format
 		var sourceId uint32
 		if err := utils.BinaryDecoder(payload, &sourceId); err != nil {
 			return sample, &FlowError{format, seq, fmt.Errorf("header source [%w]", err)}
@@ -303,14 +333,15 @@ func DecodeSample(header *SampleHeader, payload *bytes.Buffer) (interface{}, err
 
 		header.SourceIdType = sourceId >> 24
 		header.SourceIdValue = sourceId & 0x00ffffff
-	} else if format == FORMAT_IPV4 || format == FORMAT_IPV6 {
+	case SAMPLE_FORMAT_EXPANDED_FLOW, SAMPLE_FORMAT_EXPANDED_COUNTER:
+		// Explicit data-source format
 		if err := utils.BinaryDecoder(payload,
 			&header.SourceIdType,
 			&header.SourceIdValue,
 		); err != nil {
 			return sample, &FlowError{format, seq, fmt.Errorf("header source [%w]", err)}
 		}
-	} else {
+	default:
 		return sample, &FlowError{format, seq, fmt.Errorf("unknown format %d", format)}
 	}
 
@@ -318,10 +349,9 @@ func DecodeSample(header *SampleHeader, payload *bytes.Buffer) (interface{}, err
 	var flowSample FlowSample
 	var counterSample CounterSample
 	var expandedFlowSample ExpandedFlowSample
-	if format == FORMAT_RAW_PKT {
-		flowSample = FlowSample{
-			Header: *header,
-		}
+	switch format {
+	case SAMPLE_FORMAT_FLOW:
+		flowSample.Header = *header
 		if err := utils.BinaryDecoder(payload,
 			&flowSample.SamplingRate,
 			&flowSample.SamplePool,
@@ -338,23 +368,19 @@ func DecodeSample(header *SampleHeader, payload *bytes.Buffer) (interface{}, err
 		}
 		flowSample.Records = make([]FlowRecord, recordsCount) // max size of 1000 for protection
 		sample = flowSample
-	} else if format == FORMAT_ETH || format == FORMAT_IPV6 {
-		if err := utils.BinaryDecoder(payload, &recordsCount); err != nil {
+	case SAMPLE_FORMAT_COUNTER, SAMPLE_FORMAT_EXPANDED_COUNTER:
+		counterSample.Header = *header
+		if err := utils.BinaryDecoder(payload, &counterSample.CounterRecordsCount); err != nil {
 			return sample, &FlowError{format, seq, fmt.Errorf("eth [%w]", err)}
 		}
+		recordsCount = counterSample.CounterRecordsCount
 		if recordsCount > 1000 { // protection against ddos
 			return sample, &FlowError{format, seq, fmt.Errorf("too many flow records: %d", recordsCount)}
 		}
-		counterSample = CounterSample{
-			Header:              *header,
-			CounterRecordsCount: recordsCount,
-		}
 		counterSample.Records = make([]CounterRecord, recordsCount) // max size of 1000 for protection
 		sample = counterSample
-	} else if format == FORMAT_IPV4 {
-		expandedFlowSample = ExpandedFlowSample{
-			Header: *header,
-		}
+	case SAMPLE_FORMAT_EXPANDED_FLOW:
+		expandedFlowSample.Header = *header
 		if err := utils.BinaryDecoder(payload,
 			&expandedFlowSample.SamplingRate,
 			&expandedFlowSample.SamplePool,
@@ -383,22 +409,25 @@ func DecodeSample(header *SampleHeader, payload *bytes.Buffer) (interface{}, err
 			break
 		}
 		recordReader := bytes.NewBuffer(payload.Next(int(recordHeader.Length)))
-		if format == FORMAT_RAW_PKT || format == FORMAT_IPV4 {
+		switch format {
+		case SAMPLE_FORMAT_FLOW:
 			record, err := DecodeFlowRecord(&recordHeader, recordReader)
 			if err != nil {
 				return sample, &FlowError{format, seq, fmt.Errorf("record [%w]", err)}
 			}
-			if format == FORMAT_RAW_PKT {
-				flowSample.Records[i] = record
-			} else if format == FORMAT_IPV4 {
-				expandedFlowSample.Records[i] = record
-			}
-		} else if format == FORMAT_ETH || format == FORMAT_IPV6 {
+			flowSample.Records[i] = record
+		case SAMPLE_FORMAT_COUNTER, SAMPLE_FORMAT_EXPANDED_COUNTER:
 			record, err := DecodeCounterRecord(&recordHeader, recordReader)
 			if err != nil {
 				return sample, &FlowError{format, seq, fmt.Errorf("counter [%w]", err)}
 			}
 			counterSample.Records[i] = record
+		case SAMPLE_FORMAT_EXPANDED_FLOW:
+			record, err := DecodeFlowRecord(&recordHeader, recordReader)
+			if err != nil {
+				return sample, &FlowError{format, seq, fmt.Errorf("record [%w]", err)}
+			}
+			expandedFlowSample.Records[i] = record
 		}
 	}
 	return sample, nil
