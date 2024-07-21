@@ -94,4 +94,17 @@ message FlowMessage {
 
   uint32 observation_domain_id = 70;
   uint32 observation_point_id = 71;
+
+  // Encapsulation
+  enum LayerStack {
+    Ethernet = 0;
+    IPv4 = 1;
+    IPv6 = 2;
+    TCP = 3;
+    UDP = 4;
+    MPLS = 5;
+    Dot1Q = 6;
+  }
+  repeated LayerStack layer_stack = 103;
+
 }
