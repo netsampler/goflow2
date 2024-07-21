@@ -96,6 +96,7 @@ func ParseEthernet2(flowMessage *ProtoProducerMessage, data []byte, layer, calls
 	if calls == 0 { // first time calling
 		flowMessage.SrcMac = srcMac
 		flowMessage.DstMac = dstMac
+		flowMessage.Etype = uint32(binary.BigEndian.Uint16(data[12:14]))
 	}
 	// add to list of macs
 
@@ -106,23 +107,19 @@ func ParseEthernet2(flowMessage *ProtoProducerMessage, data []byte, layer, calls
 }
 
 func Parse8021Q2(flowMessage *ProtoProducerMessage, data []byte, layer, calls int) (res ParseResult, err error) {
-	if len(data) < 14 {
+	if len(data) < 4 {
 		return res, nil
 	}
-	res.Size = 14
-	flowMessage.LayerStack = append(flowMessage.LayerStack, 0) // todo: set ethernet
-
-	dstMac := binary.BigEndian.Uint64(append([]byte{0, 0}, data[0:6]...))
-	srcMac := binary.BigEndian.Uint64(append([]byte{0, 0}, data[6:12]...))
+	res.Size = 4
+	flowMessage.LayerStack = append(flowMessage.LayerStack, 6) // todo: set dot1q
 
 	if calls == 0 { // first time calling
-		flowMessage.SrcMac = srcMac
-		flowMessage.DstMac = dstMac
+		flowMessage.VlanId = uint32(binary.BigEndian.Uint16(data[0:2]))
+		flowMessage.Etype = uint32(binary.BigEndian.Uint16(data[2:4]))
 	}
-	// add to list of macs
 
 	// get next parser
-	res.NextParser, err = NextParserEtype(data[12:14])
+	res.NextParser, err = NextParserEtype(data[2:4])
 
 	return res, err
 }
