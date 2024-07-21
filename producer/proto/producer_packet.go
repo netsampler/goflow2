@@ -12,7 +12,7 @@ type ParseResult struct {
 }
 
 // Parser is a function that maps various items of a layer to a ProtoProducerMessage
-type Parser func(flowMessage *ProtoProducerMessage, data []byte, layer int) (res ParseResult, err error)
+type Parser func(flowMessage *ProtoProducerMessage, data []byte, layer, calls int) (res ParseResult, err error)
 
 func NextParserEtype(etherType []byte) (Parser, error) {
 	if len(etherType) != 2 {
@@ -51,6 +51,30 @@ func NextPortParser(port uint16) (Parser, error) {
 	// Parser for GRE, Teredo, etc.
 	// note: must depend on user configuration
 	return nil, nil
+}
+
+func ParsePacket(flowMessage *ProtoProducerMessage, data []byte, config *SFlowMapper) (err error) {
+	var offset, layer int
+
+	var nextParser Parser
+
+	nextParser = ParseEthernet2        // initial parser
+	calls := make(map[interface{}]int) // indicates number of times the parser was called
+
+	for nextParser != nil {
+		res, err := nextParser(flowMessage, data[offset:], layer, calls[nextParser])
+		calls[nextParser] += 1
+		if err != nil {
+			return err
+		}
+		nextParser = res.NextParser
+		offset += res.Size
+	}
+	return nil
+}
+
+func ParseEthernet2(flowMessage *ProtoProducerMessage, data []byte, layer, calls int) (res ParseResult, err error) {
+	return res, nil
 }
 
 func ParseEthernet(offset int, flowMessage *ProtoProducerMessage, data []byte) (etherType []byte, newOffset int, err error) {
