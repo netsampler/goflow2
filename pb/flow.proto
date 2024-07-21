@@ -104,6 +104,9 @@ message FlowMessage {
     UDP = 4;
     MPLS = 5;
     Dot1Q = 6;
+    ARP = 7;
+    ICMP = 8;
+    ICMPv6 = 9;
   }
   repeated LayerStack layer_stack = 103;
 

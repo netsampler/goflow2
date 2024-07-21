@@ -2,7 +2,56 @@ package protoproducer
 
 import (
 	"encoding/binary"
+	"fmt"
 )
+
+// ParseResult contains information about the next
+type ParseResult struct {
+	NextParser Parser // Next parser to be called
+	Size       int    // Size of the layer
+}
+
+// Parser is a function that maps various items of a layer to a ProtoProducerMessage
+type Parser func(flowMessage *ProtoProducerMessage, data []byte, layer int) (res ParseResult, err error)
+
+func NextParserEtype(etherType []byte) (Parser, error) {
+	if len(etherType) != 2 {
+		return nil, fmt.Errorf("wrong ether type")
+	}
+	switch {
+	case etherType[0] == 0x88, etherType[1] == 0x47:
+		return nil, nil // MPLS
+	case etherType[0] == 0x81, etherType[1] == 0x0:
+		return nil, nil // 802.1q
+	case etherType[0] == 0x8 && etherType[1] == 0x0:
+		return nil, nil // IPv4
+	case etherType[0] == 0x86 && etherType[1] == 0xdd:
+		return nil, nil // IPv6
+	case etherType[0] == 0x8 && etherType[1] == 0x6:
+		return nil, nil // ARP
+	}
+	return nil, nil
+}
+
+func NextProtocolParser(proto byte) (Parser, error) {
+	switch {
+	case proto == 17:
+		return nil, nil // UDP
+	case proto == 6:
+		return nil, nil // TCP
+	case proto == 1:
+		return nil, nil // ICMP
+	case proto == 58:
+		return nil, nil // ICMPv6
+	}
+	return nil, nil
+}
+
+func NextPortParser(port uint16) (Parser, error) {
+	// Parser for GRE, Teredo, etc.
+	// note: must depend on user configuration
+	return nil, nil
+}
 
 func ParseEthernet(offset int, flowMessage *ProtoProducerMessage, data []byte) (etherType []byte, newOffset int, err error) {
 	if len(data) >= offset+14 {
