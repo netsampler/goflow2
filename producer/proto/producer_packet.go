@@ -19,10 +19,12 @@ func NextParserEtype(etherType []byte) (Parser, error) {
 		return nil, fmt.Errorf("wrong ether type")
 	}
 	switch {
+	case etherType[0] == 0x19, etherType[1] == 0x9e:
+		return ParseEthernet2, nil // Transparent Ether Bridging (GRE)
 	case etherType[0] == 0x88, etherType[1] == 0x47:
 		return nil, nil // MPLS
 	case etherType[0] == 0x81, etherType[1] == 0x0:
-		return nil, nil // 802.1q
+		return Parse8021Q2, nil // 802.1q
 	case etherType[0] == 0x8 && etherType[1] == 0x0:
 		return nil, nil // IPv4
 	case etherType[0] == 0x86 && etherType[1] == 0xdd:
@@ -35,14 +37,22 @@ func NextParserEtype(etherType []byte) (Parser, error) {
 
 func NextProtocolParser(proto byte) (Parser, error) {
 	switch {
-	case proto == 17:
-		return nil, nil // UDP
-	case proto == 6:
-		return nil, nil // TCP
 	case proto == 1:
 		return nil, nil // ICMP
+	case proto == 4:
+		return nil, nil // IPIP
+	case proto == 6:
+		return nil, nil // TCP
+	case proto == 17:
+		return nil, nil // UDP
+	case proto == 41:
+		return nil, nil // IPv6IP
+	case proto == 47:
+		return nil, nil // GRE
 	case proto == 58:
 		return nil, nil // ICMPv6
+	case proto == 115:
+		return nil, nil // L2TP
 	}
 	return nil, nil
 }
@@ -61,7 +71,7 @@ func ParsePacket(flowMessage *ProtoProducerMessage, data []byte, config *SFlowMa
 	nextParser = ParseEthernet2        // initial parser
 	calls := make(map[interface{}]int) // indicates number of times the parser was called
 
-	for nextParser != nil {
+	for nextParser != nil && len(data) >= offset { // check that a next parser exists and there is enough data to read
 		res, err := nextParser(flowMessage, data[offset:], layer, calls[nextParser])
 		calls[nextParser] += 1
 		if err != nil {
@@ -74,7 +84,47 @@ func ParsePacket(flowMessage *ProtoProducerMessage, data []byte, config *SFlowMa
 }
 
 func ParseEthernet2(flowMessage *ProtoProducerMessage, data []byte, layer, calls int) (res ParseResult, err error) {
-	return res, nil
+	if len(data) < 14 {
+		return res, nil
+	}
+	res.Size = 14
+	flowMessage.LayerStack = append(flowMessage.LayerStack, 0) // todo: set ethernet
+
+	dstMac := binary.BigEndian.Uint64(append([]byte{0, 0}, data[0:6]...))
+	srcMac := binary.BigEndian.Uint64(append([]byte{0, 0}, data[6:12]...))
+
+	if calls == 0 { // first time calling
+		flowMessage.SrcMac = srcMac
+		flowMessage.DstMac = dstMac
+	}
+	// add to list of macs
+
+	// get next parser
+	res.NextParser, err = NextParserEtype(data[12:14])
+
+	return res, err
+}
+
+func Parse8021Q2(flowMessage *ProtoProducerMessage, data []byte, layer, calls int) (res ParseResult, err error) {
+	if len(data) < 14 {
+		return res, nil
+	}
+	res.Size = 14
+	flowMessage.LayerStack = append(flowMessage.LayerStack, 0) // todo: set ethernet
+
+	dstMac := binary.BigEndian.Uint64(append([]byte{0, 0}, data[0:6]...))
+	srcMac := binary.BigEndian.Uint64(append([]byte{0, 0}, data[6:12]...))
+
+	if calls == 0 { // first time calling
+		flowMessage.SrcMac = srcMac
+		flowMessage.DstMac = dstMac
+	}
+	// add to list of macs
+
+	// get next parser
+	res.NextParser, err = NextParserEtype(data[12:14])
+
+	return res, err
 }
 
 func ParseEthernet(offset int, flowMessage *ProtoProducerMessage, data []byte) (etherType []byte, newOffset int, err error) {
