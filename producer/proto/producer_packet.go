@@ -48,7 +48,7 @@ func NextProtocolParser(proto byte) (Parser, error) {
 	case proto == 41:
 		return nil, nil // IPv6IP
 	case proto == 47:
-		return nil, nil // GRE
+		return ParseGRE2, nil // GRE
 	case proto == 58:
 		return ParseICMPv62, nil // ICMPv6
 	case proto == 115:
@@ -305,6 +305,23 @@ func ParseUDP2(flowMessage *ProtoProducerMessage, data []byte, layer, calls int)
 		flowMessage.SrcPort = uint32(srcPort)
 		flowMessage.DstPort = uint32(dstPort)
 	}
+
+	return res, err
+}
+
+func ParseGRE2(flowMessage *ProtoProducerMessage, data []byte, layer, calls int) (res ParseResult, err error) {
+	if len(data) < 4 {
+		return res, nil
+	}
+
+	res.Size = 4
+
+	flowMessage.LayerStack = append(flowMessage.LayerStack, 10) // todo: set gre
+
+	eType := data[2:4]
+
+	// get next parser
+	res.NextParser, err = NextParserEtype(eType)
 
 	return res, err
 }

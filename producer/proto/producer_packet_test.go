@@ -124,7 +124,7 @@ func TestProcessICMPv62(t *testing.T) {
 	assert.Equal(t, uint32(128), flowMessage.IcmpCode)
 }
 
-func TestProcessPacket2(t *testing.T) {
+func TestProcessPacketBase2(t *testing.T) {
 	dataStr := "005300000001" + // src mac
 		"005300000002" + // dst mac
 		"8100" + // etype
@@ -144,9 +144,50 @@ func TestProcessPacket2(t *testing.T) {
 	b, _ := json.Marshal(flowMessage.FlowMessage)
 	t.Log(string(b))
 
-	for i, layer := range []uint32{0, 6, 5, 2, 9} {
+	layers := []uint32{0, 6, 5, 2, 9}
+	assert.Equal(t, len(layers), len(flowMessage.LayerStack))
+
+	for i, layer := range layers {
 		assert.Equal(t, layer, uint32(flowMessage.LayerStack[i]))
 	}
+
+	assert.Equal(t, uint32(0x86dd), flowMessage.Etype)
+
+}
+func TestProcessPacketEncap2(t *testing.T) {
+	dataStr := "005300000001" + // src mac
+		"005300000002" + // dst mac
+		"86dd" + // etype
+
+		"6000000004d82f40" + // ipv6
+		"fd010000000000000000000000000001" + // src
+		"fd010000000000000000000000000002" + // dst
+
+		"000086dd" + // gre
+
+		"6000000004d83a40" + // ipv6
+		"fe010000000000000000000000000001" + // src
+		"fe010000000000000000000000000002" + // dst
+
+		"8000f96508a4" // icmpv6
+
+	data, _ := hex.DecodeString(dataStr)
+	var flowMessage ProtoProducerMessage
+	err := ParsePacket(&flowMessage, data, nil)
+	assert.NoError(t, err)
+
+	b, _ := json.Marshal(flowMessage.FlowMessage)
+	t.Log(string(b))
+
+	layers := []uint32{0, 2, 10, 2, 9}
+	assert.Equal(t, len(layers), len(flowMessage.LayerStack))
+
+	for i, layer := range layers {
+		assert.Equal(t, layer, uint32(flowMessage.LayerStack[i]))
+	}
+
+	assert.Equal(t, uint32(0x86dd), flowMessage.Etype)
+	// todo: check addresses
 
 }
 
