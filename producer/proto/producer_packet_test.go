@@ -37,6 +37,22 @@ func TestProcessDot1Q2(t *testing.T) {
 	assert.Equal(t, uint32(0x0800), flowMessage.Etype)
 }
 
+func TestProcessMPLS(t *testing.T) {
+	dataStr := "000120ff" + // label 1
+		"000101ff" // label 2
+	data, _ := hex.DecodeString(dataStr)
+	var flowMessage ProtoProducerMessage
+	_, err := ParseMPLS2(&flowMessage, data, 0, 0)
+	assert.NoError(t, err)
+
+	b, _ := json.Marshal(flowMessage.FlowMessage)
+	t.Log(string(b))
+
+	assert.Equal(t, []uint32{18, 16}, flowMessage.MplsLabel)
+	assert.Equal(t, []uint32{255, 255}, flowMessage.MplsTtl)
+	//assert.Equal(t, uint32(0x800), flowMessage.Etype) // tested with next byte in whole packet
+}
+
 func TestProcessIPv42(t *testing.T) {
 	dataStr := "45000064" +
 		"abab" + // id
@@ -60,7 +76,7 @@ func TestProcessIPv42(t *testing.T) {
 }
 
 func TestProcessIPv62(t *testing.T) {
-	dataStr := "6000000004d83a40" + // ipv6
+	dataStr := "6001010104d83a40" + // ipv6
 		"fd010000000000000000000000000001" + // src
 		"fd010000000000000000000000000002" // dst
 	data, _ := hex.DecodeString(dataStr)
@@ -75,6 +91,7 @@ func TestProcessIPv62(t *testing.T) {
 	assert.Equal(t, []byte{0xfd, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02}, flowMessage.DstAddr)
 	assert.Equal(t, uint32(0x40), flowMessage.IpTtl)
 	assert.Equal(t, uint32(0x3a), flowMessage.Proto)
+	assert.Equal(t, uint32(0x010101), flowMessage.Ipv6FlowLabel)
 }
 
 func TestProcessICMP2(t *testing.T) {
@@ -105,6 +122,32 @@ func TestProcessICMPv62(t *testing.T) {
 
 	assert.Equal(t, uint32(128), flowMessage.IcmpType)
 	assert.Equal(t, uint32(128), flowMessage.IcmpCode)
+}
+
+func TestProcessPacket2(t *testing.T) {
+	dataStr := "005300000001" + // src mac
+		"005300000002" + // dst mac
+		"8100" + // etype
+		"00008847" + // 8021q
+		"000120ff" + // mpls label 1
+		"000101ff" + // mpls label 2
+		"6000000004d83a40" + // ipv6
+		"fd010000000000000000000000000001" + // src
+		"fd010000000000000000000000000002" + // dst
+		"8000f96508a4" // icmpv6
+
+	data, _ := hex.DecodeString(dataStr)
+	var flowMessage ProtoProducerMessage
+	err := ParsePacket(&flowMessage, data, nil)
+	assert.NoError(t, err)
+
+	b, _ := json.Marshal(flowMessage.FlowMessage)
+	t.Log(string(b))
+
+	for i, layer := range []uint32{0, 6, 5, 2, 9} {
+		assert.Equal(t, layer, uint32(flowMessage.LayerStack[i]))
+	}
+
 }
 
 // Legacy
