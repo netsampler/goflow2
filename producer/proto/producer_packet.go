@@ -38,19 +38,19 @@ func NextParserEtype(etherType []byte) (Parser, error) {
 func NextProtocolParser(proto byte) (Parser, error) {
 	switch {
 	case proto == 1:
-		return nil, nil // ICMP
+		return ParseICMP2, nil // ICMP
 	case proto == 4:
 		return nil, nil // IPIP
 	case proto == 6:
-		return nil, nil // TCP
+		return ParseTCP2, nil // TCP
 	case proto == 17:
-		return nil, nil // UDP
+		return ParseUDP2, nil // UDP
 	case proto == 41:
 		return nil, nil // IPv6IP
 	case proto == 47:
 		return nil, nil // GRE
 	case proto == 58:
-		return nil, nil // ICMPv6
+		return ParseICMPv62, nil // ICMPv6
 	case proto == 115:
 		return nil, nil // L2TP
 	}
@@ -190,6 +190,82 @@ func ParseIPv62(flowMessage *ProtoProducerMessage, data []byte, layer, calls int
 
 	return res, err
 }
+
+func ParseTCP2(flowMessage *ProtoProducerMessage, data []byte, layer, calls int) (res ParseResult, err error) {
+	if len(data) < 20 {
+		return res, nil
+	}
+
+	length := int(data[13]>>4) * 4
+	res.Size = 20 + length
+
+	flowMessage.LayerStack = append(flowMessage.LayerStack, 3) // todo: set tcp
+
+	if calls == 0 { // first time calling
+		srcPort := binary.BigEndian.Uint16(data[0:2])
+		dstPort := binary.BigEndian.Uint16(data[2:4])
+
+		flowMessage.SrcPort = uint32(srcPort)
+		flowMessage.DstPort = uint32(dstPort)
+
+		tcpflags := data[13]
+		flowMessage.TcpFlags = uint32(tcpflags)
+	}
+
+	return res, err
+}
+
+func ParseUDP2(flowMessage *ProtoProducerMessage, data []byte, layer, calls int) (res ParseResult, err error) {
+	if len(data) < 8 {
+		return res, nil
+	}
+
+	res.Size = 8
+
+	flowMessage.LayerStack = append(flowMessage.LayerStack, 4) // todo: set udp
+
+	if calls == 0 { // first time calling
+		srcPort := binary.BigEndian.Uint16(data[0:2])
+		dstPort := binary.BigEndian.Uint16(data[2:4])
+
+		flowMessage.SrcPort = uint32(srcPort)
+		flowMessage.DstPort = uint32(dstPort)
+	}
+
+	return res, err
+}
+
+func ParseICMP2(flowMessage *ProtoProducerMessage, data []byte, layer, calls int) (res ParseResult, err error) {
+	if len(data) < 2 {
+		return res, nil
+	}
+
+	res.Size = 8
+
+	if calls == 0 { // first time calling
+		flowMessage.IcmpType = uint32(data[0])
+		flowMessage.IcmpCode = uint32(data[1])
+	}
+
+	return res, err
+}
+
+func ParseICMPv62(flowMessage *ProtoProducerMessage, data []byte, layer, calls int) (res ParseResult, err error) {
+	if len(data) < 2 {
+		return res, nil
+	}
+
+	res.Size = 8
+
+	if calls == 0 { // first time calling
+		flowMessage.IcmpType = uint32(data[0])
+		flowMessage.IcmpCode = uint32(data[1])
+	}
+
+	return res, err
+}
+
+// Legacy decoders:
 
 func ParseEthernet(offset int, flowMessage *ProtoProducerMessage, data []byte) (etherType []byte, newOffset int, err error) {
 	if len(data) >= offset+14 {

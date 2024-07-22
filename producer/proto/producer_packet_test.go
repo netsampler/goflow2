@@ -77,6 +77,38 @@ func TestProcessIPv62(t *testing.T) {
 	assert.Equal(t, uint32(0x3a), flowMessage.Proto)
 }
 
+func TestProcessICMP2(t *testing.T) {
+	dataStr := "01018cf7000627c4"
+
+	data, _ := hex.DecodeString(dataStr)
+	var flowMessage ProtoProducerMessage
+	_, err := ParseICMP2(&flowMessage, data, 0, 0)
+	assert.NoError(t, err)
+
+	b, _ := json.Marshal(flowMessage.FlowMessage)
+	t.Log(string(b))
+
+	assert.Equal(t, uint32(1), flowMessage.IcmpType)
+	assert.Equal(t, uint32(1), flowMessage.IcmpCode)
+}
+
+func TestProcessICMPv62(t *testing.T) {
+	dataStr := "8080f96508a4"
+
+	data, _ := hex.DecodeString(dataStr)
+	var flowMessage ProtoProducerMessage
+	_, err := ParseICMPv62(&flowMessage, data, 0, 0)
+	assert.NoError(t, err)
+
+	b, _ := json.Marshal(flowMessage.FlowMessage)
+	t.Log(string(b))
+
+	assert.Equal(t, uint32(128), flowMessage.IcmpType)
+	assert.Equal(t, uint32(128), flowMessage.IcmpCode)
+}
+
+// Legacy
+
 func TestProcessEthernet(t *testing.T) {
 	dataStr := "005300000001" + // src mac
 		"005300000002" + // dst mac
