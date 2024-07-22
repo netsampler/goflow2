@@ -37,6 +37,46 @@ func TestProcessDot1Q2(t *testing.T) {
 	assert.Equal(t, uint32(0x0800), flowMessage.Etype)
 }
 
+func TestProcessIPv42(t *testing.T) {
+	dataStr := "45000064" +
+		"abab" + // id
+		"0000ff01" + // flag, ttl, proto
+		"aaaa" + // csum
+		"0a000001" + // src
+		"0a000002" // dst
+	data, _ := hex.DecodeString(dataStr)
+	var flowMessage ProtoProducerMessage
+	_, err := ParseIPv42(&flowMessage, data, 0, 0)
+	assert.NoError(t, err)
+
+	b, _ := json.Marshal(flowMessage.FlowMessage)
+	t.Log(string(b))
+
+	assert.Equal(t, []byte{10, 0, 0, 1}, flowMessage.SrcAddr)
+	assert.Equal(t, []byte{10, 0, 0, 2}, flowMessage.DstAddr)
+	assert.Equal(t, uint32(0xabab), flowMessage.FragmentId)
+	assert.Equal(t, uint32(0xff), flowMessage.IpTtl)
+	assert.Equal(t, uint32(1), flowMessage.Proto)
+}
+
+func TestProcessIPv62(t *testing.T) {
+	dataStr := "6000000004d83a40" + // ipv6
+		"fd010000000000000000000000000001" + // src
+		"fd010000000000000000000000000002" // dst
+	data, _ := hex.DecodeString(dataStr)
+	var flowMessage ProtoProducerMessage
+	_, err := ParseIPv62(&flowMessage, data, 0, 0)
+	assert.NoError(t, err)
+
+	b, _ := json.Marshal(flowMessage.FlowMessage)
+	t.Log(string(b))
+
+	assert.Equal(t, []byte{0xfd, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01}, flowMessage.SrcAddr)
+	assert.Equal(t, []byte{0xfd, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02}, flowMessage.DstAddr)
+	assert.Equal(t, uint32(0x40), flowMessage.IpTtl)
+	assert.Equal(t, uint32(0x3a), flowMessage.Proto)
+}
+
 func TestProcessEthernet(t *testing.T) {
 	dataStr := "005300000001" + // src mac
 		"005300000002" + // dst mac

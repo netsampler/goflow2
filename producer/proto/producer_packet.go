@@ -124,6 +124,73 @@ func Parse8021Q2(flowMessage *ProtoProducerMessage, data []byte, layer, calls in
 	return res, err
 }
 
+func ParseIPv42(flowMessage *ProtoProducerMessage, data []byte, layer, calls int) (res ParseResult, err error) {
+	if len(data) < 20 {
+		return res, nil
+	}
+	res.Size = 20
+	flowMessage.LayerStack = append(flowMessage.LayerStack, 1) // todo: set ipv4
+
+	nextHeader := data[9]
+
+	if calls == 0 { // first time calling
+		flowMessage.SrcAddr = data[12:16]
+		flowMessage.DstAddr = data[16:20]
+
+		tos := data[1]
+		ttl := data[8]
+
+		flowMessage.IpTos = uint32(tos)
+		flowMessage.IpTtl = uint32(ttl)
+
+		identification := binary.BigEndian.Uint16(data[4:6])
+		fragOffset := binary.BigEndian.Uint16(data[6:8]) // also includes flag
+
+		flowMessage.FragmentId = uint32(identification)
+		flowMessage.FragmentOffset = uint32(fragOffset) & 8191
+		flowMessage.IpFlags = uint32(fragOffset) >> 13
+
+		flowMessage.Proto = uint32(nextHeader)
+	}
+
+	// get next parser
+	res.NextParser, err = NextProtocolParser(nextHeader)
+
+	return res, err
+}
+
+func ParseIPv62(flowMessage *ProtoProducerMessage, data []byte, layer, calls int) (res ParseResult, err error) {
+	if len(data) < 40 {
+		return res, nil
+	}
+	res.Size = 40
+	flowMessage.LayerStack = append(flowMessage.LayerStack, 2) // todo: set ipv6
+
+	nextHeader := data[6]
+
+	if calls == 0 { // first time calling
+		flowMessage.SrcAddr = data[8:24]
+		flowMessage.DstAddr = data[24:40]
+
+		tostmp := uint32(binary.BigEndian.Uint16(data[0:2]))
+		tos := uint8(tostmp & 0x0ff0 >> 4)
+		ttl := data[7]
+
+		flowMessage.IpTos = uint32(tos)
+		flowMessage.IpTtl = uint32(ttl)
+
+		flowLabel := binary.BigEndian.Uint32(data[0:4])
+		flowMessage.Ipv6FlowLabel = flowLabel & 0xFFFFF
+
+		flowMessage.Proto = uint32(nextHeader)
+	}
+
+	// get next parser
+	res.NextParser, err = NextProtocolParser(nextHeader)
+
+	return res, err
+}
+
 func ParseEthernet(offset int, flowMessage *ProtoProducerMessage, data []byte) (etherType []byte, newOffset int, err error) {
 	if len(data) >= offset+14 {
 		etherType = data[offset+12 : offset+14]
