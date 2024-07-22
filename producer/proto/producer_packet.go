@@ -46,7 +46,9 @@ func NextProtocolParser(proto byte) (Parser, error) {
 	case proto == 17:
 		return ParseUDP2, nil // UDP
 	case proto == 41:
-		return nil, nil // IPv6IP
+		return ParseIPv62, nil // IPv6IP
+	case proto == 44:
+		return nil, nil // IPv6 EH Fragment
 	case proto == 47:
 		return ParseGRE2, nil // GRE
 	case proto == 58:
@@ -256,6 +258,30 @@ func ParseIPv62(flowMessage *ProtoProducerMessage, data []byte, layer, calls int
 		flowMessage.Ipv6FlowLabel = flowLabel & 0xFFFFF
 
 		flowMessage.Proto = uint32(nextHeader)
+	}
+
+	// get next parser
+	res.NextParser, err = NextProtocolParser(nextHeader)
+
+	return res, err
+}
+
+func ParseIPv6HeaderFragment2(flowMessage *ProtoProducerMessage, data []byte, layer, calls int) (res ParseResult, err error) {
+	if len(data) < 8 {
+		return res, nil
+	}
+
+	res.Size = 8
+
+	nextHeader := data[0]
+
+	if calls == 0 { // first time calling
+		fragOffset := binary.BigEndian.Uint16(data[2:4]) // also includes flag
+		identification := binary.BigEndian.Uint32(data[4:8])
+
+		flowMessage.FragmentId = identification
+		flowMessage.FragmentOffset = uint32(fragOffset) >> 3
+		flowMessage.IpFlags = uint32(fragOffset) & 7
 	}
 
 	// get next parser

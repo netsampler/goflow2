@@ -94,6 +94,21 @@ func TestProcessIPv62(t *testing.T) {
 	assert.Equal(t, uint32(0x010101), flowMessage.Ipv6FlowLabel)
 }
 
+func TestProcessIPv6HeaderFragment2(t *testing.T) {
+	dataStr := "3a000001a7882ea9"
+
+	data, _ := hex.DecodeString(dataStr)
+	var flowMessage ProtoProducerMessage
+	_, err := ParseIPv6HeaderFragment2(&flowMessage, data, 0, 0)
+	assert.NoError(t, err)
+
+	b, _ := json.Marshal(flowMessage.FlowMessage)
+	t.Log(string(b))
+
+	assert.Equal(t, uint32(2810719913), flowMessage.FragmentId)
+	assert.Equal(t, uint32(0), flowMessage.FragmentOffset)
+}
+
 func TestProcessICMP2(t *testing.T) {
 	dataStr := "01018cf7000627c4"
 
@@ -154,6 +169,7 @@ func TestProcessPacketBase2(t *testing.T) {
 	assert.Equal(t, uint32(0x86dd), flowMessage.Etype)
 
 }
+
 func TestProcessPacketGRE2(t *testing.T) {
 	dataStr := "005300000001" + // src mac
 		"005300000002" + // dst mac
