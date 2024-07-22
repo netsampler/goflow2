@@ -154,7 +154,7 @@ func TestProcessPacketBase2(t *testing.T) {
 	assert.Equal(t, uint32(0x86dd), flowMessage.Etype)
 
 }
-func TestProcessPacketEncap2(t *testing.T) {
+func TestProcessPacketGRE2(t *testing.T) {
 	dataStr := "005300000001" + // src mac
 		"005300000002" + // dst mac
 		"86dd" + // etype
@@ -163,13 +163,16 @@ func TestProcessPacketEncap2(t *testing.T) {
 		"fd010000000000000000000000000001" + // src
 		"fd010000000000000000000000000002" + // dst
 
-		"000086dd" + // gre
+		"00000800" + // gre
 
-		"6000000004d83a40" + // ipv6
-		"fe010000000000000000000000000001" + // src
-		"fe010000000000000000000000000002" + // dst
+		"45000064" + // ipv4
+		"abab" + // id
+		"0000ff01" + // flag, ttl, proto
+		"aaaa" + // csum
+		"0a000001" + // src
+		"0a000002" + // dst
 
-		"8000f96508a4" // icmpv6
+		"01018cf7000627c4" // icmp
 
 	data, _ := hex.DecodeString(dataStr)
 	var flowMessage ProtoProducerMessage
@@ -179,7 +182,7 @@ func TestProcessPacketEncap2(t *testing.T) {
 	b, _ := json.Marshal(flowMessage.FlowMessage)
 	t.Log(string(b))
 
-	layers := []uint32{0, 2, 10, 2, 9}
+	layers := []uint32{0, 2, 10, 1, 8}
 	assert.Equal(t, len(layers), len(flowMessage.LayerStack))
 
 	for i, layer := range layers {
@@ -187,6 +190,7 @@ func TestProcessPacketEncap2(t *testing.T) {
 	}
 
 	assert.Equal(t, uint32(0x86dd), flowMessage.Etype)
+	assert.Equal(t, uint32(47), flowMessage.Proto)
 	// todo: check addresses
 
 }

@@ -19,11 +19,11 @@ func NextParserEtype(etherType []byte) (Parser, error) {
 		return nil, fmt.Errorf("wrong ether type")
 	}
 	switch {
-	case etherType[0] == 0x19, etherType[1] == 0x9e:
+	case etherType[0] == 0x19 && etherType[1] == 0x9e:
 		return ParseEthernet2, nil // Transparent Ether Bridging (GRE)
-	case etherType[0] == 0x88, etherType[1] == 0x47:
+	case etherType[0] == 0x88 && etherType[1] == 0x47:
 		return ParseMPLS2, nil // MPLS
-	case etherType[0] == 0x81, etherType[1] == 0x0:
+	case etherType[0] == 0x81 && etherType[1] == 0x0:
 		return Parse8021Q2, nil // 802.1q
 	case etherType[0] == 0x8 && etherType[1] == 0x0:
 		return ParseIPv42, nil // IPv4
