@@ -5,6 +5,11 @@ import (
 	"fmt"
 )
 
+type ParseConfig struct {
+	Layer int
+	Calls int
+}
+
 // ParseResult contains information about the next
 type ParseResult struct {
 	NextParser Parser // Next parser to be called
@@ -12,7 +17,7 @@ type ParseResult struct {
 }
 
 // Parser is a function that maps various items of a layer to a ProtoProducerMessage
-type Parser func(flowMessage *ProtoProducerMessage, data []byte, layer, calls int) (res ParseResult, err error)
+type Parser func(flowMessage *ProtoProducerMessage, data []byte, pc ParseConfig) (res ParseResult, err error)
 
 func NextParserEtype(etherType []byte) (Parser, error) {
 	if len(etherType) != 2 {
@@ -68,7 +73,7 @@ func NextPortParser(srcPort, dstPort uint16) (Parser, error) {
 }
 
 func ParsePacket(flowMessage *ProtoProducerMessage, data []byte, config *SFlowMapper) (err error) {
-	var offset, layer int
+	var offset int
 
 	var nextParser Parser
 
@@ -77,7 +82,7 @@ func ParsePacket(flowMessage *ProtoProducerMessage, data []byte, config *SFlowMa
 
 	for nextParser != nil && len(data) >= offset { // check that a next parser exists and there is enough data to read
 		// calls[nextParser]
-		res, err := nextParser(flowMessage, data[offset:], layer, 0)
+		res, err := nextParser(flowMessage, data[offset:], ParseConfig{})
 		//calls[nextParser] += 1
 		if err != nil {
 			return err
@@ -88,7 +93,7 @@ func ParsePacket(flowMessage *ProtoProducerMessage, data []byte, config *SFlowMa
 	return nil
 }
 
-func ParseEthernet2(flowMessage *ProtoProducerMessage, data []byte, layer, calls int) (res ParseResult, err error) {
+func ParseEthernet2(flowMessage *ProtoProducerMessage, data []byte, pc ParseConfig) (res ParseResult, err error) {
 	if len(data) < 14 {
 		return res, nil
 	}
@@ -102,7 +107,7 @@ func ParseEthernet2(flowMessage *ProtoProducerMessage, data []byte, layer, calls
 
 	eType := data[12:14]
 
-	if calls == 0 { // first time calling
+	if pc.Calls == 0 { // first time calling
 		flowMessage.SrcMac = srcMac
 		flowMessage.DstMac = dstMac
 		flowMessage.Etype = uint32(binary.BigEndian.Uint16(eType))
@@ -115,7 +120,7 @@ func ParseEthernet2(flowMessage *ProtoProducerMessage, data []byte, layer, calls
 	return res, err
 }
 
-func Parse8021Q2(flowMessage *ProtoProducerMessage, data []byte, layer, calls int) (res ParseResult, err error) {
+func Parse8021Q2(flowMessage *ProtoProducerMessage, data []byte, pc ParseConfig) (res ParseResult, err error) {
 	if len(data) < 4 {
 		return res, nil
 	}
@@ -126,7 +131,7 @@ func Parse8021Q2(flowMessage *ProtoProducerMessage, data []byte, layer, calls in
 
 	eType := data[2:4]
 
-	if calls == 0 { // first time calling
+	if pc.Calls == 0 { // first time calling
 		flowMessage.VlanId = uint32(binary.BigEndian.Uint16(data[0:2]))
 		flowMessage.Etype = uint32(binary.BigEndian.Uint16(eType))
 	}
@@ -137,7 +142,7 @@ func Parse8021Q2(flowMessage *ProtoProducerMessage, data []byte, layer, calls in
 	return res, err
 }
 
-func ParseMPLS2(flowMessage *ProtoProducerMessage, data []byte, layer, calls int) (res ParseResult, err error) {
+func ParseMPLS2(flowMessage *ProtoProducerMessage, data []byte, pc ParseConfig) (res ParseResult, err error) {
 	if len(data) < 4 {
 		return res, nil
 	}
@@ -180,7 +185,7 @@ func ParseMPLS2(flowMessage *ProtoProducerMessage, data []byte, layer, calls int
 
 	res.Size = offset
 
-	if calls == 0 { // first time calling
+	if pc.Calls == 0 { // first time calling
 		if len(eType) == 2 {
 			flowMessage.Etype = uint32(binary.BigEndian.Uint16(eType))
 		}
@@ -197,7 +202,7 @@ func ParseMPLS2(flowMessage *ProtoProducerMessage, data []byte, layer, calls int
 	return res, err
 }
 
-func ParseIPv42(flowMessage *ProtoProducerMessage, data []byte, layer, calls int) (res ParseResult, err error) {
+func ParseIPv42(flowMessage *ProtoProducerMessage, data []byte, pc ParseConfig) (res ParseResult, err error) {
 	if len(data) < 20 {
 		return res, nil
 	}
@@ -208,7 +213,7 @@ func ParseIPv42(flowMessage *ProtoProducerMessage, data []byte, layer, calls int
 
 	nextHeader := data[9]
 
-	if calls == 0 { // first time calling
+	if pc.Calls == 0 { // first time calling
 		flowMessage.SrcAddr = data[12:16]
 		flowMessage.DstAddr = data[16:20]
 
@@ -234,7 +239,7 @@ func ParseIPv42(flowMessage *ProtoProducerMessage, data []byte, layer, calls int
 	return res, err
 }
 
-func ParseIPv62(flowMessage *ProtoProducerMessage, data []byte, layer, calls int) (res ParseResult, err error) {
+func ParseIPv62(flowMessage *ProtoProducerMessage, data []byte, pc ParseConfig) (res ParseResult, err error) {
 	if len(data) < 40 {
 		return res, nil
 	}
@@ -245,7 +250,7 @@ func ParseIPv62(flowMessage *ProtoProducerMessage, data []byte, layer, calls int
 
 	nextHeader := data[6]
 
-	if calls == 0 { // first time calling
+	if pc.Calls == 0 { // first time calling
 		flowMessage.SrcAddr = data[8:24]
 		flowMessage.DstAddr = data[24:40]
 
@@ -268,7 +273,7 @@ func ParseIPv62(flowMessage *ProtoProducerMessage, data []byte, layer, calls int
 	return res, err
 }
 
-func ParseIPv6HeaderFragment2(flowMessage *ProtoProducerMessage, data []byte, layer, calls int) (res ParseResult, err error) {
+func ParseIPv6HeaderFragment2(flowMessage *ProtoProducerMessage, data []byte, pc ParseConfig) (res ParseResult, err error) {
 	if len(data) < 8 {
 		return res, nil
 	}
@@ -279,7 +284,7 @@ func ParseIPv6HeaderFragment2(flowMessage *ProtoProducerMessage, data []byte, la
 
 	nextHeader := data[0]
 
-	if calls == 0 { // first time calling
+	if pc.Calls == 0 { // first time calling
 		fragOffset := binary.BigEndian.Uint16(data[2:4]) // also includes flag
 		identification := binary.BigEndian.Uint32(data[4:8])
 
@@ -294,7 +299,7 @@ func ParseIPv6HeaderFragment2(flowMessage *ProtoProducerMessage, data []byte, la
 	return res, err
 }
 
-func ParseIPv6HeaderRouting2(flowMessage *ProtoProducerMessage, data []byte, layer, calls int) (res ParseResult, err error) {
+func ParseIPv6HeaderRouting2(flowMessage *ProtoProducerMessage, data []byte, pc ParseConfig) (res ParseResult, err error) {
 	if len(data) < 8 {
 		return res, nil
 	}
@@ -306,7 +311,7 @@ func ParseIPv6HeaderRouting2(flowMessage *ProtoProducerMessage, data []byte, lay
 
 	// todo: add flowMessage.LayerStack
 
-	if calls == 0 { // first time calling
+	if pc.Calls == 0 { // first time calling
 
 		routingType := data[2]
 		segLeft := data[3]
@@ -336,7 +341,7 @@ func ParseIPv6HeaderRouting2(flowMessage *ProtoProducerMessage, data []byte, lay
 	return res, err
 }
 
-func ParseTCP2(flowMessage *ProtoProducerMessage, data []byte, layer, calls int) (res ParseResult, err error) {
+func ParseTCP2(flowMessage *ProtoProducerMessage, data []byte, pc ParseConfig) (res ParseResult, err error) {
 	if len(data) < 20 {
 		return res, nil
 	}
@@ -347,7 +352,7 @@ func ParseTCP2(flowMessage *ProtoProducerMessage, data []byte, layer, calls int)
 
 	flowMessage.LayerStack = append(flowMessage.LayerStack, 3) // todo: set tcp
 
-	if calls == 0 { // first time calling
+	if pc.Calls == 0 { // first time calling
 		srcPort := binary.BigEndian.Uint16(data[0:2])
 		dstPort := binary.BigEndian.Uint16(data[2:4])
 
@@ -361,7 +366,7 @@ func ParseTCP2(flowMessage *ProtoProducerMessage, data []byte, layer, calls int)
 	return res, err
 }
 
-func ParseUDP2(flowMessage *ProtoProducerMessage, data []byte, layer, calls int) (res ParseResult, err error) {
+func ParseUDP2(flowMessage *ProtoProducerMessage, data []byte, pc ParseConfig) (res ParseResult, err error) {
 	if len(data) < 8 {
 		return res, nil
 	}
@@ -370,7 +375,7 @@ func ParseUDP2(flowMessage *ProtoProducerMessage, data []byte, layer, calls int)
 
 	flowMessage.LayerStack = append(flowMessage.LayerStack, 4) // todo: set udp
 
-	if calls == 0 { // first time calling
+	if pc.Calls == 0 { // first time calling
 		srcPort := binary.BigEndian.Uint16(data[0:2])
 		dstPort := binary.BigEndian.Uint16(data[2:4])
 
@@ -381,7 +386,7 @@ func ParseUDP2(flowMessage *ProtoProducerMessage, data []byte, layer, calls int)
 	return res, err
 }
 
-func ParseGRE2(flowMessage *ProtoProducerMessage, data []byte, layer, calls int) (res ParseResult, err error) {
+func ParseGRE2(flowMessage *ProtoProducerMessage, data []byte, pc ParseConfig) (res ParseResult, err error) {
 	if len(data) < 4 {
 		return res, nil
 	}
@@ -398,7 +403,7 @@ func ParseGRE2(flowMessage *ProtoProducerMessage, data []byte, layer, calls int)
 	return res, err
 }
 
-func ParseICMP2(flowMessage *ProtoProducerMessage, data []byte, layer, calls int) (res ParseResult, err error) {
+func ParseICMP2(flowMessage *ProtoProducerMessage, data []byte, pc ParseConfig) (res ParseResult, err error) {
 	if len(data) < 2 {
 		return res, nil
 	}
@@ -407,7 +412,7 @@ func ParseICMP2(flowMessage *ProtoProducerMessage, data []byte, layer, calls int
 
 	flowMessage.LayerStack = append(flowMessage.LayerStack, 8) // todo: set icmp
 
-	if calls == 0 { // first time calling
+	if pc.Calls == 0 { // first time calling
 		flowMessage.IcmpType = uint32(data[0])
 		flowMessage.IcmpCode = uint32(data[1])
 	}
@@ -415,7 +420,7 @@ func ParseICMP2(flowMessage *ProtoProducerMessage, data []byte, layer, calls int
 	return res, err
 }
 
-func ParseICMPv62(flowMessage *ProtoProducerMessage, data []byte, layer, calls int) (res ParseResult, err error) {
+func ParseICMPv62(flowMessage *ProtoProducerMessage, data []byte, pc ParseConfig) (res ParseResult, err error) {
 	if len(data) < 2 {
 		return res, nil
 	}
@@ -424,7 +429,7 @@ func ParseICMPv62(flowMessage *ProtoProducerMessage, data []byte, layer, calls i
 
 	flowMessage.LayerStack = append(flowMessage.LayerStack, 9) // todo: set icmpv6
 
-	if calls == 0 { // first time calling
+	if pc.Calls == 0 { // first time calling
 		flowMessage.IcmpType = uint32(data[0])
 		flowMessage.IcmpCode = uint32(data[1])
 	}

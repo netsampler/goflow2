@@ -14,7 +14,7 @@ func TestProcessEthernet2(t *testing.T) {
 		"86dd" // etype
 	data, _ := hex.DecodeString(dataStr)
 	var flowMessage ProtoProducerMessage
-	_, err := ParseEthernet2(&flowMessage, data, 0, 0)
+	_, err := ParseEthernet2(&flowMessage, data, ParseConfig{})
 	assert.NoError(t, err)
 
 	b, _ := json.Marshal(flowMessage.FlowMessage)
@@ -27,7 +27,7 @@ func TestProcessDot1Q2(t *testing.T) {
 	dataStr := "00140800"
 	data, _ := hex.DecodeString(dataStr)
 	var flowMessage ProtoProducerMessage
-	_, err := Parse8021Q2(&flowMessage, data, 0, 0)
+	_, err := Parse8021Q2(&flowMessage, data, ParseConfig{})
 	assert.NoError(t, err)
 
 	b, _ := json.Marshal(flowMessage.FlowMessage)
@@ -42,7 +42,7 @@ func TestProcessMPLS(t *testing.T) {
 		"000101ff" // label 2
 	data, _ := hex.DecodeString(dataStr)
 	var flowMessage ProtoProducerMessage
-	_, err := ParseMPLS2(&flowMessage, data, 0, 0)
+	_, err := ParseMPLS2(&flowMessage, data, ParseConfig{})
 	assert.NoError(t, err)
 
 	b, _ := json.Marshal(flowMessage.FlowMessage)
@@ -62,7 +62,7 @@ func TestProcessIPv42(t *testing.T) {
 		"0a000002" // dst
 	data, _ := hex.DecodeString(dataStr)
 	var flowMessage ProtoProducerMessage
-	_, err := ParseIPv42(&flowMessage, data, 0, 0)
+	_, err := ParseIPv42(&flowMessage, data, ParseConfig{})
 	assert.NoError(t, err)
 
 	b, _ := json.Marshal(flowMessage.FlowMessage)
@@ -81,7 +81,7 @@ func TestProcessIPv62(t *testing.T) {
 		"fd010000000000000000000000000002" // dst
 	data, _ := hex.DecodeString(dataStr)
 	var flowMessage ProtoProducerMessage
-	_, err := ParseIPv62(&flowMessage, data, 0, 0)
+	_, err := ParseIPv62(&flowMessage, data, ParseConfig{})
 	assert.NoError(t, err)
 
 	b, _ := json.Marshal(flowMessage.FlowMessage)
@@ -99,7 +99,7 @@ func TestProcessIPv6HeaderFragment2(t *testing.T) {
 
 	data, _ := hex.DecodeString(dataStr)
 	var flowMessage ProtoProducerMessage
-	_, err := ParseIPv6HeaderFragment2(&flowMessage, data, 0, 0)
+	_, err := ParseIPv6HeaderFragment2(&flowMessage, data, ParseConfig{})
 	assert.NoError(t, err)
 
 	b, _ := json.Marshal(flowMessage.FlowMessage)
@@ -114,7 +114,7 @@ func TestProcessIPv6HeaderRouting2(t *testing.T) {
 
 	data, _ := hex.DecodeString(dataStr)
 	var flowMessage ProtoProducerMessage
-	_, err := ParseIPv6HeaderRouting2(&flowMessage, data, 0, 0)
+	_, err := ParseIPv6HeaderRouting2(&flowMessage, data, ParseConfig{})
 	assert.NoError(t, err)
 
 	b, _ := json.Marshal(flowMessage.FlowMessage)
@@ -126,7 +126,7 @@ func TestProcessICMP2(t *testing.T) {
 
 	data, _ := hex.DecodeString(dataStr)
 	var flowMessage ProtoProducerMessage
-	_, err := ParseICMP2(&flowMessage, data, 0, 0)
+	_, err := ParseICMP2(&flowMessage, data, ParseConfig{})
 	assert.NoError(t, err)
 
 	b, _ := json.Marshal(flowMessage.FlowMessage)
@@ -141,7 +141,7 @@ func TestProcessICMPv62(t *testing.T) {
 
 	data, _ := hex.DecodeString(dataStr)
 	var flowMessage ProtoProducerMessage
-	_, err := ParseICMPv62(&flowMessage, data, 0, 0)
+	_, err := ParseICMPv62(&flowMessage, data, ParseConfig{})
 	assert.NoError(t, err)
 
 	b, _ := json.Marshal(flowMessage.FlowMessage)
