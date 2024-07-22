@@ -10,6 +10,11 @@ type ParseConfig struct {
 	Calls int
 }
 
+// BaseLayer indicates if the parser should map to the top-level fields of the protobuf
+func (c *ParseConfig) BaseLayer() bool {
+	return c.Calls == 0
+}
+
 // ParseResult contains information about the next
 type ParseResult struct {
 	NextParser Parser // Next parser to be called
