@@ -109,6 +109,18 @@ func TestProcessIPv6HeaderFragment2(t *testing.T) {
 	assert.Equal(t, uint32(0), flowMessage.FragmentOffset)
 }
 
+func TestProcessIPv6HeaderRouting2(t *testing.T) {
+	dataStr := "29060401020300102001baba0002e00200000000000000002001baba0001000000000000000000002001baba0003e0070000000000000000"
+
+	data, _ := hex.DecodeString(dataStr)
+	var flowMessage ProtoProducerMessage
+	_, err := ParseIPv6HeaderRouting2(&flowMessage, data, 0, 0)
+	assert.NoError(t, err)
+
+	b, _ := json.Marshal(flowMessage.FlowMessage)
+	t.Log(string(b))
+}
+
 func TestProcessICMP2(t *testing.T) {
 	dataStr := "01018cf7000627c4"
 

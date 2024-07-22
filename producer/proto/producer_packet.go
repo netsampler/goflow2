@@ -40,15 +40,17 @@ func NextProtocolParser(proto byte) (Parser, error) {
 	case proto == 1:
 		return ParseICMP2, nil // ICMP
 	case proto == 4:
-		return nil, nil // IPIP
+		return ParseIPv42, nil // IPIP
 	case proto == 6:
 		return ParseTCP2, nil // TCP
 	case proto == 17:
 		return ParseUDP2, nil // UDP
 	case proto == 41:
 		return ParseIPv62, nil // IPv6IP
+	case proto == 43:
+		return ParseIPv6HeaderRouting2, nil // IPv6 EH Fragment
 	case proto == 44:
-		return nil, nil // IPv6 EH Fragment
+		return ParseIPv6HeaderFragment2, nil // IPv6 EH Fragment
 	case proto == 47:
 		return ParseGRE2, nil // GRE
 	case proto == 58:
@@ -273,6 +275,8 @@ func ParseIPv6HeaderFragment2(flowMessage *ProtoProducerMessage, data []byte, la
 
 	res.Size = 8
 
+	// todo: add flowMessage.LayerStack
+
 	nextHeader := data[0]
 
 	if calls == 0 { // first time calling
@@ -282,6 +286,48 @@ func ParseIPv6HeaderFragment2(flowMessage *ProtoProducerMessage, data []byte, la
 		flowMessage.FragmentId = identification
 		flowMessage.FragmentOffset = uint32(fragOffset) >> 3
 		flowMessage.IpFlags = uint32(fragOffset) & 7
+	}
+
+	// get next parser
+	res.NextParser, err = NextProtocolParser(nextHeader)
+
+	return res, err
+}
+
+func ParseIPv6HeaderRouting2(flowMessage *ProtoProducerMessage, data []byte, layer, calls int) (res ParseResult, err error) {
+	if len(data) < 8 {
+		return res, nil
+	}
+
+	nextHeader := data[0]
+	length := data[1]
+
+	res.Size = 8 + 8*int(length)
+
+	// todo: add flowMessage.LayerStack
+
+	if calls == 0 { // first time calling
+
+		routingType := data[2]
+		segLeft := data[3]
+
+		if routingType == 4 { // Segment Routing
+
+			lastEntry := data[4]
+			var offset int
+			var entry int
+
+			for 8+offset < res.Size &&
+				8+offset+16 <= len(data) &&
+				entry <= int(lastEntry) {
+
+				addr := data[8+offset : 8+offset+16]
+				fmt.Printf("SRv6 IP %x (%d %d %d %d)\n", addr, offset, entry, lastEntry, segLeft)
+				offset += 16
+				entry++
+			}
+		}
+
 	}
 
 	// get next parser
