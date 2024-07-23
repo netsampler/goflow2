@@ -21,6 +21,12 @@ type ParseResult struct {
 	Size       int    // Size of the layer
 }
 
+type ParserInfo struct {
+	Parser         Parser
+	ConfigKeyList  []string
+	CounterKeyList []string
+}
+
 // Parser is a function that maps various items of a layer to a ProtoProducerMessage
 type Parser func(flowMessage *ProtoProducerMessage, data []byte, pc ParseConfig) (res ParseResult, err error)
 
@@ -71,6 +77,9 @@ func NextProtocolParser(proto byte) (Parser, error) {
 	return nil, nil
 }
 
+func parserToStack(p Parser) {
+}
+
 func NextPortParser(srcPort, dstPort uint16) (Parser, error) {
 	// Parser for GRE, Teredo, etc.
 	// note: must depend on user configuration
@@ -105,7 +114,7 @@ func ParseEthernet2(flowMessage *ProtoProducerMessage, data []byte, pc ParseConf
 
 	res.Size = 14
 
-	flowMessage.LayerStack = append(flowMessage.LayerStack, 0) // todo: set ethernet
+	flowMessage.AddLayer("Ethernet")
 
 	dstMac := binary.BigEndian.Uint64(append([]byte{0, 0}, data[0:6]...))
 	srcMac := binary.BigEndian.Uint64(append([]byte{0, 0}, data[6:12]...))
@@ -132,7 +141,7 @@ func Parse8021Q2(flowMessage *ProtoProducerMessage, data []byte, pc ParseConfig)
 
 	res.Size = 4
 
-	flowMessage.LayerStack = append(flowMessage.LayerStack, 6) // todo: set dot1q
+	flowMessage.AddLayer("Dot1Q")
 
 	eType := data[2:4]
 
@@ -152,7 +161,7 @@ func ParseMPLS2(flowMessage *ProtoProducerMessage, data []byte, pc ParseConfig) 
 		return res, nil
 	}
 
-	flowMessage.LayerStack = append(flowMessage.LayerStack, 5) // todo: set mpls
+	flowMessage.AddLayer("MPLS")
 
 	var eType []byte
 	var mplsLabel, mplsTtl []uint32
@@ -214,7 +223,7 @@ func ParseIPv42(flowMessage *ProtoProducerMessage, data []byte, pc ParseConfig) 
 
 	res.Size = 20
 
-	flowMessage.LayerStack = append(flowMessage.LayerStack, 1) // todo: set ipv4
+	flowMessage.AddLayer("IPv4")
 
 	nextHeader := data[9]
 
@@ -251,7 +260,7 @@ func ParseIPv62(flowMessage *ProtoProducerMessage, data []byte, pc ParseConfig) 
 
 	res.Size = 40
 
-	flowMessage.LayerStack = append(flowMessage.LayerStack, 2) // todo: set ipv6
+	flowMessage.AddLayer("IPv6")
 
 	nextHeader := data[6]
 
@@ -355,7 +364,7 @@ func ParseTCP2(flowMessage *ProtoProducerMessage, data []byte, pc ParseConfig) (
 
 	res.Size = 20 + length
 
-	flowMessage.LayerStack = append(flowMessage.LayerStack, 3) // todo: set tcp
+	flowMessage.AddLayer("TCP")
 
 	if pc.Calls == 0 { // first time calling
 		srcPort := binary.BigEndian.Uint16(data[0:2])
@@ -378,7 +387,7 @@ func ParseUDP2(flowMessage *ProtoProducerMessage, data []byte, pc ParseConfig) (
 
 	res.Size = 8
 
-	flowMessage.LayerStack = append(flowMessage.LayerStack, 4) // todo: set udp
+	flowMessage.AddLayer("UDP")
 
 	if pc.Calls == 0 { // first time calling
 		srcPort := binary.BigEndian.Uint16(data[0:2])
@@ -398,7 +407,7 @@ func ParseGRE2(flowMessage *ProtoProducerMessage, data []byte, pc ParseConfig) (
 
 	res.Size = 4
 
-	flowMessage.LayerStack = append(flowMessage.LayerStack, 10) // todo: set gre
+	flowMessage.AddLayer("GRE")
 
 	eType := data[2:4]
 
@@ -415,7 +424,7 @@ func ParseICMP2(flowMessage *ProtoProducerMessage, data []byte, pc ParseConfig) 
 
 	res.Size = 8
 
-	flowMessage.LayerStack = append(flowMessage.LayerStack, 8) // todo: set icmp
+	flowMessage.AddLayer("ICMP")
 
 	if pc.Calls == 0 { // first time calling
 		flowMessage.IcmpType = uint32(data[0])
@@ -432,7 +441,7 @@ func ParseICMPv62(flowMessage *ProtoProducerMessage, data []byte, pc ParseConfig
 
 	res.Size = 8
 
-	flowMessage.LayerStack = append(flowMessage.LayerStack, 9) // todo: set icmpv6
+	flowMessage.AddLayer("ICMPv6")
 
 	if pc.Calls == 0 { // first time calling
 		flowMessage.IcmpType = uint32(data[0])

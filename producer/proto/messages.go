@@ -27,6 +27,12 @@ var protoMessagePool = sync.Pool{
 	},
 }
 
+func (m *ProtoProducerMessage) AddLayer(name string) (ok bool) {
+	value, ok := flowmessage.FlowMessage_LayerStack_value[name]
+	m.LayerStack = append(m.LayerStack, flowmessage.FlowMessage_LayerStack(value))
+	return ok
+}
+
 func (m *ProtoProducerMessage) MarshalBinary() ([]byte, error) {
 	buf := bytes.NewBuffer([]byte{})
 	_, err := protodelim.MarshalTo(buf, m)
