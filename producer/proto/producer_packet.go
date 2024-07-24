@@ -5,14 +5,96 @@ import (
 	"fmt"
 )
 
+const (
+	parserEthernet = iota
+	parser8021Q
+	parserMPLS
+	parserIPv4
+	parserIPv6
+	parserIPv6HeaderFragment
+	parserIPv6HeaderRouting
+	parserTCP
+	parserUDP
+	parserICMP
+	parserICMPv6
+	parserGRE
+)
+
+var (
+	parserIndexMap = map[int]ParserInfo{
+		parserEthernet: ParserInfo{
+			ParseEthernet2,
+			[]string{"ethernet", "2"},
+			20,
+		},
+		parser8021Q: ParserInfo{
+			Parse8021Q2,
+			[]string{"dot1q"},
+			25,
+		},
+		parserMPLS: ParserInfo{
+			ParseMPLS2,
+			[]string{"mpls"},
+			25,
+		},
+		parserIPv4: ParserInfo{
+			ParseIPv42,
+			[]string{"ipv4", "ip", "3"},
+			30,
+		},
+		parserIPv6: ParserInfo{
+			ParseIPv62,
+			[]string{"ipv6", "ip", "3"},
+			30,
+		},
+		parserIPv6HeaderFragment: ParserInfo{
+			ParseIPv6HeaderFragment2,
+			[]string{"ipv6he_fragment", "ipv6he"},
+			30,
+		},
+		parserIPv6HeaderRouting: ParserInfo{
+			ParseIPv6HeaderRouting2,
+			[]string{"ipv6he_routing", "ipv6he"},
+			30,
+		},
+		parserTCP: ParserInfo{
+			ParseTCP2,
+			[]string{"tcp", "4"},
+			40,
+		},
+		parserUDP: ParserInfo{
+			ParseUDP2,
+			[]string{"udp", "4"},
+			40,
+		},
+		parserICMP: ParserInfo{
+			ParseICMP2,
+			[]string{"icmp"},
+			70,
+		},
+		parserICMPv6: ParserInfo{
+			ParseICMPv62,
+			[]string{"icmpv6"},
+			70,
+		},
+		parserGRE: ParserInfo{
+			ParseGRE2,
+			[]string{"gre"},
+			40,
+		},
+	}
+)
+
 type ParseConfig struct {
-	Layer int
-	Calls int
+	Layer        int  // absolute index of the layer
+	Calls        int  // number of times the function was called
+	LayerCall    int  // number of times a function in a layer (eg: Transport) was called
+	Encapsulated bool // indicates if outside the typical mac-network-transport
 }
 
 // BaseLayer indicates if the parser should map to the top-level fields of the protobuf
 func (c *ParseConfig) BaseLayer() bool {
-	return c.Calls == 0
+	return c.LayerCall == 0
 }
 
 // ParseResult contains information about the next
@@ -22,9 +104,9 @@ type ParseResult struct {
 }
 
 type ParserInfo struct {
-	Parser         Parser
-	ConfigKeyList  []string
-	CounterKeyList []string
+	Parser        Parser
+	ConfigKeyList []string // keys to match for custom parsing
+	LayerIndex    int      // index to group
 }
 
 // Parser is a function that maps various items of a layer to a ProtoProducerMessage
