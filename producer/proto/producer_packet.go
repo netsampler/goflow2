@@ -5,85 +5,95 @@ import (
 	"fmt"
 )
 
-const (
-	parserEthernet = iota
-	parser8021Q
-	parserMPLS
-	parserIPv4
-	parserIPv6
-	parserIPv6HeaderFragment
-	parserIPv6HeaderRouting
-	parserTCP
-	parserUDP
-	parserICMP
-	parserICMPv6
-	parserGRE
-)
-
 var (
-	parserIndexMap = map[int]ParserInfo{
-		parserEthernet: ParserInfo{
-			ParseEthernet2,
-			[]string{"ethernet", "2"},
-			20,
-		},
-		parser8021Q: ParserInfo{
-			Parse8021Q2,
-			[]string{"dot1q"},
-			25,
-		},
-		parserMPLS: ParserInfo{
-			ParseMPLS2,
-			[]string{"mpls"},
-			25,
-		},
-		parserIPv4: ParserInfo{
-			ParseIPv42,
-			[]string{"ipv4", "ip", "3"},
-			30,
-		},
-		parserIPv6: ParserInfo{
-			ParseIPv62,
-			[]string{"ipv6", "ip", "3"},
-			30,
-		},
-		parserIPv6HeaderFragment: ParserInfo{
-			ParseIPv6HeaderFragment2,
-			[]string{"ipv6he_fragment", "ipv6he"},
-			30,
-		},
-		parserIPv6HeaderRouting: ParserInfo{
-			ParseIPv6HeaderRouting2,
-			[]string{"ipv6he_routing", "ipv6he"},
-			30,
-		},
-		parserTCP: ParserInfo{
-			ParseTCP2,
-			[]string{"tcp", "4"},
-			40,
-		},
-		parserUDP: ParserInfo{
-			ParseUDP2,
-			[]string{"udp", "4"},
-			40,
-		},
-		parserICMP: ParserInfo{
-			ParseICMP2,
-			[]string{"icmp"},
-			70,
-		},
-		parserICMPv6: ParserInfo{
-			ParseICMPv62,
-			[]string{"icmpv6"},
-			70,
-		},
-		parserGRE: ParserInfo{
-			ParseGRE2,
-			[]string{"gre"},
-			40,
-		},
+	parserNone = ParserInfo{
+		nil,
+		nil,
+		100,
+	}
+	parserPayload = ParserInfo{
+		nil,
+		[]string{"payload", "7"},
+		100,
+	}
+
+	parserEthernet = ParserInfo{
+		nil, //ParseEthernet2,
+		[]string{"ethernet", "2"},
+		20,
+	}
+	parser8021Q = ParserInfo{
+		nil, //Parse8021Q2,
+		[]string{"dot1q"},
+		25,
+	}
+	parserMPLS = ParserInfo{
+		nil, //ParseMPLS2,
+		[]string{"mpls"},
+		25,
+	}
+	parserIPv4 = ParserInfo{
+		nil, //ParseIPv42,
+		[]string{"ipv4", "ip", "3"},
+		30,
+	}
+	parserIPv6 = ParserInfo{
+		nil, //ParseIPv62,
+		[]string{"ipv6", "ip", "3"},
+		30,
+	}
+	parserIPv6HeaderFragment = ParserInfo{
+		nil, //ParseIPv6HeaderFragment2,
+		[]string{"ipv6he_fragment", "ipv6he"},
+		30,
+	}
+	parserIPv6HeaderRouting = ParserInfo{
+		nil, //ParseIPv6HeaderRouting2,
+		[]string{"ipv6he_routing", "ipv6he"},
+		30,
+	}
+	parserTCP = ParserInfo{
+		nil, //ParseTCP2,
+		[]string{"tcp", "4"},
+		40,
+	}
+	parserUDP = ParserInfo{
+		nil, //ParseUDP2,
+		[]string{"udp", "4"},
+		40,
+	}
+	parserICMP = ParserInfo{
+		nil, //ParseICMP2,
+		[]string{"icmp"},
+		70,
+	}
+	parserICMPv6 = ParserInfo{
+		nil, //ParseICMPv62,
+		[]string{"icmpv6"},
+		70,
+	}
+	parserGRE = ParserInfo{
+		nil, //ParseGRE2,
+		[]string{"gre"},
+		40,
 	}
 )
+
+func init() {
+	// necessary to set here otherwise initialization loop compilation error
+	parserEthernet.Parser = ParseEthernet2
+	parser8021Q.Parser = Parse8021Q2
+	parserMPLS.Parser = ParseMPLS2
+	parserIPv4.Parser = ParseIPv42
+	parserIPv6.Parser = ParseIPv62
+	parserIPv6HeaderFragment.Parser = ParseIPv6HeaderFragment2
+	parserIPv6HeaderRouting.Parser = ParseIPv6HeaderRouting2
+	parserTCP.Parser = ParseTCP2
+	parserUDP.Parser = ParseUDP2
+	parserICMP.Parser = ParseICMP2
+	parserICMPv6.Parser = ParseICMPv62
+	parserGRE.Parser = ParseGRE2
+}
 
 type ParseConfig struct {
 	Layer        int  // absolute index of the layer
@@ -94,13 +104,13 @@ type ParseConfig struct {
 
 // BaseLayer indicates if the parser should map to the top-level fields of the protobuf
 func (c *ParseConfig) BaseLayer() bool {
-	return c.LayerCall == 0
+	return !c.Encapsulated
 }
 
 // ParseResult contains information about the next
 type ParseResult struct {
-	NextParser Parser // Next parser to be called
-	Size       int    // Size of the layer
+	NextParser ParserInfo // Next parser to be called
+	Size       int        // Size of the layer
 }
 
 type ParserInfo struct {
@@ -112,78 +122,93 @@ type ParserInfo struct {
 // Parser is a function that maps various items of a layer to a ProtoProducerMessage
 type Parser func(flowMessage *ProtoProducerMessage, data []byte, pc ParseConfig) (res ParseResult, err error)
 
-func NextParserEtype(etherType []byte) (Parser, error) {
+func NextParserEtype(etherType []byte) (ParserInfo, error) {
 	if len(etherType) != 2 {
-		return nil, fmt.Errorf("wrong ether type")
+		return parserNone, fmt.Errorf("wrong ether type")
 	}
 	switch {
 	case etherType[0] == 0x19 && etherType[1] == 0x9e:
-		return ParseEthernet2, nil // Transparent Ether Bridging (GRE)
+		return parserEthernet, nil // Transparent Ether Bridging (GRE)
 	case etherType[0] == 0x88 && etherType[1] == 0x47:
-		return ParseMPLS2, nil // MPLS
+		return parserMPLS, nil // MPLS
 	case etherType[0] == 0x81 && etherType[1] == 0x0:
-		return Parse8021Q2, nil // 802.1q
+		return parser8021Q, nil // 802.1q
 	case etherType[0] == 0x8 && etherType[1] == 0x0:
-		return ParseIPv42, nil // IPv4
+		return parserIPv4, nil // IPv4
 	case etherType[0] == 0x86 && etherType[1] == 0xdd:
-		return ParseIPv62, nil // IPv6
+		return parserIPv6, nil // IPv6
 	case etherType[0] == 0x8 && etherType[1] == 0x6:
-		return nil, nil // ARP
+		// ARP
 	}
-	return nil, nil
+	return parserNone, nil
 }
 
-func NextProtocolParser(proto byte) (Parser, error) {
+func NextProtocolParser(proto byte) (ParserInfo, error) {
 	switch {
 	case proto == 1:
-		return ParseICMP2, nil // ICMP
+		return parserICMP, nil // ICMP
 	case proto == 4:
-		return ParseIPv42, nil // IPIP
+		return parserIPv4, nil // IPIP
 	case proto == 6:
-		return ParseTCP2, nil // TCP
+		return parserTCP, nil // TCP
 	case proto == 17:
-		return ParseUDP2, nil // UDP
+		return parserUDP, nil // UDP
 	case proto == 41:
-		return ParseIPv62, nil // IPv6IP
+		return parserIPv6, nil // IPv6IP
 	case proto == 43:
-		return ParseIPv6HeaderRouting2, nil // IPv6 EH Fragment
+		return parserIPv6HeaderRouting, nil // IPv6 EH Routing
 	case proto == 44:
-		return ParseIPv6HeaderFragment2, nil // IPv6 EH Fragment
+		return parserIPv6HeaderFragment, nil // IPv6 EH Fragment
 	case proto == 47:
-		return ParseGRE2, nil // GRE
+		return parserGRE, nil // GRE
 	case proto == 58:
-		return ParseICMPv62, nil // ICMPv6
+		return parserICMPv6, nil // ICMPv6
 	case proto == 115:
-		return nil, nil // L2TP
+		// L2TP
 	}
-	return nil, nil
+	return parserNone, nil
 }
 
-func parserToStack(p Parser) {
-}
-
-func NextPortParser(srcPort, dstPort uint16) (Parser, error) {
+func NextPortParser(srcPort, dstPort uint16) (ParserInfo, error) {
 	// Parser for GRE, Teredo, etc.
 	// note: must depend on user configuration
-	return nil, nil
+	return parserNone, nil
 }
 
 func ParsePacket(flowMessage *ProtoProducerMessage, data []byte, config *SFlowMapper) (err error) {
 	var offset int
 
-	var nextParser Parser
+	var nextParser ParserInfo
+	var parseConfig ParseConfig
 
-	nextParser = ParseEthernet2 // initial parser
+	nextParser = parserEthernet // initial parser
 	//calls := make(map[interface{}]int) // indicates number of times the parser was called
 
-	for nextParser != nil && len(data) >= offset { // check that a next parser exists and there is enough data to read
+	for nextParser.Parser != nil && len(data) >= offset { // check that a next parser exists and there is enough data to read
 		// calls[nextParser]
-		res, err := nextParser(flowMessage, data[offset:], ParseConfig{})
+		res, err := nextParser.Parser(flowMessage, data[offset:], parseConfig)
+		parseConfig.Layer += 1
 		//calls[nextParser] += 1
 		if err != nil {
 			return err
 		}
+
+		// Map custom fields
+		for key := range nextParser.ConfigKeyList {
+			for _, configLayer := range GetSFlowConfigLayer(config, nextParser.ConfigKeyList[key]) {
+				extracted := GetBytes(data, offset*8+configLayer.Offset, configLayer.Length)
+				if err := MapCustom(flowMessage, extracted, configLayer.MapConfigBase); err != nil {
+					return err
+				}
+			}
+		}
+
+		if res.NextParser.LayerIndex < nextParser.LayerIndex {
+			parseConfig.Encapsulated = true
+		}
+
 		nextParser = res.NextParser
+
 		offset += res.Size
 	}
 	return nil
@@ -203,7 +228,7 @@ func ParseEthernet2(flowMessage *ProtoProducerMessage, data []byte, pc ParseConf
 
 	eType := data[12:14]
 
-	if pc.Calls == 0 { // first time calling
+	if pc.BaseLayer() { // first time calling
 		flowMessage.SrcMac = srcMac
 		flowMessage.DstMac = dstMac
 		flowMessage.Etype = uint32(binary.BigEndian.Uint16(eType))
@@ -227,7 +252,7 @@ func Parse8021Q2(flowMessage *ProtoProducerMessage, data []byte, pc ParseConfig)
 
 	eType := data[2:4]
 
-	if pc.Calls == 0 { // first time calling
+	if pc.BaseLayer() { // first time calling
 		flowMessage.VlanId = uint32(binary.BigEndian.Uint16(data[0:2]))
 		flowMessage.Etype = uint32(binary.BigEndian.Uint16(eType))
 	}
@@ -281,7 +306,7 @@ func ParseMPLS2(flowMessage *ProtoProducerMessage, data []byte, pc ParseConfig) 
 
 	res.Size = offset
 
-	if pc.Calls == 0 { // first time calling
+	if pc.BaseLayer() { // first time calling
 		if len(eType) == 2 {
 			flowMessage.Etype = uint32(binary.BigEndian.Uint16(eType))
 		}
@@ -309,7 +334,7 @@ func ParseIPv42(flowMessage *ProtoProducerMessage, data []byte, pc ParseConfig) 
 
 	nextHeader := data[9]
 
-	if pc.Calls == 0 { // first time calling
+	if pc.BaseLayer() { // first time calling
 		flowMessage.SrcAddr = data[12:16]
 		flowMessage.DstAddr = data[16:20]
 
@@ -346,7 +371,7 @@ func ParseIPv62(flowMessage *ProtoProducerMessage, data []byte, pc ParseConfig) 
 
 	nextHeader := data[6]
 
-	if pc.Calls == 0 { // first time calling
+	if pc.BaseLayer() { // first time calling
 		flowMessage.SrcAddr = data[8:24]
 		flowMessage.DstAddr = data[24:40]
 
@@ -380,7 +405,7 @@ func ParseIPv6HeaderFragment2(flowMessage *ProtoProducerMessage, data []byte, pc
 
 	nextHeader := data[0]
 
-	if pc.Calls == 0 { // first time calling
+	if pc.BaseLayer() { // first time calling
 		fragOffset := binary.BigEndian.Uint16(data[2:4]) // also includes flag
 		identification := binary.BigEndian.Uint32(data[4:8])
 
@@ -407,7 +432,7 @@ func ParseIPv6HeaderRouting2(flowMessage *ProtoProducerMessage, data []byte, pc 
 
 	// todo: add flowMessage.LayerStack
 
-	if pc.Calls == 0 { // first time calling
+	if pc.BaseLayer() { // first time calling
 
 		routingType := data[2]
 		segLeft := data[3]
@@ -448,7 +473,7 @@ func ParseTCP2(flowMessage *ProtoProducerMessage, data []byte, pc ParseConfig) (
 
 	flowMessage.AddLayer("TCP")
 
-	if pc.Calls == 0 { // first time calling
+	if pc.BaseLayer() { // first time calling
 		srcPort := binary.BigEndian.Uint16(data[0:2])
 		dstPort := binary.BigEndian.Uint16(data[2:4])
 
@@ -471,7 +496,7 @@ func ParseUDP2(flowMessage *ProtoProducerMessage, data []byte, pc ParseConfig) (
 
 	flowMessage.AddLayer("UDP")
 
-	if pc.Calls == 0 { // first time calling
+	if pc.BaseLayer() { // first time calling
 		srcPort := binary.BigEndian.Uint16(data[0:2])
 		dstPort := binary.BigEndian.Uint16(data[2:4])
 
