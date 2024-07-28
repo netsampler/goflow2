@@ -59,12 +59,14 @@ func GetBytes(d []byte, offset int, length int) []byte {
 	return chunk
 }
 
+// Using a data slice, returns a chunk corresponding
 func GetBytes2(d []byte, offset, length int, shift bool) []byte {
 
 	/*
 
 		Example with an offset of 4 and length of 6
 
+		initial data:
 		0xAA 0x55
 		  1010 1010.0101 0101
 		       ^--- -^
@@ -107,6 +109,7 @@ func GetBytes2(d []byte, offset, length int, shift bool) []byte {
 	}
 
 	dUsed := d[start:end]
+
 	if shiftSize == 0 && length%8 == 0 { // simple case
 		if missing > 0 {
 			dFinal := make([]byte, lengthB)

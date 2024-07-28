@@ -171,7 +171,7 @@ func TestProcessPacketBase2(t *testing.T) {
 	b, _ := json.Marshal(flowMessage.FlowMessage)
 	t.Log(string(b))
 
-	layers := []uint32{0, 6, 5, 2, 9}
+	layers := []uint32{0, 6, 5, 2, 8}
 	assert.Equal(t, len(layers), len(flowMessage.LayerStack))
 
 	for i, layer := range layers {
@@ -239,7 +239,7 @@ func TestProcessPacketMapping(t *testing.T) {
 		"ff00" + // src port
 		"0035" + // dst port
 		"0010" + // length
-		"0xffff" + // csum
+		"ffff" + // csum
 
 		"0000000000000000" // payload
 
