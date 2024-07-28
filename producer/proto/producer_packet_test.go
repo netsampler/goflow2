@@ -1,6 +1,8 @@
 package protoproducer
 
 import (
+	"encoding/base64"
+
 	"encoding/hex"
 	"encoding/json"
 	"testing"
@@ -165,6 +167,7 @@ func TestProcessPacketBase2(t *testing.T) {
 
 	data, _ := hex.DecodeString(dataStr)
 	var flowMessage ProtoProducerMessage
+
 	err := ParsePacket(&flowMessage, data, nil)
 	assert.NoError(t, err)
 
@@ -223,6 +226,21 @@ func TestProcessPacketGRE2(t *testing.T) {
 
 }
 
+type testProtoProducerMessage struct {
+	ProtoProducerMessage
+	t *testing.T
+}
+
+func (m *testProtoProducerMessage) MapCustom(key string, v []byte, cfg MapConfigBase) error {
+	m.t.Log("mapping", key, v)
+	return m.ProtoProducerMessage.MapCustom(key, v, MapConfigBase{
+		Endianness: BigEndian,
+		ProtoIndex: 999,
+		ProtoType:  ProtoVarint,
+		ProtoArray: false,
+	})
+}
+
 func TestProcessPacketMapping(t *testing.T) {
 	dataStr := "005300000001" + // src mac
 		"005300000002" + // dst mac
@@ -257,13 +275,15 @@ func TestProcessPacketMapping(t *testing.T) {
 	configm := mapFieldsSFlow(config.Mapping)
 
 	data, _ := hex.DecodeString(dataStr)
-	var flowMessage ProtoProducerMessage
+	flowMessage := testProtoProducerMessage{
+		t: t,
+	}
+
 	err := ParsePacket(&flowMessage, data, configm)
 	assert.NoError(t, err)
 
 	b, _ := json.Marshal(flowMessage.FlowMessage)
 	t.Log(string(b))
-
 }
 
 // Legacy

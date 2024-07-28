@@ -10,72 +10,86 @@ var (
 		nil,
 		nil,
 		100,
+		9999,
 	}
 	parserPayload = ParserInfo{
 		nil,
 		[]string{"payload", "7"},
 		100,
+		9998,
 	}
 
 	parserEthernet = ParserInfo{
 		nil, //ParseEthernet2,
 		[]string{"ethernet", "2"},
 		20,
+		1,
 	}
 	parser8021Q = ParserInfo{
 		nil, //Parse8021Q2,
 		[]string{"dot1q"},
 		25,
+		2,
 	}
 	parserMPLS = ParserInfo{
 		nil, //ParseMPLS2,
 		[]string{"mpls"},
 		25,
+		3,
 	}
 	parserIPv4 = ParserInfo{
 		nil, //ParseIPv42,
 		[]string{"ipv4", "ip", "3"},
 		30,
+		4,
 	}
 	parserIPv6 = ParserInfo{
 		nil, //ParseIPv62,
 		[]string{"ipv6", "ip", "3"},
 		30,
+		5,
 	}
 	parserIPv6HeaderFragment = ParserInfo{
 		nil, //ParseIPv6HeaderFragment2,
 		[]string{"ipv6he_fragment", "ipv6he"},
 		30,
+		6,
 	}
 	parserIPv6HeaderRouting = ParserInfo{
 		nil, //ParseIPv6HeaderRouting2,
 		[]string{"ipv6he_routing", "ipv6he"},
 		30,
+		7,
 	}
 	parserTCP = ParserInfo{
 		nil, //ParseTCP2,
 		[]string{"tcp", "4"},
 		40,
+		8,
 	}
 	parserUDP = ParserInfo{
 		nil, //ParseUDP2,
 		[]string{"udp", "4"},
 		40,
+		9,
 	}
 	parserICMP = ParserInfo{
 		nil, //ParseICMP2,
 		[]string{"icmp"},
 		70,
+		10,
 	}
 	parserICMPv6 = ParserInfo{
 		nil, //ParseICMPv62,
 		[]string{"icmpv6"},
 		70,
+		11,
 	}
 	parserGRE = ParserInfo{
 		nil, //ParseGRE2,
 		[]string{"gre"},
 		40,
+		12,
 	}
 )
 
@@ -97,8 +111,8 @@ func init() {
 
 type ParseConfig struct {
 	Layer        int  // absolute index of the layer
-	Calls        int  // number of times the function was called
-	LayerCall    int  // number of times a function in a layer (eg: Transport) was called
+	Calls        int  // number of times the function was called (using parser index)
+	LayerCall    int  // number of times a function in a layer (eg: Transport) was called (using layer index)
 	Encapsulated bool // indicates if outside the typical mac-network-transport
 }
 
@@ -117,6 +131,7 @@ type ParserInfo struct {
 	Parser        Parser
 	ConfigKeyList []string // keys to match for custom parsing
 	LayerIndex    int      // index to group
+	ParserIndex   int      // unique parser index
 }
 
 // Parser is a function that maps various items of a layer to a ProtoProducerMessage
@@ -175,29 +190,31 @@ func NextPortParser(srcPort, dstPort uint16) (ParserInfo, error) {
 	return parserNone, nil
 }
 
-func ParsePacket(flowMessage *ProtoProducerMessage, data []byte, config *SFlowMapper) (err error) {
+func ParsePacket(flowMessage ProtoProducerMessageIf, data []byte, config *SFlowMapper) (err error) {
 	var offset int
 
 	var nextParser ParserInfo
 	var parseConfig ParseConfig
 
 	nextParser = parserEthernet // initial parser
-	//calls := make(map[interface{}]int) // indicates number of times the parser was called
+	callsLayer := make(map[int]int)
+	calls := make(map[int]int)
 
 	for nextParser.Parser != nil && len(data) >= offset { // check that a next parser exists and there is enough data to read
-		// calls[nextParser]
-		res, err := nextParser.Parser(flowMessage, data[offset:], parseConfig)
+		parseConfig.Calls = calls[nextParser.ParserIndex]
+		parseConfig.LayerCall = callsLayer[nextParser.LayerIndex]
+		res, err := nextParser.Parser(flowMessage.GetFlowMessage(), data[offset:], parseConfig)
 		parseConfig.Layer += 1
-		//calls[nextParser] += 1
 		if err != nil {
 			return err
 		}
 
 		// Map custom fields
 		for key := range nextParser.ConfigKeyList {
-			for _, configLayer := range GetSFlowConfigLayer(config, nextParser.ConfigKeyList[key]) {
+			configKey := nextParser.ConfigKeyList[key]
+			for _, configLayer := range GetSFlowConfigLayer(config, configKey) {
 				extracted := GetBytes2(data, offset*8+configLayer.Offset, configLayer.Length, true)
-				if err := MapCustom(flowMessage, extracted, configLayer.MapConfigBase); err != nil {
+				if err := flowMessage.MapCustom(configKey, extracted, configLayer.MapConfigBase); err != nil {
 					return err
 				}
 			}
@@ -208,6 +225,8 @@ func ParsePacket(flowMessage *ProtoProducerMessage, data []byte, config *SFlowMa
 		}
 
 		nextParser = res.NextParser
+		calls[nextParser.ParserIndex] += 1
+		callsLayer[nextParser.LayerIndex] += 1
 
 		offset += res.Size
 	}

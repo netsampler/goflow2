@@ -11,20 +11,37 @@ import (
 
 	"google.golang.org/protobuf/encoding/protodelim"
 	"google.golang.org/protobuf/encoding/protowire"
+	"google.golang.org/protobuf/proto"
 
 	flowmessage "github.com/netsampler/goflow2/v2/pb"
 )
+
+// ProtoProducerMessageIf interface to a flow message, used by parsers and tests
+type ProtoProducerMessageIf interface {
+	GetFlowMessage() *ProtoProducerMessage                   // access the underlying structure
+	MapCustom(key string, v []byte, cfg MapConfigBase) error // inject custom field
+}
 
 type ProtoProducerMessage struct {
 	flowmessage.FlowMessage
 
 	formatter *FormatterConfigMapper
+
+	skipDelimiter bool
 }
 
 var protoMessagePool = sync.Pool{
 	New: func() any {
 		return &ProtoProducerMessage{}
 	},
+}
+
+func (m *ProtoProducerMessage) GetFlowMessage() *ProtoProducerMessage {
+	return m
+}
+
+func (m *ProtoProducerMessage) MapCustom(key string, v []byte, cfg MapConfigBase) error {
+	return MapCustom(m, v, cfg)
 }
 
 func (m *ProtoProducerMessage) AddLayer(name string) (ok bool) {
@@ -35,8 +52,13 @@ func (m *ProtoProducerMessage) AddLayer(name string) (ok bool) {
 
 func (m *ProtoProducerMessage) MarshalBinary() ([]byte, error) {
 	buf := bytes.NewBuffer([]byte{})
-	_, err := protodelim.MarshalTo(buf, m)
-	return buf.Bytes(), err
+	if m.skipDelimiter {
+		b, err := proto.Marshal(m)
+		return b, err
+	} else {
+		_, err := protodelim.MarshalTo(buf, m)
+		return buf.Bytes(), err
+	}
 }
 
 func (m *ProtoProducerMessage) MarshalText() ([]byte, error) {
