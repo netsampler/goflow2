@@ -27,7 +27,7 @@ type ProtoProducerMessage struct {
 
 	formatter *FormatterConfigMapper
 
-	skipDelimiter bool
+	skipDelimiter bool // for binary marshalling, skips the varint prefix
 }
 
 var protoMessagePool = sync.Pool{

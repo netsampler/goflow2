@@ -286,6 +286,112 @@ func TestProcessPacketMapping(t *testing.T) {
 	t.Log(string(b))
 }
 
+func TestProcessPacketMappingEncap(t *testing.T) {
+	dataStr := "005300000001" + // src mac
+		"005300000002" + // dst mac
+		"86dd" + // etype
+
+		"6001010104d82b40" + // ipv6
+		"fd010000000000000000000000000001" + // src
+		"fd010000000000000000000000000002" + // dst
+
+		"04060401020300102001baba0002e00200000000000000002001baba0001000000000000000000002001baba0003e0070000000000000000" + // srv6
+
+		"45000064" + // ipv4
+		"abab" + // id
+		"0000ff11" + // flag, ttl, proto
+		"aaaa" + // csum
+		"0a000001" + // src
+		"0a000002" + // dst
+
+		// udp
+		"ff00" + // src port
+		"0035" + // dst port
+		"0010" + // length
+		"ffff" + // csum
+
+		"0000000000000000" // payload
+
+	config := ProducerConfig{
+		Formatter: FormatterConfig{
+			Render: map[string]RendererID{
+				"src_ip_encap": RendererIP,
+				"dst_ip_encap": RendererIP,
+			},
+			Fields: []string{
+				"src_ip_encap",
+				"dst_ip_encap",
+			},
+			Protobuf: []ProtobufFormatterConfig{
+				ProtobufFormatterConfig{
+					Name:  "src_ip_encap",
+					Index: 998,
+					Type:  "string",
+					Array: true,
+				},
+				ProtobufFormatterConfig{
+					Name:  "dst_ip_encap",
+					Index: 999,
+					Type:  "string",
+					Array: true,
+				},
+			},
+		},
+		SFlow: SFlowProducerConfig{
+			Mapping: []SFlowMapField{
+				SFlowMapField{
+					Layer:  "ipv6",
+					Offset: 64,
+					Length: 128,
+					// todo: encap
+
+					Destination: "src_ip_encap",
+				},
+				SFlowMapField{
+					Layer:  "ipv6",
+					Offset: 192,
+					Length: 128,
+
+					Destination: "dst_ip_encap",
+				},
+
+				SFlowMapField{
+					Layer:  "ipv4",
+					Offset: 96,
+					Length: 32,
+
+					Destination: "src_ip_encap",
+				},
+				SFlowMapField{
+					Layer:  "ipv4",
+					Offset: 128,
+					Length: 32,
+
+					Destination: "dst_ip_encap",
+				},
+			},
+		},
+	}
+	configm, _ := mapConfig(&config)
+
+	data, _ := hex.DecodeString(dataStr)
+	var flowMessage ProtoProducerMessage
+	flowMessage.formatter = configm.Formatter
+
+	err := ParsePacket(&flowMessage, data, configm.SFlow)
+	assert.NoError(t, err)
+
+	b, _ := json.Marshal(flowMessage.FlowMessage)
+	t.Log(string(b))
+
+	flowMessage.skipDelimiter = true
+	b, _ = flowMessage.MarshalBinary()
+	t.Log(base64.StdEncoding.EncodeToString(b))
+
+	b, _ = flowMessage.MarshalJSON()
+	t.Log(string(b))
+}
+
 // Legacy
 
 func TestProcessEthernet(t *testing.T) {

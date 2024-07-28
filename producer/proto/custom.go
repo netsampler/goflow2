@@ -27,9 +27,10 @@ type NetFlowV9ProducerConfig struct {
 }
 
 type SFlowMapField struct {
-	Layer  string `yaml:"layer"`
-	Offset int    `yaml:"offset"` // offset in bits
-	Length int    `yaml:"length"` // length in bits
+	Layer string `yaml:"layer"`
+	//Encapsulated bool `yaml:"encap"` // only parse if encapsulated
+	Offset int `yaml:"offset"` // offset in bits
+	Length int `yaml:"length"` // length in bits
 
 	Destination string     `yaml:"destination"`
 	Endian      EndianType `yaml:"endianness"`
