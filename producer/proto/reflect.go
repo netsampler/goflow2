@@ -59,6 +59,91 @@ func GetBytes(d []byte, offset int, length int) []byte {
 	return chunk
 }
 
+func GetBytes2(d []byte, offset, length int, shift bool) []byte {
+
+	/*
+
+		Example with an offset of 4 and length of 6
+
+		0xAA 0x55
+		  1010 1010.0101 0101
+		       ^--- -^
+
+		with shift
+		0x29
+		  0010 1001
+
+		without shift (bitwise AND)
+		0xa4
+		  1010 0100
+
+
+	*/
+
+	if len(d)*8 < offset {
+		return nil
+	}
+	if length == 0 {
+		return nil
+	}
+
+	shiftSize := offset % 8      // how much to shift to the left due to offset
+	shiftRightSize := length % 8 // for final step
+
+	start := offset / 8
+	end := (offset + length) / 8
+	if (offset+length)%8 > 0 {
+		end += 1
+	}
+
+	lengthB := length / 8
+	if shiftRightSize > 0 {
+		lengthB += 1
+	}
+
+	missing := end - len(d) // calculate how many missing bytes
+	if missing > 0 {
+		end = len(d)
+	}
+
+	dUsed := d[start:end]
+	if shiftSize == 0 && length%8 == 0 { // simple case
+		if missing > 0 {
+			dFinal := make([]byte, lengthB)
+
+			copy(dFinal, dUsed)
+			return dFinal
+		}
+		return dUsed
+	}
+
+	dFinal := make([]byte, lengthB)
+
+	// first pass, apply offset
+	for i := range dFinal {
+		if i >= len(dUsed) {
+			break
+		}
+		left := dUsed[i] << shiftSize
+
+		dFinal[i] = left
+		if i+1 >= len(dUsed) {
+			break
+		}
+		right := dUsed[i+1] >> (8 - shiftSize)
+		dFinal[i] |= right
+	}
+
+	// final pass
+	if shift {
+		dFinal[len(dFinal)-1] >>= (8 - shiftRightSize) % 8
+	} else {
+		dFinal[len(dFinal)-1] &= (0xFF << ((8 - shiftRightSize) % 8))
+	}
+
+	return dFinal
+}
+
 func IsUInt(k reflect.Kind) bool {
 	return k == reflect.Uint8 || k == reflect.Uint16 || k == reflect.Uint32 || k == reflect.Uint64
 }

@@ -197,6 +197,7 @@ func ParsePacket(flowMessage *ProtoProducerMessage, data []byte, config *SFlowMa
 		for key := range nextParser.ConfigKeyList {
 			for _, configLayer := range GetSFlowConfigLayer(config, nextParser.ConfigKeyList[key]) {
 				extracted := GetBytes(data, offset*8+configLayer.Offset, configLayer.Length)
+				fmt.Println(offset, nextParser.ConfigKeyList[key], key, extracted, configLayer.Offset)
 				if err := MapCustom(flowMessage, extracted, configLayer.MapConfigBase); err != nil {
 					return err
 				}

@@ -223,6 +223,49 @@ func TestProcessPacketGRE2(t *testing.T) {
 
 }
 
+func TestProcessPacketMapping(t *testing.T) {
+	dataStr := "005300000001" + // src mac
+		"005300000002" + // dst mac
+		"0800" + // etype
+
+		"45000064" + // ipv4
+		"abab" + // id
+		"0000ff11" + // flag, ttl, proto
+		"aaaa" + // csum
+		"0a000001" + // src
+		"0a000002" + // dst
+
+		// udp
+		"ff00" + // src port
+		"0035" + // dst port
+		"0010" + // length
+		"0xffff" + // csum
+
+		"0000000000000000" // payload
+
+	config := SFlowProducerConfig{
+		Mapping: []SFlowMapField{
+			SFlowMapField{
+				Layer:  "udp",
+				Offset: 48,
+				Length: 16,
+
+				Destination: "csum",
+			},
+		},
+	}
+	configm := mapFieldsSFlow(config.Mapping)
+
+	data, _ := hex.DecodeString(dataStr)
+	var flowMessage ProtoProducerMessage
+	err := ParsePacket(&flowMessage, data, configm)
+	assert.NoError(t, err)
+
+	b, _ := json.Marshal(flowMessage.FlowMessage)
+	t.Log(string(b))
+
+}
+
 // Legacy
 
 func TestProcessEthernet(t *testing.T) {
