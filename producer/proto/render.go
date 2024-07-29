@@ -64,6 +64,9 @@ var (
 		1:   "ICMP",
 		6:   "TCP",
 		17:  "UDP",
+		47:  "GRE",
+		50:  "ESP",
+		51:  "AH",
 		58:  "ICMPv6",
 		132: "SCTP",
 	}
@@ -169,11 +172,29 @@ func EtypeRenderer(msg *ProtoProducerMessage, fieldName string, data interface{}
 	return "unknown"
 }
 
+func ProtoName(protoNumber uint32) string {
+	if (protoNumber >= 146) && (protoNumber <= 252) {
+		return "unassigned"
+	}
+	if (protoNumber >= 252) && (protoNumber <= 253) {
+		return "experimental"
+	}
+	if protoNumber == 255 {
+		return "reserved"
+	}
+	dataC, ok := protoName[protoNumber]
+	if ok {
+		return dataC
+	} else {
+		return "unknown"
+	}
+}
+
 func ProtoRenderer(msg *ProtoProducerMessage, fieldName string, data interface{}) interface{} {
 	if dataC, ok := data.(uint32); ok {
-		return protoName[dataC]
+		return ProtoName(dataC)
 	} else if dataC, ok := data.(uint64); ok {
-		return protoName[uint32(dataC)]
+		return ProtoName(uint32(dataC))
 	}
 	return "unknown"
 }
