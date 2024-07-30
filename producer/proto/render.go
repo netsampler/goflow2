@@ -176,7 +176,7 @@ func ProtoName(protoNumber uint32) string {
 	if (protoNumber >= 146) && (protoNumber <= 252) {
 		return "unassigned"
 	}
-	if (protoNumber >= 252) && (protoNumber <= 253) {
+	if (protoNumber >= 253) && (protoNumber <= 254) {
 		return "experimental"
 	}
 	if protoNumber == 255 {
