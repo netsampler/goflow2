@@ -7,99 +7,6 @@ import (
 	"github.com/netsampler/goflow2/v2/decoders/netflow"
 )
 
-type NetFlowMapField struct {
-	PenProvided bool   `yaml:"penprovided"`
-	Type        uint16 `yaml:"field"`
-	Pen         uint32 `yaml:"pen"`
-
-	Destination string     `yaml:"destination"`
-	Endian      EndianType `yaml:"endianness"`
-	//DestinationLength uint8  `json:"dlen"` // could be used if populating a slice of uint16 that aren't in protobuf
-}
-
-type IPFIXProducerConfig struct {
-	Mapping []NetFlowMapField `yaml:"mapping"`
-	//PacketMapping []SFlowMapField   `json:"packet-mapping"` // for embedded frames: use sFlow configuration
-}
-
-type NetFlowV9ProducerConfig struct {
-	Mapping []NetFlowMapField `json:"mapping"`
-}
-
-type SFlowMapField struct {
-	Layer string `yaml:"layer"`
-	//Encapsulated bool `yaml:"encap"` // only parse if encapsulated
-	Offset int `yaml:"offset"` // offset in bits
-	Length int `yaml:"length"` // length in bits
-
-	Destination string     `yaml:"destination"`
-	Endian      EndianType `yaml:"endianness"`
-	//DestinationLength uint8  `json:"dlen"`
-}
-
-type SFlowProducerConfig struct {
-	Mapping []SFlowMapField `yaml:"mapping"`
-}
-
-type ProtobufFormatterConfig struct {
-	Name  string
-	Index int32
-	Type  string
-	Array bool
-}
-
-type FormatterConfig struct {
-	Fields   []string                  `yaml:"fields"`
-	Key      []string                  `yaml:"key"`
-	Render   map[string]RendererID     `yaml:"render"`
-	Rename   map[string]string         `yaml:"rename"`
-	Protobuf []ProtobufFormatterConfig `yaml:"protobuf"`
-}
-
-type ProducerConfig struct {
-	Formatter FormatterConfig `yaml:"formatter"`
-
-	IPFIX     IPFIXProducerConfig     `yaml:"ipfix"`
-	NetFlowV9 NetFlowV9ProducerConfig `yaml:"netflowv9"`
-	SFlow     SFlowProducerConfig     `yaml:"sflow"` // also used for IPFIX data frames
-
-	// should do a rename map list for when printing
-}
-
-type DataMap struct {
-	MapConfigBase
-}
-
-type FormatterConfigMapper struct {
-	fields  []string
-	key     []string
-	reMap   map[string]string // map from a potential json name into the protobuf structure
-	rename  map[string]string // manually renaming fields
-	render  map[string]RenderFunc
-	pbMap   map[string]ProtobufFormatterConfig
-	numToPb map[int32]ProtobufFormatterConfig
-	isSlice map[string]bool
-}
-
-type NetFlowMapper struct {
-	data map[string]DataMap // maps field to destination
-}
-
-func (m *NetFlowMapper) Map(field netflow.DataField) (DataMap, bool) {
-	mapped, found := m.data[fmt.Sprintf("%v-%d-%d", field.PenProvided, field.Pen, field.Type)]
-	return mapped, found
-}
-
-type DataMapLayer struct {
-	MapConfigBase
-	Offset int
-	Length int
-}
-
-type SFlowMapper struct {
-	data map[string][]DataMapLayer // map layer to list of offsets
-}
-
 func GetSFlowConfigLayer(m *SFlowMapper, layer string) []DataMapLayer {
 	if m == nil {
 		return nil
@@ -134,12 +41,9 @@ func mapFieldsNetFlow(fields []NetFlowMapField) *NetFlowMapper {
 	return &NetFlowMapper{ret}
 }
 
-type producerConfigMapped struct {
-	Formatter *FormatterConfigMapper
-
-	IPFIX     *NetFlowMapper
-	NetFlowV9 *NetFlowMapper
-	SFlow     *SFlowMapper
+func (m *NetFlowMapper) Map(field netflow.DataField) (DataMap, bool) {
+	mapped, found := m.data[fmt.Sprintf("%v-%d-%d", field.PenProvided, field.Pen, field.Type)]
+	return mapped, found
 }
 
 func (c *producerConfigMapped) finalizemapDest(v *MapConfigBase) error {
