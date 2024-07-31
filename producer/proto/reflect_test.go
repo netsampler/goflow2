@@ -71,3 +71,10 @@ func TestGetBytes(t *testing.T) {
 	assert.Equal(t, []byte{0}, r)
 
 }
+
+func BenchmarkGetBytes(b *testing.B) {
+	d := []byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}
+	for i := 0; i < b.N; i++ {
+		GetBytes2(d, 2, 10, false)
+	}
+}
