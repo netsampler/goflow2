@@ -148,3 +148,23 @@ func (c *MapConfigBase) GetProtoType() ProtoType {
 func (c *MapConfigBase) IsArray() bool {
 	return c.ProtoArray
 }
+
+// Refactoring using interfaces
+
+type MapConfigBaseIf interface {
+	GetEndianness() EndianType
+	GetDestination() string
+	GetProtoIndex() int32
+	GetProtoType() ProtoType
+	IsArray() bool
+}
+
+type MapConfigLayerIf interface {
+	// combine with configbase?
+	GetOffset() int
+	GetLength() int
+}
+
+type MappingConfigIf interface {
+	GetLayer(layer string)
+}

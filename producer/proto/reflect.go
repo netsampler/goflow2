@@ -156,7 +156,7 @@ func MapCustom(flowMessage *ProtoProducerMessage, v []byte, cfg MapConfigBase) e
 	vfm := reflect.ValueOf(flowMessage)
 	vfm = reflect.Indirect(vfm)
 
-	fieldValue := vfm.FieldByName(cfg.Destination)
+	fieldValue := vfm.FieldByName(cfg.GetDestination())
 
 	if fieldValue.IsValid() {
 		typeDest := fieldValue.Type()
@@ -170,7 +170,7 @@ func MapCustom(flowMessage *ProtoProducerMessage, v []byte, cfg MapConfigBase) e
 				item := reflect.New(typeDest.Elem())
 
 				if IsUInt(typeDest.Elem().Kind()) {
-					if cfg.Endianness == LittleEndian {
+					if cfg.GetEndianness() == LittleEndian {
 						if err := DecodeUNumberLE(v, item.Interface()); err != nil {
 							return err
 						}
@@ -180,7 +180,7 @@ func MapCustom(flowMessage *ProtoProducerMessage, v []byte, cfg MapConfigBase) e
 						}
 					}
 				} else if IsInt(typeDest.Elem().Kind()) {
-					if cfg.Endianness == LittleEndian {
+					if cfg.GetEndianness() == LittleEndian {
 						if err := DecodeNumberLE(v, item.Interface()); err != nil {
 							return err
 						}
@@ -198,7 +198,7 @@ func MapCustom(flowMessage *ProtoProducerMessage, v []byte, cfg MapConfigBase) e
 
 		} else if fieldValueAddr.IsValid() {
 			if IsUInt(typeDest.Kind()) {
-				if cfg.Endianness == LittleEndian {
+				if cfg.GetEndianness() == LittleEndian {
 					if err := DecodeUNumberLE(v, fieldValueAddr.Interface()); err != nil {
 						return err
 					}
@@ -208,7 +208,7 @@ func MapCustom(flowMessage *ProtoProducerMessage, v []byte, cfg MapConfigBase) e
 					}
 				}
 			} else if IsInt(typeDest.Kind()) {
-				if cfg.Endianness == LittleEndian {
+				if cfg.GetEndianness() == LittleEndian {
 					if err := DecodeNumberLE(v, fieldValueAddr.Interface()); err != nil {
 						return err
 					}
@@ -220,17 +220,17 @@ func MapCustom(flowMessage *ProtoProducerMessage, v []byte, cfg MapConfigBase) e
 			}
 
 		}
-	} else if cfg.ProtoIndex > 0 {
+	} else if cfg.GetProtoIndex() > 0 {
 
 		fmr := flowMessage.ProtoReflect()
 		unk := fmr.GetUnknown()
 
-		if !cfg.ProtoArray {
+		if !cfg.IsArray() {
 			var offset int
 			for offset < len(unk) {
 				num, _, length := protowire.ConsumeField(unk[offset:])
 				offset += length
-				if int32(num) == cfg.ProtoIndex {
+				if int32(num) == cfg.GetProtoIndex() {
 					// only one allowed
 					break
 				}
@@ -238,8 +238,8 @@ func MapCustom(flowMessage *ProtoProducerMessage, v []byte, cfg MapConfigBase) e
 		}
 
 		var dstVar uint64
-		if cfg.ProtoType == ProtoVarint {
-			if cfg.Endianness == LittleEndian {
+		if cfg.GetProtoType() == ProtoVarint {
+			if cfg.GetEndianness() == LittleEndian {
 				if err := DecodeUNumberLE(v, &dstVar); err != nil {
 					return err
 				}
@@ -249,10 +249,10 @@ func MapCustom(flowMessage *ProtoProducerMessage, v []byte, cfg MapConfigBase) e
 				}
 			}
 			// support signed int?
-			unk = protowire.AppendTag(unk, protowire.Number(cfg.ProtoIndex), protowire.VarintType)
+			unk = protowire.AppendTag(unk, protowire.Number(cfg.GetProtoIndex()), protowire.VarintType)
 			unk = protowire.AppendVarint(unk, dstVar)
-		} else if cfg.ProtoType == ProtoString {
-			unk = protowire.AppendTag(unk, protowire.Number(cfg.ProtoIndex), protowire.BytesType)
+		} else if cfg.GetProtoType() == ProtoString {
+			unk = protowire.AppendTag(unk, protowire.Number(cfg.GetProtoIndex()), protowire.BytesType)
 			unk = protowire.AppendString(unk, string(v))
 		} else {
 			return fmt.Errorf("could not insert into protobuf unknown")
