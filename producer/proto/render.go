@@ -119,7 +119,7 @@ var (
 		55:  "Min-IPv4",
 		56:  "TLSP",
 		57:  "SKIP",
-		58:  "ICMPv6",
+		58:  "IPv6-ICMP",
 		59:  "IPv6-NoNxt",
 		60:  "IPv6-Opts",
 		61:  "any-host-internal-protocol",
