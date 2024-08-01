@@ -180,10 +180,12 @@ type MappingConfigIf interface {
 	GetLayer(layer string)
 }
 
+// Returns the mapping information for a specific type of template field
 type TemplateMapper interface {
 	Map(field netflow.DataField) (DataMap, bool)
 }
 
+// Returns the mapping information for a layer of a packet
 type PacketMapper interface {
 	Map(layer string) ([]DataMapLayer, bool)
 }
