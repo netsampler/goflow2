@@ -12,11 +12,10 @@ type NetFlowMapField struct {
 
 type IPFIXProducerConfig struct {
 	Mapping []NetFlowMapField `yaml:"mapping"`
-	//PacketMapping []SFlowMapField   `json:"packet-mapping"` // for embedded frames: use sFlow configuration
 }
 
 type NetFlowV9ProducerConfig struct {
-	Mapping []NetFlowMapField `json:"mapping"`
+	Mapping []NetFlowMapField `yaml:"mapping"`
 }
 
 type SFlowMapField struct {
@@ -35,10 +34,10 @@ type SFlowProducerConfig struct {
 }
 
 type ProtobufFormatterConfig struct {
-	Name  string
-	Index int32
-	Type  string
-	Array bool
+	Name  string `yaml:"name"`
+	Index int32  `yaml:"index"`
+	Type  string `yaml:"type"`
+	Array bool   `yaml:"array"`
 }
 
 type FormatterConfig struct {
@@ -84,12 +83,6 @@ type FormatterConfigMapper struct {
 
 type NetFlowMapper struct {
 	data map[string]DataMap // maps field to destination
-}
-
-type DataMapLayer struct {
-	MapConfigBase
-	Offset int
-	Length int
 }
 
 type SFlowMapper struct {
@@ -147,6 +140,13 @@ func (c *MapConfigBase) GetProtoType() ProtoType {
 
 func (c *MapConfigBase) IsArray() bool {
 	return c.ProtoArray
+}
+
+// Extended structure for packet mapping
+type DataMapLayer struct {
+	MapConfigBase
+	Offset int
+	Length int
 }
 
 // Refactoring using interfaces
