@@ -109,6 +109,7 @@ func init() {
 	parserGRE.Parser = ParseGRE2
 }
 
+// Stores information about the current state of parsing
 type ParseConfig struct {
 	Layer        int  // absolute index of the layer
 	Calls        int  // number of times the function was called (using parser index)

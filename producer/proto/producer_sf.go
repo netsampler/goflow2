@@ -23,7 +23,7 @@ func ParseSampledHeader(flowMessage *ProtoProducerMessage, sampledHeader *sflow.
 	return ParseSampledHeaderConfig(flowMessage, sampledHeader, nil)
 }
 
-func ParseSampledHeaderConfig(flowMessage *ProtoProducerMessage, sampledHeader *sflow.SampledHeader, config *SFlowMapper) error {
+func ParseSampledHeaderConfig(flowMessage *ProtoProducerMessage, sampledHeader *sflow.SampledHeader, config PacketMapper) error {
 	data := (*sampledHeader).HeaderData
 	switch (*sampledHeader).Protocol {
 	case 1: // Ethernet
@@ -34,7 +34,7 @@ func ParseSampledHeaderConfig(flowMessage *ProtoProducerMessage, sampledHeader *
 	return nil
 }
 
-func SearchSFlowSampleConfig(flowMessage *ProtoProducerMessage, flowSample interface{}, config *SFlowMapper) error {
+func SearchSFlowSampleConfig(flowMessage *ProtoProducerMessage, flowSample interface{}, config PacketMapper) error {
 	var records []sflow.FlowRecord
 	flowMessage.Type = flowmessage.FlowMessage_SFLOW_5
 
@@ -112,7 +112,7 @@ func SearchSFlowSampleConfig(flowMessage *ProtoProducerMessage, flowSample inter
 
 }
 
-func SearchSFlowSamplesConfig(samples []interface{}, config *SFlowMapper) (flowMessageSet []producer.ProducerMessage, err error) {
+func SearchSFlowSamplesConfig(samples []interface{}, config PacketMapper) (flowMessageSet []producer.ProducerMessage, err error) {
 	for _, flowSample := range samples {
 		fmsg := protoMessagePool.Get().(*ProtoProducerMessage)
 		fmsg.Reset()
@@ -125,17 +125,17 @@ func SearchSFlowSamplesConfig(samples []interface{}, config *SFlowMapper) (flowM
 }
 
 // Converts an sFlow message
-func ProcessMessageSFlowConfig(packet *sflow.Packet, config *producerConfigMapped) (flowMessageSet []producer.ProducerMessage, err error) {
+func ProcessMessageSFlowConfig(packet *sflow.Packet, config ProtoProducerConfig) (flowMessageSet []producer.ProducerMessage, err error) {
 	seqnum := packet.SequenceNumber
 	agent := packet.AgentIP
 
-	var cfg *SFlowMapper
+	var cfgSFlow PacketMapper
 	if config != nil {
-		cfg = config.SFlow
+		cfgSFlow = config.GetPacketMapper()
 	}
 
 	flowSamples := GetSFlowFlowSamples(packet)
-	flowMessageSet, err = SearchSFlowSamplesConfig(flowSamples, cfg)
+	flowMessageSet, err = SearchSFlowSamplesConfig(flowSamples, cfgSFlow)
 	if err != nil {
 		return flowMessageSet, err
 	}

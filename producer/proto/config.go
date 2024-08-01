@@ -72,6 +72,22 @@ type producerConfigMapped struct {
 	SFlow     *SFlowMapper
 }
 
+func (c *producerConfigMapped) GetFormatter() *FormatterConfigMapper {
+	return c.Formatter
+}
+
+func (c *producerConfigMapped) GetIPFIXMapper() TemplateMapper {
+	return c.IPFIX
+}
+
+func (c *producerConfigMapped) GetNetFlowMapper() TemplateMapper {
+	return c.NetFlowV9
+}
+
+func (c *producerConfigMapped) GetPacketMapper() PacketMapper {
+	return c.SFlow
+}
+
 type DataMap struct {
 	MapConfigBase
 }
@@ -194,4 +210,12 @@ type TemplateMapper interface {
 // Returns the mapping information for a layer of a packet
 type PacketMapper interface {
 	Map(layer string) []DataMapLayer
+}
+
+// Top level configuration for a general flow to protobuf producer
+type ProtoProducerConfig interface {
+	GetFormatter() *FormatterConfigMapper
+	GetIPFIXMapper() TemplateMapper
+	GetNetFlowMapper() TemplateMapper
+	GetPacketMapper() PacketMapper
 }
