@@ -4,6 +4,13 @@ import (
 	"encoding/binary"
 )
 
+func GetSFlowConfigLayer(m *SFlowMapper, layer string) []DataMapLayer {
+	if m == nil {
+		return nil
+	}
+	return m.data[layer]
+}
+
 func ParseEthernet(offset int, flowMessage *ProtoProducerMessage, data []byte) (etherType []byte, newOffset int, err error) {
 	if len(data) >= offset+14 {
 		etherType = data[offset+12 : offset+14]

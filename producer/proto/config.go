@@ -92,12 +92,22 @@ type NetFlowMapper struct {
 }
 
 func (m *NetFlowMapper) Map(field netflow.DataField) (DataMap, bool) {
+	if m == nil {
+		return DataMap{}, false
+	}
 	mapped, found := m.data[fmt.Sprintf("%v-%d-%d", field.PenProvided, field.Pen, field.Type)]
 	return mapped, found
 }
 
 type SFlowMapper struct {
 	data map[string][]DataMapLayer // map layer to list of offsets
+}
+
+func (m *SFlowMapper) Map(layer string) []DataMapLayer {
+	if m == nil {
+		return nil
+	}
+	return m.data[layer]
 }
 
 type EndianType string
@@ -176,10 +186,6 @@ type MapConfigLayerIf interface {
 	GetLength() int
 }
 
-type MappingConfigIf interface {
-	GetLayer(layer string)
-}
-
 // Returns the mapping information for a specific type of template field
 type TemplateMapper interface {
 	Map(field netflow.DataField) (DataMap, bool)
@@ -187,5 +193,5 @@ type TemplateMapper interface {
 
 // Returns the mapping information for a layer of a packet
 type PacketMapper interface {
-	Map(layer string) ([]DataMapLayer, bool)
+	Map(layer string) []DataMapLayer
 }

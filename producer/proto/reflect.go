@@ -138,7 +138,7 @@ func IsInt(k reflect.Kind) bool {
 	return k == reflect.Int8 || k == reflect.Int16 || k == reflect.Int32 || k == reflect.Int64
 }
 
-func MapCustomNetFlow(flowMessage *ProtoProducerMessage, df netflow.DataField, mapper *NetFlowMapper) error {
+func MapCustomNetFlow(flowMessage *ProtoProducerMessage, df netflow.DataField, mapper TemplateMapper) error {
 	if mapper == nil {
 		return nil
 	}

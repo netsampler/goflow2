@@ -5,13 +5,6 @@ import (
 	"reflect"
 )
 
-func GetSFlowConfigLayer(m *SFlowMapper, layer string) []DataMapLayer {
-	if m == nil {
-		return nil
-	}
-	return m.data[layer]
-}
-
 func mapFieldsSFlow(fields []SFlowMapField) *SFlowMapper {
 	ret := make(map[string][]DataMapLayer)
 	for _, field := range fields {

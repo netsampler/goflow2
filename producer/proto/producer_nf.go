@@ -263,7 +263,7 @@ func addrReplaceCheck(dstAddr *[]byte, v []byte, eType *uint32, ipv6 bool) {
 	}
 }
 
-func ConvertNetFlowDataSet(flowMessage *ProtoProducerMessage, version uint16, baseTime uint32, uptime uint32, record []netflow.DataField, mapperNetFlow *NetFlowMapper, mapperSFlow *SFlowMapper) error {
+func ConvertNetFlowDataSet(flowMessage *ProtoProducerMessage, version uint16, baseTime uint32, uptime uint32, record []netflow.DataField, mapperNetFlow TemplateMapper, mapperSFlow PacketMapper) error {
 	var time uint64
 	baseTimeNs := uint64(baseTime) * 1000000000
 	// the following should be overriden if the template contains timing information

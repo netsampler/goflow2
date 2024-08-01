@@ -190,7 +190,7 @@ func NextPortParser(srcPort, dstPort uint16) (ParserInfo, error) {
 	return parserNone, nil
 }
 
-func ParsePacket(flowMessage ProtoProducerMessageIf, data []byte, config *SFlowMapper) (err error) {
+func ParsePacket(flowMessage ProtoProducerMessageIf, data []byte, config PacketMapper) (err error) {
 	var offset int
 
 	var nextParser ParserInfo
@@ -212,10 +212,12 @@ func ParsePacket(flowMessage ProtoProducerMessageIf, data []byte, config *SFlowM
 		// Map custom fields
 		for key := range nextParser.ConfigKeyList {
 			configKey := nextParser.ConfigKeyList[key]
-			for _, configLayer := range GetSFlowConfigLayer(config, configKey) {
-				extracted := GetBytes2(data, offset*8+configLayer.Offset, configLayer.Length, true)
-				if err := flowMessage.MapCustom(configKey, extracted, configLayer.MapConfigBase); err != nil {
-					return err
+			if config != nil {
+				for _, configLayer := range config.Map(configKey) {
+					extracted := GetBytes2(data, offset*8+configLayer.Offset, configLayer.Length, true)
+					if err := flowMessage.MapCustom(configKey, extracted, configLayer.MapConfigBase); err != nil {
+						return err
+					}
 				}
 			}
 		}
