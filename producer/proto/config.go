@@ -1,5 +1,11 @@
 package protoproducer
 
+import (
+	"fmt"
+
+	"github.com/netsampler/goflow2/v2/decoders/netflow"
+)
+
 type NetFlowMapField struct {
 	PenProvided bool   `yaml:"penprovided"`
 	Type        uint16 `yaml:"field"`
@@ -85,6 +91,11 @@ type NetFlowMapper struct {
 	data map[string]DataMap // maps field to destination
 }
 
+func (m *NetFlowMapper) Map(field netflow.DataField) (DataMap, bool) {
+	mapped, found := m.data[fmt.Sprintf("%v-%d-%d", field.PenProvided, field.Pen, field.Type)]
+	return mapped, found
+}
+
 type SFlowMapper struct {
 	data map[string][]DataMapLayer // map layer to list of offsets
 }
@@ -167,4 +178,12 @@ type MapConfigLayerIf interface {
 
 type MappingConfigIf interface {
 	GetLayer(layer string)
+}
+
+type TemplateMapper interface {
+	Map(field netflow.DataField) (DataMap, bool)
+}
+
+type PacketMapper interface {
+	Map(layer string) ([]DataMapLayer, bool)
 }

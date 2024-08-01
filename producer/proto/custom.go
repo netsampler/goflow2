@@ -3,8 +3,6 @@ package protoproducer
 import (
 	"fmt"
 	"reflect"
-
-	"github.com/netsampler/goflow2/v2/decoders/netflow"
 )
 
 func GetSFlowConfigLayer(m *SFlowMapper, layer string) []DataMapLayer {
@@ -39,11 +37,6 @@ func mapFieldsNetFlow(fields []NetFlowMapField) *NetFlowMapper {
 		ret[fmt.Sprintf("%v-%d-%d", field.PenProvided, field.Pen, field.Type)] = dm
 	}
 	return &NetFlowMapper{ret}
-}
-
-func (m *NetFlowMapper) Map(field netflow.DataField) (DataMap, bool) {
-	mapped, found := m.data[fmt.Sprintf("%v-%d-%d", field.PenProvided, field.Pen, field.Type)]
-	return mapped, found
 }
 
 func (c *producerConfigMapped) finalizemapDest(v *MapConfigBase) error {
