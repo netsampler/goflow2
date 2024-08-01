@@ -215,7 +215,7 @@ func ParsePacket(flowMessage ProtoProducerMessageIf, data []byte, config PacketM
 			if config != nil {
 				for _, configLayer := range config.Map(configKey) {
 					extracted := GetBytes2(data, offset*8+configLayer.Offset, configLayer.Length, true)
-					if err := flowMessage.MapCustom(configKey, extracted, configLayer.MapConfigBase); err != nil {
+					if err := flowMessage.MapCustom(configKey, extracted, &configLayer); err != nil {
 						return err
 					}
 				}

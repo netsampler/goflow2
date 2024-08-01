@@ -231,14 +231,15 @@ type testProtoProducerMessage struct {
 	t *testing.T
 }
 
-func (m *testProtoProducerMessage) MapCustom(key string, v []byte, cfg MapConfigBase) error {
+func (m *testProtoProducerMessage) MapCustom(key string, v []byte, cfg MapConfigBaseIf) error {
 	m.t.Log("mapping", key, v)
-	return m.ProtoProducerMessage.MapCustom(key, v, MapConfigBase{
+	mc := MapConfigBase{
 		Endianness: BigEndian,
 		ProtoIndex: 999,
 		ProtoType:  ProtoVarint,
 		ProtoArray: false,
-	})
+	}
+	return m.ProtoProducerMessage.MapCustom(key, v, &mc)
 }
 
 func TestProcessPacketMapping(t *testing.T) {

@@ -18,8 +18,8 @@ import (
 
 // ProtoProducerMessageIf interface to a flow message, used by parsers and tests
 type ProtoProducerMessageIf interface {
-	GetFlowMessage() *ProtoProducerMessage                   // access the underlying structure
-	MapCustom(key string, v []byte, cfg MapConfigBase) error // inject custom field
+	GetFlowMessage() *ProtoProducerMessage                     // access the underlying structure
+	MapCustom(key string, v []byte, cfg MapConfigBaseIf) error // inject custom field
 }
 
 type ProtoProducerMessage struct {
@@ -40,8 +40,8 @@ func (m *ProtoProducerMessage) GetFlowMessage() *ProtoProducerMessage {
 	return m
 }
 
-func (m *ProtoProducerMessage) MapCustom(key string, v []byte, cfg MapConfigBase) error {
-	return MapCustomLegacy(m, v, cfg)
+func (m *ProtoProducerMessage) MapCustom(key string, v []byte, cfg MapConfigBaseIf) error {
+	return MapCustom(m, v, cfg)
 }
 
 func (m *ProtoProducerMessage) AddLayer(name string) (ok bool) {
