@@ -4,6 +4,10 @@ import (
 	"encoding/binary"
 )
 
+func MapCustomLegacy(flowMessage *ProtoProducerMessage, v []byte, cfg MapConfigBase) error {
+	return MapCustom(flowMessage, v, &cfg)
+}
+
 func GetSFlowConfigLayer(m *SFlowMapper, layer string) []DataMapLayer {
 	if m == nil {
 		return nil
@@ -230,7 +234,7 @@ func ParseEthernetHeader(flowMessage *ProtoProducerMessage, data []byte, config 
 
 	for _, configLayer := range GetSFlowConfigLayer(config, "0") {
 		extracted := GetBytes(data, offset+configLayer.Offset, configLayer.Length)
-		if err := MapCustom(flowMessage, extracted, configLayer.MapConfigBase); err != nil {
+		if err := MapCustomLegacy(flowMessage, extracted, configLayer.MapConfigBase); err != nil {
 			return err
 		}
 	}
@@ -262,7 +266,7 @@ func ParseEthernetHeader(flowMessage *ProtoProducerMessage, data []byte, config 
 
 		for _, configLayer := range GetSFlowConfigLayer(config, "3") {
 			extracted := GetBytes(data, offset*8+configLayer.Offset, configLayer.Length)
-			if err := MapCustom(flowMessage, extracted, configLayer.MapConfigBase); err != nil {
+			if err := MapCustomLegacy(flowMessage, extracted, configLayer.MapConfigBase); err != nil {
 				return err
 			}
 		}
@@ -275,7 +279,7 @@ func ParseEthernetHeader(flowMessage *ProtoProducerMessage, data []byte, config 
 
 			for _, configLayer := range GetSFlowConfigLayer(config, "ipv4") {
 				extracted := GetBytes(data, prevOffset*8+configLayer.Offset, configLayer.Length)
-				if err := MapCustom(flowMessage, extracted, configLayer.MapConfigBase); err != nil {
+				if err := MapCustomLegacy(flowMessage, extracted, configLayer.MapConfigBase); err != nil {
 					return err
 				}
 			}
@@ -290,14 +294,14 @@ func ParseEthernetHeader(flowMessage *ProtoProducerMessage, data []byte, config 
 
 			for _, configLayer := range GetSFlowConfigLayer(config, "ipv6") {
 				extracted := GetBytes(data, prevOffset*8+configLayer.Offset, configLayer.Length)
-				if err := MapCustom(flowMessage, extracted, configLayer.MapConfigBase); err != nil {
+				if err := MapCustomLegacy(flowMessage, extracted, configLayer.MapConfigBase); err != nil {
 					return err
 				}
 			}
 		} else if IsARP(etherType) { // ARP
 			for _, configLayer := range GetSFlowConfigLayer(config, "arp") {
 				extracted := GetBytes(data, offset*8+configLayer.Offset, configLayer.Length)
-				if err := MapCustom(flowMessage, extracted, configLayer.MapConfigBase); err != nil {
+				if err := MapCustomLegacy(flowMessage, extracted, configLayer.MapConfigBase); err != nil {
 					return err
 				}
 			}
@@ -305,7 +309,7 @@ func ParseEthernetHeader(flowMessage *ProtoProducerMessage, data []byte, config 
 
 		for _, configLayer := range GetSFlowConfigLayer(config, "4") {
 			extracted := GetBytes(data, offset*8+configLayer.Offset, configLayer.Length)
-			if err := MapCustom(flowMessage, extracted, configLayer.MapConfigBase); err != nil {
+			if err := MapCustomLegacy(flowMessage, extracted, configLayer.MapConfigBase); err != nil {
 				return err
 			}
 		}
@@ -322,7 +326,7 @@ func ParseEthernetHeader(flowMessage *ProtoProducerMessage, data []byte, config 
 					}
 					for _, configLayer := range GetSFlowConfigLayer(config, "udp") {
 						extracted := GetBytes(data, prevOffset*8+configLayer.Offset, configLayer.Length)
-						if err := MapCustom(flowMessage, extracted, configLayer.MapConfigBase); err != nil {
+						if err := MapCustomLegacy(flowMessage, extracted, configLayer.MapConfigBase); err != nil {
 							return err
 						}
 					}
@@ -332,7 +336,7 @@ func ParseEthernetHeader(flowMessage *ProtoProducerMessage, data []byte, config 
 					}
 					for _, configLayer := range GetSFlowConfigLayer(config, "tcp") {
 						extracted := GetBytes(data, prevOffset*8+configLayer.Offset, configLayer.Length)
-						if err := MapCustom(flowMessage, extracted, configLayer.MapConfigBase); err != nil {
+						if err := MapCustomLegacy(flowMessage, extracted, configLayer.MapConfigBase); err != nil {
 							return err
 						}
 					}
@@ -342,7 +346,7 @@ func ParseEthernetHeader(flowMessage *ProtoProducerMessage, data []byte, config 
 					}
 					for _, configLayer := range GetSFlowConfigLayer(config, "icmp") {
 						extracted := GetBytes(data, prevOffset*8+configLayer.Offset, configLayer.Length)
-						if err := MapCustom(flowMessage, extracted, configLayer.MapConfigBase); err != nil {
+						if err := MapCustomLegacy(flowMessage, extracted, configLayer.MapConfigBase); err != nil {
 							return err
 						}
 					}
@@ -352,7 +356,7 @@ func ParseEthernetHeader(flowMessage *ProtoProducerMessage, data []byte, config 
 					}
 					for _, configLayer := range GetSFlowConfigLayer(config, "icmp6") {
 						extracted := GetBytes(data, prevOffset*8+configLayer.Offset, configLayer.Length)
-						if err := MapCustom(flowMessage, extracted, configLayer.MapConfigBase); err != nil {
+						if err := MapCustomLegacy(flowMessage, extracted, configLayer.MapConfigBase); err != nil {
 							return err
 						}
 					}
@@ -367,7 +371,7 @@ func ParseEthernetHeader(flowMessage *ProtoProducerMessage, data []byte, config 
 				customOffset := appOffset*8 + configLayer.Offset - int(flowMessage.FragmentOffset)*8 // allows user to get data from a fragment as well
 				// todo: check the calculation (might be off due to various header size)
 				extracted := GetBytes(data, customOffset, configLayer.Length)
-				if err := MapCustom(flowMessage, extracted, configLayer.MapConfigBase); err != nil {
+				if err := MapCustomLegacy(flowMessage, extracted, configLayer.MapConfigBase); err != nil {
 					return err
 				}
 			}

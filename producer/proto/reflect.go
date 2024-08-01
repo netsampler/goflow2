@@ -145,14 +145,14 @@ func MapCustomNetFlow(flowMessage *ProtoProducerMessage, df netflow.DataField, m
 	mapped, ok := mapper.Map(df)
 	if ok {
 		v := df.Value.([]byte)
-		if err := MapCustom(flowMessage, v, mapped.MapConfigBase); err != nil {
+		if err := MapCustomLegacy(flowMessage, v, mapped.MapConfigBase); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func MapCustom(flowMessage *ProtoProducerMessage, v []byte, cfg MapConfigBase) error {
+func MapCustom(flowMessage *ProtoProducerMessage, v []byte, cfg MapConfigBaseIf) error {
 	vfm := reflect.ValueOf(flowMessage)
 	vfm = reflect.Indirect(vfm)
 

@@ -41,7 +41,7 @@ func (m *ProtoProducerMessage) GetFlowMessage() *ProtoProducerMessage {
 }
 
 func (m *ProtoProducerMessage) MapCustom(key string, v []byte, cfg MapConfigBase) error {
-	return MapCustom(m, v, cfg)
+	return MapCustomLegacy(m, v, cfg)
 }
 
 func (m *ProtoProducerMessage) AddLayer(name string) (ok bool) {
