@@ -95,12 +95,11 @@ func (p *ProtoProducer) Commit(flowMessageSet []producer.ProducerMessage) {
 
 func (p *ProtoProducer) Close() {}
 
-func CreateProtoProducer(cfg *ProducerConfig, samplingRateSystem func() SamplingRateSystem) (producer.ProducerInterface, error) {
-	cfgMapped, err := mapConfig(cfg)
+func CreateProtoProducer(cfg ProtoProducerConfig, samplingRateSystem func() SamplingRateSystem) (producer.ProducerInterface, error) {
 	return &ProtoProducer{
-		cfg:                cfgMapped,
+		cfg:                cfg,
 		samplinglock:       &sync.RWMutex{},
 		sampling:           make(map[string]SamplingRateSystem),
 		samplingRateSystem: samplingRateSystem,
-	}, err
+	}, nil
 }

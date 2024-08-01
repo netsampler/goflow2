@@ -122,7 +122,12 @@ func main() {
 			}
 		}
 
-		flowProducer, err = protoproducer.CreateProtoProducer(cfgProducer, protoproducer.CreateSamplingSystem)
+		cfgm, err := cfgProducer.Compile() // converts configuration into a format that can be used by a protobuf producer
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		flowProducer, err = protoproducer.CreateProtoProducer(cfgm, protoproducer.CreateSamplingSystem)
 		if err != nil {
 			log.Fatal(err)
 		}

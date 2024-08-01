@@ -64,6 +64,10 @@ type ProducerConfig struct {
 	// should do a rename map list for when printing
 }
 
+func (c *ProducerConfig) Compile() (ProtoProducerConfig, error) {
+	return mapConfig(c)
+}
+
 type producerConfigMapped struct {
 	Formatter *FormatterConfigMapper
 
