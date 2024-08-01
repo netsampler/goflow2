@@ -4,6 +4,39 @@ import (
 	"encoding/binary"
 )
 
+func GetBytes(d []byte, offset int, length int) []byte {
+	if length == 0 || offset < 0 {
+		return nil
+	}
+	leftBytes := offset / 8
+	rightBytes := (offset + length) / 8
+	if (offset+length)%8 != 0 {
+		rightBytes += 1
+	}
+	if leftBytes >= len(d) {
+		return nil
+	}
+	if rightBytes > len(d) {
+		rightBytes = len(d)
+	}
+	chunk := make([]byte, rightBytes-leftBytes)
+
+	offsetMod8 := (offset % 8)
+	shiftAnd := byte(0xff >> (8 - offsetMod8))
+
+	var shifted byte
+	for i := range chunk {
+		j := len(chunk) - 1 - i
+		cur := d[j+leftBytes]
+		chunk[j] = (cur << offsetMod8) | shifted
+		shifted = shiftAnd & cur
+	}
+	last := len(chunk) - 1
+	shiftAndLast := byte(0xff << ((8 - ((offset + length) % 8)) % 8))
+	chunk[last] = chunk[last] & shiftAndLast
+	return chunk
+}
+
 func MapCustomLegacy(flowMessage *ProtoProducerMessage, v []byte, cfg MapConfigBase) error {
 	return MapCustom(flowMessage, v, &cfg)
 }

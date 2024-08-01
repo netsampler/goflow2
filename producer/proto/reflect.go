@@ -9,39 +9,6 @@ import (
 	"github.com/netsampler/goflow2/v2/decoders/netflow"
 )
 
-func GetBytes(d []byte, offset int, length int) []byte {
-	if length == 0 || offset < 0 {
-		return nil
-	}
-	leftBytes := offset / 8
-	rightBytes := (offset + length) / 8
-	if (offset+length)%8 != 0 {
-		rightBytes += 1
-	}
-	if leftBytes >= len(d) {
-		return nil
-	}
-	if rightBytes > len(d) {
-		rightBytes = len(d)
-	}
-	chunk := make([]byte, rightBytes-leftBytes)
-
-	offsetMod8 := (offset % 8)
-	shiftAnd := byte(0xff >> (8 - offsetMod8))
-
-	var shifted byte
-	for i := range chunk {
-		j := len(chunk) - 1 - i
-		cur := d[j+leftBytes]
-		chunk[j] = (cur << offsetMod8) | shifted
-		shifted = shiftAnd & cur
-	}
-	last := len(chunk) - 1
-	shiftAndLast := byte(0xff << ((8 - ((offset + length) % 8)) % 8))
-	chunk[last] = chunk[last] & shiftAndLast
-	return chunk
-}
-
 // Using a data slice, returns a chunk corresponding
 func GetBytes2(d []byte, offset, length int, shift bool) []byte {
 
