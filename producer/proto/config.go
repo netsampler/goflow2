@@ -77,7 +77,7 @@ type producerConfigMapped struct {
 	SFlow     *SFlowMapper
 }
 
-func (c *producerConfigMapped) GetFormatter() *FormatterConfigMapper {
+func (c *producerConfigMapped) GetFormatter() FormatterMapper {
 	return c.Formatter
 }
 
@@ -261,7 +261,7 @@ type FormatterMapper interface {
 
 // Top level configuration for a general flow to protobuf producer
 type ProtoProducerConfig interface {
-	GetFormatter() *FormatterConfigMapper
+	GetFormatter() FormatterMapper
 	GetIPFIXMapper() TemplateMapper
 	GetNetFlowMapper() TemplateMapper
 	GetPacketMapper() PacketMapper
