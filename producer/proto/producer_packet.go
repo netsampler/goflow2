@@ -459,6 +459,8 @@ func ParseIPv6HeaderRouting2(flowMessage *ProtoProducerMessage, data []byte, pc 
 		routingType := data[2]
 		segLeft := data[3]
 
+		flowMessage.Ipv6RoutingHeaderSegLeft = uint32(segLeft)
+
 		if routingType == 4 { // Segment Routing
 
 			lastEntry := data[4]
@@ -470,7 +472,9 @@ func ParseIPv6HeaderRouting2(flowMessage *ProtoProducerMessage, data []byte, pc 
 				entry <= int(lastEntry) {
 
 				addr := data[8+offset : 8+offset+16]
-				fmt.Printf("SRv6 IP %x (%d %d %d %d)\n", addr, offset, entry, lastEntry, segLeft)
+
+				flowMessage.Ipv6RoutingHeaderAddresses = append(flowMessage.Ipv6RoutingHeaderAddresses, addr)
+
 				offset += 16
 				entry++
 			}

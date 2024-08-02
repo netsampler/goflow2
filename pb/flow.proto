@@ -111,4 +111,7 @@ message FlowMessage {
   }
   repeated LayerStack layer_stack = 103;
 
+  repeated bytes ipv6_routing_header_addresses = 104; // SRv6
+  uint32 ipv6_routing_header_seg_left = 105; // SRv6
+
 }

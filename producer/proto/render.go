@@ -53,6 +53,8 @@ var (
 		"DstNet":         NetworkRenderer,
 
 		"icmp_name": ICMPRenderer,
+
+		"Ipv6RoutingHeaderAddresses": IPRenderer,
 	}
 
 	etypeName = map[uint32]string{
