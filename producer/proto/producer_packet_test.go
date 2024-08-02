@@ -373,13 +373,13 @@ func TestProcessPacketMappingEncap(t *testing.T) {
 			},
 		},
 	}
-	configm, _ := mapConfig(&config)
+	configm, _ := config.Compile()
 
 	data, _ := hex.DecodeString(dataStr)
 	var flowMessage ProtoProducerMessage
-	flowMessage.formatter = configm.Formatter
+	flowMessage.formatter = configm.GetFormatter()
 
-	err := ParsePacket(&flowMessage, data, configm.SFlow)
+	err := ParsePacket(&flowMessage, data, configm.GetPacketMapper())
 	assert.NoError(t, err)
 
 	b, _ := json.Marshal(flowMessage.FlowMessage)

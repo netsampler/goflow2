@@ -68,6 +68,7 @@ func (c *ProducerConfig) Compile() (ProtoProducerConfig, error) {
 	return mapConfig(c)
 }
 
+// Optimized version of a configuration to be used by a protobuf producer
 type producerConfigMapped struct {
 	Formatter *FormatterConfigMapper
 
