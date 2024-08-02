@@ -108,6 +108,38 @@ type FormatterConfigMapper struct {
 	isSlice map[string]bool
 }
 
+func (f *FormatterConfigMapper) Keys() []string {
+	return f.key
+}
+
+func (f *FormatterConfigMapper) Fields() []string {
+	return f.fields
+}
+
+func (f *FormatterConfigMapper) Rename(name string) (string, bool) {
+	r, ok := f.rename[name]
+	return r, ok
+}
+
+func (f *FormatterConfigMapper) Remap(name string) (string, bool) {
+	r, ok := f.reMap[name]
+	return r, ok
+}
+
+func (f *FormatterConfigMapper) Render(name string) (RenderFunc, bool) {
+	r, ok := f.render[name]
+	return r, ok
+}
+
+func (f *FormatterConfigMapper) NumToProtobuf(num int32) (ProtobufFormatterConfig, bool) {
+	r, ok := f.numToPb[num]
+	return r, ok
+}
+
+func (f *FormatterConfigMapper) IsArray(name string) bool {
+	return f.isSlice[name]
+}
+
 type NetFlowMapper struct {
 	data map[string]DataMap // maps field to destination
 }
@@ -215,6 +247,16 @@ type TemplateMapper interface {
 // Returns the mapping information for a layer of a packet
 type PacketMapper interface {
 	Map(layer string) []DataMapLayer
+}
+
+type FormatterMapper interface {
+	Keys() []string
+	Fields() []string
+	Rename(name string) (string, bool)
+	Remap(name string) (string, bool)
+	Render(name string) (RenderFunc, bool)
+	NumToProtobuf(num int32) (ProtobufFormatterConfig, bool)
+	IsArray(name string) bool
 }
 
 // Top level configuration for a general flow to protobuf producer
