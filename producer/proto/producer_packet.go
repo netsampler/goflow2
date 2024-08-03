@@ -156,6 +156,7 @@ func NextParserEtype(etherType []byte) (ParserInfo, error) {
 	case etherType[0] == 0x8 && etherType[1] == 0x6:
 		// ARP
 	}
+	//todo: copy parsernone + add configkeylist = []string{etypeXXXX}
 	return parserNone, nil
 }
 
@@ -182,6 +183,7 @@ func NextProtocolParser(proto byte) (ParserInfo, error) {
 	case proto == 115:
 		// L2TP
 	}
+	//todo: copy parsernone + add configkeylist = []string{protoXX}
 	return parserNone, nil
 }
 
