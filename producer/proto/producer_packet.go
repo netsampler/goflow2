@@ -21,73 +21,73 @@ var (
 
 	parserEthernet = ParserInfo{
 		nil, //ParseEthernet2,
-		[]string{"ethernet", "2"},
+		[]string{"ethernet", "2", "etype6558", "etype0x199e"},
 		20,
 		1,
 	}
 	parser8021Q = ParserInfo{
 		nil, //Parse8021Q2,
-		[]string{"dot1q"},
+		[]string{"dot1q", "etype33024", "etype0x8100"},
 		25,
 		2,
 	}
 	parserMPLS = ParserInfo{
 		nil, //ParseMPLS2,
-		[]string{"mpls"},
+		[]string{"mpls", "etype34887", "etype0x8847"},
 		25,
 		3,
 	}
 	parserIPv4 = ParserInfo{
 		nil, //ParseIPv42,
-		[]string{"ipv4", "ip", "3"},
+		[]string{"ipv4", "ip", "3", "etype2048", "etype0x0800", "proto4"},
 		30,
 		4,
 	}
 	parserIPv6 = ParserInfo{
 		nil, //ParseIPv62,
-		[]string{"ipv6", "ip", "3"},
+		[]string{"ipv6", "ip", "3", "etype32525", "etype0x86dd", "proto41"},
 		30,
 		5,
 	}
-	parserIPv6HeaderFragment = ParserInfo{
-		nil, //ParseIPv6HeaderFragment2,
-		[]string{"ipv6he_fragment", "ipv6he"},
-		30,
-		6,
-	}
 	parserIPv6HeaderRouting = ParserInfo{
 		nil, //ParseIPv6HeaderRouting2,
-		[]string{"ipv6he_routing", "ipv6he"},
+		[]string{"ipv6he_routing", "ipv6he", "proto43"},
 		30,
 		7,
 	}
+	parserIPv6HeaderFragment = ParserInfo{
+		nil, //ParseIPv6HeaderFragment2,
+		[]string{"ipv6he_fragment", "ipv6he", "proto44"},
+		30,
+		6,
+	}
 	parserTCP = ParserInfo{
 		nil, //ParseTCP2,
-		[]string{"tcp", "4"},
+		[]string{"tcp", "4", "proto6"},
 		40,
 		8,
 	}
 	parserUDP = ParserInfo{
 		nil, //ParseUDP2,
-		[]string{"udp", "4"},
+		[]string{"udp", "4", "proto17"},
 		40,
 		9,
 	}
 	parserICMP = ParserInfo{
 		nil, //ParseICMP2,
-		[]string{"icmp"},
+		[]string{"icmp", "proto1"},
 		70,
 		10,
 	}
 	parserICMPv6 = ParserInfo{
 		nil, //ParseICMPv62,
-		[]string{"icmpv6"},
+		[]string{"icmpv6", "proto58"},
 		70,
 		11,
 	}
 	parserGRE = ParserInfo{
 		nil, //ParseGRE2,
-		[]string{"gre"},
+		[]string{"gre", "proto47"},
 		40,
 		12,
 	}
@@ -100,8 +100,8 @@ func init() {
 	parserMPLS.Parser = ParseMPLS2
 	parserIPv4.Parser = ParseIPv42
 	parserIPv6.Parser = ParseIPv62
-	parserIPv6HeaderFragment.Parser = ParseIPv6HeaderFragment2
 	parserIPv6HeaderRouting.Parser = ParseIPv6HeaderRouting2
+	parserIPv6HeaderFragment.Parser = ParseIPv6HeaderFragment2
 	parserTCP.Parser = ParseTCP2
 	parserUDP.Parser = ParseUDP2
 	parserICMP.Parser = ParseICMP2
@@ -156,8 +156,10 @@ func NextParserEtype(etherType []byte) (ParserInfo, error) {
 	case etherType[0] == 0x8 && etherType[1] == 0x6:
 		// ARP
 	}
-	//todo: copy parsernone + add configkeylist = []string{etypeXXXX}
-	return parserNone, nil
+	info := parserNone
+	etypeNum := uint16(etherType[0]<<8) | uint16(etherType[1])
+	info.ConfigKeyList = []string{fmt.Sprintf("etype%d", etypeNum), fmt.Sprintf("etype0x%.4x", etypeNum)}
+	return info, nil
 }
 
 func NextProtocolParser(proto byte) (ParserInfo, error) {
@@ -183,7 +185,8 @@ func NextProtocolParser(proto byte) (ParserInfo, error) {
 	case proto == 115:
 		// L2TP
 	}
-	//todo: copy parsernone + add configkeylist = []string{protoXX}
+	info := parserNone
+	info.ConfigKeyList = []string{fmt.Sprintf("proto%d", proto)}
 	return parserNone, nil
 }
 
