@@ -268,6 +268,7 @@ type MapConfigLayerIf interface {
 	MapConfigBaseIf
 	GetOffset() int
 	GetLength() int
+	IsEncapsulated() bool
 }
 
 // Returns the mapping information for a specific type of template field

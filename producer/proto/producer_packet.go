@@ -232,6 +232,10 @@ func ParsePacket(flowMessage ProtoProducerMessageIf, data []byte, config PacketM
 					if configLayer == nil {
 						break
 					}
+					if configLayer.IsEncapsulated() != parseConfig.Encapsulated {
+						continue
+					}
+
 					extracted := GetBytes2(data, offset*8+configLayer.GetOffset(), configLayer.GetLength(), true)
 					if err := flowMessage.MapCustom(key, extracted, configLayer); err != nil {
 						return err
@@ -240,7 +244,7 @@ func ParsePacket(flowMessage ProtoProducerMessageIf, data []byte, config PacketM
 			}
 		}
 
-		if res.NextParser.LayerIndex < nextParser.LayerIndex {
+		if res.NextParser.LayerIndex <= nextParser.LayerIndex { // must be equals to support IP over IP
 			parseConfig.Encapsulated = true
 		}
 

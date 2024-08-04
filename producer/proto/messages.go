@@ -222,28 +222,32 @@ func (m *ProtoProducerMessage) FormatMessageReflectCustom(ext, quotes, sep, sign
 		// note: isSlice is necessary to consider certain byte arrays in their entirety
 		// eg: IP addresses
 		if isSlice {
-			c := fieldValue.Len()
 			v := "["
-			for i := 0; i < c; i++ {
-				fieldValueI := fieldValue.Index(i)
-				var val interface{}
-				if fieldValueI.IsValid() {
-					val = fieldValueI.Interface()
-				}
 
-				rendered := renderer(m, fieldName, val)
-				if rendered == nil {
-					continue
-				}
-				renderedType := reflect.TypeOf(rendered)
-				if renderedType.Kind() == reflect.String {
-					v += fmt.Sprintf("%s%v%s", quotes, rendered, quotes)
-				} else {
-					v += fmt.Sprintf("%v", rendered)
-				}
+			if fieldValue.IsValid() {
 
-				if i < c-1 {
-					v += ","
+				c := fieldValue.Len()
+				for i := 0; i < c; i++ {
+					fieldValueI := fieldValue.Index(i)
+					var val interface{}
+					if fieldValueI.IsValid() {
+						val = fieldValueI.Interface()
+					}
+
+					rendered := renderer(m, fieldName, val)
+					if rendered == nil {
+						continue
+					}
+					renderedType := reflect.TypeOf(rendered)
+					if renderedType.Kind() == reflect.String {
+						v += fmt.Sprintf("%s%v%s", quotes, rendered, quotes)
+					} else {
+						v += fmt.Sprintf("%v", rendered)
+					}
+
+					if i < c-1 {
+						v += ","
+					}
 				}
 			}
 			v += "]"

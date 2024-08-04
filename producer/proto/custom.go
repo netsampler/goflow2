@@ -9,8 +9,9 @@ func mapFieldsSFlow(fields []SFlowMapField) *SFlowMapper {
 	ret := make(map[string][]*DataMapLayer)
 	for _, field := range fields {
 		retLayerEntry := &DataMapLayer{
-			Offset: field.Offset,
-			Length: field.Length,
+			Offset:       field.Offset,
+			Length:       field.Length,
+			Encapsulated: field.Encapsulated,
 		}
 		retLayerEntry.Destination = field.Destination
 		retLayerEntry.Endianness = field.Endian

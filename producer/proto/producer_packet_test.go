@@ -341,32 +341,35 @@ func TestProcessPacketMappingEncap(t *testing.T) {
 		SFlow: SFlowProducerConfig{
 			Mapping: []SFlowMapField{
 				SFlowMapField{
-					Layer:  "ipv6",
-					Offset: 64,
-					Length: 128,
-					// todo: encap
+					Layer:        "ipv6",
+					Offset:       64,
+					Length:       128,
+					Encapsulated: true,
 
 					Destination: "src_ip_encap",
 				},
 				SFlowMapField{
-					Layer:  "ipv6",
-					Offset: 192,
-					Length: 128,
+					Layer:        "ipv6",
+					Offset:       192,
+					Length:       128,
+					Encapsulated: true,
 
 					Destination: "dst_ip_encap",
 				},
 
 				SFlowMapField{
-					Layer:  "ipv4",
-					Offset: 96,
-					Length: 32,
+					Layer:        "ipv4",
+					Offset:       96,
+					Length:       32,
+					Encapsulated: true,
 
 					Destination: "src_ip_encap",
 				},
 				SFlowMapField{
-					Layer:  "ipv4",
-					Offset: 128,
-					Length: 32,
+					Layer:        "ipv4",
+					Offset:       128,
+					Length:       32,
+					Encapsulated: true,
 
 					Destination: "dst_ip_encap",
 				},
