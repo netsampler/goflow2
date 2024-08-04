@@ -25,10 +25,10 @@ type NetFlowV9ProducerConfig struct {
 }
 
 type SFlowMapField struct {
-	Layer string `yaml:"layer"`
-	//Encapsulated bool `yaml:"encap"` // only parse if encapsulated
-	Offset int `yaml:"offset"` // offset in bits
-	Length int `yaml:"length"` // length in bits
+	Layer        string `yaml:"layer"`
+	Encapsulated bool   `yaml:"encap"`  // only parse if encapsulated
+	Offset       int    `yaml:"offset"` // offset in bits
+	Length       int    `yaml:"length"` // length in bits
 
 	Destination string     `yaml:"destination"`
 	Endian      EndianType `yaml:"endianness"`
@@ -141,26 +141,44 @@ func (f *FormatterConfigMapper) IsArray(name string) bool {
 }
 
 type NetFlowMapper struct {
-	data map[string]DataMap // maps field to destination
+	data map[string]*DataMap // maps field to destination
 }
 
-func (m *NetFlowMapper) Map(field netflow.DataField) (DataMap, bool) {
+func (m *NetFlowMapper) Map(field netflow.DataField) (MapConfigBaseIf, bool) {
 	if m == nil {
-		return DataMap{}, false
+		return &DataMap{}, false
 	}
 	mapped, found := m.data[fmt.Sprintf("%v-%d-%d", field.PenProvided, field.Pen, field.Type)]
 	return mapped, found
 }
 
 type SFlowMapper struct {
-	data map[string][]DataMapLayer // map layer to list of offsets
+	data map[string][]*DataMapLayer // map layer to list of offsets
 }
 
-func (m *SFlowMapper) Map(layer string) []DataMapLayer {
+type sflowMapperIterator struct {
+	data []*DataMapLayer
+	n    int
+}
+
+func (i *sflowMapperIterator) Next() MapConfigLayerIf {
+	if len(i.data) <= i.n {
+		return nil
+	}
+	d := i.data[i.n]
+	i.n += 1
+	return d
+}
+
+type MapLayerIterator interface {
+	Next() MapConfigLayerIf
+}
+
+func (m *SFlowMapper) Map(layer string) MapLayerIterator {
 	if m == nil {
 		return nil
 	}
-	return m.data[layer]
+	return &sflowMapperIterator{data: m.data[layer], n: 0}
 }
 
 type EndianType string
@@ -219,8 +237,21 @@ func (c *MapConfigBase) IsArray() bool {
 // Extended structure for packet mapping
 type DataMapLayer struct {
 	MapConfigBase
-	Offset int
-	Length int
+	Offset       int
+	Length       int
+	Encapsulated bool
+}
+
+func (c *DataMapLayer) GetOffset() int {
+	return c.Offset
+}
+
+func (c *DataMapLayer) GetLength() int {
+	return c.Length
+}
+
+func (c *DataMapLayer) IsEncapsulated() bool {
+	return c.Encapsulated
 }
 
 // Refactoring using interfaces
@@ -234,19 +265,19 @@ type MapConfigBaseIf interface {
 }
 
 type MapConfigLayerIf interface {
-	// combine with configbase?
+	MapConfigBaseIf
 	GetOffset() int
 	GetLength() int
 }
 
 // Returns the mapping information for a specific type of template field
 type TemplateMapper interface {
-	Map(field netflow.DataField) (DataMap, bool)
+	Map(field netflow.DataField) (MapConfigBaseIf, bool)
 }
 
 // Returns the mapping information for a layer of a packet
 type PacketMapper interface {
-	Map(layer string) []DataMapLayer
+	Map(layer string) MapLayerIterator
 }
 
 type FormatterMapper interface {

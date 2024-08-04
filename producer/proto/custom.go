@@ -6,9 +6,9 @@ import (
 )
 
 func mapFieldsSFlow(fields []SFlowMapField) *SFlowMapper {
-	ret := make(map[string][]DataMapLayer)
+	ret := make(map[string][]*DataMapLayer)
 	for _, field := range fields {
-		retLayerEntry := DataMapLayer{
+		retLayerEntry := &DataMapLayer{
 			Offset: field.Offset,
 			Length: field.Length,
 		}
@@ -18,18 +18,18 @@ func mapFieldsSFlow(fields []SFlowMapField) *SFlowMapper {
 		retLayer = append(retLayer, retLayerEntry)
 		ret[field.Layer] = retLayer
 	}
-	return &SFlowMapper{ret}
+	return &SFlowMapper{data: ret}
 }
 
 func mapFieldsNetFlow(fields []NetFlowMapField) *NetFlowMapper {
-	ret := make(map[string]DataMap)
+	ret := make(map[string]*DataMap)
 	for _, field := range fields {
-		dm := DataMap{}
+		dm := &DataMap{}
 		dm.Destination = field.Destination
 		dm.Endianness = field.Endian
 		ret[fmt.Sprintf("%v-%d-%d", field.PenProvided, field.Pen, field.Type)] = dm
 	}
-	return &NetFlowMapper{ret}
+	return &NetFlowMapper{data: ret}
 }
 
 func (c *producerConfigMapped) finalizemapDest(v *MapConfigBase) error {

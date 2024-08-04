@@ -41,7 +41,7 @@ func MapCustomLegacy(flowMessage *ProtoProducerMessage, v []byte, cfg MapConfigB
 	return MapCustom(flowMessage, v, &cfg)
 }
 
-func GetSFlowConfigLayer(m *SFlowMapper, layer string) []DataMapLayer {
+func GetSFlowConfigLayer(m *SFlowMapper, layer string) []*DataMapLayer {
 	if m == nil {
 		return nil
 	}

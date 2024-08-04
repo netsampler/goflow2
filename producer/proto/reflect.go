@@ -112,7 +112,7 @@ func MapCustomNetFlow(flowMessage *ProtoProducerMessage, df netflow.DataField, m
 	mapped, ok := mapper.Map(df)
 	if ok {
 		v := df.Value.([]byte)
-		if err := MapCustom(flowMessage, v, &mapped); err != nil {
+		if err := MapCustom(flowMessage, v, mapped); err != nil {
 			return err
 		}
 	}

@@ -224,12 +224,16 @@ func ParsePacket(flowMessage ProtoProducerMessageIf, data []byte, config PacketM
 		}
 
 		// Map custom fields
-		for key := range nextParser.ConfigKeyList {
-			configKey := nextParser.ConfigKeyList[key]
+		for _, key := range nextParser.ConfigKeyList {
 			if config != nil {
-				for _, configLayer := range config.Map(configKey) {
-					extracted := GetBytes2(data, offset*8+configLayer.Offset, configLayer.Length, true)
-					if err := flowMessage.MapCustom(configKey, extracted, &configLayer); err != nil {
+				layerIterator := config.Map(key)
+				for {
+					configLayer := layerIterator.Next()
+					if configLayer == nil {
+						break
+					}
+					extracted := GetBytes2(data, offset*8+configLayer.GetOffset(), configLayer.GetLength(), true)
+					if err := flowMessage.MapCustom(key, extracted, configLayer); err != nil {
 						return err
 					}
 				}
