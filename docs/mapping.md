@@ -83,12 +83,13 @@ The perimeter that is considered encapsulation here is the GRE protocol (note: i
 Rather than having duplicates of the existing fields with encapsulation, a configuration file can be used to collect
 the encapsulated fields.
 
-Todo: rephrase:
-A hack could also be setting the destination to be `src_addr` and `dst_addr` as array,
-In the protobuf protocol, this will be considered as not packed.
+An additional consideration is that protobuf fields can be array (or `repeated`).
+Due to the way the mapping works, the arrays are not [packed](https://protobuf.dev/programming-guides/encoding/#packed)
+(equivalent to a `repeated myfield = 123 [packed=false]` in the definition).
+Each item is encoded in the order they are parsed alongside other fields
+whereas packed would require a second pass to combine all the items together.
 
 ### Inner UDP/TCP ports
-
 
 ```yaml
 formatter:
@@ -97,11 +98,11 @@ formatter:
     - dst_port_encap
   protobuf:
     - name: src_port_encap
-      index: 996
+      index: 1021
       type: string
       array: true
     - name: dst_port_encap
-      index: 997
+      index: 1022
       type: string
       array: true
 sflow:
@@ -130,7 +131,6 @@ sflow:
 
 ### Inner IP addresses
 
-
 ```yaml
 formatter:
   fields:
@@ -138,11 +138,11 @@ formatter:
     - dst_ip_encap
   protobuf:
     - name: src_ip_encap
-      index: 998
+      index: 1006
       type: string
       array: true
     - name: dst_ip_encap
-      index: 999
+      index: 1007
       type: string
       array: true
 sflow:
