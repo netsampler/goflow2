@@ -21,73 +21,73 @@ var (
 
 	parserEthernet = ParserInfo{
 		nil, //ParseEthernet2,
-		[]string{"ethernet", "2", "etype6558", "etype0x199e"},
+		[]string{"ethernet", "2"},
 		20,
 		1,
 	}
 	parser8021Q = ParserInfo{
 		nil, //Parse8021Q2,
-		[]string{"dot1q", "etype33024", "etype0x8100"},
+		[]string{"dot1q"},
 		25,
 		2,
 	}
 	parserMPLS = ParserInfo{
 		nil, //ParseMPLS2,
-		[]string{"mpls", "etype34887", "etype0x8847"},
+		[]string{"mpls"},
 		25,
 		3,
 	}
 	parserIPv4 = ParserInfo{
 		nil, //ParseIPv42,
-		[]string{"ipv4", "ip", "3", "etype2048", "etype0x0800", "proto4"},
+		[]string{"ipv4", "ip", "3"},
 		30,
 		4,
 	}
 	parserIPv6 = ParserInfo{
 		nil, //ParseIPv62,
-		[]string{"ipv6", "ip", "3", "etype32525", "etype0x86dd", "proto41"},
+		[]string{"ipv6", "ip", "3"},
 		30,
 		5,
 	}
 	parserIPv6HeaderRouting = ParserInfo{
 		nil, //ParseIPv6HeaderRouting2,
-		[]string{"ipv6he_routing", "ipv6he", "proto43"},
+		[]string{"ipv6he_routing", "ipv6he"},
 		30,
 		7,
 	}
 	parserIPv6HeaderFragment = ParserInfo{
 		nil, //ParseIPv6HeaderFragment2,
-		[]string{"ipv6he_fragment", "ipv6he", "proto44"},
+		[]string{"ipv6he_fragment", "ipv6he"},
 		30,
 		6,
 	}
 	parserTCP = ParserInfo{
 		nil, //ParseTCP2,
-		[]string{"tcp", "4", "proto6"},
+		[]string{"tcp", "4"},
 		40,
 		8,
 	}
 	parserUDP = ParserInfo{
 		nil, //ParseUDP2,
-		[]string{"udp", "4", "proto17"},
+		[]string{"udp", "4"},
 		40,
 		9,
 	}
 	parserICMP = ParserInfo{
 		nil, //ParseICMP2,
-		[]string{"icmp", "proto1"},
+		[]string{"icmp"},
 		70,
 		10,
 	}
 	parserICMPv6 = ParserInfo{
 		nil, //ParseICMPv62,
-		[]string{"icmpv6", "proto58"},
+		[]string{"icmpv6"},
 		70,
 		11,
 	}
 	parserGRE = ParserInfo{
 		nil, //ParseGRE2,
-		[]string{"gre", "proto47"},
+		[]string{"gre"},
 		40,
 		12,
 	}
@@ -139,6 +139,13 @@ type ParserInfo struct {
 type Parser func(flowMessage *ProtoProducerMessage, data []byte, pc ParseConfig) (res ParseResult, err error)
 
 func NextParserEtype(etherType []byte) (ParserInfo, error) {
+	info, err := innerNextParserEtype(etherType)
+	etypeNum := uint16(etherType[0]<<8) | uint16(etherType[1])
+	info.ConfigKeyList = append(info.ConfigKeyList, fmt.Sprintf("etype%d", etypeNum), fmt.Sprintf("etype0x%.4x", etypeNum))
+	return info, err
+}
+
+func innerNextParserEtype(etherType []byte) (ParserInfo, error) {
 	if len(etherType) != 2 {
 		return parserNone, fmt.Errorf("wrong ether type")
 	}
@@ -156,13 +163,16 @@ func NextParserEtype(etherType []byte) (ParserInfo, error) {
 	case etherType[0] == 0x8 && etherType[1] == 0x6:
 		// ARP
 	}
-	info := parserNone
-	etypeNum := uint16(etherType[0]<<8) | uint16(etherType[1])
-	info.ConfigKeyList = []string{fmt.Sprintf("etype%d", etypeNum), fmt.Sprintf("etype0x%.4x", etypeNum)}
-	return info, nil
+	return parserNone, nil
 }
 
 func NextProtocolParser(proto byte) (ParserInfo, error) {
+	info, err := innerNextProtocolParser(proto)
+	info.ConfigKeyList = append(info.ConfigKeyList, fmt.Sprintf("proto%d", proto))
+	return info, err
+}
+
+func innerNextProtocolParser(proto byte) (ParserInfo, error) {
 	switch {
 	case proto == 1:
 		return parserICMP, nil // ICMP
@@ -185,8 +195,6 @@ func NextProtocolParser(proto byte) (ParserInfo, error) {
 	case proto == 115:
 		// L2TP
 	}
-	info := parserNone
-	info.ConfigKeyList = []string{fmt.Sprintf("proto%d", proto)}
 	return parserNone, nil
 }
 
