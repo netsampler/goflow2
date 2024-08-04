@@ -313,7 +313,7 @@ func main() {
 							l.Info("closed receiver")
 							continue
 						} else if !errors.Is(err, netflow.ErrorTemplateNotFound) && !errors.Is(err, debug.PanicError) {
-							l.Error("error")
+							l.WithError(err).Error("error")
 							continue
 						}
 

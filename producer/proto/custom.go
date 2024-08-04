@@ -129,6 +129,8 @@ func mapFormat(cfg *ProducerConfig) (*FormatterConfigMapper, error) {
 		"MplsIp":         true,
 		"MplsLabel":      true,
 		"MplsTtl":        true,
+		"LayerStack":        true,
+		"Ipv6RoutingHeaderAddresses":        true,
 	} // todo: improve this with defaults
 	for k, v := range defaultRenderers {
 		formatterMapped.render[k] = v
