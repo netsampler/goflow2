@@ -107,7 +107,9 @@ message FlowMessage {
     ICMP = 7;
     ICMPv6 = 8;
     GRE = 9;
-    // todo: add nsh, add ipv6 extension headers
+    IPv6HeaderRouting = 10;
+    IPv6HeaderFragment = 11;
+    // todo: add nsh
   }
   repeated LayerStack layer_stack = 103;
 

@@ -33,14 +33,14 @@ var (
 		[]string{"dot1q"},
 		25,
 		2,
-		false,
+		true,
 	}
 	parserMPLS = ParserInfo{
 		nil, //ParseMPLS2,
 		[]string{"mpls"},
 		25,
 		3,
-		false,
+		true,
 	}
 	parserIPv4 = ParserInfo{
 		nil, //ParseIPv42,
@@ -462,7 +462,7 @@ func ParseIPv6HeaderFragment2(flowMessage *ProtoProducerMessage, data []byte, pc
 
 	res.Size = 8
 
-	// todo: add flowMessage.LayerStack
+	flowMessage.AddLayer("IPv6HeaderFragment")
 
 	nextHeader := data[0]
 
@@ -491,7 +491,7 @@ func ParseIPv6HeaderRouting2(flowMessage *ProtoProducerMessage, data []byte, pc 
 
 	res.Size = 8 + 8*int(length)
 
-	// todo: add flowMessage.LayerStack
+	flowMessage.AddLayer("IPv6HeaderRouting")
 
 	if pc.BaseLayer() { // first time calling
 
