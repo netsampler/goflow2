@@ -11,12 +11,14 @@ var (
 		nil,
 		100,
 		9999,
+		false,
 	}
 	parserPayload = ParserInfo{
 		nil,
 		[]string{"payload", "7"},
 		100,
 		9998,
+		false,
 	}
 
 	parserEthernet = ParserInfo{
@@ -24,72 +26,84 @@ var (
 		[]string{"ethernet", "2"},
 		20,
 		1,
+		false,
 	}
 	parser8021Q = ParserInfo{
 		nil, //Parse8021Q2,
 		[]string{"dot1q"},
 		25,
 		2,
+		false,
 	}
 	parserMPLS = ParserInfo{
 		nil, //ParseMPLS2,
 		[]string{"mpls"},
 		25,
 		3,
+		false,
 	}
 	parserIPv4 = ParserInfo{
 		nil, //ParseIPv42,
 		[]string{"ipv4", "ip", "3"},
 		30,
 		4,
+		false,
 	}
 	parserIPv6 = ParserInfo{
 		nil, //ParseIPv62,
 		[]string{"ipv6", "ip", "3"},
 		30,
 		5,
+		false,
 	}
 	parserIPv6HeaderRouting = ParserInfo{
 		nil, //ParseIPv6HeaderRouting2,
 		[]string{"ipv6he_routing", "ipv6he"},
-		30,
+		35,
 		7,
+		false,
 	}
 	parserIPv6HeaderFragment = ParserInfo{
 		nil, //ParseIPv6HeaderFragment2,
 		[]string{"ipv6he_fragment", "ipv6he"},
-		30,
+		35,
 		6,
+		true,
 	}
 	parserTCP = ParserInfo{
 		nil, //ParseTCP2,
 		[]string{"tcp", "4"},
 		40,
 		8,
+		false,
 	}
 	parserUDP = ParserInfo{
 		nil, //ParseUDP2,
 		[]string{"udp", "4"},
 		40,
 		9,
+		false,
 	}
 	parserICMP = ParserInfo{
 		nil, //ParseICMP2,
 		[]string{"icmp"},
 		70,
 		10,
+		false,
 	}
 	parserICMPv6 = ParserInfo{
 		nil, //ParseICMPv62,
 		[]string{"icmpv6"},
 		70,
 		11,
+		false,
 	}
 	parserGRE = ParserInfo{
 		nil, //ParseGRE2,
 		[]string{"gre"},
 		40,
 		12,
+		false,
 	}
 )
 
@@ -133,6 +147,7 @@ type ParserInfo struct {
 	ConfigKeyList []string // keys to match for custom parsing
 	LayerIndex    int      // index to group
 	ParserIndex   int      // unique parser index
+	EncapSkip     bool     // indicates if should skip encapsulation calculations
 }
 
 // Parser is a function that maps various items of a layer to a ProtoProducerMessage
@@ -244,7 +259,10 @@ func ParsePacket(flowMessage ProtoProducerMessageIf, data []byte, config PacketM
 			}
 		}
 
-		if res.NextParser.LayerIndex <= nextParser.LayerIndex { // must be equals to support IP over IP
+		// compares the next layer index with current to determine if it's an encapsulation
+		// IP over IP is the equals case
+		// except if layer is skipping comparison (will be compared after). For instance IPv6 Fragment Header cannot trigger encap
+		if !res.NextParser.EncapSkip && res.NextParser.LayerIndex <= nextParser.LayerIndex {
 			parseConfig.Encapsulated = true
 		}
 
