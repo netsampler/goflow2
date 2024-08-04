@@ -261,7 +261,7 @@ func ParsePacket(flowMessage ProtoProducerMessageIf, data []byte, config PacketM
 
 		// compares the next layer index with current to determine if it's an encapsulation
 		// IP over IP is the equals case
-		// except if layer is skipping comparison (will be compared after). For instance IPv6 Fragment Header cannot trigger encap
+		// except if layer is skipping comparison (will be compared after). For instance IPv6 Fragment Header, dot1q and MPLS cannot trigger encap
 		if !res.NextParser.EncapSkip && res.NextParser.LayerIndex <= nextParser.LayerIndex {
 			parseConfig.Encapsulated = true
 		}
