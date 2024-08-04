@@ -242,7 +242,7 @@ func ParsePacket(flowMessage ProtoProducerMessageIf, data []byte, config PacketM
 		for _, key := range nextParser.ConfigKeyList {
 			if config != nil {
 				layerIterator := config.Map(key)
-				for {
+				for layerIterator != nil {
 					configLayer := layerIterator.Next()
 					if configLayer == nil {
 						break
