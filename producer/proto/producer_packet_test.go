@@ -213,7 +213,7 @@ func TestProcessPacketGRE2(t *testing.T) {
 	b, _ := json.Marshal(flowMessage.FlowMessage)
 	t.Log(string(b))
 
-	layers := []uint32{0, 2, 10, 1, 8}
+	layers := []uint32{0, 2, 9, 1, 7}
 	assert.Equal(t, len(layers), len(flowMessage.LayerStack))
 
 	for i, layer := range layers {
