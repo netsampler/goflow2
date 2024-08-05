@@ -122,7 +122,12 @@ func main() {
 			}
 		}
 
-		flowProducer, err = protoproducer.CreateProtoProducer(cfgProducer, protoproducer.CreateSamplingSystem)
+		cfgm, err := cfgProducer.Compile() // converts configuration into a format that can be used by a protobuf producer
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		flowProducer, err = protoproducer.CreateProtoProducer(cfgm, protoproducer.CreateSamplingSystem)
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -308,7 +313,7 @@ func main() {
 							l.Info("closed receiver")
 							continue
 						} else if !errors.Is(err, netflow.ErrorTemplateNotFound) && !errors.Is(err, debug.PanicError) {
-							l.Error("error")
+							l.WithError(err).Error("error")
 							continue
 						}
 

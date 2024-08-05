@@ -3,115 +3,15 @@ package protoproducer
 import (
 	"fmt"
 	"reflect"
-
-	"github.com/netsampler/goflow2/v2/decoders/netflow"
 )
 
-type NetFlowMapField struct {
-	PenProvided bool   `yaml:"penprovided"`
-	Type        uint16 `yaml:"field"`
-	Pen         uint32 `yaml:"pen"`
-
-	Destination string     `yaml:"destination"`
-	Endian      EndianType `yaml:"endianness"`
-	//DestinationLength uint8  `json:"dlen"` // could be used if populating a slice of uint16 that aren't in protobuf
-}
-
-type IPFIXProducerConfig struct {
-	Mapping []NetFlowMapField `yaml:"mapping"`
-	//PacketMapping []SFlowMapField   `json:"packet-mapping"` // for embedded frames: use sFlow configuration
-}
-
-type NetFlowV9ProducerConfig struct {
-	Mapping []NetFlowMapField `json:"mapping"`
-}
-
-type SFlowMapField struct {
-	Layer  string `yaml:"layer"`
-	Offset int    `yaml:"offset"` // offset in bits
-	Length int    `yaml:"length"` // length in bits
-
-	Destination string     `yaml:"destination"`
-	Endian      EndianType `yaml:"endianness"`
-	//DestinationLength uint8  `json:"dlen"`
-}
-
-type SFlowProducerConfig struct {
-	Mapping []SFlowMapField `yaml:"mapping"`
-}
-
-type ProtobufFormatterConfig struct {
-	Name  string
-	Index int32
-	Type  string
-	Array bool
-}
-
-type FormatterConfig struct {
-	Fields   []string                  `yaml:"fields"`
-	Key      []string                  `yaml:"key"`
-	Render   map[string]RendererID     `yaml:"render"`
-	Rename   map[string]string         `yaml:"rename"`
-	Protobuf []ProtobufFormatterConfig `yaml:"protobuf"`
-}
-
-type ProducerConfig struct {
-	Formatter FormatterConfig `yaml:"formatter"`
-
-	IPFIX     IPFIXProducerConfig     `yaml:"ipfix"`
-	NetFlowV9 NetFlowV9ProducerConfig `yaml:"netflowv9"`
-	SFlow     SFlowProducerConfig     `yaml:"sflow"` // also used for IPFIX data frames
-
-	// should do a rename map list for when printing
-}
-
-type DataMap struct {
-	MapConfigBase
-}
-
-type FormatterConfigMapper struct {
-	fields  []string
-	key     []string
-	reMap   map[string]string // map from a potential json name into the protobuf structure
-	rename  map[string]string // manually renaming fields
-	render  map[string]RenderFunc
-	pbMap   map[string]ProtobufFormatterConfig
-	numToPb map[int32]ProtobufFormatterConfig
-	isSlice map[string]bool
-}
-
-type NetFlowMapper struct {
-	data map[string]DataMap // maps field to destination
-}
-
-func (m *NetFlowMapper) Map(field netflow.DataField) (DataMap, bool) {
-	mapped, found := m.data[fmt.Sprintf("%v-%d-%d", field.PenProvided, field.Pen, field.Type)]
-	return mapped, found
-}
-
-type DataMapLayer struct {
-	MapConfigBase
-	Offset int
-	Length int
-}
-
-type SFlowMapper struct {
-	data map[string][]DataMapLayer // map layer to list of offsets
-}
-
-func GetSFlowConfigLayer(m *SFlowMapper, layer string) []DataMapLayer {
-	if m == nil {
-		return nil
-	}
-	return m.data[layer]
-}
-
 func mapFieldsSFlow(fields []SFlowMapField) *SFlowMapper {
-	ret := make(map[string][]DataMapLayer)
+	ret := make(map[string][]*DataMapLayer)
 	for _, field := range fields {
-		retLayerEntry := DataMapLayer{
-			Offset: field.Offset,
-			Length: field.Length,
+		retLayerEntry := &DataMapLayer{
+			Offset:       field.Offset,
+			Length:       field.Length,
+			Encapsulated: field.Encapsulated,
 		}
 		retLayerEntry.Destination = field.Destination
 		retLayerEntry.Endianness = field.Endian
@@ -119,26 +19,18 @@ func mapFieldsSFlow(fields []SFlowMapField) *SFlowMapper {
 		retLayer = append(retLayer, retLayerEntry)
 		ret[field.Layer] = retLayer
 	}
-	return &SFlowMapper{ret}
+	return &SFlowMapper{data: ret}
 }
 
 func mapFieldsNetFlow(fields []NetFlowMapField) *NetFlowMapper {
-	ret := make(map[string]DataMap)
+	ret := make(map[string]*DataMap)
 	for _, field := range fields {
-		dm := DataMap{}
+		dm := &DataMap{}
 		dm.Destination = field.Destination
 		dm.Endianness = field.Endian
 		ret[fmt.Sprintf("%v-%d-%d", field.PenProvided, field.Pen, field.Type)] = dm
 	}
-	return &NetFlowMapper{ret}
-}
-
-type producerConfigMapped struct {
-	Formatter *FormatterConfigMapper
-
-	IPFIX     *NetFlowMapper
-	NetFlowV9 *NetFlowMapper
-	SFlow     *SFlowMapper
+	return &NetFlowMapper{data: ret}
 }
 
 func (c *producerConfigMapped) finalizemapDest(v *MapConfigBase) error {
@@ -232,11 +124,14 @@ func mapFormat(cfg *ProducerConfig) (*FormatterConfigMapper, error) {
 	formatterMapped.render = make(map[string]RenderFunc)
 	formatterMapped.rename = make(map[string]string)
 	formatterMapped.isSlice = map[string]bool{
-		"BgpCommunities": true,
-		"AsPath":         true,
-		"MplsIp":         true,
-		"MplsLabel":      true,
-		"MplsTtl":        true,
+		"BgpCommunities":             true,
+		"AsPath":                     true,
+		"MplsIp":                     true,
+		"MplsLabel":                  true,
+		"MplsTtl":                    true,
+		"LayerStack":                 true,
+		"LayerSize":                  true,
+		"Ipv6RoutingHeaderAddresses": true,
 	} // todo: improve this with defaults
 	for k, v := range defaultRenderers {
 		formatterMapped.render[k] = v
