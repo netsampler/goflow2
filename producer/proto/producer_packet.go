@@ -58,14 +58,14 @@ var (
 	}
 	parserIPv6HeaderRouting = ParserInfo{
 		nil, //ParseIPv6HeaderRouting2,
-		[]string{"ipv6he_routing", "ipv6he"},
+		[]string{"ipv6eh_routing", "ipv6eh"},
 		35,
 		7,
 		false,
 	}
 	parserIPv6HeaderFragment = ParserInfo{
 		nil, //ParseIPv6HeaderFragment2,
-		[]string{"ipv6he_fragment", "ipv6he"},
+		[]string{"ipv6eh_fragment", "ipv6eh"},
 		35,
 		6,
 		true,
@@ -258,6 +258,9 @@ func ParsePacket(flowMessage ProtoProducerMessageIf, data []byte, config PacketM
 				}
 			}
 		}
+
+		fm := flowMessage.GetFlowMessage()
+		fm.LayerSize = append(fm.LayerSize, uint32(res.Size))
 
 		// compares the next layer index with current to determine if it's an encapsulation
 		// IP over IP is the equals case

@@ -112,8 +112,9 @@ message FlowMessage {
     // todo: add nsh
   }
   repeated LayerStack layer_stack = 103;
+  repeated uint32 layer_size = 104;
 
-  repeated bytes ipv6_routing_header_addresses = 104; // SRv6
-  uint32 ipv6_routing_header_seg_left = 105; // SRv6
+  repeated bytes ipv6_routing_header_addresses = 105; // SRv6
+  uint32 ipv6_routing_header_seg_left = 106; // SRv6
 
 }
