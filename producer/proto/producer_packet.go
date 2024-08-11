@@ -58,14 +58,14 @@ var (
 	}
 	parserIPv6HeaderRouting = ParserInfo{
 		nil, //ParseIPv6HeaderRouting2,
-		[]string{"ipv6eh_routing", "ipv6eh"},
+		[]string{"ipv6eh_routing", "ipv6-route", "ipv6eh"},
 		35,
 		7,
 		false,
 	}
 	parserIPv6HeaderFragment = ParserInfo{
 		nil, //ParseIPv6HeaderFragment2,
-		[]string{"ipv6eh_fragment", "ipv6eh"},
+		[]string{"ipv6eh_fragment", "ipv6-frag", "ipv6eh"},
 		35,
 		6,
 		true,
@@ -93,7 +93,7 @@ var (
 	}
 	parserICMPv6 = ParserInfo{
 		nil, //ParseICMPv62,
-		[]string{"icmpv6"},
+		[]string{"icmpv6", "ipv6-icmp"},
 		70,
 		11,
 		false,

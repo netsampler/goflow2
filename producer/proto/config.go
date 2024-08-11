@@ -2,6 +2,7 @@ package protoproducer
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/netsampler/goflow2/v2/decoders/netflow"
 )
@@ -178,7 +179,7 @@ func (m *SFlowMapper) Map(layer string) MapLayerIterator {
 	if m == nil {
 		return nil
 	}
-	return &sflowMapperIterator{data: m.data[layer], n: 0}
+	return &sflowMapperIterator{data: m.data[strings.ToLower(layer)], n: 0}
 }
 
 type EndianType string
