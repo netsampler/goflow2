@@ -109,18 +109,18 @@ var (
 
 func init() {
 	// necessary to set here otherwise initialization loop compilation error
-	parserEthernet.Parser = ParseEthernet2
-	parser8021Q.Parser = Parse8021Q2
-	parserMPLS.Parser = ParseMPLS2
-	parserIPv4.Parser = ParseIPv42
-	parserIPv6.Parser = ParseIPv62
-	parserIPv6HeaderRouting.Parser = ParseIPv6HeaderRouting2
-	parserIPv6HeaderFragment.Parser = ParseIPv6HeaderFragment2
-	parserTCP.Parser = ParseTCP2
-	parserUDP.Parser = ParseUDP2
-	parserICMP.Parser = ParseICMP2
-	parserICMPv6.Parser = ParseICMPv62
-	parserGRE.Parser = ParseGRE2
+	parserEthernet.Parser = ParseEthernet
+	parser8021Q.Parser = Parse8021Q
+	parserMPLS.Parser = ParseMPLS
+	parserIPv4.Parser = ParseIPv4
+	parserIPv6.Parser = ParseIPv6
+	parserIPv6HeaderRouting.Parser = ParseIPv6HeaderRouting
+	parserIPv6HeaderFragment.Parser = ParseIPv6HeaderFragment
+	parserTCP.Parser = ParseTCP
+	parserUDP.Parser = ParseUDP
+	parserICMP.Parser = ParseICMP
+	parserICMPv6.Parser = ParseICMPv6
+	parserGRE.Parser = ParseGRE
 }
 
 // Stores information about the current state of parsing
@@ -251,7 +251,7 @@ func ParsePacket(flowMessage ProtoProducerMessageIf, data []byte, config PacketM
 						continue
 					}
 
-					extracted := GetBytes2(data, offset*8+configLayer.GetOffset(), configLayer.GetLength(), true)
+					extracted := GetBytes(data, offset*8+configLayer.GetOffset(), configLayer.GetLength(), true)
 					if err := flowMessage.MapCustom(key, extracted, configLayer); err != nil {
 						return err
 					}
@@ -278,7 +278,7 @@ func ParsePacket(flowMessage ProtoProducerMessageIf, data []byte, config PacketM
 	return nil
 }
 
-func ParseEthernet2(flowMessage *ProtoProducerMessage, data []byte, pc ParseConfig) (res ParseResult, err error) {
+func ParseEthernet(flowMessage *ProtoProducerMessage, data []byte, pc ParseConfig) (res ParseResult, err error) {
 	if len(data) < 14 {
 		return res, nil
 	}
@@ -305,7 +305,7 @@ func ParseEthernet2(flowMessage *ProtoProducerMessage, data []byte, pc ParseConf
 	return res, err
 }
 
-func Parse8021Q2(flowMessage *ProtoProducerMessage, data []byte, pc ParseConfig) (res ParseResult, err error) {
+func Parse8021Q(flowMessage *ProtoProducerMessage, data []byte, pc ParseConfig) (res ParseResult, err error) {
 	if len(data) < 4 {
 		return res, nil
 	}
@@ -327,7 +327,7 @@ func Parse8021Q2(flowMessage *ProtoProducerMessage, data []byte, pc ParseConfig)
 	return res, err
 }
 
-func ParseMPLS2(flowMessage *ProtoProducerMessage, data []byte, pc ParseConfig) (res ParseResult, err error) {
+func ParseMPLS(flowMessage *ProtoProducerMessage, data []byte, pc ParseConfig) (res ParseResult, err error) {
 	if len(data) < 4 {
 		return res, nil
 	}
@@ -387,7 +387,7 @@ func ParseMPLS2(flowMessage *ProtoProducerMessage, data []byte, pc ParseConfig) 
 	return res, err
 }
 
-func ParseIPv42(flowMessage *ProtoProducerMessage, data []byte, pc ParseConfig) (res ParseResult, err error) {
+func ParseIPv4(flowMessage *ProtoProducerMessage, data []byte, pc ParseConfig) (res ParseResult, err error) {
 	if len(data) < 20 {
 		return res, nil
 	}
@@ -424,7 +424,7 @@ func ParseIPv42(flowMessage *ProtoProducerMessage, data []byte, pc ParseConfig) 
 	return res, err
 }
 
-func ParseIPv62(flowMessage *ProtoProducerMessage, data []byte, pc ParseConfig) (res ParseResult, err error) {
+func ParseIPv6(flowMessage *ProtoProducerMessage, data []byte, pc ParseConfig) (res ParseResult, err error) {
 	if len(data) < 40 {
 		return res, nil
 	}
@@ -458,7 +458,7 @@ func ParseIPv62(flowMessage *ProtoProducerMessage, data []byte, pc ParseConfig) 
 	return res, err
 }
 
-func ParseIPv6HeaderFragment2(flowMessage *ProtoProducerMessage, data []byte, pc ParseConfig) (res ParseResult, err error) {
+func ParseIPv6HeaderFragment(flowMessage *ProtoProducerMessage, data []byte, pc ParseConfig) (res ParseResult, err error) {
 	if len(data) < 8 {
 		return res, nil
 	}
@@ -484,7 +484,7 @@ func ParseIPv6HeaderFragment2(flowMessage *ProtoProducerMessage, data []byte, pc
 	return res, err
 }
 
-func ParseIPv6HeaderRouting2(flowMessage *ProtoProducerMessage, data []byte, pc ParseConfig) (res ParseResult, err error) {
+func ParseIPv6HeaderRouting(flowMessage *ProtoProducerMessage, data []byte, pc ParseConfig) (res ParseResult, err error) {
 	if len(data) < 8 {
 		return res, nil
 	}
@@ -530,7 +530,7 @@ func ParseIPv6HeaderRouting2(flowMessage *ProtoProducerMessage, data []byte, pc 
 	return res, err
 }
 
-func ParseTCP2(flowMessage *ProtoProducerMessage, data []byte, pc ParseConfig) (res ParseResult, err error) {
+func ParseTCP(flowMessage *ProtoProducerMessage, data []byte, pc ParseConfig) (res ParseResult, err error) {
 	if len(data) < 20 {
 		return res, nil
 	}
@@ -555,7 +555,7 @@ func ParseTCP2(flowMessage *ProtoProducerMessage, data []byte, pc ParseConfig) (
 	return res, err
 }
 
-func ParseUDP2(flowMessage *ProtoProducerMessage, data []byte, pc ParseConfig) (res ParseResult, err error) {
+func ParseUDP(flowMessage *ProtoProducerMessage, data []byte, pc ParseConfig) (res ParseResult, err error) {
 	if len(data) < 8 {
 		return res, nil
 	}
@@ -575,7 +575,7 @@ func ParseUDP2(flowMessage *ProtoProducerMessage, data []byte, pc ParseConfig) (
 	return res, err
 }
 
-func ParseGRE2(flowMessage *ProtoProducerMessage, data []byte, pc ParseConfig) (res ParseResult, err error) {
+func ParseGRE(flowMessage *ProtoProducerMessage, data []byte, pc ParseConfig) (res ParseResult, err error) {
 	if len(data) < 4 {
 		return res, nil
 	}
@@ -592,7 +592,7 @@ func ParseGRE2(flowMessage *ProtoProducerMessage, data []byte, pc ParseConfig) (
 	return res, err
 }
 
-func ParseICMP2(flowMessage *ProtoProducerMessage, data []byte, pc ParseConfig) (res ParseResult, err error) {
+func ParseICMP(flowMessage *ProtoProducerMessage, data []byte, pc ParseConfig) (res ParseResult, err error) {
 	if len(data) < 2 {
 		return res, nil
 	}
@@ -609,7 +609,7 @@ func ParseICMP2(flowMessage *ProtoProducerMessage, data []byte, pc ParseConfig) 
 	return res, err
 }
 
-func ParseICMPv62(flowMessage *ProtoProducerMessage, data []byte, pc ParseConfig) (res ParseResult, err error) {
+func ParseICMPv6(flowMessage *ProtoProducerMessage, data []byte, pc ParseConfig) (res ParseResult, err error) {
 	if len(data) < 2 {
 		return res, nil
 	}

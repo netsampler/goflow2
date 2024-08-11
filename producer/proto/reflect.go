@@ -10,7 +10,7 @@ import (
 )
 
 // Using a data slice, returns a chunk corresponding
-func GetBytes2(d []byte, offset, length int, shift bool) []byte {
+func GetBytes(d []byte, offset, length int, shift bool) []byte {
 
 	/*
 
