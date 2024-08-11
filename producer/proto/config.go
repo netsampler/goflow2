@@ -21,8 +21,6 @@ var (
 	}
 )
 
-// Refactoring using interfaces
-
 type MapConfigBaseIf interface {
 	GetEndianness() EndianType
 	GetDestination() string

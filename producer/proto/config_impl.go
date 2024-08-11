@@ -8,6 +8,19 @@ import (
 	"github.com/netsampler/goflow2/v2/decoders/netflow"
 )
 
+var (
+	isSliceMap = map[string]bool{
+		"BgpCommunities":             true,
+		"AsPath":                     true,
+		"MplsIp":                     true,
+		"MplsLabel":                  true,
+		"MplsTtl":                    true,
+		"LayerStack":                 true,
+		"LayerSize":                  true,
+		"Ipv6RoutingHeaderAddresses": true,
+	}
+)
+
 type NetFlowMapField struct {
 	PenProvided bool   `yaml:"penprovided"`
 	Type        uint16 `yaml:"field"`
@@ -357,16 +370,7 @@ func mapFormat(cfg *ProducerConfig) (*FormatterConfigMapper, error) {
 	pbMap := make(map[string]ProtobufFormatterConfig)
 	formatterMapped.render = make(map[string]RenderFunc)
 	formatterMapped.rename = make(map[string]string)
-	formatterMapped.isSlice = map[string]bool{
-		"BgpCommunities":             true,
-		"AsPath":                     true,
-		"MplsIp":                     true,
-		"MplsLabel":                  true,
-		"MplsTtl":                    true,
-		"LayerStack":                 true,
-		"LayerSize":                  true,
-		"Ipv6RoutingHeaderAddresses": true,
-	} // todo: improve this with defaults
+	formatterMapped.isSlice = isSliceMap
 	for k, v := range defaultRenderers {
 		formatterMapped.render[k] = v
 	}
