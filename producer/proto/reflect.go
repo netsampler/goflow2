@@ -119,7 +119,7 @@ func MapCustomNetFlow(flowMessage *ProtoProducerMessage, df netflow.DataField, m
 	return nil
 }
 
-func MapCustom(flowMessage *ProtoProducerMessage, v []byte, cfg MapConfigBaseIf) error {
+func MapCustom(flowMessage *ProtoProducerMessage, v []byte, cfg MappableField) error {
 	vfm := reflect.ValueOf(flowMessage)
 	vfm = reflect.Indirect(vfm)
 

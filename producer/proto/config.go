@@ -21,7 +21,9 @@ var (
 	}
 )
 
-type MapConfigBaseIf interface {
+// MappableField is the interface that allows a flow's field to be mapped to a specific protobuf field.
+// Provided by Template Mapper's function.
+type MappableField interface {
 	GetEndianness() EndianType
 	GetDestination() string
 	GetProtoIndex() int32
@@ -29,23 +31,31 @@ type MapConfigBaseIf interface {
 	IsArray() bool
 }
 
-type MapConfigLayerIf interface {
-	MapConfigBaseIf
+// MappableByteField is the interface, similar to MappableField, but for direct packet parsing.
+// Provided by PacketMapper.
+type MappableByteField interface {
+	MappableField
 	GetOffset() int
 	GetLength() int
 	IsEncapsulated() bool
 }
 
-// Returns the mapping information for a specific type of template field
+// TemplateMapper is the interface to returns the mapping information for a specific type of template field
 type TemplateMapper interface {
-	Map(field netflow.DataField) (MapConfigBaseIf, bool)
+	Map(field netflow.DataField) (MappableField, bool)
 }
 
-// Returns the mapping information for a layer of a packet
+// MapLayerIterator is the interface to obtain subsequent mapping information
+type MapLayerIterator interface {
+	Next() MappableByteField // returns the next MappableByteField. Function is called by the packet parser until returns nil.
+}
+
+// PacketMapper is the interface to obtain the mapping information for a layer of a packet
 type PacketMapper interface {
-	Map(layer string) MapLayerIterator
+	Map(layer string) MapLayerIterator // returns an iterator to avoid handling arrays
 }
 
+// FormatterMapper returns the configuration statements for the textual formatting of the protobuf messages
 type FormatterMapper interface {
 	Keys() []string
 	Fields() []string
@@ -56,7 +66,7 @@ type FormatterMapper interface {
 	IsArray(name string) bool
 }
 
-// Top level configuration for a general flow to protobuf producer
+// ProtoProducerConfig is the top level configuration for a general flow to protobuf producer
 type ProtoProducerConfig interface {
 	GetFormatter() FormatterMapper
 	GetIPFIXMapper() TemplateMapper

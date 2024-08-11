@@ -159,7 +159,7 @@ type NetFlowMapper struct {
 	data map[string]*DataMap // maps field to destination
 }
 
-func (m *NetFlowMapper) Map(field netflow.DataField) (MapConfigBaseIf, bool) {
+func (m *NetFlowMapper) Map(field netflow.DataField) (MappableField, bool) {
 	if m == nil {
 		return &DataMap{}, false
 	}
@@ -176,17 +176,13 @@ type sflowMapperIterator struct {
 	n    int
 }
 
-func (i *sflowMapperIterator) Next() MapConfigLayerIf {
+func (i *sflowMapperIterator) Next() MappableByteField {
 	if len(i.data) <= i.n {
 		return nil
 	}
 	d := i.data[i.n]
 	i.n += 1
 	return d
-}
-
-type MapLayerIterator interface {
-	Next() MapConfigLayerIf
 }
 
 func (m *SFlowMapper) Map(layer string) MapLayerIterator {

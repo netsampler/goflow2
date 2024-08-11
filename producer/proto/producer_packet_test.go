@@ -231,7 +231,7 @@ type testProtoProducerMessage struct {
 	t *testing.T
 }
 
-func (m *testProtoProducerMessage) MapCustom(key string, v []byte, cfg MapConfigBaseIf) error {
+func (m *testProtoProducerMessage) MapCustom(key string, v []byte, cfg MappableField) error {
 	m.t.Log("mapping", key, v)
 	mc := MapConfigBase{
 		Endianness: BigEndian,
