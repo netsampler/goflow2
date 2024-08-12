@@ -109,6 +109,8 @@ message FlowMessage {
     GRE = 9;
     IPv6HeaderRouting = 10;
     IPv6HeaderFragment = 11;
+    Geneve = 12;
+    Teredo = 13;
     Custom = 99;
     // todo: add nsh
   }

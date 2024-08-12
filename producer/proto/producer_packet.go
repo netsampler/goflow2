@@ -743,6 +743,8 @@ func ParseGRE(flowMessage *ProtoProducerMessage, data []byte, pc ParseConfig) (r
 }
 
 func ParseTeredoDst(flowMessage *ProtoProducerMessage, data []byte, pc ParseConfig) (res ParseResult, err error) {
+	flowMessage.AddLayer("Teredo")
+
 	// get next parser
 	res.NextParser = parserIPv6
 
@@ -755,6 +757,8 @@ func ParseGeneve(flowMessage *ProtoProducerMessage, data []byte, pc ParseConfig)
 	}
 
 	res.Size = int(data[0]&0x3f)*4 + 8
+
+	flowMessage.AddLayer("Geneve")
 
 	eType := data[2:4]
 
