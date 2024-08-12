@@ -66,14 +66,17 @@ netflowv9:
 sflow:
   ports:
     - proto: "udp"
-      dstport: 6081
-      next: "geneve"
+      dir: "dst"
+      port: 3544
+      parser: "teredo-dst"
     - proto: "udp"
-      dstport: 3544
-      next: "teredo"
+      dir: "both"
+      port: 4754
+      parser: "gre"
     - proto: "udp"
-      dstport: 4754
-      next: "gre"
+      dir: "both"
+      port: 6081
+      parser: "geneve"
   mapping:
     - layer: "udp"
       offset: 48

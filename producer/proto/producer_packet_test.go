@@ -420,7 +420,7 @@ func TestProcessPacketMappingPort(t *testing.T) {
 
 	var domain []byte
 
-	RegisterPort("udp", 53, &ParserInfo{
+	RegisterPort("udp", PortDirDst, 53, ParserInfo{
 		Parser: func(flowMessage *ProtoProducerMessage, data []byte, pc ParseConfig) (res ParseResult, err error) {
 			domain = data[13 : 13+11]
 			flowMessage.AddLayer("Custom")

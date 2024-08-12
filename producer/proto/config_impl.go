@@ -51,9 +51,10 @@ type SFlowMapField struct {
 }
 
 type SFlowProtocolParse struct {
-	Proto   string `yaml:"proto"`
-	DstPort uint16 `yaml:"dstport"`
-	Next    string `yaml:"next"`
+	Proto  string     `yaml:"proto"`
+	Dir    RegPortDir `yaml:"dir"`
+	Port   uint16     `yaml:"port"`
+	Parser string     `yaml:"parser"`
 }
 
 type SFlowProducerConfig struct {
@@ -199,10 +200,6 @@ func (m *SFlowMapper) Map(layer string) MapLayerIterator {
 	return &sflowMapperIterator{data: m.data[strings.ToLower(layer)], n: 0}
 }
 
-func (m *SFlowMapper) NextParser(proto string, srcPort, dstPort uint16) (parser string, err error) {
-	return "", nil
-}
-
 // Structure to help the MapCustom functions
 // populate the protobuf data
 type MapConfigBase struct {
@@ -274,6 +271,20 @@ func mapFieldsSFlow(fields []SFlowMapField) *SFlowMapper {
 		ret[field.Layer] = retLayer
 	}
 	return &SFlowMapper{data: ret}
+}
+
+func mapPortsSFlow(ports []SFlowProtocolParse) error {
+	for _, port := range ports {
+		parser, ok := GetParser(port.Parser)
+		if !ok {
+			return fmt.Errorf("parser %s not found", port.Parser)
+		}
+		if err := RegisterPort(port.Proto, port.Dir, port.Port, parser); err != nil {
+			return err
+		}
+
+	}
+	return nil
 }
 
 func mapFieldsNetFlow(fields []NetFlowMapField) *NetFlowMapper {
@@ -451,6 +462,9 @@ func mapConfig(cfg *ProducerConfig) (*producerConfigMapped, error) {
 		newCfg.IPFIX = mapFieldsNetFlow(cfg.IPFIX.Mapping)
 		newCfg.NetFlowV9 = mapFieldsNetFlow(cfg.NetFlowV9.Mapping)
 		newCfg.SFlow = mapFieldsSFlow(cfg.SFlow.Mapping)
+		if err := mapPortsSFlow(cfg.SFlow.Ports); err != nil {
+			return nil, err
+		}
 	}
 	var err error
 	if newCfg.Formatter, err = mapFormat(cfg); err != nil {
