@@ -64,6 +64,16 @@ netflowv9:
     - field: 61
       destination: flow_direction
 sflow:
+  ports:
+    - proto: "udp"
+      dstport: 6081
+      next: "geneve"
+    - proto: "udp"
+      dstport: 3544
+      next: "teredo"
+    - proto: "udp"
+      dstport: 4754
+      next: "gre"
   mapping:
     - layer: "udp"
       offset: 48

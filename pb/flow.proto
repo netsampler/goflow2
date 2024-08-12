@@ -109,6 +109,7 @@ message FlowMessage {
     GRE = 9;
     IPv6HeaderRouting = 10;
     IPv6HeaderFragment = 11;
+    Custom = 99;
     // todo: add nsh
   }
   repeated LayerStack layer_stack = 103;

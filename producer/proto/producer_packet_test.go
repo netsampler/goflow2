@@ -2,7 +2,6 @@ package protoproducer
 
 import (
 	"encoding/base64"
-
 	"encoding/hex"
 	"encoding/json"
 	"testing"
@@ -394,4 +393,47 @@ func TestProcessPacketMappingEncap(t *testing.T) {
 
 	b, _ = flowMessage.MarshalJSON()
 	t.Log(string(b))
+}
+
+func TestProcessPacketMappingPort(t *testing.T) {
+	dataStr := "005300000001" + // src mac
+		"005300000002" + // dst mac
+		"0800" + // etype
+
+		"45000064" + // ipv4
+		"abab" + // id
+		"0000ff11" + // flag, ttl, proto
+		"aaaa" + // csum
+		"0a000001" + // src
+		"0a000002" + // dst
+
+		// udp
+		"ff00" + // src port
+		"0035" + // dst port
+		"0015" + // length
+		"ffff" + // csum
+
+		"02a901000001000000000000146578616d706c6503636f6d0000010001" // dns packet
+
+	data, _ := hex.DecodeString(dataStr)
+	var flowMessage ProtoProducerMessage
+
+	var domain []byte
+
+	RegisterPort("udp", 53, &ParserInfo{
+		Parser: func(flowMessage *ProtoProducerMessage, data []byte, pc ParseConfig) (res ParseResult, err error) {
+			domain = data[13 : 13+11]
+			flowMessage.AddLayer("Custom")
+			t.Log("read DNS packet", string(domain))
+			res.Size = len(data)
+			return res, err
+		},
+	})
+
+	err := ParsePacket(&flowMessage, data, nil)
+	assert.NoError(t, err)
+
+	assert.Equal(t, []byte{0x65, 0x78, 0x61, 0x6D, 0x70, 0x6C, 0x65, 0x03, 0x63, 0x6F, 0x6D}, domain)
+	assert.Equal(t, 4, len(flowMessage.LayerSize))
+	assert.Equal(t, uint32(29), flowMessage.LayerSize[3])
 }

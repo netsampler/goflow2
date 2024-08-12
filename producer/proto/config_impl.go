@@ -50,8 +50,15 @@ type SFlowMapField struct {
 	//DestinationLength uint8  `json:"dlen"`
 }
 
+type SFlowProtocolParse struct {
+	Proto   string `yaml:"proto"`
+	DstPort uint16 `yaml:"dstport"`
+	Next    string `yaml:"next"`
+}
+
 type SFlowProducerConfig struct {
-	Mapping []SFlowMapField `yaml:"mapping"`
+	Mapping []SFlowMapField      `yaml:"mapping"`
+	Ports   []SFlowProtocolParse `yaml:"ports"`
 }
 
 type ProtobufFormatterConfig struct {
@@ -190,6 +197,10 @@ func (m *SFlowMapper) Map(layer string) MapLayerIterator {
 		return nil
 	}
 	return &sflowMapperIterator{data: m.data[strings.ToLower(layer)], n: 0}
+}
+
+func (m *SFlowMapper) NextParser(proto string, srcPort, dstPort uint16) (parser string, err error) {
+	return "", nil
 }
 
 // Structure to help the MapCustom functions

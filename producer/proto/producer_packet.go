@@ -3,11 +3,15 @@ package protoproducer
 import (
 	"encoding/binary"
 	"fmt"
+	"sync"
 )
 
 var (
+	errParserEmpty = fmt.Errorf("parser is nil")
+
 	parserNone = ParserInfo{
 		nil,
+		"none",
 		nil,
 		100,
 		9999,
@@ -15,6 +19,7 @@ var (
 	}
 	parserPayload = ParserInfo{
 		nil,
+		"payload",
 		[]string{"payload", "7"},
 		100,
 		9998,
@@ -23,6 +28,7 @@ var (
 
 	parserEthernet = ParserInfo{
 		nil, //ParseEthernet2,
+		"ethernet",
 		[]string{"ethernet", "2"},
 		20,
 		1,
@@ -30,6 +36,7 @@ var (
 	}
 	parser8021Q = ParserInfo{
 		nil, //Parse8021Q2,
+		"dot1q",
 		[]string{"dot1q"},
 		25,
 		2,
@@ -37,6 +44,7 @@ var (
 	}
 	parserMPLS = ParserInfo{
 		nil, //ParseMPLS2,
+		"mpls",
 		[]string{"mpls"},
 		25,
 		3,
@@ -44,6 +52,7 @@ var (
 	}
 	parserIPv4 = ParserInfo{
 		nil, //ParseIPv42,
+		"ipv4",
 		[]string{"ipv4", "ip", "3"},
 		30,
 		4,
@@ -51,6 +60,7 @@ var (
 	}
 	parserIPv6 = ParserInfo{
 		nil, //ParseIPv62,
+		"ipv6",
 		[]string{"ipv6", "ip", "3"},
 		30,
 		5,
@@ -58,6 +68,7 @@ var (
 	}
 	parserIPv6HeaderRouting = ParserInfo{
 		nil, //ParseIPv6HeaderRouting2,
+		"ipv6-route",
 		[]string{"ipv6eh_routing", "ipv6-route", "ipv6eh"},
 		35,
 		7,
@@ -65,6 +76,7 @@ var (
 	}
 	parserIPv6HeaderFragment = ParserInfo{
 		nil, //ParseIPv6HeaderFragment2,
+		"ipv6-frag",
 		[]string{"ipv6eh_fragment", "ipv6-frag", "ipv6eh"},
 		35,
 		6,
@@ -72,6 +84,7 @@ var (
 	}
 	parserTCP = ParserInfo{
 		nil, //ParseTCP2,
+		"tcp",
 		[]string{"tcp", "4"},
 		40,
 		8,
@@ -79,6 +92,7 @@ var (
 	}
 	parserUDP = ParserInfo{
 		nil, //ParseUDP2,
+		"udp",
 		[]string{"udp", "4"},
 		40,
 		9,
@@ -86,6 +100,7 @@ var (
 	}
 	parserICMP = ParserInfo{
 		nil, //ParseICMP2,
+		"icmp",
 		[]string{"icmp"},
 		70,
 		10,
@@ -93,6 +108,7 @@ var (
 	}
 	parserICMPv6 = ParserInfo{
 		nil, //ParseICMPv62,
+		"ipv6-icmp",
 		[]string{"icmpv6", "ipv6-icmp"},
 		70,
 		11,
@@ -100,11 +116,17 @@ var (
 	}
 	parserGRE = ParserInfo{
 		nil, //ParseGRE2,
+		"gre",
 		[]string{"gre"},
 		40,
 		12,
 		false,
 	}
+
+	nameToParser = sync.Map{}
+	customEtype  = sync.Map{}
+	customProto  = sync.Map{}
+	customPort   = sync.Map{}
 )
 
 func init() {
@@ -121,7 +143,63 @@ func init() {
 	parserICMP.Parser = ParseICMP
 	parserICMPv6.Parser = ParseICMPv6
 	parserGRE.Parser = ParseGRE
+
+	// Load initial parsers by name
+	for _, p := range []*ParserInfo{
+		&parserEthernet,
+		&parser8021Q,
+		&parserMPLS,
+		&parserIPv4,
+		&parserIPv6,
+		&parserIPv6HeaderRouting,
+		&parserIPv6HeaderFragment,
+		&parserTCP,
+		&parserUDP,
+		&parserICMP,
+		&parserICMPv6,
+		&parserGRE} {
+		nameToParser.Store(p.Name, p)
+	}
+
 }
+
+// GetParser returns a parser by name
+func GetParser(name string) (info ParserInfo, ok bool) {
+	parser, ok := nameToParser.Load(name)
+	if ok {
+		return *parser.(*ParserInfo), ok
+	}
+	return info, ok
+}
+
+// RegisterEtype adds or replace a parser used when decoding a protocol on top of layer 2 (eg: Ethernet).
+func RegisterEtype(eType uint16, parser *ParserInfo) error {
+	if parser == nil {
+		return errParserEmpty
+	}
+	customEtype.Store(eType, parser) // parser can be invoked to decode certain etypes
+	return nil
+}
+
+// RegisterProto adds or replace a parser used when decoding a protocol on top of layer 3 (eg: IP).
+func RegisterProto(proto byte, parser *ParserInfo) error {
+	if parser == nil {
+		return errParserEmpty
+	}
+	customProto.Store(proto, parser) // parser can be invoked to decode certain protocols
+	return nil
+}
+
+// RegisterPort adds or replace a parser used when decoding a protocol on top of layer 4 (eg: UDP). Port is used for source and destination
+func RegisterPort(proto string, port uint16, parser *ParserInfo) error {
+	if parser == nil {
+		return errParserEmpty
+	}
+	customPort.Store(fmt.Sprintf("%s-%d", proto, port), parser) // parser can be invoked to decode certain encapsulated protocols
+	return nil
+}
+
+// todo: getparser
 
 // Stores information about the current state of parsing
 type ParseConfig struct {
@@ -144,6 +222,7 @@ type ParseResult struct {
 
 type ParserInfo struct {
 	Parser        Parser
+	Name          string
 	ConfigKeyList []string // keys to match for custom parsing
 	LayerIndex    int      // index to group
 	ParserIndex   int      // unique parser index
@@ -164,18 +243,24 @@ func innerNextParserEtype(etherType []byte) (ParserInfo, error) {
 	if len(etherType) != 2 {
 		return parserNone, fmt.Errorf("wrong ether type")
 	}
+
+	eType := uint16(etherType[0])<<8 | uint16(etherType[1])
+	if cParser, ok := customEtype.Load(eType); ok {
+		return *cParser.(*ParserInfo), nil
+	}
+
 	switch {
-	case etherType[0] == 0x19 && etherType[1] == 0x9e:
+	case eType == 0x199e:
 		return parserEthernet, nil // Transparent Ether Bridging (GRE)
-	case etherType[0] == 0x88 && etherType[1] == 0x47:
+	case eType == 0x8847:
 		return parserMPLS, nil // MPLS
-	case etherType[0] == 0x81 && etherType[1] == 0x0:
+	case eType == 0x8100:
 		return parser8021Q, nil // 802.1q
-	case etherType[0] == 0x8 && etherType[1] == 0x0:
+	case eType == 0x0800:
 		return parserIPv4, nil // IPv4
-	case etherType[0] == 0x86 && etherType[1] == 0xdd:
+	case eType == 0x86dd:
 		return parserIPv6, nil // IPv6
-	case etherType[0] == 0x8 && etherType[1] == 0x6:
+	case eType == 0x0806:
 		// ARP
 	}
 	return parserNone, nil
@@ -188,6 +273,10 @@ func NextProtocolParser(proto byte) (ParserInfo, error) {
 }
 
 func innerNextProtocolParser(proto byte) (ParserInfo, error) {
+	if cParser, ok := customProto.Load(proto); ok {
+		return *cParser.(*ParserInfo), nil
+	}
+
 	switch {
 	case proto == 1:
 		return parserICMP, nil // ICMP
@@ -213,10 +302,27 @@ func innerNextProtocolParser(proto byte) (ParserInfo, error) {
 	return parserNone, nil
 }
 
-func NextPortParser(srcPort, dstPort uint16) (ParserInfo, error) {
-	// Parser for GRE, Teredo, etc.
-	// note: must depend on user configuration
-	return parserNone, nil
+func NextPortParser(proto string, srcPort, dstPort uint16) (ParserInfo, error) {
+	// Parser for GRE, Teredo, Geneve, etc.
+
+	dir, info, err := innerNextPortParser(proto, srcPort, dstPort)
+	// a custom parser must be present in order to expand the keys array
+	if dir == 1 {
+		info.ConfigKeyList = append(info.ConfigKeyList, fmt.Sprintf("%s%d", proto, dstPort))
+	} else if dir == 2 {
+		info.ConfigKeyList = append(info.ConfigKeyList, fmt.Sprintf("%s%d", proto, srcPort))
+	}
+	return info, err
+}
+
+func innerNextPortParser(proto string, srcPort, dstPort uint16) (byte, ParserInfo, error) {
+	if cParser, ok := customPort.Load(fmt.Sprintf("%s-%d", proto, dstPort)); ok {
+		return 1, *cParser.(*ParserInfo), nil
+	}
+	if cParser, ok := customPort.Load(fmt.Sprintf("%s-%d", proto, srcPort)); ok {
+		return 2, *cParser.(*ParserInfo), nil
+	}
+	return 0, parserNone, nil
 }
 
 func ParsePacket(flowMessage ProtoProducerMessageIf, data []byte, config PacketMapper) (err error) {
@@ -541,16 +647,18 @@ func ParseTCP(flowMessage *ProtoProducerMessage, data []byte, pc ParseConfig) (r
 
 	flowMessage.AddLayer("TCP")
 
-	if pc.BaseLayer() { // first time calling
-		srcPort := binary.BigEndian.Uint16(data[0:2])
-		dstPort := binary.BigEndian.Uint16(data[2:4])
+	srcPort := binary.BigEndian.Uint16(data[0:2])
+	dstPort := binary.BigEndian.Uint16(data[2:4])
 
+	if pc.BaseLayer() { // first time calling
 		flowMessage.SrcPort = uint32(srcPort)
 		flowMessage.DstPort = uint32(dstPort)
 
 		tcpflags := data[13]
 		flowMessage.TcpFlags = uint32(tcpflags)
 	}
+
+	res.NextParser, err = NextPortParser("tcp", srcPort, dstPort)
 
 	return res, err
 }
@@ -564,13 +672,15 @@ func ParseUDP(flowMessage *ProtoProducerMessage, data []byte, pc ParseConfig) (r
 
 	flowMessage.AddLayer("UDP")
 
-	if pc.BaseLayer() { // first time calling
-		srcPort := binary.BigEndian.Uint16(data[0:2])
-		dstPort := binary.BigEndian.Uint16(data[2:4])
+	srcPort := binary.BigEndian.Uint16(data[0:2])
+	dstPort := binary.BigEndian.Uint16(data[2:4])
 
+	if pc.BaseLayer() { // first time calling
 		flowMessage.SrcPort = uint32(srcPort)
 		flowMessage.DstPort = uint32(dstPort)
 	}
+
+	res.NextParser, err = NextPortParser("udp", srcPort, dstPort)
 
 	return res, err
 }
