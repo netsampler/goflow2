@@ -437,3 +437,54 @@ func TestProcessPacketMappingPort(t *testing.T) {
 	assert.Equal(t, 4, len(flowMessage.LayerSize))
 	assert.Equal(t, uint32(29), flowMessage.LayerSize[3])
 }
+
+func TestProcessPacketMappingGeneve(t *testing.T) {
+	dataStr := "005300000001" + // src mac
+		"005300000002" + // dst mac
+		"0800" + // etype
+
+		"45000064" + // ipv4
+		"abab" + // id
+		"0000ff11" + // flag, ttl, proto
+		"aaaa" + // csum
+		"0a000001" + // src
+		"0a000002" + // dst
+
+		// udp
+		"ff00" + // src port
+		"17c1" + // dst port
+		"0015" + // length
+		"ffff" + // csum
+
+		"0240655800000a00000080010000000c" + // geneve
+
+		"005300000001" + // src mac
+		"005300000002" + // dst mac
+		"0800" + // etype
+
+		"45000064" + // ipv4
+		"abab" + // id
+		"0000ff01" + // flag, ttl, proto
+		"aaaa" + // csum
+		"0a000001" + // src
+		"0a000002" + // dst
+
+		"01018cf7000627c4" // icmp
+
+	data, _ := hex.DecodeString(dataStr)
+	var flowMessage ProtoProducerMessage
+
+	gp, _ := GetParser("geneve")
+
+	RegisterPort("udp", PortDirBoth, 6081, gp)
+
+	err := ParsePacket(&flowMessage, data, nil)
+	assert.NoError(t, err)
+
+	layers := []uint32{0, 1, 4, 12, 0, 1, 7}
+	assert.Equal(t, len(layers), len(flowMessage.LayerStack))
+
+	for i, layer := range layers {
+		assert.Equal(t, layer, uint32(flowMessage.LayerStack[i]))
+	}
+}
