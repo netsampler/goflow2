@@ -311,21 +311,17 @@ func EtypeRenderer(msg *ProtoProducerMessage, fieldName string, data interface{}
 }
 
 func ProtoName(protoNumber uint32) string {
-	if (protoNumber >= 146) && (protoNumber <= 252) {
-		return "unassigned"
-	}
-	if (protoNumber >= 253) && (protoNumber <= 254) {
-		return "experimental"
-	}
-	if protoNumber == 255 {
-		return "reserved"
-	}
 	dataC, ok := protoName[protoNumber]
 	if ok {
 		return dataC
-	} else {
-		return "unknown"
+	} else if (protoNumber >= 146) && (protoNumber <= 252) {
+		return "unassigned"
+	} else if (protoNumber >= 253) && (protoNumber <= 254) {
+		return "experimental"
+	} else if protoNumber == 255 {
+		return "reserved"
 	}
+	return "unknown"
 }
 
 func ProtoRenderer(msg *ProtoProducerMessage, fieldName string, data interface{}) interface{} {
