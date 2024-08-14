@@ -27,7 +27,11 @@ func ParseSampledHeaderConfig(flowMessage *ProtoProducerMessage, sampledHeader *
 	data := (*sampledHeader).HeaderData
 	switch (*sampledHeader).Protocol {
 	case 1: // Ethernet
-		if err := ParsePacket(flowMessage, data, config); err != nil {
+		if config == nil {
+			config = DefaultEnvironment
+		}
+
+		if err := config.ParsePacket(flowMessage, data); err != nil {
 			return err
 		}
 	}

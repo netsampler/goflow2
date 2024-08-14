@@ -6,6 +6,12 @@ import (
 	"sync"
 )
 
+type ParserEnvironment interface {
+	NextParserEtype(etherType []byte) (ParserInfo, error)
+	NextParserProto(proto byte) (ParserInfo, error)
+	NextParserPort(proto string, srcPort, dstPort uint16) (ParserInfo, error)
+}
+
 type RegPortDir string
 
 var (
@@ -145,10 +151,7 @@ var (
 		false,
 	}
 
-	nameToParser = sync.Map{}
-	customEtype  = sync.Map{}
-	customProto  = sync.Map{}
-	customPort   = sync.Map{}
+	DefaultEnvironment *BaseParserEnvironment
 )
 
 func init() {
@@ -168,6 +171,23 @@ func init() {
 	parserTeredoDst.Parser = ParseTeredoDst
 	parserGeneve.Parser = ParseGeneve
 
+	DefaultEnvironment = NewBaseParserEnvironment()
+}
+
+type BaseParserEnvironment struct {
+	nameToParser *sync.Map
+	customEtype  *sync.Map
+	customProto  *sync.Map
+	customPort   *sync.Map
+}
+
+func NewBaseParserEnvironment() *BaseParserEnvironment {
+	e := &BaseParserEnvironment{}
+	e.nameToParser = &sync.Map{}
+	e.customEtype = &sync.Map{}
+	e.customProto = &sync.Map{}
+	e.customPort = &sync.Map{}
+
 	// Load initial parsers by name
 	for _, p := range []ParserInfo{
 		parserEthernet,
@@ -185,14 +205,15 @@ func init() {
 		parserTeredoDst,
 		parserGeneve,
 	} {
-		nameToParser.Store(p.Name, p)
+		e.nameToParser.Store(p.Name, p)
 	}
 
+	return e
 }
 
 // GetParser returns a parser by name
-func GetParser(name string) (info ParserInfo, ok bool) {
-	parser, ok := nameToParser.Load(name)
+func (e *BaseParserEnvironment) GetParser(name string) (info ParserInfo, ok bool) {
+	parser, ok := e.nameToParser.Load(name)
 	if ok {
 		return parser.(ParserInfo), ok
 	}
@@ -200,36 +221,36 @@ func GetParser(name string) (info ParserInfo, ok bool) {
 }
 
 // RegisterEtype adds or replace a parser used when decoding a protocol on top of layer 2 (eg: Ethernet).
-func RegisterEtype(eType uint16, parser ParserInfo) error {
+func (e *BaseParserEnvironment) RegisterEtype(eType uint16, parser ParserInfo) error {
 	if parser.Parser == nil {
 		return errParserEmpty
 	}
-	customEtype.Store(eType, parser) // parser can be invoked to decode certain etypes
+	e.customEtype.Store(eType, parser) // parser can be invoked to decode certain etypes
 	return nil
 }
 
 // RegisterProto adds or replace a parser used when decoding a protocol on top of layer 3 (eg: IP).
-func RegisterProto(proto byte, parser ParserInfo) error {
+func (e *BaseParserEnvironment) RegisterProto(proto byte, parser ParserInfo) error {
 	if parser.Parser == nil {
 		return errParserEmpty
 	}
-	customProto.Store(proto, parser) // parser can be invoked to decode certain protocols
+	e.customProto.Store(proto, parser) // parser can be invoked to decode certain protocols
 	return nil
 }
 
 // RegisterPort adds or replace a parser used when decoding a protocol on top of layer 4 (eg: UDP). Port is used for source and destination
-func RegisterPort(proto string, dir RegPortDir, port uint16, parser ParserInfo) error {
+func (e *BaseParserEnvironment) RegisterPort(proto string, dir RegPortDir, port uint16, parser ParserInfo) error {
 	if parser.Parser == nil {
 		return errParserEmpty
 	}
 	switch dir {
 	case PortDirBoth:
-		customPort.Store(fmt.Sprintf("%s-src-%d", proto, port), parser)
-		customPort.Store(fmt.Sprintf("%s-dst-%d", proto, port), parser)
+		e.customPort.Store(fmt.Sprintf("%s-src-%d", proto, port), parser)
+		e.customPort.Store(fmt.Sprintf("%s-dst-%d", proto, port), parser)
 	case PortDirSrc:
-		customPort.Store(fmt.Sprintf("%s-src-%d", proto, port), parser)
+		e.customPort.Store(fmt.Sprintf("%s-src-%d", proto, port), parser)
 	case PortDirDst:
-		customPort.Store(fmt.Sprintf("%s-dst-%d", proto, port), parser)
+		e.customPort.Store(fmt.Sprintf("%s-dst-%d", proto, port), parser)
 	default:
 		return fmt.Errorf("unknown direction %s", dir)
 	}
@@ -237,53 +258,20 @@ func RegisterPort(proto string, dir RegPortDir, port uint16, parser ParserInfo) 
 	return nil
 }
 
-// todo: getparser
-
-// Stores information about the current state of parsing
-type ParseConfig struct {
-	Layer        int  // absolute index of the layer
-	Calls        int  // number of times the function was called (using parser index)
-	LayerCall    int  // number of times a function in a layer (eg: Transport) was called (using layer index)
-	Encapsulated bool // indicates if outside the typical mac-network-transport
-}
-
-// BaseLayer indicates if the parser should map to the top-level fields of the protobuf
-func (c *ParseConfig) BaseLayer() bool {
-	return !c.Encapsulated
-}
-
-// ParseResult contains information about the next
-type ParseResult struct {
-	NextParser ParserInfo // Next parser to be called
-	Size       int        // Size of the layer
-}
-
-type ParserInfo struct {
-	Parser        Parser
-	Name          string
-	ConfigKeyList []string // keys to match for custom parsing
-	LayerIndex    int      // index to group
-	ParserIndex   int      // unique parser index
-	EncapSkip     bool     // indicates if should skip encapsulation calculations
-}
-
-// Parser is a function that maps various items of a layer to a ProtoProducerMessage
-type Parser func(flowMessage *ProtoProducerMessage, data []byte, pc ParseConfig) (res ParseResult, err error)
-
-func NextParserEtype(etherType []byte) (ParserInfo, error) {
-	info, err := innerNextParserEtype(etherType)
+func (e *BaseParserEnvironment) NextParserEtype(etherType []byte) (ParserInfo, error) {
+	info, err := e.innerNextParserEtype(etherType)
 	etypeNum := uint16(etherType[0]<<8) | uint16(etherType[1])
 	info.ConfigKeyList = append(info.ConfigKeyList, fmt.Sprintf("etype%d", etypeNum), fmt.Sprintf("etype0x%.4x", etypeNum))
 	return info, err
 }
 
-func innerNextParserEtype(etherType []byte) (ParserInfo, error) {
+func (e *BaseParserEnvironment) innerNextParserEtype(etherType []byte) (ParserInfo, error) {
 	if len(etherType) != 2 {
 		return parserNone, fmt.Errorf("wrong ether type")
 	}
 
 	eType := uint16(etherType[0])<<8 | uint16(etherType[1])
-	if cParser, ok := customEtype.Load(eType); ok {
+	if cParser, ok := e.customEtype.Load(eType); ok {
 		return cParser.(ParserInfo), nil
 	}
 
@@ -306,14 +294,14 @@ func innerNextParserEtype(etherType []byte) (ParserInfo, error) {
 	return parserNone, nil
 }
 
-func NextProtocolParser(proto byte) (ParserInfo, error) {
-	info, err := innerNextProtocolParser(proto)
+func (e *BaseParserEnvironment) NextParserProto(proto byte) (ParserInfo, error) {
+	info, err := e.innerNextParserProto(proto)
 	info.ConfigKeyList = append(info.ConfigKeyList, fmt.Sprintf("proto%d", proto))
 	return info, err
 }
 
-func innerNextProtocolParser(proto byte) (ParserInfo, error) {
-	if cParser, ok := customProto.Load(proto); ok {
+func (e *BaseParserEnvironment) innerNextParserProto(proto byte) (ParserInfo, error) {
+	if cParser, ok := e.customProto.Load(proto); ok {
 		return cParser.(ParserInfo), nil
 	}
 
@@ -342,10 +330,10 @@ func innerNextProtocolParser(proto byte) (ParserInfo, error) {
 	return parserNone, nil
 }
 
-func NextPortParser(proto string, srcPort, dstPort uint16) (ParserInfo, error) {
+func (e *BaseParserEnvironment) NextParserPort(proto string, srcPort, dstPort uint16) (ParserInfo, error) {
 	// Parser for GRE, Teredo, Geneve, etc.
 
-	dir, info, err := innerNextPortParser(proto, srcPort, dstPort)
+	dir, info, err := e.innerNextParserPort(proto, srcPort, dstPort)
 	// a custom parser must be present in order to expand the keys array
 	if dir == 1 {
 		info.ConfigKeyList = append(info.ConfigKeyList, fmt.Sprintf("%s%d", proto, dstPort))
@@ -355,21 +343,64 @@ func NextPortParser(proto string, srcPort, dstPort uint16) (ParserInfo, error) {
 	return info, err
 }
 
-func innerNextPortParser(proto string, srcPort, dstPort uint16) (byte, ParserInfo, error) {
-	if cParser, ok := customPort.Load(fmt.Sprintf("%s-dst-%d", proto, dstPort)); ok {
+func (e *BaseParserEnvironment) innerNextParserPort(proto string, srcPort, dstPort uint16) (byte, ParserInfo, error) {
+	if cParser, ok := e.customPort.Load(fmt.Sprintf("%s-dst-%d", proto, dstPort)); ok {
 		return 1, cParser.(ParserInfo), nil
 	}
-	if cParser, ok := customPort.Load(fmt.Sprintf("%s-src-%d", proto, srcPort)); ok {
+	if cParser, ok := e.customPort.Load(fmt.Sprintf("%s-src-%d", proto, srcPort)); ok {
 		return 2, cParser.(ParserInfo), nil
 	}
+
 	return 0, parserNone, nil
 }
 
-func ParsePacket(flowMessage ProtoProducerMessageIf, data []byte, config PacketMapper) (err error) {
+func (e *BaseParserEnvironment) ParsePacket(flowMessage ProtoProducerMessageIf, data []byte) (err error) {
+	return ParsePacket(flowMessage, data, nil, e)
+}
+
+// Stores information about the current state of parsing
+type ParseConfig struct {
+	Environment  ParserEnvironment // parser configuration to customize chained calls
+	Layer        int               // absolute index of the layer
+	Calls        int               // number of times the function was called (using parser index)
+	LayerCall    int               // number of times a function in a layer (eg: Transport) was called (using layer index)
+	Encapsulated bool              // indicates if outside the typical mac-network-transport
+}
+
+// BaseLayer indicates if the parser should map to the top-level fields of the protobuf
+func (c *ParseConfig) BaseLayer() bool {
+	return !c.Encapsulated
+}
+
+// ParseResult contains information about the next
+type ParseResult struct {
+	NextParser ParserInfo // Next parser to be called
+	Size       int        // Size of the layer
+}
+
+type ParserInfo struct {
+	Parser        Parser
+	Name          string
+	ConfigKeyList []string // keys to match for custom parsing
+	LayerIndex    int      // index to group
+	ParserIndex   int      // unique parser index
+	EncapSkip     bool     // indicates if should skip encapsulation calculations
+}
+
+// Parser is a function that maps various items of a layer to a ProtoProducerMessage
+type Parser func(flowMessage *ProtoProducerMessage, data []byte, pc ParseConfig) (res ParseResult, err error)
+
+func ParsePacket(flowMessage ProtoProducerMessageIf, data []byte, config PacketLayerMapper, pe ParserEnvironment) (err error) {
 	var offset int
 
 	var nextParser ParserInfo
 	var parseConfig ParseConfig
+
+	if pe != nil {
+		parseConfig.Environment = pe
+	} else {
+		parseConfig.Environment = DefaultEnvironment
+	}
 
 	nextParser = parserEthernet // initial parser
 	callsLayer := make(map[int]int)
@@ -445,8 +476,11 @@ func ParseEthernet(flowMessage *ProtoProducerMessage, data []byte, pc ParseConfi
 	}
 	// add to list of macs
 
+	if pc.Environment == nil {
+		return res, err
+	}
 	// get next parser
-	res.NextParser, err = NextParserEtype(eType)
+	res.NextParser, err = pc.Environment.NextParserEtype(eType)
 
 	return res, err
 }
@@ -467,8 +501,11 @@ func Parse8021Q(flowMessage *ProtoProducerMessage, data []byte, pc ParseConfig) 
 		flowMessage.Etype = uint32(binary.BigEndian.Uint16(eType))
 	}
 
+	if pc.Environment == nil {
+		return res, err
+	}
 	// get next parser
-	res.NextParser, err = NextParserEtype(eType)
+	res.NextParser, err = pc.Environment.NextParserEtype(eType)
 
 	return res, err
 }
@@ -527,7 +564,10 @@ func ParseMPLS(flowMessage *ProtoProducerMessage, data []byte, pc ParseConfig) (
 
 	// get next parser
 	if len(eType) == 2 {
-		res.NextParser, err = NextParserEtype(eType)
+		if pc.Environment == nil {
+			return res, err
+		}
+		res.NextParser, err = pc.Environment.NextParserEtype(eType)
 	}
 
 	return res, err
@@ -564,8 +604,11 @@ func ParseIPv4(flowMessage *ProtoProducerMessage, data []byte, pc ParseConfig) (
 		flowMessage.Proto = uint32(nextHeader)
 	}
 
+	if pc.Environment == nil {
+		return res, err
+	}
 	// get next parser
-	res.NextParser, err = NextProtocolParser(nextHeader)
+	res.NextParser, err = pc.Environment.NextParserProto(nextHeader)
 
 	return res, err
 }
@@ -597,9 +640,11 @@ func ParseIPv6(flowMessage *ProtoProducerMessage, data []byte, pc ParseConfig) (
 
 		flowMessage.Proto = uint32(nextHeader)
 	}
-
+	if pc.Environment == nil {
+		return res, err
+	}
 	// get next parser
-	res.NextParser, err = NextProtocolParser(nextHeader)
+	res.NextParser, err = pc.Environment.NextParserProto(nextHeader)
 
 	return res, err
 }
@@ -623,9 +668,11 @@ func ParseIPv6HeaderFragment(flowMessage *ProtoProducerMessage, data []byte, pc 
 		flowMessage.FragmentOffset = uint32(fragOffset) >> 3
 		flowMessage.IpFlags = uint32(fragOffset) & 7
 	}
-
+	if pc.Environment == nil {
+		return res, err
+	}
 	// get next parser
-	res.NextParser, err = NextProtocolParser(nextHeader)
+	res.NextParser, err = pc.Environment.NextParserProto(nextHeader)
 
 	return res, err
 }
@@ -669,9 +716,11 @@ func ParseIPv6HeaderRouting(flowMessage *ProtoProducerMessage, data []byte, pc P
 		}
 
 	}
-
+	if pc.Environment == nil {
+		return res, err
+	}
 	// get next parser
-	res.NextParser, err = NextProtocolParser(nextHeader)
+	res.NextParser, err = pc.Environment.NextParserProto(nextHeader)
 
 	return res, err
 }
@@ -697,8 +746,10 @@ func ParseTCP(flowMessage *ProtoProducerMessage, data []byte, pc ParseConfig) (r
 		tcpflags := data[13]
 		flowMessage.TcpFlags = uint32(tcpflags)
 	}
-
-	res.NextParser, err = NextPortParser("tcp", srcPort, dstPort)
+	if pc.Environment == nil {
+		return res, err
+	}
+	res.NextParser, err = pc.Environment.NextParserPort("tcp", srcPort, dstPort)
 
 	return res, err
 }
@@ -719,8 +770,10 @@ func ParseUDP(flowMessage *ProtoProducerMessage, data []byte, pc ParseConfig) (r
 		flowMessage.SrcPort = uint32(srcPort)
 		flowMessage.DstPort = uint32(dstPort)
 	}
-
-	res.NextParser, err = NextPortParser("udp", srcPort, dstPort)
+	if pc.Environment == nil {
+		return res, err
+	}
+	res.NextParser, err = pc.Environment.NextParserPort("udp", srcPort, dstPort)
 
 	return res, err
 }
@@ -735,9 +788,11 @@ func ParseGRE(flowMessage *ProtoProducerMessage, data []byte, pc ParseConfig) (r
 	flowMessage.AddLayer("GRE")
 
 	eType := data[2:4]
-
+	if pc.Environment == nil {
+		return res, err
+	}
 	// get next parser
-	res.NextParser, err = NextParserEtype(eType)
+	res.NextParser, err = pc.Environment.NextParserEtype(eType)
 
 	return res, err
 }
@@ -761,9 +816,11 @@ func ParseGeneve(flowMessage *ProtoProducerMessage, data []byte, pc ParseConfig)
 	flowMessage.AddLayer("Geneve")
 
 	eType := data[2:4]
-
+	if pc.Environment == nil {
+		return res, err
+	}
 	// get next parser
-	res.NextParser, err = NextParserEtype(eType)
+	res.NextParser, err = pc.Environment.NextParserEtype(eType)
 
 	return res, err
 }

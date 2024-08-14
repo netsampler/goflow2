@@ -614,7 +614,7 @@ func ConvertNetFlowDataSet(flowMessage *ProtoProducerMessage, version uint16, ba
 					}
 					flowMessage.Packets = 1
 				case netflow.IPFIX_FIELD_dataLinkFrameSection:
-					if err := ParsePacket(flowMessage, v, mapperSFlow); err != nil {
+					if err := mapperSFlow.ParsePacket(flowMessage, v); err != nil {
 						return err
 					}
 					flowMessage.Packets = 1

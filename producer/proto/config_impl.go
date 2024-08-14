@@ -200,6 +200,13 @@ func (m *SFlowMapper) Map(layer string) MapLayerIterator {
 	return &sflowMapperIterator{data: m.data[strings.ToLower(layer)], n: 0}
 }
 
+func (m *SFlowMapper) ParsePacket(flowMessage ProtoProducerMessageIf, data []byte) (err error) {
+	if m == nil {
+		return nil
+	}
+	return ParsePacket(flowMessage, data, m, nil)
+}
+
 // Structure to help the MapCustom functions
 // populate the protobuf data
 type MapConfigBase struct {
@@ -275,11 +282,11 @@ func mapFieldsSFlow(fields []SFlowMapField) *SFlowMapper {
 
 func mapPortsSFlow(ports []SFlowProtocolParse) error {
 	for _, port := range ports {
-		parser, ok := GetParser(port.Parser)
+		parser, ok := DefaultEnvironment.GetParser(port.Parser)
 		if !ok {
 			return fmt.Errorf("parser %s not found", port.Parser)
 		}
-		if err := RegisterPort(port.Proto, port.Dir, port.Port, parser); err != nil {
+		if err := DefaultEnvironment.RegisterPort(port.Proto, port.Dir, port.Port, parser); err != nil {
 			return err
 		}
 

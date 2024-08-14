@@ -167,7 +167,7 @@ func TestProcessPacketBase(t *testing.T) {
 	data, _ := hex.DecodeString(dataStr)
 	var flowMessage ProtoProducerMessage
 
-	err := ParsePacket(&flowMessage, data, nil)
+	err := ParsePacket(&flowMessage, data, nil, nil)
 	assert.NoError(t, err)
 
 	b, _ := json.Marshal(flowMessage.FlowMessage)
@@ -206,7 +206,7 @@ func TestProcessPacketGRE(t *testing.T) {
 
 	data, _ := hex.DecodeString(dataStr)
 	var flowMessage ProtoProducerMessage
-	err := ParsePacket(&flowMessage, data, nil)
+	err := ParsePacket(&flowMessage, data, nil, nil)
 	assert.NoError(t, err)
 
 	b, _ := json.Marshal(flowMessage.FlowMessage)
@@ -279,7 +279,7 @@ func TestProcessPacketMapping(t *testing.T) {
 		t: t,
 	}
 
-	err := ParsePacket(&flowMessage, data, configm)
+	err := ParsePacket(&flowMessage, data, configm, nil)
 	assert.NoError(t, err)
 
 	b, _ := json.Marshal(flowMessage.FlowMessage)
@@ -381,7 +381,7 @@ func TestProcessPacketMappingEncap(t *testing.T) {
 	var flowMessage ProtoProducerMessage
 	flowMessage.formatter = configm.GetFormatter()
 
-	err := ParsePacket(&flowMessage, data, configm.GetPacketMapper())
+	err := configm.GetPacketMapper().ParsePacket(&flowMessage, data)
 	assert.NoError(t, err)
 
 	b, _ := json.Marshal(flowMessage.FlowMessage)
@@ -420,7 +420,9 @@ func TestProcessPacketMappingPort(t *testing.T) {
 
 	var domain []byte
 
-	RegisterPort("udp", PortDirDst, 53, ParserInfo{
+	pe := NewBaseParserEnvironment()
+
+	pe.RegisterPort("udp", PortDirDst, 53, ParserInfo{
 		Parser: func(flowMessage *ProtoProducerMessage, data []byte, pc ParseConfig) (res ParseResult, err error) {
 			domain = data[13 : 13+11]
 			flowMessage.AddLayer("Custom")
@@ -430,7 +432,7 @@ func TestProcessPacketMappingPort(t *testing.T) {
 		},
 	})
 
-	err := ParsePacket(&flowMessage, data, nil)
+	err := ParsePacket(&flowMessage, data, nil, pe)
 	assert.NoError(t, err)
 
 	assert.Equal(t, []byte{0x65, 0x78, 0x61, 0x6D, 0x70, 0x6C, 0x65, 0x03, 0x63, 0x6F, 0x6D}, domain)
@@ -474,11 +476,13 @@ func TestProcessPacketMappingGeneve(t *testing.T) {
 	data, _ := hex.DecodeString(dataStr)
 	var flowMessage ProtoProducerMessage
 
-	gp, _ := GetParser("geneve")
+	pe := NewBaseParserEnvironment()
 
-	RegisterPort("udp", PortDirBoth, 6081, gp)
+	gp, _ := pe.GetParser("geneve")
 
-	err := ParsePacket(&flowMessage, data, nil)
+	pe.RegisterPort("udp", PortDirBoth, 6081, gp)
+
+	err := ParsePacket(&flowMessage, data, nil, pe)
 	assert.NoError(t, err)
 
 	layers := []uint32{0, 1, 4, 12, 0, 1, 7}

@@ -51,8 +51,12 @@ type MapLayerIterator interface {
 }
 
 // PacketMapper is the interface to obtain the mapping information for a layer of a packet
-type PacketMapper interface {
+type PacketLayerMapper interface {
 	Map(layer string) MapLayerIterator // returns an iterator to avoid handling arrays
+}
+
+type PacketMapper interface {
+	ParsePacket(flowMessage ProtoProducerMessageIf, data []byte) (err error)
 }
 
 // FormatterMapper returns the configuration statements for the textual formatting of the protobuf messages
