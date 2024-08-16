@@ -176,7 +176,8 @@ func (m *NetFlowMapper) Map(field netflow.DataField) (MappableField, bool) {
 }
 
 type SFlowMapper struct {
-	data map[string][]*DataMapLayer // map layer to list of offsets
+	data              map[string][]*DataMapLayer // map layer to list of offsets
+	parserEnvironment ParserEnvironment
 }
 
 type sflowMapperIterator struct {
@@ -204,7 +205,7 @@ func (m *SFlowMapper) ParsePacket(flowMessage ProtoProducerMessageIf, data []byt
 	if m == nil {
 		return nil
 	}
-	return ParsePacket(flowMessage, data, m, nil)
+	return ParsePacket(flowMessage, data, m, m.parserEnvironment)
 }
 
 // Structure to help the MapCustom functions
@@ -280,18 +281,19 @@ func mapFieldsSFlow(fields []SFlowMapField) *SFlowMapper {
 	return &SFlowMapper{data: ret}
 }
 
-func mapPortsSFlow(ports []SFlowProtocolParse) error {
+func mapPortsSFlow(ports []SFlowProtocolParse) (ParserEnvironment, error) {
+	e := NewBaseParserEnvironment()
 	for _, port := range ports {
-		parser, ok := DefaultEnvironment.GetParser(port.Parser)
+		parser, ok := e.GetParser(port.Parser)
 		if !ok {
-			return fmt.Errorf("parser %s not found", port.Parser)
+			return e, fmt.Errorf("parser %s not found", port.Parser)
 		}
-		if err := DefaultEnvironment.RegisterPort(port.Proto, port.Dir, port.Port, parser); err != nil {
-			return err
+		if err := e.RegisterPort(port.Proto, port.Dir, port.Port, parser); err != nil {
+			return e, err
 		}
 
 	}
-	return nil
+	return e, nil
 }
 
 func mapFieldsNetFlow(fields []NetFlowMapField) *NetFlowMapper {
@@ -469,7 +471,9 @@ func mapConfig(cfg *ProducerConfig) (*producerConfigMapped, error) {
 		newCfg.IPFIX = mapFieldsNetFlow(cfg.IPFIX.Mapping)
 		newCfg.NetFlowV9 = mapFieldsNetFlow(cfg.NetFlowV9.Mapping)
 		newCfg.SFlow = mapFieldsSFlow(cfg.SFlow.Mapping)
-		if err := mapPortsSFlow(cfg.SFlow.Ports); err != nil {
+		var err error
+		newCfg.SFlow.parserEnvironment, err = mapPortsSFlow(cfg.SFlow.Ports)
+		if err != nil {
 			return nil, err
 		}
 	}

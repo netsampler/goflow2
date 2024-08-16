@@ -50,11 +50,12 @@ type MapLayerIterator interface {
 	Next() MappableByteField // returns the next MappableByteField. Function is called by the packet parser until returns nil.
 }
 
-// PacketMapper is the interface to obtain the mapping information for a layer of a packet
+// PacketLayerMapper is the interface to obtain the mapping information for a layer of a packet
 type PacketLayerMapper interface {
 	Map(layer string) MapLayerIterator // returns an iterator to avoid handling arrays
 }
 
+// PacketMapper is the interface to parse a packet into a flow message
 type PacketMapper interface {
 	ParsePacket(flowMessage ProtoProducerMessageIf, data []byte) (err error)
 }
