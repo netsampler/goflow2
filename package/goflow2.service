@@ -7,6 +7,7 @@ Type=simple
 EnvironmentFile=/etc/default/goflow2
 WorkingDirectory=/usr/share/goflow2
 ExecStart=/usr/bin/goflow2 $GOFLOW2_ARGS
+ExecReload=/bin/kill -HUP $MAINPID
 
 [Install]
 WantedBy=multi-user.target

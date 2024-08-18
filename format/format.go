@@ -9,8 +9,8 @@ var (
 	formatDrivers = make(map[string]FormatDriver)
 	lock          = &sync.RWMutex{}
 
-	ErrorFormat       = fmt.Errorf("format error")
-	ErrorNoSerializer = fmt.Errorf("message is not serializable")
+	ErrFormat       = fmt.Errorf("format error")
+	ErrNoSerializer = fmt.Errorf("message is not serializable")
 )
 
 type DriverFormatError struct {
@@ -23,7 +23,7 @@ func (e *DriverFormatError) Error() string {
 }
 
 func (e *DriverFormatError) Unwrap() []error {
-	return []error{ErrorFormat, e.Err}
+	return []error{ErrFormat, e.Err}
 }
 
 type FormatDriver interface {
@@ -67,7 +67,7 @@ func FindFormat(name string) (*Format, error) {
 	t, ok := formatDrivers[name]
 	lock.RUnlock()
 	if !ok {
-		return nil, fmt.Errorf("%w %s not found", ErrorFormat, name)
+		return nil, fmt.Errorf("%w %s not found", ErrFormat, name)
 	}
 
 	err := t.Init()

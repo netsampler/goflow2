@@ -11,7 +11,7 @@ import (
 )
 
 type ProtoProducer struct {
-	cfgMapped          *producerConfigMapped
+	cfg                ProtoProducerConfig
 	samplinglock       *sync.RWMutex
 	sampling           map[string]SamplingRateSystem
 	samplingRateSystem func() SamplingRateSystem
@@ -55,7 +55,7 @@ func (p *ProtoProducer) Produce(msg interface{}, args *producer.ProduceArgs) (fl
 		})
 	case *netflow.NFv9Packet:
 		samplingRateSystem := p.getSamplingRateSystem(args)
-		flowMessageSet, err = ProcessMessageNetFlowV9Config(msgConv, samplingRateSystem, p.cfgMapped)
+		flowMessageSet, err = ProcessMessageNetFlowV9Config(msgConv, samplingRateSystem, p.cfg)
 
 		p.enrich(flowMessageSet, func(fmsg *ProtoProducerMessage) {
 			fmsg.TimeReceivedNs = tr
@@ -63,14 +63,14 @@ func (p *ProtoProducer) Produce(msg interface{}, args *producer.ProduceArgs) (fl
 		})
 	case *netflow.IPFIXPacket:
 		samplingRateSystem := p.getSamplingRateSystem(args)
-		flowMessageSet, err = ProcessMessageIPFIXConfig(msgConv, samplingRateSystem, p.cfgMapped)
+		flowMessageSet, err = ProcessMessageIPFIXConfig(msgConv, samplingRateSystem, p.cfg)
 
 		p.enrich(flowMessageSet, func(fmsg *ProtoProducerMessage) {
 			fmsg.TimeReceivedNs = tr
 			fmsg.SamplerAddress = sa
 		})
 	case *sflow.Packet:
-		flowMessageSet, err = ProcessMessageSFlowConfig(msgConv, p.cfgMapped)
+		flowMessageSet, err = ProcessMessageSFlowConfig(msgConv, p.cfg)
 
 		p.enrich(flowMessageSet, func(fmsg *ProtoProducerMessage) {
 			fmsg.TimeReceivedNs = tr
@@ -82,7 +82,7 @@ func (p *ProtoProducer) Produce(msg interface{}, args *producer.ProduceArgs) (fl
 	}
 
 	p.enrich(flowMessageSet, func(fmsg *ProtoProducerMessage) {
-		fmsg.formatter = p.cfgMapped.Formatter
+		fmsg.formatter = p.cfg.GetFormatter()
 	})
 	return flowMessageSet, err
 }
@@ -95,12 +95,11 @@ func (p *ProtoProducer) Commit(flowMessageSet []producer.ProducerMessage) {
 
 func (p *ProtoProducer) Close() {}
 
-func CreateProtoProducer(cfg *ProducerConfig, samplingRateSystem func() SamplingRateSystem) (producer.ProducerInterface, error) {
-	cfgMapped, err := mapConfig(cfg)
+func CreateProtoProducer(cfg ProtoProducerConfig, samplingRateSystem func() SamplingRateSystem) (producer.ProducerInterface, error) {
 	return &ProtoProducer{
-		cfgMapped:          cfgMapped,
+		cfg:                cfg,
 		samplinglock:       &sync.RWMutex{},
 		sampling:           make(map[string]SamplingRateSystem),
 		samplingRateSystem: samplingRateSystem,
-	}, err
+	}, nil
 }

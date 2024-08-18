@@ -58,7 +58,7 @@ func PromDecoderWrapper(wrapped utils.DecoderFunc, name string) utils.DecoderFun
 			prometheus.Labels{
 				"name": name,
 			}).
-			Observe(float64((timeTrackStop.Sub(timeTrackStart)).Nanoseconds()) / 1000000000)
+			Observe(float64((timeTrackStop.Sub(timeTrackStart)).Nanoseconds()) / 1e9)
 
 		if err != nil {
 			if errors.Is(err, netflow.ErrorTemplateNotFound) {
@@ -86,12 +86,6 @@ func PromDecoderWrapper(wrapped utils.DecoderFunc, name string) utils.DecoderFun
 
 func recordCommonNetFlowMetrics(version uint16, key string, flowSets []interface{}) {
 	versionStr := fmt.Sprintf("%d", version)
-	NetFlowStats.With(
-		prometheus.Labels{
-			"router":  key,
-			"version": versionStr,
-		}).
-		Inc()
 
 	for _, fs := range flowSets {
 		switch fsConv := fs.(type) {

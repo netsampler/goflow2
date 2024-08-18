@@ -94,4 +94,30 @@ message FlowMessage {
 
   uint32 observation_domain_id = 70;
   uint32 observation_point_id = 71;
+
+  // Encapsulation
+  enum LayerStack {
+    Ethernet = 0;
+    IPv4 = 1;
+    IPv6 = 2;
+    TCP = 3;
+    UDP = 4;
+    MPLS = 5;
+    Dot1Q = 6;
+    ICMP = 7;
+    ICMPv6 = 8;
+    GRE = 9;
+    IPv6HeaderRouting = 10;
+    IPv6HeaderFragment = 11;
+    Geneve = 12;
+    Teredo = 13;
+    Custom = 99;
+    // todo: add nsh
+  }
+  repeated LayerStack layer_stack = 103;
+  repeated uint32 layer_size = 104;
+
+  repeated bytes ipv6_routing_header_addresses = 105; // SRv6
+  uint32 ipv6_routing_header_seg_left = 106; // SRv6
+
 }
