@@ -291,7 +291,6 @@ func mapPortsSFlow(ports []SFlowProtocolParse) (ParserEnvironment, error) {
 		if err := e.RegisterPort(port.Proto, port.Dir, port.Port, parser); err != nil {
 			return e, err
 		}
-
 	}
 	return e, nil
 }
@@ -333,7 +332,6 @@ func (c *producerConfigMapped) finalizeSFlowMapper(m *SFlowMapper) error {
 			}
 			m.data[k][i] = v
 		}
-
 	}
 	return nil
 }

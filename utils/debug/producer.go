@@ -14,7 +14,6 @@ func (p *PanicProducerWrapper) Produce(msg interface{}, args *producer.ProduceAr
 
 	defer func() {
 		if pErr := recover(); pErr != nil {
-
 			pErrC, _ := pErr.(string)
 			err = &PanicErrorMessage{Msg: msg, Inner: pErrC, Stacktrace: debug.Stack()}
 		}
