@@ -11,14 +11,23 @@ import (
 
 	"google.golang.org/protobuf/encoding/protodelim"
 	"google.golang.org/protobuf/encoding/protowire"
+	"google.golang.org/protobuf/proto"
 
 	flowmessage "github.com/netsampler/goflow2/v2/pb"
 )
 
+// ProtoProducerMessageIf interface to a flow message, used by parsers and tests
+type ProtoProducerMessageIf interface {
+	GetFlowMessage() *ProtoProducerMessage                   // access the underlying structure
+	MapCustom(key string, v []byte, cfg MappableField) error // inject custom field
+}
+
 type ProtoProducerMessage struct {
 	flowmessage.FlowMessage
 
-	formatter *FormatterConfigMapper
+	formatter FormatterMapper
+
+	skipDelimiter bool // for binary marshalling, skips the varint prefix
 }
 
 var protoMessagePool = sync.Pool{
@@ -27,10 +36,29 @@ var protoMessagePool = sync.Pool{
 	},
 }
 
+func (m *ProtoProducerMessage) GetFlowMessage() *ProtoProducerMessage {
+	return m
+}
+
+func (m *ProtoProducerMessage) MapCustom(key string, v []byte, cfg MappableField) error {
+	return MapCustom(m, v, cfg)
+}
+
+func (m *ProtoProducerMessage) AddLayer(name string) (ok bool) {
+	value, ok := flowmessage.FlowMessage_LayerStack_value[name]
+	m.LayerStack = append(m.LayerStack, flowmessage.FlowMessage_LayerStack(value))
+	return ok
+}
+
 func (m *ProtoProducerMessage) MarshalBinary() ([]byte, error) {
 	buf := bytes.NewBuffer([]byte{})
-	_, err := protodelim.MarshalTo(buf, m)
-	return buf.Bytes(), err
+	if m.skipDelimiter {
+		b, err := proto.Marshal(m)
+		return b, err
+	} else {
+		_, err := protodelim.MarshalTo(buf, m)
+		return buf.Bytes(), err
+	}
 }
 
 func (m *ProtoProducerMessage) MarshalText() ([]byte, error) {
@@ -43,11 +71,11 @@ func (m *ProtoProducerMessage) baseKey(h hash.Hash) {
 
 	unkMap := m.mapUnknown() // todo: should be able to reuse if set in structure
 
-	for _, s := range m.formatter.key {
+	for _, s := range m.formatter.Keys() {
 		fieldName := s
 
 		// get original name from structure
-		if fieldNameMap, ok := m.formatter.reMap[fieldName]; ok && fieldNameMap != "" {
+		if fieldNameMap, ok := m.formatter.Remap(fieldName); ok && fieldNameMap != "" {
 			fieldName = fieldNameMap
 		}
 
@@ -68,7 +96,7 @@ func (m *ProtoProducerMessage) baseKey(h hash.Hash) {
 }
 
 func (m *ProtoProducerMessage) Key() []byte {
-	if m.formatter == nil || len(m.formatter.key) == 0 {
+	if len(m.formatter.Keys()) == 0 {
 		return nil
 	}
 	h := fnv.New32()
@@ -111,7 +139,7 @@ func (m *ProtoProducerMessage) mapUnknown() map[string]interface{} {
 		offset += length
 
 		// we check if the index is listed in the config
-		if pbField, ok := m.formatter.numToPb[int32(num)]; ok {
+		if pbField, ok := m.formatter.NumToProtobuf(int32(num)); ok {
 
 			var dest interface{}
 			var value interface{}
@@ -150,27 +178,28 @@ func (m *ProtoProducerMessage) FormatMessageReflectCustom(ext, quotes, sep, sign
 	vfm = reflect.Indirect(vfm)
 
 	var i int
-	fstr := make([]string, len(m.formatter.fields)) // todo: reuse with pool
+	fields := m.formatter.Fields()
+	fstr := make([]string, len(fields)) // todo: reuse with pool
 
 	unkMap := m.mapUnknown()
 
 	// iterate through the fields requested by the user
-	for _, s := range m.formatter.fields {
+	for _, s := range fields {
 		fieldName := s
 
 		fieldFinalName := s
-		if fieldRename, ok := m.formatter.rename[s]; ok && fieldRename != "" {
+		if fieldRename, ok := m.formatter.Rename(s); ok && fieldRename != "" {
 			fieldFinalName = fieldRename
 		}
 
 		// get original name from structure
-		if fieldNameMap, ok := m.formatter.reMap[fieldName]; ok && fieldNameMap != "" {
+		if fieldNameMap, ok := m.formatter.Remap(fieldName); ok && fieldNameMap != "" {
 			fieldName = fieldNameMap
 		}
 
 		// get renderer
-		renderer, okRenderer := m.formatter.render[fieldName]
-		if !okRenderer {
+		renderer, okRenderer := m.formatter.Render(fieldName)
+		if !okRenderer { // todo: change to renderer check
 			renderer = NilRenderer
 		}
 
@@ -187,34 +216,38 @@ func (m *ProtoProducerMessage) FormatMessageReflectCustom(ext, quotes, sep, sign
 			}
 		}
 
-		isSlice := m.formatter.isSlice[fieldName]
+		isSlice := m.formatter.IsArray(fieldName)
 
 		// render each item of the array independently
 		// note: isSlice is necessary to consider certain byte arrays in their entirety
 		// eg: IP addresses
 		if isSlice {
-			c := fieldValue.Len()
 			v := "["
-			for i := 0; i < c; i++ {
-				fieldValueI := fieldValue.Index(i)
-				var val interface{}
-				if fieldValueI.IsValid() {
-					val = fieldValueI.Interface()
-				}
 
-				rendered := renderer(m, fieldName, val)
-				if rendered == nil {
-					continue
-				}
-				renderedType := reflect.TypeOf(rendered)
-				if renderedType.Kind() == reflect.String {
-					v += fmt.Sprintf("%s%v%s", quotes, rendered, quotes)
-				} else {
-					v += fmt.Sprintf("%v", rendered)
-				}
+			if fieldValue.IsValid() {
 
-				if i < c-1 {
-					v += ","
+				c := fieldValue.Len()
+				for i := 0; i < c; i++ {
+					fieldValueI := fieldValue.Index(i)
+					var val interface{}
+					if fieldValueI.IsValid() {
+						val = fieldValueI.Interface()
+					}
+
+					rendered := renderer(m, fieldName, val)
+					if rendered == nil {
+						continue
+					}
+					renderedType := reflect.TypeOf(rendered)
+					if renderedType.Kind() == reflect.String {
+						v += fmt.Sprintf("%s%v%s", quotes, rendered, quotes)
+					} else {
+						v += fmt.Sprintf("%v", rendered)
+					}
+
+					if i < c-1 {
+						v += ","
+					}
 				}
 			}
 			v += "]"

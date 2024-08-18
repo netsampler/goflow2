@@ -29,7 +29,7 @@ func (d *TextDriver) Format(data interface{}) ([]byte, []byte, error) {
 	if dataIf, ok := data.(interface{ String() string }); ok {
 		return key, []byte(dataIf.String()), nil
 	}
-	return key, nil, format.ErrorNoSerializer
+	return key, nil, format.ErrNoSerializer
 }
 
 func init() {
