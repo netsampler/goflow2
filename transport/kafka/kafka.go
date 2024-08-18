@@ -47,7 +47,7 @@ func (e *KafkaTransportError) Error() string {
 	return fmt.Sprintf("kafka transport %s", e.Err.Error())
 }
 func (e *KafkaTransportError) Unwrap() []error {
-	return []error{transport.ErrorTransport, e.Err}
+	return []error{transport.ErrTransport, e.Err}
 }
 
 type KafkaSASLAlgorithm string

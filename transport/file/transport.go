@@ -71,7 +71,6 @@ func (d *FileDriver) Init() error {
 				}
 			}
 		}()
-
 	}
 	return nil
 }

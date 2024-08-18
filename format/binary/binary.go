@@ -26,7 +26,7 @@ func (d *BinaryDriver) Format(data interface{}) ([]byte, []byte, error) {
 		text, err := dataIf.MarshalBinary()
 		return key, text, err
 	}
-	return key, nil, format.ErrorNoSerializer
+	return key, nil, format.ErrNoSerializer
 }
 
 func init() {
