@@ -51,15 +51,17 @@ func TestProcessMessageNetFlow(t *testing.T) {
 	}
 
 	pktnf9 := netflow.NFv9Packet{
-		FlowSets: dfs,
+		SystemUptime: 218432000,
+		UnixSeconds:  1705732882,
+		FlowSets:     dfs,
 	}
 	testsr := &SingleSamplingRateSystem{1}
 	msgs, err := ProcessMessageNetFlowV9Config(&pktnf9, testsr, nil)
 	if assert.Nil(t, err) && assert.Len(t, msgs, 1) {
 		msg, ok := msgs[0].(*ProtoProducerMessage)
 		if assert.True(t, ok) {
-			assert.Equal(t, uint64(218432176*1e6), msg.TimeFlowStartNs)
-			assert.Equal(t, uint64(218432192*1e6), msg.TimeFlowEndNs)
+			assert.Equal(t, uint64(1705732882176*1e6), msg.TimeFlowStartNs)
+			assert.Equal(t, uint64(1705732882192*1e6), msg.TimeFlowEndNs)
 			assert.Equal(t, []uint32{24041, 211992, 48675}, msg.MplsLabel)
 		}
 	}
