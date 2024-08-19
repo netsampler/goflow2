@@ -16,6 +16,31 @@ func TestProcessMessageNetFlow(t *testing.T) {
 					Type:  netflow.NFV9_FIELD_IPV4_SRC_ADDR,
 					Value: []byte{10, 0, 0, 1},
 				},
+				netflow.DataField{
+					Type: netflow.NFV9_FIELD_FIRST_SWITCHED,
+					// 218432176
+					Value: []byte{0x0d, 0x05, 0x02, 0xb0},
+				},
+				netflow.DataField{
+					Type: netflow.NFV9_FIELD_LAST_SWITCHED,
+					// 218432192
+					Value: []byte{0x0d, 0x05, 0x02, 0xc0},
+				},
+				netflow.DataField{
+					Type: netflow.NFV9_FIELD_MPLS_LABEL_1,
+					// 24041
+					Value: []byte{0x05, 0xde, 0x94},
+				},
+				netflow.DataField{
+					Type: netflow.NFV9_FIELD_MPLS_LABEL_2,
+					// 211992
+					Value: []byte{0x33, 0xc1, 0x85},
+				},
+				netflow.DataField{
+					Type: netflow.NFV9_FIELD_MPLS_LABEL_3,
+					// 48675
+					Value: []byte{0x0b, 0xe2, 0x35},
+				},
 			},
 		},
 	}
@@ -26,11 +51,20 @@ func TestProcessMessageNetFlow(t *testing.T) {
 	}
 
 	pktnf9 := netflow.NFv9Packet{
-		FlowSets: dfs,
+		SystemUptime: 218432000,
+		UnixSeconds:  1705732882,
+		FlowSets:     dfs,
 	}
 	testsr := &SingleSamplingRateSystem{1}
-	_, err := ProcessMessageNetFlowV9Config(&pktnf9, testsr, nil)
-	assert.Nil(t, err)
+	msgs, err := ProcessMessageNetFlowV9Config(&pktnf9, testsr, nil)
+	if assert.Nil(t, err) && assert.Len(t, msgs, 1) {
+		msg, ok := msgs[0].(*ProtoProducerMessage)
+		if assert.True(t, ok) {
+			assert.Equal(t, uint64(1705732882176*1e6), msg.TimeFlowStartNs)
+			assert.Equal(t, uint64(1705732882192*1e6), msg.TimeFlowEndNs)
+			assert.Equal(t, []uint32{24041, 211992, 48675}, msg.MplsLabel)
+		}
+	}
 
 	pktipfix := netflow.IPFIXPacket{
 		FlowSets: dfs,
