@@ -58,9 +58,9 @@ func TestProcessMessageNetFlow(t *testing.T) {
 	if assert.Nil(t, err) && assert.Len(t, msgs, 1) {
 		msg, ok := msgs[0].(*ProtoProducerMessage)
 		if assert.True(t, ok) {
-			assert.Equal(t, msg.TimeFlowStartNs, uint64(1705732882176000000))
-			assert.Equal(t, msg.TimeFlowEndNs, uint64(1705732882192000000))
-			assert.Equal(t, msg.MplsLabel, []uint32{24041, 211992, 48675})
+			assert.Equal(t, uint64(218432176*1e6), msg.TimeFlowStartNs)
+			assert.Equal(t, uint64(218432192*1e6), msg.TimeFlowEndNs)
+			assert.Equal(t, []uint32{24041, 211992, 48675}, msg.MplsLabel)
 		}
 	}
 
