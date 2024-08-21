@@ -203,7 +203,7 @@ func (m *SFlowMapper) Map(layer string) MapLayerIterator {
 
 func (m *SFlowMapper) ParsePacket(flowMessage ProtoProducerMessageIf, data []byte) (err error) {
 	if m == nil {
-		return nil
+		return ParsePacket(flowMessage, data, m, DefaultEnvironment)
 	}
 	return ParsePacket(flowMessage, data, m, m.parserEnvironment)
 }
