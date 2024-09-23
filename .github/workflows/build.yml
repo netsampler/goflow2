@@ -47,7 +47,7 @@ jobs:
         ARCH=arm64 make package-deb package-rpm
 
     - name: Upload Artifact
-      uses: actions/upload-artifact@v2
+      uses: actions/upload-artifact@v4
       with:
         name: dist
         path: dist/*
