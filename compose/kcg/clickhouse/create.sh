@@ -41,6 +41,7 @@ clickhouse client -n <<-EOSQL
     ) ENGINE = Kafka()
     SETTINGS
         kafka_broker_list = 'kafka:9092',
+        kafka_num_consumers = 1,
         kafka_topic_list = 'flows',
         kafka_group_name = 'clickhouse',
         kafka_format = 'Protobuf',

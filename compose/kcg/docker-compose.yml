@@ -1,23 +1,27 @@
 version: "3"
 services:
-  zookeeper:
-    image: bitnami/zookeeper:3.7.1
-    ports:
-      - 2181:2181
-    environment:
-      - ALLOW_ANONYMOUS_LOGIN=yes
-    restart: always
   kafka:
-    image: bitnami/kafka:3.4.0
+    image: bitnami/kafka:3.9.0
     ports:
       - 9092:9092
     environment:
-      - KAFKA_ZOOKEEPER_CONNECT=zookeeper:2181
       - ALLOW_PLAINTEXT_LISTENER=yes
       - KAFKA_DELETE_TOPIC_ENABLE=true
+      - KAFKA_ENABLE_KRAFT=true
+      - KAFKA_KRAFT_CLUSTER_ID=AAAAAAAAAAAAAAAAAAAAAA # uuid encoded in base64
+      # dd if=/dev/zero of=/dev/stdout count=16 bs=1 | openssl enc -A -a
+      # head -c 20 /dev/zero | base64
+      - KAFKA_CFG_BROKER_ID=1
+      - KAFKA_CFG_NODE_ID=1
+      - KAFKA_CFG_CONTROLLER_QUORUM_VOTERS=1@kafka:9093
+      - KAFKA_CFG_CONTROLLER_LISTENER_NAMES=CONTROLLER
+      - KAFKA_CFG_INTER_BROKER_LISTENER_NAME=IB
+      - KAFKA_CFG_PROCESS_ROLES=broker,controller
+      - KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP=CONTROLLER:PLAINTEXT,BROKER:PLAINTEXT,IB:PLAINTEXT
+      - KAFKA_CFG_LISTENERS=CONTROLLER://:9093,BROKER://:9092,IB://:9094
+      - KAFKA_ADVERTISED_LISTENERS=BROKER://kafka:9092,IB://:9094
+      - BITNAMI_DEBUG=yes
     restart: always
-    depends_on:
-      - zookeeper
   grafana:
     image: grafana/grafana:9.4.3
     environment:
@@ -32,7 +36,7 @@ services:
       - ./grafana/dashboards.yml:/etc/grafana/provisioning/dashboards/dashboards.yml
       - ./grafana/dashboards:/var/lib/grafana/dashboards
   prometheus:
-    image: prom/prometheus:v2.37.6
+    image: prom/prometheus:v3.0.1
     ports:
       - 9090:9090
     restart: always
@@ -53,18 +57,20 @@ services:
       - 6343:6343/udp
       - 2055:2055/udp
     restart: always
-    command: 
-    - -transport.kafka.brokers=kafka:9092
-    - -transport=kafka
-    - -transport.kafka.topic=flows
-    - -format=bin
+    command:
+      - -transport.kafka.brokers=kafka:9092
+      - -transport=kafka
+      - -transport.kafka.topic=flows
+      - -format=bin
   db:
-    image: clickhouse/clickhouse-server:22.8.14.53-alpine
+    image: clickhouse/clickhouse-server:24.11.1.2557-alpine
     ports:
       - 8123:8123
     volumes:
       - ./clickhouse:/docker-entrypoint-initdb.d/
-      - ../../pb/flow.proto:/var/lib/clickhouse/format_schemas/flow.proto
+      #- ../../pb/flow.proto:/var/lib/clickhouse/format_schemas/flow.proto
+      # the following files have 101:101 as owner
+      - ./clickhouse/flow.proto:/var/lib/clickhouse/format_schemas/flow.proto
       - ./clickhouse/protocols.csv:/var/lib/clickhouse/user_files/protocols.csv
     depends_on:
       - kafka

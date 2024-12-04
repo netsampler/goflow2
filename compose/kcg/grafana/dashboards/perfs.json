@@ -1,2106 +1,2753 @@
 {
-  "annotations": {
-    "list": [
-      {
-        "builtIn": 1,
-        "datasource": "-- Grafana --",
-        "enable": true,
-        "hide": true,
-        "iconColor": "rgba(0, 211, 255, 1)",
-        "name": "Annotations & Alerts",
-        "type": "dashboard"
-      }
-    ]
-  },
-  "description": "Metrics about the NetFlow+sFlow collector",
-  "editable": true,
-  "gnetId": null,
-  "graphTooltip": 0,
-  "id": 2,
-  "links": [],
-  "panels": [
+    "annotations":
     {
-      "collapsed": false,
-      "gridPos": {
-        "h": 1,
-        "w": 24,
-        "x": 0,
-        "y": 0
-      },
-      "id": 53,
-      "panels": [],
-      "repeat": null,
-      "title": "Totals",
-      "type": "row"
+        "list":
+        [
+            {
+                "builtIn": 1,
+                "datasource":
+                {
+                    "type": "datasource",
+                    "uid": "grafana"
+                },
+                "enable": true,
+                "hide": true,
+                "iconColor": "rgba(0, 211, 255, 1)",
+                "name": "Annotations & Alerts",
+                "target":
+                {
+                    "limit": 100,
+                    "matchAny": false,
+                    "tags":
+                    [],
+                    "type": "dashboard"
+                },
+                "type": "dashboard"
+            }
+        ]
     },
-    {
-      "cacheTimeout": null,
-      "colorBackground": false,
-      "colorValue": false,
-      "colors": [
-        "rgba(245, 54, 54, 0.9)",
-        "rgba(237, 129, 40, 0.89)",
-        "rgba(50, 172, 45, 0.97)"
-      ],
-      "datasource": "Prometheus",
-      "format": "pps",
-      "gauge": {
-        "maxValue": 100,
-        "minValue": 0,
-        "show": false,
-        "thresholdLabels": false,
-        "thresholdMarkers": true
-      },
-      "gridPos": {
-        "h": 7,
-        "w": 12,
-        "x": 0,
-        "y": 1
-      },
-      "id": 9,
-      "interval": null,
-      "links": [],
-      "mappingType": 1,
-      "mappingTypes": [
+    "description": "Metrics about the NetFlow+sFlow collector",
+    "editable": true,
+    "fiscalYearStartMonth": 0,
+    "graphTooltip": 0,
+    "links":
+    [],
+    "liveNow": false,
+    "panels":
+    [
         {
-          "name": "value to text",
-          "value": 1
+            "collapsed": false,
+            "datasource":
+            {
+                "type": "vertamedia-clickhouse-datasource",
+                "uid": "PDEE91DDB90597936"
+            },
+            "gridPos":
+            {
+                "h": 1,
+                "w": 24,
+                "x": 0,
+                "y": 0
+            },
+            "id": 53,
+            "panels":
+            [],
+            "targets":
+            [
+                {
+                    "datasource":
+                    {
+                        "type": "vertamedia-clickhouse-datasource",
+                        "uid": "PDEE91DDB90597936"
+                    },
+                    "refId": "A"
+                }
+            ],
+            "title": "Totals",
+            "type": "row"
         },
         {
-          "name": "range to text",
-          "value": 2
-        }
-      ],
-      "maxDataPoints": 100,
-      "nullPointMode": "connected",
-      "nullText": null,
-      "postfix": "",
-      "postfixFontSize": "50%",
-      "prefix": "",
-      "prefixFontSize": "50%",
-      "rangeMaps": [
-        {
-          "from": "null",
-          "text": "N/A",
-          "to": "null"
-        }
-      ],
-      "sparkline": {
-        "fillColor": "rgba(31, 118, 189, 0.18)",
-        "full": true,
-        "lineColor": "rgb(31, 120, 193)",
-        "show": true
-      },
-      "tableColumn": "",
-      "targets": [
-        {
-          "expr": "sum(rate(flow_process_nf_flowset_records_sum[5m]))",
-          "format": "time_series",
-          "intervalFactor": 1,
-          "refId": "A"
-        }
-      ],
-      "thresholds": "",
-      "title": "NetFlows Total",
-      "type": "singlestat",
-      "valueFontSize": "80%",
-      "valueMaps": [
-        {
-          "op": "=",
-          "text": "N/A",
-          "value": "null"
-        }
-      ],
-      "valueName": "avg"
-    },
-    {
-      "cacheTimeout": null,
-      "colorBackground": false,
-      "colorValue": false,
-      "colors": [
-        "rgba(245, 54, 54, 0.9)",
-        "rgba(237, 129, 40, 0.89)",
-        "rgba(50, 172, 45, 0.97)"
-      ],
-      "datasource": "Prometheus",
-      "format": "pps",
-      "gauge": {
-        "maxValue": 100,
-        "minValue": 0,
-        "show": false,
-        "thresholdLabels": false,
-        "thresholdMarkers": true
-      },
-      "gridPos": {
-        "h": 7,
-        "w": 12,
-        "x": 12,
-        "y": 1
-      },
-      "id": 10,
-      "interval": null,
-      "links": [],
-      "mappingType": 1,
-      "mappingTypes": [
-        {
-          "name": "value to text",
-          "value": 1
+            "datasource":
+            {
+                "type": "prometheus",
+                "uid": "PBFA97CFB590B2093"
+            },
+            "fieldConfig":
+            {
+                "defaults":
+                {
+                    "color":
+                    {
+                        "fixedColor": "rgb(31, 120, 193)",
+                        "mode": "fixed"
+                    },
+                    "mappings":
+                    [
+                        {
+                            "options":
+                            {
+                                "match": "null",
+                                "result":
+                                {
+                                    "text": "N/A"
+                                }
+                            },
+                            "type": "special"
+                        }
+                    ],
+                    "thresholds":
+                    {
+                        "mode": "absolute",
+                        "steps":
+                        [
+                            {
+                                "color": "green",
+                                "value": null
+                            },
+                            {
+                                "color": "red",
+                                "value": 80
+                            }
+                        ]
+                    },
+                    "unit": "pps"
+                },
+                "overrides":
+                []
+            },
+            "gridPos":
+            {
+                "h": 7,
+                "w": 12,
+                "x": 0,
+                "y": 1
+            },
+            "id": 9,
+            "links":
+            [],
+            "maxDataPoints": 100,
+            "options":
+            {
+                "colorMode": "none",
+                "graphMode": "area",
+                "justifyMode": "auto",
+                "orientation": "horizontal",
+                "reduceOptions":
+                {
+                    "calcs":
+                    [
+                        "mean"
+                    ],
+                    "fields": "",
+                    "values": false
+                },
+                "textMode": "auto"
+            },
+            "pluginVersion": "9.4.3",
+            "targets":
+            [
+                {
+                    "datasource":
+                    {
+                        "type": "prometheus",
+                        "uid": "PBFA97CFB590B2093"
+                    },
+                    "editorMode": "code",
+                    "expr": "sum(rate(goflow2_flow_process_nf_flowset_records_total[5m]))",
+                    "format": "time_series",
+                    "intervalFactor": 1,
+                    "range": true,
+                    "refId": "A"
+                }
+            ],
+            "title": "NetFlows Total",
+            "type": "stat"
         },
         {
-          "name": "range to text",
-          "value": 2
-        }
-      ],
-      "maxDataPoints": 100,
-      "nullPointMode": "connected",
-      "nullText": null,
-      "postfix": "",
-      "postfixFontSize": "50%",
-      "prefix": "",
-      "prefixFontSize": "50%",
-      "rangeMaps": [
-        {
-          "from": "null",
-          "text": "N/A",
-          "to": "null"
-        }
-      ],
-      "sparkline": {
-        "fillColor": "rgba(31, 118, 189, 0.18)",
-        "full": true,
-        "lineColor": "rgb(31, 120, 193)",
-        "show": true
-      },
-      "tableColumn": "",
-      "targets": [
-        {
-          "expr": "sum(rate(flow_process_sf_samples_sum[5m]))",
-          "format": "time_series",
-          "intervalFactor": 1,
-          "refId": "A"
-        }
-      ],
-      "thresholds": "",
-      "title": "sFlows Total",
-      "type": "singlestat",
-      "valueFontSize": "80%",
-      "valueMaps": [
-        {
-          "op": "=",
-          "text": "N/A",
-          "value": "null"
-        }
-      ],
-      "valueName": "avg"
-    },
-    {
-      "collapsed": false,
-      "gridPos": {
-        "h": 1,
-        "w": 24,
-        "x": 0,
-        "y": 8
-      },
-      "id": 54,
-      "panels": [],
-      "repeat": null,
-      "title": "Flows UDP Metrics",
-      "type": "row"
-    },
-    {
-      "aliasColors": {},
-      "bars": false,
-      "dashLength": 10,
-      "dashes": false,
-      "datasource": "Prometheus",
-      "fill": 10,
-      "gridPos": {
-        "h": 7,
-        "w": 12,
-        "x": 0,
-        "y": 9
-      },
-      "id": 51,
-      "legend": {
-        "alignAsTable": true,
-        "avg": true,
-        "current": true,
-        "max": false,
-        "min": false,
-        "rightSide": true,
-        "show": true,
-        "sort": "current",
-        "sortDesc": true,
-        "total": false,
-        "values": true
-      },
-      "lines": true,
-      "linewidth": 1,
-      "links": [],
-      "nullPointMode": "null",
-      "percentage": false,
-      "pointradius": 5,
-      "points": false,
-      "renderer": "flot",
-      "seriesOverrides": [
-        {
-          "alias": "/Total*/",
-          "color": "#DEDAF7",
-          "fill": 0,
-          "stack": false
-        }
-      ],
-      "spaceLength": 10,
-      "stack": true,
-      "steppedLine": false,
-      "targets": [
-        {
-          "expr": "sum(rate(udp_traffic_bytes[5m])) by (remote_ip)",
-          "format": "time_series",
-          "intervalFactor": 1,
-          "legendFormat": "{{ remote_ip }}",
-          "refId": "A"
+            "datasource":
+            {
+                "type": "prometheus",
+                "uid": "PBFA97CFB590B2093"
+            },
+            "fieldConfig":
+            {
+                "defaults":
+                {
+                    "color":
+                    {
+                        "fixedColor": "rgb(31, 120, 193)",
+                        "mode": "fixed"
+                    },
+                    "mappings":
+                    [
+                        {
+                            "options":
+                            {
+                                "match": "null",
+                                "result":
+                                {
+                                    "text": "N/A"
+                                }
+                            },
+                            "type": "special"
+                        }
+                    ],
+                    "thresholds":
+                    {
+                        "mode": "absolute",
+                        "steps":
+                        [
+                            {
+                                "color": "green",
+                                "value": null
+                            },
+                            {
+                                "color": "red",
+                                "value": 80
+                            }
+                        ]
+                    },
+                    "unit": "pps"
+                },
+                "overrides":
+                []
+            },
+            "gridPos":
+            {
+                "h": 7,
+                "w": 12,
+                "x": 12,
+                "y": 1
+            },
+            "id": 10,
+            "links":
+            [],
+            "maxDataPoints": 100,
+            "options":
+            {
+                "colorMode": "none",
+                "graphMode": "area",
+                "justifyMode": "auto",
+                "orientation": "horizontal",
+                "reduceOptions":
+                {
+                    "calcs":
+                    [
+                        "mean"
+                    ],
+                    "fields": "",
+                    "values": false
+                },
+                "textMode": "auto"
+            },
+            "pluginVersion": "9.4.3",
+            "targets":
+            [
+                {
+                    "datasource":
+                    {
+                        "type": "prometheus",
+                        "uid": "PBFA97CFB590B2093"
+                    },
+                    "editorMode": "code",
+                    "expr": "sum(rate(goflow2_flow_process_sf_samples_total[5m]))",
+                    "format": "time_series",
+                    "intervalFactor": 1,
+                    "range": true,
+                    "refId": "A"
+                }
+            ],
+            "title": "sFlows Total",
+            "type": "stat"
         },
         {
-          "expr": "sum(rate(udp_traffic_bytes[5m]))",
-          "format": "time_series",
-          "intervalFactor": 1,
-          "legendFormat": "Total",
-          "refId": "B"
-        }
-      ],
-      "thresholds": [],
-      "timeFrom": null,
-      "timeRegions": [],
-      "timeShift": null,
-      "title": "UDP2Kafka Bandwidth",
-      "tooltip": {
-        "shared": false,
-        "sort": 0,
-        "value_type": "individual"
-      },
-      "type": "graph",
-      "xaxis": {
-        "buckets": null,
-        "mode": "time",
-        "name": null,
-        "show": true,
-        "values": []
-      },
-      "yaxes": [
-        {
-          "format": "Bps",
-          "label": null,
-          "logBase": 1,
-          "max": null,
-          "min": "0",
-          "show": true
+            "collapsed": false,
+            "datasource":
+            {
+                "type": "vertamedia-clickhouse-datasource",
+                "uid": "PDEE91DDB90597936"
+            },
+            "gridPos":
+            {
+                "h": 1,
+                "w": 24,
+                "x": 0,
+                "y": 8
+            },
+            "id": 54,
+            "panels":
+            [],
+            "targets":
+            [
+                {
+                    "datasource":
+                    {
+                        "type": "vertamedia-clickhouse-datasource",
+                        "uid": "PDEE91DDB90597936"
+                    },
+                    "refId": "A"
+                }
+            ],
+            "title": "Flows UDP Metrics",
+            "type": "row"
         },
         {
-          "format": "short",
-          "label": null,
-          "logBase": 1,
-          "max": null,
-          "min": null,
-          "show": true
-        }
-      ],
-      "yaxis": {
-        "align": false,
-        "alignLevel": null
-      }
-    },
-    {
-      "aliasColors": {},
-      "bars": false,
-      "dashLength": 10,
-      "dashes": false,
-      "datasource": "Prometheus",
-      "fill": 10,
-      "gridPos": {
-        "h": 7,
-        "w": 12,
-        "x": 12,
-        "y": 9
-      },
-      "id": 52,
-      "legend": {
-        "alignAsTable": true,
-        "avg": true,
-        "current": true,
-        "max": false,
-        "min": false,
-        "rightSide": true,
-        "show": true,
-        "sort": "current",
-        "sortDesc": true,
-        "total": false,
-        "values": true
-      },
-      "lines": true,
-      "linewidth": 1,
-      "links": [],
-      "nullPointMode": "null",
-      "percentage": false,
-      "pointradius": 5,
-      "points": false,
-      "renderer": "flot",
-      "seriesOverrides": [
-        {
-          "alias": "/Total*/",
-          "color": "#DEDAF7",
-          "fill": 0,
-          "stack": false
-        }
-      ],
-      "spaceLength": 10,
-      "stack": true,
-      "steppedLine": false,
-      "targets": [
-        {
-          "expr": "sum(rate(udp_traffic_packets[5m])) by (remote_ip)",
-          "format": "time_series",
-          "intervalFactor": 1,
-          "legendFormat": "{{ remote_ip }}",
-          "refId": "A"
+            "aliasColors":
+            {},
+            "bars": false,
+            "dashLength": 10,
+            "dashes": false,
+            "datasource":
+            {
+                "type": "prometheus",
+                "uid": "PBFA97CFB590B2093"
+            },
+            "fill": 10,
+            "fillGradient": 0,
+            "gridPos":
+            {
+                "h": 7,
+                "w": 12,
+                "x": 0,
+                "y": 9
+            },
+            "hiddenSeries": false,
+            "id": 51,
+            "legend":
+            {
+                "alignAsTable": true,
+                "avg": true,
+                "current": true,
+                "max": false,
+                "min": false,
+                "rightSide": true,
+                "show": true,
+                "sort": "current",
+                "sortDesc": true,
+                "total": false,
+                "values": true
+            },
+            "lines": true,
+            "linewidth": 1,
+            "links":
+            [],
+            "nullPointMode": "null",
+            "options":
+            {
+                "alertThreshold": true
+            },
+            "percentage": false,
+            "pluginVersion": "9.4.3",
+            "pointradius": 5,
+            "points": false,
+            "renderer": "flot",
+            "seriesOverrides":
+            [
+                {
+                    "alias": "/Total*/",
+                    "color": "#DEDAF7",
+                    "fill": 0,
+                    "stack": false
+                }
+            ],
+            "spaceLength": 10,
+            "stack": true,
+            "steppedLine": false,
+            "targets":
+            [
+                {
+                    "datasource":
+                    {
+                        "type": "prometheus",
+                        "uid": "PBFA97CFB590B2093"
+                    },
+                    "editorMode": "code",
+                    "expr": "sum(rate(goflow2_flow_traffic_bytes_total[5m])) by (remote_ip)",
+                    "format": "time_series",
+                    "intervalFactor": 1,
+                    "legendFormat": "{{ remote_ip }}",
+                    "range": true,
+                    "refId": "A"
+                },
+                {
+                    "datasource":
+                    {
+                        "type": "prometheus",
+                        "uid": "PBFA97CFB590B2093"
+                    },
+                    "editorMode": "code",
+                    "expr": "sum(rate(goflow2_flow_traffic_bytes_total[5m]))",
+                    "format": "time_series",
+                    "intervalFactor": 1,
+                    "legendFormat": "Total",
+                    "range": true,
+                    "refId": "B"
+                }
+            ],
+            "thresholds":
+            [],
+            "timeRegions":
+            [],
+            "title": "UDP2Kafka Bandwidth",
+            "tooltip":
+            {
+                "shared": false,
+                "sort": 0,
+                "value_type": "individual"
+            },
+            "type": "graph",
+            "xaxis":
+            {
+                "mode": "time",
+                "show": true,
+                "values":
+                []
+            },
+            "yaxes":
+            [
+                {
+                    "format": "Bps",
+                    "logBase": 1,
+                    "min": "0",
+                    "show": true
+                },
+                {
+                    "format": "short",
+                    "logBase": 1,
+                    "show": true
+                }
+            ],
+            "yaxis":
+            {
+                "align": false
+            }
         },
         {
-          "expr": "sum(rate(udp_traffic_packets[5m]))",
-          "format": "time_series",
-          "intervalFactor": 1,
-          "legendFormat": "Total",
-          "refId": "B"
-        }
-      ],
-      "thresholds": [],
-      "timeFrom": null,
-      "timeRegions": [],
-      "timeShift": null,
-      "title": "UDP2Kafka packets",
-      "tooltip": {
-        "shared": false,
-        "sort": 0,
-        "value_type": "individual"
-      },
-      "type": "graph",
-      "xaxis": {
-        "buckets": null,
-        "mode": "time",
-        "name": null,
-        "show": true,
-        "values": []
-      },
-      "yaxes": [
-        {
-          "format": "pps",
-          "label": "",
-          "logBase": 1,
-          "max": null,
-          "min": "0",
-          "show": true
+            "aliasColors":
+            {},
+            "bars": false,
+            "dashLength": 10,
+            "dashes": false,
+            "datasource":
+            {
+                "type": "prometheus",
+                "uid": "PBFA97CFB590B2093"
+            },
+            "fill": 10,
+            "fillGradient": 0,
+            "gridPos":
+            {
+                "h": 7,
+                "w": 12,
+                "x": 12,
+                "y": 9
+            },
+            "hiddenSeries": false,
+            "id": 52,
+            "legend":
+            {
+                "alignAsTable": true,
+                "avg": true,
+                "current": true,
+                "max": false,
+                "min": false,
+                "rightSide": true,
+                "show": true,
+                "sort": "current",
+                "sortDesc": true,
+                "total": false,
+                "values": true
+            },
+            "lines": true,
+            "linewidth": 1,
+            "links":
+            [],
+            "nullPointMode": "null",
+            "options":
+            {
+                "alertThreshold": true
+            },
+            "percentage": false,
+            "pluginVersion": "9.4.3",
+            "pointradius": 5,
+            "points": false,
+            "renderer": "flot",
+            "seriesOverrides":
+            [
+                {
+                    "alias": "/Total*/",
+                    "color": "#DEDAF7",
+                    "fill": 0,
+                    "stack": false
+                }
+            ],
+            "spaceLength": 10,
+            "stack": true,
+            "steppedLine": false,
+            "targets":
+            [
+                {
+                    "datasource":
+                    {
+                        "type": "prometheus",
+                        "uid": "PBFA97CFB590B2093"
+                    },
+                    "editorMode": "code",
+                    "expr": "sum(rate(goflow2_flow_traffic_packets_total[5m])) by (remote_ip)",
+                    "format": "time_series",
+                    "intervalFactor": 1,
+                    "legendFormat": "{{ remote_ip }}",
+                    "range": true,
+                    "refId": "A"
+                },
+                {
+                    "datasource":
+                    {
+                        "type": "prometheus",
+                        "uid": "PBFA97CFB590B2093"
+                    },
+                    "editorMode": "code",
+                    "expr": "sum(rate(goflow2_flow_traffic_packets_total[5m]))",
+                    "format": "time_series",
+                    "intervalFactor": 1,
+                    "legendFormat": "Total",
+                    "range": true,
+                    "refId": "B"
+                }
+            ],
+            "thresholds":
+            [],
+            "timeRegions":
+            [],
+            "title": "UDP2Kafka packets",
+            "tooltip":
+            {
+                "shared": false,
+                "sort": 0,
+                "value_type": "individual"
+            },
+            "type": "graph",
+            "xaxis":
+            {
+                "mode": "time",
+                "show": true,
+                "values":
+                []
+            },
+            "yaxes":
+            [
+                {
+                    "format": "pps",
+                    "label": "",
+                    "logBase": 1,
+                    "min": "0",
+                    "show": true
+                },
+                {
+                    "format": "short",
+                    "logBase": 1,
+                    "show": true
+                }
+            ],
+            "yaxis":
+            {
+                "align": false
+            }
         },
         {
-          "format": "short",
-          "label": null,
-          "logBase": 1,
-          "max": null,
-          "min": null,
-          "show": true
-        }
-      ],
-      "yaxis": {
-        "align": false,
-        "alignLevel": null
-      }
-    },
-    {
-      "aliasColors": {},
-      "bars": false,
-      "dashLength": 10,
-      "dashes": false,
-      "datasource": "Prometheus",
-      "fill": 10,
-      "gridPos": {
-        "h": 7,
-        "w": 12,
-        "x": 0,
-        "y": 16
-      },
-      "id": 1,
-      "legend": {
-        "alignAsTable": true,
-        "avg": true,
-        "current": true,
-        "max": false,
-        "min": false,
-        "rightSide": true,
-        "show": true,
-        "sort": "current",
-        "sortDesc": true,
-        "total": false,
-        "values": true
-      },
-      "lines": true,
-      "linewidth": 1,
-      "links": [],
-      "nullPointMode": "null",
-      "percentage": false,
-      "pointradius": 5,
-      "points": false,
-      "renderer": "flot",
-      "seriesOverrides": [
-        {
-          "alias": "/Total*/",
-          "color": "#DEDAF7",
-          "fill": 0,
-          "stack": false
-        }
-      ],
-      "spaceLength": 10,
-      "stack": true,
-      "steppedLine": false,
-      "targets": [
-        {
-          "expr": "sum(rate(flow_traffic_bytes{type=\"sFlow\"}[5m])) by (remote_ip)",
-          "format": "time_series",
-          "intervalFactor": 1,
-          "legendFormat": "{{ remote_ip }}",
-          "refId": "A"
+            "aliasColors":
+            {},
+            "bars": false,
+            "dashLength": 10,
+            "dashes": false,
+            "datasource":
+            {
+                "type": "prometheus",
+                "uid": "PBFA97CFB590B2093"
+            },
+            "fill": 10,
+            "fillGradient": 0,
+            "gridPos":
+            {
+                "h": 7,
+                "w": 12,
+                "x": 0,
+                "y": 16
+            },
+            "hiddenSeries": false,
+            "id": 1,
+            "legend":
+            {
+                "alignAsTable": true,
+                "avg": true,
+                "current": true,
+                "max": false,
+                "min": false,
+                "rightSide": true,
+                "show": true,
+                "sort": "current",
+                "sortDesc": true,
+                "total": false,
+                "values": true
+            },
+            "lines": true,
+            "linewidth": 1,
+            "links":
+            [],
+            "nullPointMode": "null",
+            "options":
+            {
+                "alertThreshold": true
+            },
+            "percentage": false,
+            "pluginVersion": "9.4.3",
+            "pointradius": 5,
+            "points": false,
+            "renderer": "flot",
+            "seriesOverrides":
+            [
+                {
+                    "alias": "/Total*/",
+                    "color": "#DEDAF7",
+                    "fill": 0,
+                    "stack": false
+                }
+            ],
+            "spaceLength": 10,
+            "stack": true,
+            "steppedLine": false,
+            "targets":
+            [
+                {
+                    "datasource":
+                    {
+                        "type": "prometheus",
+                        "uid": "PBFA97CFB590B2093"
+                    },
+                    "editorMode": "code",
+                    "expr": "sum(rate(goflow2_flow_traffic_size_bytes_sum{type=\"sflow\"}[5m])) by (remote_ip)",
+                    "format": "time_series",
+                    "intervalFactor": 1,
+                    "legendFormat": "{{ remote_ip }}",
+                    "range": true,
+                    "refId": "A"
+                },
+                {
+                    "aggregator": "sum",
+                    "alias": "$tag_type | Total",
+                    "currentTagKey": "",
+                    "currentTagValue": "",
+                    "datasource":
+                    {
+                        "type": "prometheus",
+                        "uid": "PBFA97CFB590B2093"
+                    },
+                    "downsampleAggregator": "avg",
+                    "downsampleFillPolicy": "none",
+                    "downsampleInterval": "",
+                    "editorMode": "code",
+                    "expr": "sum(rate(goflow2_flow_traffic_size_bytes_sum{type=\"sflow\"}[5m]))",
+                    "format": "time_series",
+                    "intervalFactor": 1,
+                    "legendFormat": "sFlow | Total",
+                    "metric": "goflow.flow_traffic_bytes",
+                    "range": true,
+                    "refId": "B",
+                    "shouldComputeRate": true,
+                    "tags":
+                    {
+                        "type": "sFlow"
+                    }
+                }
+            ],
+            "thresholds":
+            [],
+            "timeRegions":
+            [],
+            "title": "sFlow UDP Bandwidth",
+            "tooltip":
+            {
+                "shared": false,
+                "sort": 0,
+                "value_type": "individual"
+            },
+            "type": "graph",
+            "xaxis":
+            {
+                "mode": "time",
+                "show": true,
+                "values":
+                []
+            },
+            "yaxes":
+            [
+                {
+                    "format": "Bps",
+                    "logBase": 1,
+                    "min": "0",
+                    "show": true
+                },
+                {
+                    "format": "short",
+                    "logBase": 1,
+                    "show": true
+                }
+            ],
+            "yaxis":
+            {
+                "align": false
+            }
         },
         {
-          "aggregator": "sum",
-          "alias": "$tag_type | Total",
-          "currentTagKey": "",
-          "currentTagValue": "",
-          "downsampleAggregator": "avg",
-          "downsampleFillPolicy": "none",
-          "downsampleInterval": "",
-          "expr": "sum(rate(flow_traffic_bytes{type=\"sFlow\"}[5m]))",
-          "format": "time_series",
-          "intervalFactor": 1,
-          "legendFormat": "sFlow | Total",
-          "metric": "goflow.flow_traffic_bytes",
-          "refId": "B",
-          "shouldComputeRate": true,
-          "tags": {
-            "type": "sFlow"
-          }
-        }
-      ],
-      "thresholds": [],
-      "timeFrom": null,
-      "timeRegions": [],
-      "timeShift": null,
-      "title": "sFlow UDP Bandwidth",
-      "tooltip": {
-        "shared": false,
-        "sort": 0,
-        "value_type": "individual"
-      },
-      "type": "graph",
-      "xaxis": {
-        "buckets": null,
-        "mode": "time",
-        "name": null,
-        "show": true,
-        "values": []
-      },
-      "yaxes": [
-        {
-          "format": "Bps",
-          "label": null,
-          "logBase": 1,
-          "max": null,
-          "min": "0",
-          "show": true
+            "aliasColors":
+            {},
+            "bars": false,
+            "dashLength": 10,
+            "dashes": false,
+            "datasource":
+            {
+                "type": "prometheus",
+                "uid": "PBFA97CFB590B2093"
+            },
+            "fill": 10,
+            "fillGradient": 0,
+            "gridPos":
+            {
+                "h": 7,
+                "w": 12,
+                "x": 12,
+                "y": 16
+            },
+            "hiddenSeries": false,
+            "id": 2,
+            "legend":
+            {
+                "alignAsTable": true,
+                "avg": true,
+                "current": true,
+                "max": false,
+                "min": false,
+                "rightSide": true,
+                "show": true,
+                "sort": "current",
+                "sortDesc": true,
+                "total": false,
+                "values": true
+            },
+            "lines": true,
+            "linewidth": 1,
+            "links":
+            [],
+            "nullPointMode": "null",
+            "options":
+            {
+                "alertThreshold": true
+            },
+            "percentage": false,
+            "pluginVersion": "9.4.3",
+            "pointradius": 5,
+            "points": false,
+            "renderer": "flot",
+            "seriesOverrides":
+            [
+                {
+                    "alias": "/Total*/",
+                    "color": "#DEDAF7",
+                    "fill": 0,
+                    "stack": false
+                }
+            ],
+            "spaceLength": 10,
+            "stack": true,
+            "steppedLine": false,
+            "targets":
+            [
+                {
+                    "datasource":
+                    {
+                        "type": "prometheus",
+                        "uid": "PBFA97CFB590B2093"
+                    },
+                    "editorMode": "code",
+                    "expr": "sum(rate(goflow2_flow_traffic_size_bytes_count{type=\"sflow\"}[5m])) by (remote_ip)",
+                    "format": "time_series",
+                    "intervalFactor": 1,
+                    "legendFormat": "{{ remote_ip }}",
+                    "range": true,
+                    "refId": "A"
+                },
+                {
+                    "aggregator": "sum",
+                    "alias": "$tag_type | Total",
+                    "currentTagKey": "",
+                    "currentTagValue": "",
+                    "datasource":
+                    {
+                        "type": "prometheus",
+                        "uid": "PBFA97CFB590B2093"
+                    },
+                    "downsampleAggregator": "avg",
+                    "downsampleFillPolicy": "none",
+                    "downsampleInterval": "",
+                    "editorMode": "code",
+                    "expr": "sum(rate(goflow2_flow_traffic_size_bytes_count{type=\"sflow\"}[5m]))",
+                    "format": "time_series",
+                    "intervalFactor": 1,
+                    "legendFormat": "sFlow | Total",
+                    "metric": "goflow-kafka.flow_traffic_packets",
+                    "range": true,
+                    "refId": "B",
+                    "shouldComputeRate": true,
+                    "tags":
+                    {
+                        "type": "sFlow"
+                    }
+                }
+            ],
+            "thresholds":
+            [],
+            "timeRegions":
+            [],
+            "title": "sFlow UDP Packets",
+            "tooltip":
+            {
+                "shared": false,
+                "sort": 0,
+                "value_type": "individual"
+            },
+            "type": "graph",
+            "xaxis":
+            {
+                "mode": "time",
+                "show": true,
+                "values":
+                []
+            },
+            "yaxes":
+            [
+                {
+                    "format": "pps",
+                    "label": "",
+                    "logBase": 1,
+                    "min": "0",
+                    "show": true
+                },
+                {
+                    "format": "short",
+                    "logBase": 1,
+                    "show": true
+                }
+            ],
+            "yaxis":
+            {
+                "align": false
+            }
         },
         {
-          "format": "short",
-          "label": null,
-          "logBase": 1,
-          "max": null,
-          "min": null,
-          "show": true
-        }
-      ],
-      "yaxis": {
-        "align": false,
-        "alignLevel": null
-      }
-    },
-    {
-      "aliasColors": {},
-      "bars": false,
-      "dashLength": 10,
-      "dashes": false,
-      "datasource": "Prometheus",
-      "fill": 10,
-      "gridPos": {
-        "h": 7,
-        "w": 12,
-        "x": 12,
-        "y": 16
-      },
-      "id": 2,
-      "legend": {
-        "alignAsTable": true,
-        "avg": true,
-        "current": true,
-        "max": false,
-        "min": false,
-        "rightSide": true,
-        "show": true,
-        "sort": "current",
-        "sortDesc": true,
-        "total": false,
-        "values": true
-      },
-      "lines": true,
-      "linewidth": 1,
-      "links": [],
-      "nullPointMode": "null",
-      "percentage": false,
-      "pointradius": 5,
-      "points": false,
-      "renderer": "flot",
-      "seriesOverrides": [
-        {
-          "alias": "/Total*/",
-          "color": "#DEDAF7",
-          "fill": 0,
-          "stack": false
-        }
-      ],
-      "spaceLength": 10,
-      "stack": true,
-      "steppedLine": false,
-      "targets": [
-        {
-          "expr": "sum(rate(flow_traffic_packets{type=\"sFlow\"}[5m])) by (remote_ip)",
-          "format": "time_series",
-          "intervalFactor": 1,
-          "legendFormat": "{{ remote_ip }}",
-          "refId": "A"
+            "aliasColors":
+            {},
+            "bars": false,
+            "dashLength": 10,
+            "dashes": false,
+            "datasource":
+            {
+                "type": "prometheus",
+                "uid": "PBFA97CFB590B2093"
+            },
+            "fill": 10,
+            "fillGradient": 0,
+            "gridPos":
+            {
+                "h": 7,
+                "w": 12,
+                "x": 0,
+                "y": 23
+            },
+            "hiddenSeries": false,
+            "id": 48,
+            "legend":
+            {
+                "alignAsTable": true,
+                "avg": true,
+                "current": true,
+                "max": false,
+                "min": false,
+                "rightSide": true,
+                "show": true,
+                "sort": "current",
+                "sortDesc": true,
+                "total": false,
+                "values": true
+            },
+            "lines": true,
+            "linewidth": 1,
+            "links":
+            [],
+            "nullPointMode": "null",
+            "options":
+            {
+                "alertThreshold": true
+            },
+            "percentage": false,
+            "pluginVersion": "9.4.3",
+            "pointradius": 5,
+            "points": false,
+            "renderer": "flot",
+            "seriesOverrides":
+            [
+                {
+                    "alias": "/Total*/",
+                    "color": "#DEDAF7",
+                    "fill": 0,
+                    "stack": false
+                }
+            ],
+            "spaceLength": 10,
+            "stack": true,
+            "steppedLine": false,
+            "targets":
+            [
+                {
+                    "datasource":
+                    {
+                        "type": "prometheus",
+                        "uid": "PBFA97CFB590B2093"
+                    },
+                    "editorMode": "code",
+                    "expr": "sum(rate(goflow2_flow_traffic_size_bytes_sum{type=\"netflow\"}[5m])) by (remote_ip)",
+                    "format": "time_series",
+                    "intervalFactor": 1,
+                    "legendFormat": "{{ remote_ip }}",
+                    "range": true,
+                    "refId": "A"
+                },
+                {
+                    "datasource":
+                    {
+                        "type": "prometheus",
+                        "uid": "PBFA97CFB590B2093"
+                    },
+                    "editorMode": "code",
+                    "expr": "sum(rate(goflow2_flow_traffic_size_bytes_sum{type=\"netflow\"}[5m]))",
+                    "format": "time_series",
+                    "intervalFactor": 1,
+                    "legendFormat": "NetFlow | Total",
+                    "range": true,
+                    "refId": "B"
+                }
+            ],
+            "thresholds":
+            [],
+            "timeRegions":
+            [],
+            "title": "NetFlow UDP Bandwidth",
+            "tooltip":
+            {
+                "shared": false,
+                "sort": 0,
+                "value_type": "individual"
+            },
+            "type": "graph",
+            "xaxis":
+            {
+                "mode": "time",
+                "show": true,
+                "values":
+                []
+            },
+            "yaxes":
+            [
+                {
+                    "format": "Bps",
+                    "logBase": 1,
+                    "min": "0",
+                    "show": true
+                },
+                {
+                    "format": "short",
+                    "logBase": 1,
+                    "show": true
+                }
+            ],
+            "yaxis":
+            {
+                "align": false
+            }
         },
         {
-          "aggregator": "sum",
-          "alias": "$tag_type | Total",
-          "currentTagKey": "",
-          "currentTagValue": "",
-          "downsampleAggregator": "avg",
-          "downsampleFillPolicy": "none",
-          "downsampleInterval": "",
-          "expr": "sum(rate(flow_traffic_packets{type=\"sFlow\"}[5m]))",
-          "format": "time_series",
-          "intervalFactor": 1,
-          "legendFormat": "sFlow | Total",
-          "metric": "goflow-kafka.flow_traffic_packets",
-          "refId": "B",
-          "shouldComputeRate": true,
-          "tags": {
-            "type": "sFlow"
-          }
-        }
-      ],
-      "thresholds": [],
-      "timeFrom": null,
-      "timeRegions": [],
-      "timeShift": null,
-      "title": "sFlow UDP Packets",
-      "tooltip": {
-        "shared": false,
-        "sort": 0,
-        "value_type": "individual"
-      },
-      "type": "graph",
-      "xaxis": {
-        "buckets": null,
-        "mode": "time",
-        "name": null,
-        "show": true,
-        "values": []
-      },
-      "yaxes": [
-        {
-          "format": "pps",
-          "label": "",
-          "logBase": 1,
-          "max": null,
-          "min": "0",
-          "show": true
+            "aliasColors":
+            {},
+            "bars": false,
+            "dashLength": 10,
+            "dashes": false,
+            "datasource":
+            {
+                "type": "prometheus",
+                "uid": "PBFA97CFB590B2093"
+            },
+            "fill": 10,
+            "fillGradient": 0,
+            "gridPos":
+            {
+                "h": 7,
+                "w": 12,
+                "x": 12,
+                "y": 23
+            },
+            "hiddenSeries": false,
+            "id": 47,
+            "legend":
+            {
+                "alignAsTable": true,
+                "avg": true,
+                "current": true,
+                "max": false,
+                "min": false,
+                "rightSide": true,
+                "show": true,
+                "sort": "current",
+                "sortDesc": true,
+                "total": false,
+                "values": true
+            },
+            "lines": true,
+            "linewidth": 1,
+            "links":
+            [],
+            "nullPointMode": "null",
+            "options":
+            {
+                "alertThreshold": true
+            },
+            "percentage": false,
+            "pluginVersion": "9.4.3",
+            "pointradius": 5,
+            "points": false,
+            "renderer": "flot",
+            "seriesOverrides":
+            [
+                {
+                    "alias": "/Total*/",
+                    "color": "#DEDAF7",
+                    "fill": 0,
+                    "stack": false
+                }
+            ],
+            "spaceLength": 10,
+            "stack": true,
+            "steppedLine": false,
+            "targets":
+            [
+                {
+                    "datasource":
+                    {
+                        "type": "prometheus",
+                        "uid": "PBFA97CFB590B2093"
+                    },
+                    "editorMode": "code",
+                    "expr": "sum(rate(goflow2_flow_traffic_size_bytes_count{type=\"netflow\"}[5m])) by (remote_ip)",
+                    "format": "time_series",
+                    "intervalFactor": 1,
+                    "legendFormat": "{{ remote_ip }}",
+                    "range": true,
+                    "refId": "A"
+                },
+                {
+                    "aggregator": "sum",
+                    "alias": "$tag_type | Total",
+                    "currentTagKey": "",
+                    "currentTagValue": "",
+                    "datasource":
+                    {
+                        "type": "prometheus",
+                        "uid": "PBFA97CFB590B2093"
+                    },
+                    "downsampleAggregator": "avg",
+                    "downsampleFillPolicy": "none",
+                    "downsampleInterval": "",
+                    "editorMode": "code",
+                    "expr": "sum(rate(goflow2_flow_traffic_size_bytes_count{type=\"netflow\"}[5m]))",
+                    "format": "time_series",
+                    "intervalFactor": 1,
+                    "legendFormat": "NetFlow | Total",
+                    "metric": "goflow-kafka.flow_traffic_packets",
+                    "range": true,
+                    "refId": "B",
+                    "shouldComputeRate": true,
+                    "tags":
+                    {
+                        "type": "NetFlow"
+                    }
+                }
+            ],
+            "thresholds":
+            [],
+            "timeRegions":
+            [],
+            "title": "NetFlow UDP Packets",
+            "tooltip":
+            {
+                "shared": false,
+                "sort": 0,
+                "value_type": "individual"
+            },
+            "type": "graph",
+            "xaxis":
+            {
+                "mode": "time",
+                "show": true,
+                "values":
+                []
+            },
+            "yaxes":
+            [
+                {
+                    "format": "pps",
+                    "label": "",
+                    "logBase": 1,
+                    "min": "0",
+                    "show": true
+                },
+                {
+                    "format": "short",
+                    "logBase": 1,
+                    "show": true
+                }
+            ],
+            "yaxis":
+            {
+                "align": false
+            }
         },
         {
-          "format": "short",
-          "label": null,
-          "logBase": 1,
-          "max": null,
-          "min": null,
-          "show": true
-        }
-      ],
-      "yaxis": {
-        "align": false,
-        "alignLevel": null
-      }
-    },
-    {
-      "aliasColors": {},
-      "bars": false,
-      "dashLength": 10,
-      "dashes": false,
-      "datasource": "Prometheus",
-      "fill": 10,
-      "gridPos": {
-        "h": 7,
-        "w": 12,
-        "x": 0,
-        "y": 23
-      },
-      "id": 48,
-      "legend": {
-        "alignAsTable": true,
-        "avg": true,
-        "current": true,
-        "max": false,
-        "min": false,
-        "rightSide": true,
-        "show": true,
-        "sort": "current",
-        "sortDesc": true,
-        "total": false,
-        "values": true
-      },
-      "lines": true,
-      "linewidth": 1,
-      "links": [],
-      "nullPointMode": "null",
-      "percentage": false,
-      "pointradius": 5,
-      "points": false,
-      "renderer": "flot",
-      "seriesOverrides": [
-        {
-          "alias": "/Total*/",
-          "color": "#DEDAF7",
-          "fill": 0,
-          "stack": false
-        }
-      ],
-      "spaceLength": 10,
-      "stack": true,
-      "steppedLine": false,
-      "targets": [
-        {
-          "expr": "sum(rate(flow_traffic_bytes{type=\"NetFlow\"}[5m])) by (remote_ip)",
-          "format": "time_series",
-          "intervalFactor": 1,
-          "legendFormat": "{{ remote_ip }}",
-          "refId": "A"
+            "collapsed": false,
+            "datasource":
+            {
+                "type": "vertamedia-clickhouse-datasource",
+                "uid": "PDEE91DDB90597936"
+            },
+            "gridPos":
+            {
+                "h": 1,
+                "w": 24,
+                "x": 0,
+                "y": 30
+            },
+            "id": 55,
+            "panels":
+            [],
+            "targets":
+            [
+                {
+                    "datasource":
+                    {
+                        "type": "vertamedia-clickhouse-datasource",
+                        "uid": "PDEE91DDB90597936"
+                    },
+                    "refId": "A"
+                }
+            ],
+            "title": "NetFlow metrics",
+            "type": "row"
         },
         {
-          "expr": "sum(rate(flow_traffic_bytes{type=\"NetFlow\"}[5m]))",
-          "format": "time_series",
-          "intervalFactor": 1,
-          "legendFormat": "NetFlow | Total",
-          "refId": "B"
-        }
-      ],
-      "thresholds": [],
-      "timeFrom": null,
-      "timeRegions": [],
-      "timeShift": null,
-      "title": "NetFlow UDP Bandwidth",
-      "tooltip": {
-        "shared": false,
-        "sort": 0,
-        "value_type": "individual"
-      },
-      "type": "graph",
-      "xaxis": {
-        "buckets": null,
-        "mode": "time",
-        "name": null,
-        "show": true,
-        "values": []
-      },
-      "yaxes": [
-        {
-          "format": "Bps",
-          "label": null,
-          "logBase": 1,
-          "max": null,
-          "min": "0",
-          "show": true
+            "aliasColors":
+            {},
+            "bars": false,
+            "dashLength": 10,
+            "dashes": false,
+            "datasource":
+            {
+                "type": "prometheus",
+                "uid": "PBFA97CFB590B2093"
+            },
+            "fill": 0,
+            "fillGradient": 0,
+            "gridPos":
+            {
+                "h": 7,
+                "w": 12,
+                "x": 0,
+                "y": 31
+            },
+            "hiddenSeries": false,
+            "id": 3,
+            "legend":
+            {
+                "alignAsTable": true,
+                "avg": true,
+                "current": true,
+                "max": true,
+                "min": true,
+                "show": true,
+                "total": false,
+                "values": true
+            },
+            "lines": true,
+            "linewidth": 1,
+            "links":
+            [],
+            "nullPointMode": "null",
+            "options":
+            {
+                "alertThreshold": true
+            },
+            "percentage": false,
+            "pluginVersion": "9.4.3",
+            "pointradius": 5,
+            "points": false,
+            "renderer": "flot",
+            "seriesOverrides":
+            [],
+            "spaceLength": 10,
+            "stack": false,
+            "steppedLine": false,
+            "targets":
+            [
+                {
+                    "datasource":
+                    {
+                        "type": "prometheus",
+                        "uid": "PBFA97CFB590B2093"
+                    },
+                    "editorMode": "code",
+                    "expr": "sum(rate(goflow2_flow_process_nf_flowset_records_total[5m])) by (version,type)",
+                    "format": "time_series",
+                    "intervalFactor": 1,
+                    "legendFormat": "{{ version }} | {{ type }} ",
+                    "range": true,
+                    "refId": "A"
+                }
+            ],
+            "thresholds":
+            [],
+            "timeRegions":
+            [],
+            "title": "NetFlows by type and version",
+            "tooltip":
+            {
+                "shared": true,
+                "sort": 0,
+                "value_type": "individual"
+            },
+            "type": "graph",
+            "xaxis":
+            {
+                "mode": "time",
+                "show": true,
+                "values":
+                []
+            },
+            "yaxes":
+            [
+                {
+                    "format": "pps",
+                    "logBase": 1,
+                    "show": true
+                },
+                {
+                    "format": "short",
+                    "logBase": 1,
+                    "show": true
+                }
+            ],
+            "yaxis":
+            {
+                "align": false
+            }
         },
         {
-          "format": "short",
-          "label": null,
-          "logBase": 1,
-          "max": null,
-          "min": null,
-          "show": true
-        }
-      ],
-      "yaxis": {
-        "align": false,
-        "alignLevel": null
-      }
-    },
-    {
-      "aliasColors": {},
-      "bars": false,
-      "dashLength": 10,
-      "dashes": false,
-      "datasource": "Prometheus",
-      "fill": 10,
-      "gridPos": {
-        "h": 7,
-        "w": 12,
-        "x": 12,
-        "y": 23
-      },
-      "id": 47,
-      "legend": {
-        "alignAsTable": true,
-        "avg": true,
-        "current": true,
-        "max": false,
-        "min": false,
-        "rightSide": true,
-        "show": true,
-        "sort": "current",
-        "sortDesc": true,
-        "total": false,
-        "values": true
-      },
-      "lines": true,
-      "linewidth": 1,
-      "links": [],
-      "nullPointMode": "null",
-      "percentage": false,
-      "pointradius": 5,
-      "points": false,
-      "renderer": "flot",
-      "seriesOverrides": [
-        {
-          "alias": "/Total*/",
-          "color": "#DEDAF7",
-          "fill": 0,
-          "stack": false
-        }
-      ],
-      "spaceLength": 10,
-      "stack": true,
-      "steppedLine": false,
-      "targets": [
-        {
-          "expr": "sum(rate(flow_traffic_packets{type=\"NetFlow\"}[5m])) by (remote_ip)",
-          "format": "time_series",
-          "intervalFactor": 1,
-          "legendFormat": "{{ remote_ip }}",
-          "refId": "A"
+            "aliasColors":
+            {},
+            "bars": false,
+            "dashLength": 10,
+            "dashes": false,
+            "datasource":
+            {
+                "type": "prometheus",
+                "uid": "PBFA97CFB590B2093"
+            },
+            "fill": 1,
+            "fillGradient": 0,
+            "gridPos":
+            {
+                "h": 7,
+                "w": 12,
+                "x": 12,
+                "y": 31
+            },
+            "hiddenSeries": false,
+            "id": 4,
+            "legend":
+            {
+                "alignAsTable": true,
+                "avg": true,
+                "current": true,
+                "max": true,
+                "min": true,
+                "show": true,
+                "total": false,
+                "values": true
+            },
+            "lines": true,
+            "linewidth": 1,
+            "links":
+            [],
+            "nullPointMode": "null",
+            "options":
+            {
+                "alertThreshold": true
+            },
+            "percentage": false,
+            "pluginVersion": "9.4.3",
+            "pointradius": 5,
+            "points": false,
+            "renderer": "flot",
+            "seriesOverrides":
+            [],
+            "spaceLength": 10,
+            "stack": false,
+            "steppedLine": false,
+            "targets":
+            [
+                {
+                    "datasource":
+                    {
+                        "type": "prometheus",
+                        "uid": "PBFA97CFB590B2093"
+                    },
+                    "editorMode": "code",
+                    "expr": "sum(rate(goflow2_flow_process_nf_errors_total[5m])) by (error)",
+                    "format": "time_series",
+                    "intervalFactor": 1,
+                    "legendFormat": "{{ error }}",
+                    "metric": "goflow-kafka.flow_process_nf_errors_count",
+                    "range": true,
+                    "refId": "A"
+                }
+            ],
+            "thresholds":
+            [],
+            "timeRegions":
+            [],
+            "title": "NetFlows errors",
+            "tooltip":
+            {
+                "shared": true,
+                "sort": 0,
+                "value_type": "individual"
+            },
+            "type": "graph",
+            "xaxis":
+            {
+                "mode": "time",
+                "show": true,
+                "values":
+                []
+            },
+            "yaxes":
+            [
+                {
+                    "format": "hertz",
+                    "logBase": 1,
+                    "show": true
+                },
+                {
+                    "format": "short",
+                    "logBase": 1,
+                    "show": true
+                }
+            ],
+            "yaxis":
+            {
+                "align": false
+            }
         },
         {
-          "aggregator": "sum",
-          "alias": "$tag_type | Total",
-          "currentTagKey": "",
-          "currentTagValue": "",
-          "downsampleAggregator": "avg",
-          "downsampleFillPolicy": "none",
-          "downsampleInterval": "",
-          "expr": "sum(rate(flow_traffic_packets{type=\"NetFlow\"}[5m]))",
-          "format": "time_series",
-          "intervalFactor": 1,
-          "legendFormat": "NetFlow | Total",
-          "metric": "goflow-kafka.flow_traffic_packets",
-          "refId": "B",
-          "shouldComputeRate": true,
-          "tags": {
-            "type": "NetFlow"
-          }
-        }
-      ],
-      "thresholds": [],
-      "timeFrom": null,
-      "timeRegions": [],
-      "timeShift": null,
-      "title": "NetFlow UDP Packets",
-      "tooltip": {
-        "shared": false,
-        "sort": 0,
-        "value_type": "individual"
-      },
-      "type": "graph",
-      "xaxis": {
-        "buckets": null,
-        "mode": "time",
-        "name": null,
-        "show": true,
-        "values": []
-      },
-      "yaxes": [
-        {
-          "format": "pps",
-          "label": "",
-          "logBase": 1,
-          "max": null,
-          "min": "0",
-          "show": true
+            "aliasColors":
+            {},
+            "bars": false,
+            "dashLength": 10,
+            "dashes": false,
+            "datasource":
+            {
+                "type": "prometheus",
+                "uid": "PBFA97CFB590B2093"
+            },
+            "fill": 0,
+            "fillGradient": 0,
+            "gridPos":
+            {
+                "h": 7,
+                "w": 12,
+                "x": 0,
+                "y": 38
+            },
+            "hiddenSeries": false,
+            "id": 6,
+            "legend":
+            {
+                "alignAsTable": true,
+                "avg": false,
+                "current": true,
+                "max": false,
+                "min": false,
+                "rightSide": true,
+                "show": true,
+                "sort": "current",
+                "sortDesc": true,
+                "total": false,
+                "values": true
+            },
+            "lines": true,
+            "linewidth": 1,
+            "links":
+            [],
+            "nullPointMode": "null",
+            "options":
+            {
+                "alertThreshold": true
+            },
+            "percentage": false,
+            "pluginVersion": "9.4.3",
+            "pointradius": 5,
+            "points": false,
+            "renderer": "flot",
+            "seriesOverrides":
+            [],
+            "spaceLength": 10,
+            "stack": false,
+            "steppedLine": false,
+            "targets":
+            [
+                {
+                    "datasource":
+                    {
+                        "type": "prometheus",
+                        "uid": "PBFA97CFB590B2093"
+                    },
+                    "editorMode": "code",
+                    "expr": "sum(rate(goflow2_flow_process_nf_templates_total[5m])) by (version,router,type)",
+                    "format": "time_series",
+                    "intervalFactor": 1,
+                    "legendFormat": "{{ version }} | {{ router }} | {{ type }}",
+                    "range": true,
+                    "refId": "A"
+                }
+            ],
+            "thresholds":
+            [],
+            "timeRegions":
+            [],
+            "title": "NetFlow templates",
+            "tooltip":
+            {
+                "shared": false,
+                "sort": 0,
+                "value_type": "individual"
+            },
+            "type": "graph",
+            "xaxis":
+            {
+                "mode": "time",
+                "show": true,
+                "values":
+                []
+            },
+            "yaxes":
+            [
+                {
+                    "format": "pps",
+                    "logBase": 1,
+                    "show": true
+                },
+                {
+                    "format": "short",
+                    "logBase": 1,
+                    "show": true
+                }
+            ],
+            "yaxis":
+            {
+                "align": false
+            }
         },
         {
-          "format": "short",
-          "label": null,
-          "logBase": 1,
-          "max": null,
-          "min": null,
-          "show": true
-        }
-      ],
-      "yaxis": {
-        "align": false,
-        "alignLevel": null
-      }
-    },
-    {
-      "collapsed": false,
-      "gridPos": {
-        "h": 1,
-        "w": 24,
-        "x": 0,
-        "y": 30
-      },
-      "id": 55,
-      "panels": [],
-      "repeat": null,
-      "title": "NetFlow metrics",
-      "type": "row"
-    },
-    {
-      "aliasColors": {},
-      "bars": false,
-      "dashLength": 10,
-      "dashes": false,
-      "datasource": "Prometheus",
-      "fill": 0,
-      "gridPos": {
-        "h": 7,
-        "w": 12,
-        "x": 0,
-        "y": 31
-      },
-      "id": 3,
-      "legend": {
-        "alignAsTable": true,
-        "avg": true,
-        "current": true,
-        "max": true,
-        "min": true,
-        "show": true,
-        "total": false,
-        "values": true
-      },
-      "lines": true,
-      "linewidth": 1,
-      "links": [],
-      "nullPointMode": "null",
-      "percentage": false,
-      "pointradius": 5,
-      "points": false,
-      "renderer": "flot",
-      "seriesOverrides": [],
-      "spaceLength": 10,
-      "stack": false,
-      "steppedLine": false,
-      "targets": [
-        {
-          "expr": "sum(rate(flow_process_nf_flowset_records_sum[5m])) by (version,type)",
-          "format": "time_series",
-          "intervalFactor": 1,
-          "legendFormat": "{{ version }} | {{ type }} ",
-          "refId": "A"
-        }
-      ],
-      "thresholds": [],
-      "timeFrom": null,
-      "timeRegions": [],
-      "timeShift": null,
-      "title": "NetFlows by type and version",
-      "tooltip": {
-        "shared": true,
-        "sort": 0,
-        "value_type": "individual"
-      },
-      "type": "graph",
-      "xaxis": {
-        "buckets": null,
-        "mode": "time",
-        "name": null,
-        "show": true,
-        "values": []
-      },
-      "yaxes": [
-        {
-          "format": "pps",
-          "label": null,
-          "logBase": 1,
-          "max": null,
-          "min": null,
-          "show": true
+            "aliasColors":
+            {},
+            "bars": false,
+            "dashLength": 10,
+            "dashes": false,
+            "datasource":
+            {
+                "type": "prometheus",
+                "uid": "PBFA97CFB590B2093"
+            },
+            "fill": 0,
+            "fillGradient": 0,
+            "gridPos":
+            {
+                "h": 7,
+                "w": 12,
+                "x": 12,
+                "y": 38
+            },
+            "hiddenSeries": false,
+            "id": 7,
+            "legend":
+            {
+                "alignAsTable": true,
+                "avg": false,
+                "current": true,
+                "max": false,
+                "min": false,
+                "rightSide": true,
+                "show": true,
+                "sort": "current",
+                "sortDesc": true,
+                "total": false,
+                "values": true
+            },
+            "lines": true,
+            "linewidth": 1,
+            "links":
+            [],
+            "nullPointMode": "null",
+            "options":
+            {
+                "alertThreshold": true
+            },
+            "percentage": false,
+            "pluginVersion": "9.4.3",
+            "pointradius": 5,
+            "points": false,
+            "renderer": "flot",
+            "seriesOverrides":
+            [],
+            "spaceLength": 10,
+            "stack": false,
+            "steppedLine": false,
+            "targets":
+            [
+                {
+                    "datasource":
+                    {
+                        "type": "prometheus",
+                        "uid": "PBFA97CFB590B2093"
+                    },
+                    "editorMode": "code",
+                    "expr": "sum(rate(goflow2_flow_process_nf_templates_total[5m])) by (router,version)",
+                    "format": "time_series",
+                    "intervalFactor": 1,
+                    "legendFormat": "{{ router }} | {{ version }}",
+                    "range": true,
+                    "refId": "A"
+                }
+            ],
+            "thresholds":
+            [],
+            "timeRegions":
+            [],
+            "title": "NetFlows - DataFlowSets by router and version",
+            "tooltip":
+            {
+                "shared": false,
+                "sort": 0,
+                "value_type": "individual"
+            },
+            "type": "graph",
+            "xaxis":
+            {
+                "mode": "time",
+                "show": true,
+                "values":
+                []
+            },
+            "yaxes":
+            [
+                {
+                    "format": "pps",
+                    "logBase": 1,
+                    "show": true
+                },
+                {
+                    "format": "short",
+                    "logBase": 1,
+                    "show": true
+                }
+            ],
+            "yaxis":
+            {
+                "align": false
+            }
         },
         {
-          "format": "short",
-          "label": null,
-          "logBase": 1,
-          "max": null,
-          "min": null,
-          "show": true
-        }
-      ],
-      "yaxis": {
-        "align": false,
-        "alignLevel": null
-      }
-    },
-    {
-      "aliasColors": {},
-      "bars": false,
-      "dashLength": 10,
-      "dashes": false,
-      "datasource": "Prometheus",
-      "fill": 1,
-      "gridPos": {
-        "h": 7,
-        "w": 12,
-        "x": 12,
-        "y": 31
-      },
-      "id": 4,
-      "legend": {
-        "alignAsTable": true,
-        "avg": true,
-        "current": true,
-        "max": true,
-        "min": true,
-        "show": true,
-        "total": false,
-        "values": true
-      },
-      "lines": true,
-      "linewidth": 1,
-      "links": [],
-      "nullPointMode": "null",
-      "percentage": false,
-      "pointradius": 5,
-      "points": false,
-      "renderer": "flot",
-      "seriesOverrides": [],
-      "spaceLength": 10,
-      "stack": false,
-      "steppedLine": false,
-      "targets": [
-        {
-          "expr": "sum(rate(flow_process_nf_errors_count[5m])) by (error)",
-          "format": "time_series",
-          "intervalFactor": 1,
-          "legendFormat": "{{ error }}",
-          "metric": "goflow-kafka.flow_process_nf_errors_count",
-          "refId": "A"
-        }
-      ],
-      "thresholds": [],
-      "timeFrom": null,
-      "timeRegions": [],
-      "timeShift": null,
-      "title": "NetFlows errors",
-      "tooltip": {
-        "shared": true,
-        "sort": 0,
-        "value_type": "individual"
-      },
-      "type": "graph",
-      "xaxis": {
-        "buckets": null,
-        "mode": "time",
-        "name": null,
-        "show": true,
-        "values": []
-      },
-      "yaxes": [
-        {
-          "format": "hertz",
-          "label": null,
-          "logBase": 1,
-          "max": null,
-          "min": null,
-          "show": true
+            "aliasColors":
+            {},
+            "bars": false,
+            "dashLength": 10,
+            "dashes": false,
+            "datasource":
+            {
+                "type": "prometheus",
+                "uid": "PBFA97CFB590B2093"
+            },
+            "fill": 0,
+            "fillGradient": 0,
+            "gridPos":
+            {
+                "h": 7,
+                "w": 24,
+                "x": 0,
+                "y": 45
+            },
+            "hiddenSeries": false,
+            "id": 14,
+            "legend":
+            {
+                "alignAsTable": true,
+                "avg": true,
+                "current": true,
+                "max": true,
+                "min": true,
+                "rightSide": true,
+                "show": true,
+                "total": false,
+                "values": true
+            },
+            "lines": true,
+            "linewidth": 1,
+            "links":
+            [],
+            "nullPointMode": "null",
+            "options":
+            {
+                "alertThreshold": true
+            },
+            "percentage": false,
+            "pluginVersion": "9.4.3",
+            "pointradius": 5,
+            "points": false,
+            "renderer": "flot",
+            "seriesOverrides":
+            [],
+            "spaceLength": 10,
+            "stack": false,
+            "steppedLine": false,
+            "targets":
+            [
+                {
+                    "datasource":
+                    {
+                        "type": "prometheus",
+                        "uid": "PBFA97CFB590B2093"
+                    },
+                    "editorMode": "code",
+                    "expr": "sum(rate(goflow2_flow_process_nf_delay_seconds[5m])) by (quantile,router,version)",
+                    "format": "time_series",
+                    "intervalFactor": 1,
+                    "legendFormat": "Q{{ quantile }} | {{ router }} | {{ version }}",
+                    "range": true,
+                    "refId": "A"
+                }
+            ],
+            "thresholds":
+            [],
+            "timeRegions":
+            [],
+            "title": "Time between flow and processing",
+            "tooltip":
+            {
+                "shared": false,
+                "sort": 0,
+                "value_type": "individual"
+            },
+            "type": "graph",
+            "xaxis":
+            {
+                "mode": "time",
+                "show": true,
+                "values":
+                []
+            },
+            "yaxes":
+            [
+                {
+                    "format": "s",
+                    "label": "",
+                    "logBase": 1,
+                    "min": "0",
+                    "show": true
+                },
+                {
+                    "format": "short",
+                    "logBase": 1,
+                    "show": true
+                }
+            ],
+            "yaxis":
+            {
+                "align": false
+            }
         },
         {
-          "format": "short",
-          "label": null,
-          "logBase": 1,
-          "max": null,
-          "min": null,
-          "show": true
-        }
-      ],
-      "yaxis": {
-        "align": false,
-        "alignLevel": null
-      }
-    },
-    {
-      "aliasColors": {},
-      "bars": false,
-      "dashLength": 10,
-      "dashes": false,
-      "datasource": "Prometheus",
-      "fill": 0,
-      "gridPos": {
-        "h": 7,
-        "w": 12,
-        "x": 0,
-        "y": 38
-      },
-      "id": 6,
-      "legend": {
-        "alignAsTable": true,
-        "avg": false,
-        "current": true,
-        "max": false,
-        "min": false,
-        "rightSide": true,
-        "show": true,
-        "sort": "current",
-        "sortDesc": true,
-        "total": false,
-        "values": true
-      },
-      "lines": true,
-      "linewidth": 1,
-      "links": [],
-      "nullPointMode": "null",
-      "percentage": false,
-      "pointradius": 5,
-      "points": false,
-      "renderer": "flot",
-      "seriesOverrides": [],
-      "spaceLength": 10,
-      "stack": false,
-      "steppedLine": false,
-      "targets": [
-        {
-          "expr": "sum(rate(flow_process_nf_templates_count[5m])) by (version,router,type)",
-          "format": "time_series",
-          "intervalFactor": 1,
-          "legendFormat": "{{ version }} | {{ router }} | {{ type }}",
-          "refId": "A"
-        }
-      ],
-      "thresholds": [],
-      "timeFrom": null,
-      "timeRegions": [],
-      "timeShift": null,
-      "title": "NetFlow templates",
-      "tooltip": {
-        "shared": false,
-        "sort": 0,
-        "value_type": "individual"
-      },
-      "type": "graph",
-      "xaxis": {
-        "buckets": null,
-        "mode": "time",
-        "name": null,
-        "show": true,
-        "values": []
-      },
-      "yaxes": [
-        {
-          "format": "pps",
-          "label": null,
-          "logBase": 1,
-          "max": null,
-          "min": null,
-          "show": true
+            "collapsed": false,
+            "datasource":
+            {
+                "type": "vertamedia-clickhouse-datasource",
+                "uid": "PDEE91DDB90597936"
+            },
+            "gridPos":
+            {
+                "h": 1,
+                "w": 24,
+                "x": 0,
+                "y": 52
+            },
+            "id": 56,
+            "panels":
+            [],
+            "targets":
+            [
+                {
+                    "datasource":
+                    {
+                        "type": "vertamedia-clickhouse-datasource",
+                        "uid": "PDEE91DDB90597936"
+                    },
+                    "refId": "A"
+                }
+            ],
+            "title": "sFlow metrics",
+            "type": "row"
         },
         {
-          "format": "short",
-          "label": null,
-          "logBase": 1,
-          "max": null,
-          "min": null,
-          "show": true
-        }
-      ],
-      "yaxis": {
-        "align": false,
-        "alignLevel": null
-      }
-    },
-    {
-      "aliasColors": {},
-      "bars": false,
-      "dashLength": 10,
-      "dashes": false,
-      "datasource": "Prometheus",
-      "fill": 0,
-      "gridPos": {
-        "h": 7,
-        "w": 12,
-        "x": 12,
-        "y": 38
-      },
-      "id": 7,
-      "legend": {
-        "alignAsTable": true,
-        "avg": false,
-        "current": true,
-        "max": false,
-        "min": false,
-        "rightSide": true,
-        "show": true,
-        "sort": "current",
-        "sortDesc": true,
-        "total": false,
-        "values": true
-      },
-      "lines": true,
-      "linewidth": 1,
-      "links": [],
-      "nullPointMode": "null",
-      "percentage": false,
-      "pointradius": 5,
-      "points": false,
-      "renderer": "flot",
-      "seriesOverrides": [],
-      "spaceLength": 10,
-      "stack": false,
-      "steppedLine": false,
-      "targets": [
-        {
-          "expr": "sum(rate(flow_process_nf_flowset_records_sum[5m])) by (router,version)",
-          "format": "time_series",
-          "intervalFactor": 1,
-          "legendFormat": "{{ router }} | {{ version }}",
-          "refId": "A"
-        }
-      ],
-      "thresholds": [],
-      "timeFrom": null,
-      "timeRegions": [],
-      "timeShift": null,
-      "title": "NetFlows - DataFlowSets by router and version",
-      "tooltip": {
-        "shared": false,
-        "sort": 0,
-        "value_type": "individual"
-      },
-      "type": "graph",
-      "xaxis": {
-        "buckets": null,
-        "mode": "time",
-        "name": null,
-        "show": true,
-        "values": []
-      },
-      "yaxes": [
-        {
-          "format": "pps",
-          "label": null,
-          "logBase": 1,
-          "max": null,
-          "min": null,
-          "show": true
+            "aliasColors":
+            {},
+            "bars": false,
+            "dashLength": 10,
+            "dashes": false,
+            "datasource":
+            {
+                "type": "prometheus",
+                "uid": "PBFA97CFB590B2093"
+            },
+            "fill": 0,
+            "fillGradient": 0,
+            "gridPos":
+            {
+                "h": 7,
+                "w": 12,
+                "x": 0,
+                "y": 53
+            },
+            "hiddenSeries": false,
+            "id": 5,
+            "legend":
+            {
+                "alignAsTable": true,
+                "avg": true,
+                "current": true,
+                "max": true,
+                "min": true,
+                "show": true,
+                "total": false,
+                "values": true
+            },
+            "lines": true,
+            "linewidth": 1,
+            "links":
+            [],
+            "nullPointMode": "null",
+            "options":
+            {
+                "alertThreshold": true
+            },
+            "percentage": false,
+            "pluginVersion": "9.4.3",
+            "pointradius": 5,
+            "points": false,
+            "renderer": "flot",
+            "seriesOverrides":
+            [],
+            "spaceLength": 10,
+            "stack": false,
+            "steppedLine": false,
+            "targets":
+            [
+                {
+                    "datasource":
+                    {
+                        "type": "prometheus",
+                        "uid": "PBFA97CFB590B2093"
+                    },
+                    "editorMode": "code",
+                    "expr": "sum(rate(goflow2_flow_process_sf_samples_records_total[5m])) by (version,type)",
+                    "format": "time_series",
+                    "intervalFactor": 1,
+                    "legendFormat": "{{ version }} | {{ type }}",
+                    "range": true,
+                    "refId": "A"
+                }
+            ],
+            "thresholds":
+            [],
+            "timeRegions":
+            [],
+            "title": "sFlows by type",
+            "tooltip":
+            {
+                "shared": true,
+                "sort": 0,
+                "value_type": "individual"
+            },
+            "type": "graph",
+            "xaxis":
+            {
+                "mode": "time",
+                "show": true,
+                "values":
+                []
+            },
+            "yaxes":
+            [
+                {
+                    "format": "pps",
+                    "logBase": 1,
+                    "show": true
+                },
+                {
+                    "format": "short",
+                    "logBase": 1,
+                    "show": true
+                }
+            ],
+            "yaxis":
+            {
+                "align": false
+            }
         },
         {
-          "format": "short",
-          "label": null,
-          "logBase": 1,
-          "max": null,
-          "min": null,
-          "show": true
-        }
-      ],
-      "yaxis": {
-        "align": false,
-        "alignLevel": null
-      }
-    },
-    {
-      "aliasColors": {},
-      "bars": false,
-      "dashLength": 10,
-      "dashes": false,
-      "datasource": "Prometheus",
-      "fill": 0,
-      "gridPos": {
-        "h": 7,
-        "w": 24,
-        "x": 0,
-        "y": 45
-      },
-      "id": 14,
-      "legend": {
-        "alignAsTable": true,
-        "avg": true,
-        "current": true,
-        "max": true,
-        "min": true,
-        "rightSide": true,
-        "show": true,
-        "total": false,
-        "values": true
-      },
-      "lines": true,
-      "linewidth": 1,
-      "links": [],
-      "nullPointMode": "null",
-      "percentage": false,
-      "pointradius": 5,
-      "points": false,
-      "renderer": "flot",
-      "seriesOverrides": [],
-      "spaceLength": 10,
-      "stack": false,
-      "steppedLine": false,
-      "targets": [
-        {
-          "expr": "sum(rate(flow_process_nf_delay_summary_seconds[5m])) by (quantile,router,version)",
-          "format": "time_series",
-          "intervalFactor": 1,
-          "legendFormat": "Q{{ quantile }} | {{ router }} | {{ version }}",
-          "refId": "A"
-        }
-      ],
-      "thresholds": [],
-      "timeFrom": null,
-      "timeRegions": [],
-      "timeShift": null,
-      "title": "Time between flow and processing",
-      "tooltip": {
-        "shared": false,
-        "sort": 0,
-        "value_type": "individual"
-      },
-      "type": "graph",
-      "xaxis": {
-        "buckets": null,
-        "mode": "time",
-        "name": null,
-        "show": true,
-        "values": []
-      },
-      "yaxes": [
-        {
-          "format": "s",
-          "label": "",
-          "logBase": 1,
-          "max": null,
-          "min": "0",
-          "show": true
+            "aliasColors":
+            {},
+            "bars": false,
+            "dashLength": 10,
+            "dashes": false,
+            "datasource":
+            {
+                "type": "prometheus",
+                "uid": "PBFA97CFB590B2093"
+            },
+            "fill": 0,
+            "fillGradient": 0,
+            "gridPos":
+            {
+                "h": 7,
+                "w": 12,
+                "x": 12,
+                "y": 53
+            },
+            "hiddenSeries": false,
+            "id": 8,
+            "legend":
+            {
+                "alignAsTable": true,
+                "avg": false,
+                "current": true,
+                "max": false,
+                "min": false,
+                "rightSide": true,
+                "show": true,
+                "sort": "current",
+                "sortDesc": true,
+                "total": false,
+                "values": true
+            },
+            "lines": true,
+            "linewidth": 1,
+            "links":
+            [],
+            "nullPointMode": "null",
+            "options":
+            {
+                "alertThreshold": true
+            },
+            "percentage": false,
+            "pluginVersion": "9.4.3",
+            "pointradius": 5,
+            "points": false,
+            "renderer": "flot",
+            "seriesOverrides":
+            [],
+            "spaceLength": 10,
+            "stack": false,
+            "steppedLine": false,
+            "targets":
+            [
+                {
+                    "datasource":
+                    {
+                        "type": "prometheus",
+                        "uid": "PBFA97CFB590B2093"
+                    },
+                    "editorMode": "code",
+                    "expr": "sum(rate(goflow2_flow_process_sf_samples_records_total{type=\"FlowSample\"}[5m])) by (agent,version)",
+                    "format": "time_series",
+                    "intervalFactor": 1,
+                    "legendFormat": "{{ agent }} | {{ version }}",
+                    "range": true,
+                    "refId": "A"
+                }
+            ],
+            "thresholds":
+            [],
+            "timeRegions":
+            [],
+            "title": "sFlows Flow records by agent and version",
+            "tooltip":
+            {
+                "shared": false,
+                "sort": 0,
+                "value_type": "individual"
+            },
+            "type": "graph",
+            "xaxis":
+            {
+                "mode": "time",
+                "show": true,
+                "values":
+                []
+            },
+            "yaxes":
+            [
+                {
+                    "format": "pps",
+                    "logBase": 1,
+                    "show": true
+                },
+                {
+                    "format": "short",
+                    "logBase": 1,
+                    "show": true
+                }
+            ],
+            "yaxis":
+            {
+                "align": false
+            }
         },
         {
-          "format": "short",
-          "label": null,
-          "logBase": 1,
-          "max": null,
-          "min": null,
-          "show": true
-        }
-      ],
-      "yaxis": {
-        "align": false,
-        "alignLevel": null
-      }
-    },
-    {
-      "collapsed": false,
-      "gridPos": {
-        "h": 1,
-        "w": 24,
-        "x": 0,
-        "y": 52
-      },
-      "id": 56,
-      "panels": [],
-      "repeat": null,
-      "title": "sFlow metrics",
-      "type": "row"
-    },
-    {
-      "aliasColors": {},
-      "bars": false,
-      "dashLength": 10,
-      "dashes": false,
-      "datasource": "Prometheus",
-      "fill": 0,
-      "gridPos": {
-        "h": 7,
-        "w": 12,
-        "x": 0,
-        "y": 53
-      },
-      "id": 5,
-      "legend": {
-        "alignAsTable": true,
-        "avg": true,
-        "current": true,
-        "max": true,
-        "min": true,
-        "show": true,
-        "total": false,
-        "values": true
-      },
-      "lines": true,
-      "linewidth": 1,
-      "links": [],
-      "nullPointMode": "null",
-      "percentage": false,
-      "pointradius": 5,
-      "points": false,
-      "renderer": "flot",
-      "seriesOverrides": [],
-      "spaceLength": 10,
-      "stack": false,
-      "steppedLine": false,
-      "targets": [
-        {
-          "expr": "sum(rate(flow_process_sf_samples_sum[5m])) by (version,type)",
-          "format": "time_series",
-          "intervalFactor": 1,
-          "legendFormat": "{{ version }} | {{ type }}",
-          "refId": "A"
-        }
-      ],
-      "thresholds": [],
-      "timeFrom": null,
-      "timeRegions": [],
-      "timeShift": null,
-      "title": "sFlows by type",
-      "tooltip": {
-        "shared": true,
-        "sort": 0,
-        "value_type": "individual"
-      },
-      "type": "graph",
-      "xaxis": {
-        "buckets": null,
-        "mode": "time",
-        "name": null,
-        "show": true,
-        "values": []
-      },
-      "yaxes": [
-        {
-          "format": "pps",
-          "label": null,
-          "logBase": 1,
-          "max": null,
-          "min": null,
-          "show": true
+            "collapsed": false,
+            "datasource":
+            {
+                "type": "vertamedia-clickhouse-datasource",
+                "uid": "PDEE91DDB90597936"
+            },
+            "gridPos":
+            {
+                "h": 1,
+                "w": 24,
+                "x": 0,
+                "y": 60
+            },
+            "id": 57,
+            "panels":
+            [],
+            "targets":
+            [
+                {
+                    "datasource":
+                    {
+                        "type": "vertamedia-clickhouse-datasource",
+                        "uid": "PDEE91DDB90597936"
+                    },
+                    "refId": "A"
+                }
+            ],
+            "title": "NetFlow decoder metrics",
+            "type": "row"
         },
         {
-          "format": "short",
-          "label": null,
-          "logBase": 1,
-          "max": null,
-          "min": null,
-          "show": true
-        }
-      ],
-      "yaxis": {
-        "align": false,
-        "alignLevel": null
-      }
-    },
-    {
-      "aliasColors": {},
-      "bars": false,
-      "dashLength": 10,
-      "dashes": false,
-      "datasource": "Prometheus",
-      "fill": 0,
-      "gridPos": {
-        "h": 7,
-        "w": 12,
-        "x": 12,
-        "y": 53
-      },
-      "id": 8,
-      "legend": {
-        "alignAsTable": true,
-        "avg": false,
-        "current": true,
-        "max": false,
-        "min": false,
-        "rightSide": true,
-        "show": true,
-        "sort": "current",
-        "sortDesc": true,
-        "total": false,
-        "values": true
-      },
-      "lines": true,
-      "linewidth": 1,
-      "links": [],
-      "nullPointMode": "null",
-      "percentage": false,
-      "pointradius": 5,
-      "points": false,
-      "renderer": "flot",
-      "seriesOverrides": [],
-      "spaceLength": 10,
-      "stack": false,
-      "steppedLine": false,
-      "targets": [
-        {
-          "expr": "sum(rate(flow_process_sf_samples_records_sum{type=\"FlowSample\"}[5m])) by (agent,version)",
-          "format": "time_series",
-          "intervalFactor": 1,
-          "legendFormat": "{{ agent }} | {{ version }}",
-          "refId": "A"
-        }
-      ],
-      "thresholds": [],
-      "timeFrom": null,
-      "timeRegions": [],
-      "timeShift": null,
-      "title": "sFlows Flow records by agent and version",
-      "tooltip": {
-        "shared": false,
-        "sort": 0,
-        "value_type": "individual"
-      },
-      "type": "graph",
-      "xaxis": {
-        "buckets": null,
-        "mode": "time",
-        "name": null,
-        "show": true,
-        "values": []
-      },
-      "yaxes": [
-        {
-          "format": "pps",
-          "label": null,
-          "logBase": 1,
-          "max": null,
-          "min": null,
-          "show": true
+            "aliasColors":
+            {},
+            "bars": false,
+            "dashLength": 10,
+            "dashes": false,
+            "datasource":
+            {
+                "type": "prometheus",
+                "uid": "PBFA97CFB590B2093"
+            },
+            "fieldConfig":
+            {
+                "defaults":
+                {
+                    "unit": "s"
+                },
+                "overrides":
+                []
+            },
+            "fill": 0,
+            "fillGradient": 0,
+            "gridPos":
+            {
+                "h": 7,
+                "w": 8,
+                "x": 0,
+                "y": 61
+            },
+            "hiddenSeries": false,
+            "id": 11,
+            "legend":
+            {
+                "alignAsTable": true,
+                "avg": true,
+                "current": true,
+                "max": true,
+                "min": true,
+                "rightSide": false,
+                "show": true,
+                "sort": "current",
+                "sortDesc": false,
+                "total": false,
+                "values": true
+            },
+            "lines": true,
+            "linewidth": 1,
+            "links":
+            [],
+            "nullPointMode": "null",
+            "options":
+            {
+                "alertThreshold": true
+            },
+            "percentage": false,
+            "pluginVersion": "9.4.3",
+            "pointradius": 5,
+            "points": false,
+            "renderer": "flot",
+            "seriesOverrides":
+            [],
+            "spaceLength": 10,
+            "stack": false,
+            "steppedLine": false,
+            "targets":
+            [
+                {
+                    "datasource":
+                    {
+                        "type": "prometheus",
+                        "uid": "PBFA97CFB590B2093"
+                    },
+                    "editorMode": "code",
+                    "expr": "avg(goflow2_flow_decoding_time_seconds{name=\"netflow\"}) by (quantile)",
+                    "format": "time_series",
+                    "intervalFactor": 1,
+                    "legendFormat": "Q{{ quantile }}",
+                    "range": true,
+                    "refId": "A"
+                }
+            ],
+            "thresholds":
+            [],
+            "timeRegions":
+            [],
+            "title": "NetFlow decoding time quantiles",
+            "tooltip":
+            {
+                "shared": true,
+                "sort": 0,
+                "value_type": "individual"
+            },
+            "type": "graph",
+            "xaxis":
+            {
+                "mode": "time",
+                "show": true,
+                "values":
+                []
+            },
+            "yaxes":
+            [
+                {
+                    "format": "s",
+                    "logBase": 1,
+                    "show": true
+                },
+                {
+                    "format": "short",
+                    "logBase": 1,
+                    "show": true
+                }
+            ],
+            "yaxis":
+            {
+                "align": false
+            }
         },
         {
-          "format": "short",
-          "label": null,
-          "logBase": 1,
-          "max": null,
-          "min": null,
-          "show": true
-        }
-      ],
-      "yaxis": {
-        "align": false,
-        "alignLevel": null
-      }
-    },
-    {
-      "collapsed": false,
-      "gridPos": {
-        "h": 1,
-        "w": 24,
-        "x": 0,
-        "y": 60
-      },
-      "id": 57,
-      "panels": [],
-      "repeat": null,
-      "title": "NetFlow decoder metrics",
-      "type": "row"
-    },
-    {
-      "aliasColors": {},
-      "bars": false,
-      "dashLength": 10,
-      "dashes": false,
-      "datasource": "Prometheus",
-      "fill": 0,
-      "gridPos": {
-        "h": 7,
-        "w": 8,
-        "x": 0,
-        "y": 61
-      },
-      "id": 11,
-      "legend": {
-        "alignAsTable": true,
-        "avg": true,
-        "current": true,
-        "max": true,
-        "min": true,
-        "rightSide": false,
-        "show": true,
-        "sort": "current",
-        "sortDesc": false,
-        "total": false,
-        "values": true
-      },
-      "lines": true,
-      "linewidth": 1,
-      "links": [],
-      "nullPointMode": "null",
-      "percentage": false,
-      "pointradius": 5,
-      "points": false,
-      "renderer": "flot",
-      "seriesOverrides": [],
-      "spaceLength": 10,
-      "stack": false,
-      "steppedLine": false,
-      "targets": [
-        {
-          "expr": "avg(flow_summary_decoding_time_us{name=\"NetFlow\"}) by (quantile)",
-          "format": "time_series",
-          "intervalFactor": 1,
-          "legendFormat": "Q{{ quantile }}",
-          "refId": "A"
-        }
-      ],
-      "thresholds": [],
-      "timeFrom": null,
-      "timeRegions": [],
-      "timeShift": null,
-      "title": "NetFlow decoding time quantiles",
-      "tooltip": {
-        "shared": true,
-        "sort": 0,
-        "value_type": "individual"
-      },
-      "type": "graph",
-      "xaxis": {
-        "buckets": null,
-        "mode": "time",
-        "name": null,
-        "show": true,
-        "values": []
-      },
-      "yaxes": [
-        {
-          "format": "µs",
-          "label": null,
-          "logBase": 1,
-          "max": null,
-          "min": null,
-          "show": true
+            "aliasColors":
+            {},
+            "bars": false,
+            "dashLength": 10,
+            "dashes": false,
+            "datasource":
+            {
+                "type": "prometheus",
+                "uid": "PBFA97CFB590B2093"
+            },
+            "fieldConfig":
+            {
+                "defaults":
+                {
+                    "unit": "s"
+                },
+                "overrides":
+                []
+            },
+            "fill": 0,
+            "fillGradient": 0,
+            "gridPos":
+            {
+                "h": 7,
+                "w": 8,
+                "x": 8,
+                "y": 61
+            },
+            "hiddenSeries": false,
+            "id": 12,
+            "legend":
+            {
+                "alignAsTable": true,
+                "avg": true,
+                "current": true,
+                "max": true,
+                "min": true,
+                "rightSide": false,
+                "show": true,
+                "sort": "current",
+                "sortDesc": false,
+                "total": false,
+                "values": true
+            },
+            "lines": true,
+            "linewidth": 1,
+            "links":
+            [],
+            "nullPointMode": "null",
+            "options":
+            {
+                "alertThreshold": true
+            },
+            "percentage": false,
+            "pluginVersion": "9.4.3",
+            "pointradius": 5,
+            "points": false,
+            "renderer": "flot",
+            "seriesOverrides":
+            [],
+            "spaceLength": 10,
+            "stack": false,
+            "steppedLine": false,
+            "targets":
+            [
+                {
+                    "datasource":
+                    {
+                        "type": "prometheus",
+                        "uid": "PBFA97CFB590B2093"
+                    },
+                    "editorMode": "code",
+                    "expr": "avg(goflow2_flow_decoding_time_seconds{name=\"netflow\"}) by (quantile)",
+                    "format": "time_series",
+                    "intervalFactor": 1,
+                    "legendFormat": "Q{{ quantile }}",
+                    "range": true,
+                    "refId": "A"
+                }
+            ],
+            "thresholds":
+            [],
+            "timeRegions":
+            [],
+            "title": "NetFlow processing time quantiles",
+            "tooltip":
+            {
+                "shared": true,
+                "sort": 0,
+                "value_type": "individual"
+            },
+            "type": "graph",
+            "xaxis":
+            {
+                "mode": "time",
+                "show": true,
+                "values":
+                []
+            },
+            "yaxes":
+            [
+                {
+                    "format": "s",
+                    "logBase": 1,
+                    "show": true
+                },
+                {
+                    "format": "short",
+                    "logBase": 1,
+                    "show": true
+                }
+            ],
+            "yaxis":
+            {
+                "align": false
+            }
         },
         {
-          "format": "short",
-          "label": null,
-          "logBase": 1,
-          "max": null,
-          "min": null,
-          "show": true
-        }
-      ],
-      "yaxis": {
-        "align": false,
-        "alignLevel": null
-      }
-    },
-    {
-      "aliasColors": {},
-      "bars": false,
-      "dashLength": 10,
-      "dashes": false,
-      "datasource": "Prometheus",
-      "fill": 0,
-      "gridPos": {
-        "h": 7,
-        "w": 8,
-        "x": 8,
-        "y": 61
-      },
-      "id": 12,
-      "legend": {
-        "alignAsTable": true,
-        "avg": true,
-        "current": true,
-        "max": true,
-        "min": true,
-        "rightSide": false,
-        "show": true,
-        "sort": "current",
-        "sortDesc": false,
-        "total": false,
-        "values": true
-      },
-      "lines": true,
-      "linewidth": 1,
-      "links": [],
-      "nullPointMode": "null",
-      "percentage": false,
-      "pointradius": 5,
-      "points": false,
-      "renderer": "flot",
-      "seriesOverrides": [],
-      "spaceLength": 10,
-      "stack": false,
-      "steppedLine": false,
-      "targets": [
-        {
-          "expr": "avg(flow_summary_processing_time_us{name=\"NetFlow\"}) by (quantile)",
-          "format": "time_series",
-          "intervalFactor": 1,
-          "legendFormat": "Q{{ quantile }}",
-          "refId": "A"
-        }
-      ],
-      "thresholds": [],
-      "timeFrom": null,
-      "timeRegions": [],
-      "timeShift": null,
-      "title": "NetFlow processing time quantiles",
-      "tooltip": {
-        "shared": true,
-        "sort": 0,
-        "value_type": "individual"
-      },
-      "type": "graph",
-      "xaxis": {
-        "buckets": null,
-        "mode": "time",
-        "name": null,
-        "show": true,
-        "values": []
-      },
-      "yaxes": [
-        {
-          "format": "µs",
-          "label": null,
-          "logBase": 1,
-          "max": null,
-          "min": null,
-          "show": true
+            "aliasColors":
+            {},
+            "bars": false,
+            "dashLength": 10,
+            "dashes": false,
+            "datasource":
+            {
+                "type": "prometheus",
+                "uid": "PBFA97CFB590B2093"
+            },
+            "fieldConfig":
+            {
+                "defaults":
+                {
+                    "unit": "s"
+                },
+                "overrides":
+                []
+            },
+            "fill": 0,
+            "fillGradient": 0,
+            "gridPos":
+            {
+                "h": 7,
+                "w": 8,
+                "x": 16,
+                "y": 61
+            },
+            "hiddenSeries": false,
+            "id": 13,
+            "legend":
+            {
+                "alignAsTable": true,
+                "avg": true,
+                "current": true,
+                "max": true,
+                "min": true,
+                "rightSide": false,
+                "show": true,
+                "total": false,
+                "values": true
+            },
+            "lines": true,
+            "linewidth": 1,
+            "links":
+            [],
+            "nullPointMode": "null",
+            "options":
+            {
+                "alertThreshold": true
+            },
+            "percentage": false,
+            "pluginVersion": "9.4.3",
+            "pointradius": 5,
+            "points": false,
+            "renderer": "flot",
+            "seriesOverrides":
+            [],
+            "spaceLength": 10,
+            "stack": false,
+            "steppedLine": false,
+            "targets":
+            [
+                {
+                    "datasource":
+                    {
+                        "type": "prometheus",
+                        "uid": "PBFA97CFB590B2093"
+                    },
+                    "editorMode": "code",
+                    "expr": "sum(rate(goflow2_flow_decoding_time_seconds{name=\"netflow\"}[5m])) by (worker)",
+                    "format": "time_series",
+                    "intervalFactor": 1,
+                    "legendFormat": "Worker {{ worker }}",
+                    "range": true,
+                    "refId": "A"
+                }
+            ],
+            "thresholds":
+            [],
+            "timeRegions":
+            [],
+            "title": "NetFlow worker rate",
+            "tooltip":
+            {
+                "shared": true,
+                "sort": 0,
+                "value_type": "individual"
+            },
+            "type": "graph",
+            "xaxis":
+            {
+                "mode": "time",
+                "show": true,
+                "values":
+                []
+            },
+            "yaxes":
+            [
+                {
+                    "format": "s",
+                    "logBase": 1,
+                    "show": true
+                },
+                {
+                    "format": "short",
+                    "logBase": 1,
+                    "show": true
+                }
+            ],
+            "yaxis":
+            {
+                "align": false
+            }
         },
         {
-          "format": "short",
-          "label": null,
-          "logBase": 1,
-          "max": null,
-          "min": null,
-          "show": true
-        }
-      ],
-      "yaxis": {
-        "align": false,
-        "alignLevel": null
-      }
-    },
-    {
-      "aliasColors": {},
-      "bars": false,
-      "dashLength": 10,
-      "dashes": false,
-      "datasource": "Prometheus",
-      "fill": 0,
-      "gridPos": {
-        "h": 7,
-        "w": 8,
-        "x": 16,
-        "y": 61
-      },
-      "id": 13,
-      "legend": {
-        "alignAsTable": true,
-        "avg": true,
-        "current": true,
-        "max": true,
-        "min": true,
-        "rightSide": false,
-        "show": true,
-        "sort": null,
-        "sortDesc": null,
-        "total": false,
-        "values": true
-      },
-      "lines": true,
-      "linewidth": 1,
-      "links": [],
-      "nullPointMode": "null",
-      "percentage": false,
-      "pointradius": 5,
-      "points": false,
-      "renderer": "flot",
-      "seriesOverrides": [],
-      "spaceLength": 10,
-      "stack": false,
-      "steppedLine": false,
-      "targets": [
-        {
-          "expr": "sum(rate(flow_decoder_count{name=\"NetFlow\"}[5m])) by (worker)",
-          "format": "time_series",
-          "intervalFactor": 1,
-          "legendFormat": "Worker {{ worker }}",
-          "refId": "A"
-        }
-      ],
-      "thresholds": [],
-      "timeFrom": null,
-      "timeRegions": [],
-      "timeShift": null,
-      "title": "NetFlow worker rate",
-      "tooltip": {
-        "shared": true,
-        "sort": 0,
-        "value_type": "individual"
-      },
-      "type": "graph",
-      "xaxis": {
-        "buckets": null,
-        "mode": "time",
-        "name": null,
-        "show": true,
-        "values": []
-      },
-      "yaxes": [
-        {
-          "format": "pps",
-          "label": null,
-          "logBase": 1,
-          "max": null,
-          "min": null,
-          "show": true
+            "collapsed": false,
+            "datasource":
+            {
+                "type": "vertamedia-clickhouse-datasource",
+                "uid": "PDEE91DDB90597936"
+            },
+            "gridPos":
+            {
+                "h": 1,
+                "w": 24,
+                "x": 0,
+                "y": 68
+            },
+            "id": 58,
+            "panels":
+            [],
+            "targets":
+            [
+                {
+                    "datasource":
+                    {
+                        "type": "vertamedia-clickhouse-datasource",
+                        "uid": "PDEE91DDB90597936"
+                    },
+                    "refId": "A"
+                }
+            ],
+            "title": "sFlow decoder metrics",
+            "type": "row"
         },
         {
-          "format": "short",
-          "label": null,
-          "logBase": 1,
-          "max": null,
-          "min": null,
-          "show": true
-        }
-      ],
-      "yaxis": {
-        "align": false,
-        "alignLevel": null
-      }
-    },
-    {
-      "collapsed": false,
-      "gridPos": {
-        "h": 1,
-        "w": 24,
-        "x": 0,
-        "y": 68
-      },
-      "id": 58,
-      "panels": [],
-      "repeat": null,
-      "title": "sFlow decoder metrics",
-      "type": "row"
-    },
-    {
-      "aliasColors": {},
-      "bars": false,
-      "dashLength": 10,
-      "dashes": false,
-      "datasource": "Prometheus",
-      "fill": 0,
-      "gridPos": {
-        "h": 7,
-        "w": 8,
-        "x": 0,
-        "y": 69
-      },
-      "id": 15,
-      "legend": {
-        "alignAsTable": true,
-        "avg": true,
-        "current": true,
-        "max": true,
-        "min": true,
-        "show": true,
-        "sort": "current",
-        "sortDesc": false,
-        "total": false,
-        "values": true
-      },
-      "lines": true,
-      "linewidth": 1,
-      "links": [],
-      "nullPointMode": "null",
-      "percentage": false,
-      "pointradius": 5,
-      "points": false,
-      "renderer": "flot",
-      "seriesOverrides": [],
-      "spaceLength": 10,
-      "stack": false,
-      "steppedLine": false,
-      "targets": [
-        {
-          "expr": "avg(flow_summary_decoding_time_us{name=\"sFlow\"}) by (quantile)",
-          "format": "time_series",
-          "intervalFactor": 1,
-          "legendFormat": "Q{{ quantile }}",
-          "refId": "A"
-        }
-      ],
-      "thresholds": [],
-      "timeFrom": null,
-      "timeRegions": [],
-      "timeShift": null,
-      "title": "sFlow decoding time quantiles",
-      "tooltip": {
-        "shared": true,
-        "sort": 0,
-        "value_type": "individual"
-      },
-      "type": "graph",
-      "xaxis": {
-        "buckets": null,
-        "mode": "time",
-        "name": null,
-        "show": true,
-        "values": []
-      },
-      "yaxes": [
-        {
-          "format": "µs",
-          "label": null,
-          "logBase": 1,
-          "max": null,
-          "min": null,
-          "show": true
+            "aliasColors":
+            {},
+            "bars": false,
+            "dashLength": 10,
+            "dashes": false,
+            "datasource":
+            {
+                "type": "prometheus",
+                "uid": "PBFA97CFB590B2093"
+            },
+            "fieldConfig":
+            {
+                "defaults":
+                {
+                    "unit": "s"
+                },
+                "overrides":
+                []
+            },
+            "fill": 0,
+            "fillGradient": 0,
+            "gridPos":
+            {
+                "h": 7,
+                "w": 8,
+                "x": 0,
+                "y": 69
+            },
+            "hiddenSeries": false,
+            "id": 15,
+            "legend":
+            {
+                "alignAsTable": true,
+                "avg": true,
+                "current": true,
+                "max": true,
+                "min": true,
+                "show": true,
+                "sort": "current",
+                "sortDesc": false,
+                "total": false,
+                "values": true
+            },
+            "lines": true,
+            "linewidth": 1,
+            "links":
+            [],
+            "nullPointMode": "null",
+            "options":
+            {
+                "alertThreshold": true
+            },
+            "percentage": false,
+            "pluginVersion": "9.4.3",
+            "pointradius": 5,
+            "points": false,
+            "renderer": "flot",
+            "seriesOverrides":
+            [],
+            "spaceLength": 10,
+            "stack": false,
+            "steppedLine": false,
+            "targets":
+            [
+                {
+                    "datasource":
+                    {
+                        "type": "prometheus",
+                        "uid": "PBFA97CFB590B2093"
+                    },
+                    "editorMode": "code",
+                    "expr": "avg(goflow2_flow_decoding_time_seconds{name=\"sflow\"}) by (quantile)",
+                    "format": "time_series",
+                    "intervalFactor": 1,
+                    "legendFormat": "Q{{ quantile }}",
+                    "range": true,
+                    "refId": "A"
+                }
+            ],
+            "thresholds":
+            [],
+            "timeRegions":
+            [],
+            "title": "sFlow decoding time quantiles",
+            "tooltip":
+            {
+                "shared": true,
+                "sort": 0,
+                "value_type": "individual"
+            },
+            "type": "graph",
+            "xaxis":
+            {
+                "mode": "time",
+                "show": true,
+                "values":
+                []
+            },
+            "yaxes":
+            [
+                {
+                    "format": "s",
+                    "logBase": 1,
+                    "show": true
+                },
+                {
+                    "format": "short",
+                    "logBase": 1,
+                    "show": true
+                }
+            ],
+            "yaxis":
+            {
+                "align": false
+            }
         },
         {
-          "format": "short",
-          "label": null,
-          "logBase": 1,
-          "max": null,
-          "min": null,
-          "show": true
-        }
-      ],
-      "yaxis": {
-        "align": false,
-        "alignLevel": null
-      }
-    },
-    {
-      "aliasColors": {},
-      "bars": false,
-      "dashLength": 10,
-      "dashes": false,
-      "datasource": "Prometheus",
-      "fill": 0,
-      "gridPos": {
-        "h": 7,
-        "w": 8,
-        "x": 8,
-        "y": 69
-      },
-      "id": 16,
-      "legend": {
-        "alignAsTable": true,
-        "avg": true,
-        "current": true,
-        "max": true,
-        "min": true,
-        "show": true,
-        "sort": "current",
-        "sortDesc": false,
-        "total": false,
-        "values": true
-      },
-      "lines": true,
-      "linewidth": 1,
-      "links": [],
-      "nullPointMode": "null",
-      "percentage": false,
-      "pointradius": 5,
-      "points": false,
-      "renderer": "flot",
-      "seriesOverrides": [],
-      "spaceLength": 10,
-      "stack": false,
-      "steppedLine": false,
-      "targets": [
-        {
-          "expr": "avg(flow_summary_decoding_time_us{name=\"sFlow\"}) by (quantile)",
-          "format": "time_series",
-          "intervalFactor": 1,
-          "legendFormat": "Q{{ quantile }}",
-          "refId": "A"
-        }
-      ],
-      "thresholds": [],
-      "timeFrom": null,
-      "timeRegions": [],
-      "timeShift": null,
-      "title": "sFlow processing time quantiles",
-      "tooltip": {
-        "shared": true,
-        "sort": 0,
-        "value_type": "individual"
-      },
-      "type": "graph",
-      "xaxis": {
-        "buckets": null,
-        "mode": "time",
-        "name": null,
-        "show": true,
-        "values": []
-      },
-      "yaxes": [
-        {
-          "format": "µs",
-          "label": null,
-          "logBase": 1,
-          "max": null,
-          "min": null,
-          "show": true
+            "aliasColors":
+            {},
+            "bars": false,
+            "dashLength": 10,
+            "dashes": false,
+            "datasource":
+            {
+                "type": "prometheus",
+                "uid": "PBFA97CFB590B2093"
+            },
+            "fieldConfig":
+            {
+                "defaults":
+                {
+                    "unit": "s"
+                },
+                "overrides":
+                []
+            },
+            "fill": 0,
+            "fillGradient": 0,
+            "gridPos":
+            {
+                "h": 7,
+                "w": 8,
+                "x": 8,
+                "y": 69
+            },
+            "hiddenSeries": false,
+            "id": 16,
+            "legend":
+            {
+                "alignAsTable": true,
+                "avg": true,
+                "current": true,
+                "max": true,
+                "min": true,
+                "show": true,
+                "sort": "current",
+                "sortDesc": false,
+                "total": false,
+                "values": true
+            },
+            "lines": true,
+            "linewidth": 1,
+            "links":
+            [],
+            "nullPointMode": "null",
+            "options":
+            {
+                "alertThreshold": true
+            },
+            "percentage": false,
+            "pluginVersion": "9.4.3",
+            "pointradius": 5,
+            "points": false,
+            "renderer": "flot",
+            "seriesOverrides":
+            [],
+            "spaceLength": 10,
+            "stack": false,
+            "steppedLine": false,
+            "targets":
+            [
+                {
+                    "datasource":
+                    {
+                        "type": "prometheus",
+                        "uid": "PBFA97CFB590B2093"
+                    },
+                    "editorMode": "code",
+                    "expr": "avg(goflow2_flow_decoding_time_seconds{name=\"sflow\"}) by (quantile)",
+                    "format": "time_series",
+                    "intervalFactor": 1,
+                    "legendFormat": "Q{{ quantile }}",
+                    "range": true,
+                    "refId": "A"
+                }
+            ],
+            "thresholds":
+            [],
+            "timeRegions":
+            [],
+            "title": "sFlow processing time quantiles",
+            "tooltip":
+            {
+                "shared": true,
+                "sort": 0,
+                "value_type": "individual"
+            },
+            "type": "graph",
+            "xaxis":
+            {
+                "mode": "time",
+                "show": true,
+                "values":
+                []
+            },
+            "yaxes":
+            [
+                {
+                    "format": "s",
+                    "logBase": 1,
+                    "show": true
+                },
+                {
+                    "format": "short",
+                    "logBase": 1,
+                    "show": true
+                }
+            ],
+            "yaxis":
+            {
+                "align": false
+            }
         },
         {
-          "format": "short",
-          "label": null,
-          "logBase": 1,
-          "max": null,
-          "min": null,
-          "show": true
+            "aliasColors":
+            {},
+            "bars": false,
+            "dashLength": 10,
+            "dashes": false,
+            "datasource":
+            {
+                "type": "prometheus",
+                "uid": "PBFA97CFB590B2093"
+            },
+            "fieldConfig":
+            {
+                "defaults":
+                {
+                    "unit": "s"
+                },
+                "overrides":
+                []
+            },
+            "fill": 0,
+            "fillGradient": 0,
+            "gridPos":
+            {
+                "h": 7,
+                "w": 8,
+                "x": 16,
+                "y": 69
+            },
+            "hiddenSeries": false,
+            "id": 17,
+            "legend":
+            {
+                "alignAsTable": true,
+                "avg": true,
+                "current": true,
+                "max": true,
+                "min": true,
+                "rightSide": false,
+                "show": true,
+                "total": false,
+                "values": true
+            },
+            "lines": true,
+            "linewidth": 1,
+            "links":
+            [],
+            "nullPointMode": "null",
+            "options":
+            {
+                "alertThreshold": true
+            },
+            "percentage": false,
+            "pluginVersion": "9.4.3",
+            "pointradius": 5,
+            "points": false,
+            "renderer": "flot",
+            "seriesOverrides":
+            [],
+            "spaceLength": 10,
+            "stack": false,
+            "steppedLine": false,
+            "targets":
+            [
+                {
+                    "datasource":
+                    {
+                        "type": "prometheus",
+                        "uid": "PBFA97CFB590B2093"
+                    },
+                    "editorMode": "code",
+                    "expr": "sum(rate(goflow2_flow_decoding_time_seconds{name=\"sflow\"}[5m])) by (worker)",
+                    "format": "time_series",
+                    "intervalFactor": 1,
+                    "legendFormat": "Worker {{ worker }}",
+                    "range": true,
+                    "refId": "A"
+                }
+            ],
+            "thresholds":
+            [],
+            "timeRegions":
+            [],
+            "title": "sFlow worker rate",
+            "tooltip":
+            {
+                "shared": true,
+                "sort": 0,
+                "value_type": "individual"
+            },
+            "type": "graph",
+            "xaxis":
+            {
+                "mode": "time",
+                "show": true,
+                "values":
+                []
+            },
+            "yaxes":
+            [
+                {
+                    "format": "s",
+                    "logBase": 1,
+                    "show": true
+                },
+                {
+                    "format": "short",
+                    "logBase": 1,
+                    "show": true
+                }
+            ],
+            "yaxis":
+            {
+                "align": false
+            }
         }
-      ],
-      "yaxis": {
-        "align": false,
-        "alignLevel": null
-      }
-    },
-    {
-      "aliasColors": {},
-      "bars": false,
-      "dashLength": 10,
-      "dashes": false,
-      "datasource": "Prometheus",
-      "fill": 0,
-      "gridPos": {
-        "h": 7,
-        "w": 8,
-        "x": 16,
-        "y": 69
-      },
-      "id": 17,
-      "legend": {
-        "alignAsTable": true,
-        "avg": true,
-        "current": true,
-        "max": true,
-        "min": true,
-        "rightSide": false,
-        "show": true,
-        "sort": null,
-        "sortDesc": null,
-        "total": false,
-        "values": true
-      },
-      "lines": true,
-      "linewidth": 1,
-      "links": [],
-      "nullPointMode": "null",
-      "percentage": false,
-      "pointradius": 5,
-      "points": false,
-      "renderer": "flot",
-      "seriesOverrides": [],
-      "spaceLength": 10,
-      "stack": false,
-      "steppedLine": false,
-      "targets": [
-        {
-          "expr": "sum(rate(flow_decoder_count{name=\"sFlow\"}[5m])) by (worker)",
-          "format": "time_series",
-          "intervalFactor": 1,
-          "legendFormat": "Worker {{ worker }}",
-          "refId": "A"
-        }
-      ],
-      "thresholds": [],
-      "timeFrom": null,
-      "timeRegions": [],
-      "timeShift": null,
-      "title": "sFlow worker rate",
-      "tooltip": {
-        "shared": true,
-        "sort": 0,
-        "value_type": "individual"
-      },
-      "type": "graph",
-      "xaxis": {
-        "buckets": null,
-        "mode": "time",
-        "name": null,
-        "show": true,
-        "values": []
-      },
-      "yaxes": [
-        {
-          "format": "pps",
-          "label": null,
-          "logBase": 1,
-          "max": null,
-          "min": null,
-          "show": true
-        },
-        {
-          "format": "short",
-          "label": null,
-          "logBase": 1,
-          "max": null,
-          "min": null,
-          "show": true
-        }
-      ],
-      "yaxis": {
-        "align": false,
-        "alignLevel": null
-      }
-    }
-  ],
-  "refresh": false,
-  "schemaVersion": 16,
-  "style": "dark",
-  "tags": [],
-  "templating": {
-    "list": []
-  },
-  "time": {
-    "from": "now-24h",
-    "to": "now"
-  },
-  "timepicker": {
-    "refresh_intervals": [
-      "5s",
-      "10s",
-      "30s",
-      "1m",
-      "5m",
-      "15m",
-      "30m",
-      "1h",
-      "2h",
-      "1d"
     ],
-    "time_options": [
-      "5m",
-      "15m",
-      "1h",
-      "6h",
-      "12h",
-      "24h",
-      "2d",
-      "7d",
-      "30d"
-    ]
-  },
-  "timezone": "utc",
-  "title": "GoFlow - Internals",
-  "uid": "4U5xQZPmz",
-  "version": 2
+    "refresh": "",
+    "revision": 1,
+    "schemaVersion": 38,
+    "style": "dark",
+    "tags":
+    [],
+    "templating":
+    {
+        "list":
+        []
+    },
+    "time":
+    {
+        "from": "now-30m",
+        "to": "now"
+    },
+    "timepicker":
+    {
+        "refresh_intervals":
+        [
+            "5s",
+            "10s",
+            "30s",
+            "1m",
+            "5m",
+            "15m",
+            "30m",
+            "1h",
+            "2h",
+            "1d"
+        ],
+        "time_options":
+        [
+            "5m",
+            "15m",
+            "1h",
+            "6h",
+            "12h",
+            "24h",
+            "2d",
+            "7d",
+            "30d"
+        ]
+    },
+    "timezone": "utc",
+    "title": "GoFlow - Internals",
+    "uid": "4U5xQZPmz",
+    "version": 1,
+    "weekStart": ""
 }
