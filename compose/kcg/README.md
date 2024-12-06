@@ -26,3 +26,6 @@ using `MATERIALIZED TABLES` and `VIEWS` defined in a [schema file](./clickhouse/
 
 You can visualize the data in Grafana at http://localhost:3000 (credentials: admin/admin) with the
 pre-made dashboards.
+
+Note: if you are using Colima as the engine, it does not support UDP port forwarding. Flows won't be collected.
+It is possible to run GoFlow2 locally and feed into kafka if you add an `/etc/hosts` entry `127.0.0.1 kafka`.
