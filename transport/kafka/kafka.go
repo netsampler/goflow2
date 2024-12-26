@@ -18,7 +18,10 @@ import (
 )
 
 type KafkaDriver struct {
-	kafkaTLS            bool
+	kafkaTLS        bool
+	kafkaClientCert string
+	kafkaClientKey  string
+
 	kafkaSASL           string
 	kafkaTopic          string
 	kafkaSrv            string
@@ -83,6 +86,10 @@ var (
 
 func (d *KafkaDriver) Prepare() error {
 	flag.BoolVar(&d.kafkaTLS, "transport.kafka.tls", false, "Use TLS to connect to Kafka")
+
+	flag.StringVar(&d.kafkaClientCert, "transport.kafka.tls.client", "", "Kafka client certificate")
+	flag.StringVar(&d.kafkaClientKey, "transport.kafka.tls.key", "", "Kafka client key")
+
 	flag.StringVar(&d.kafkaSASL, "transport.kafka.sasl", "none",
 		fmt.Sprintf(
 			"Use SASL to connect to Kafka, available settings: %s (TLS is recommended and the environment variables KAFKA_SASL_USER and KAFKA_SASL_PASS need to be set)",
@@ -151,6 +158,22 @@ func (d *KafkaDriver) Init() error {
 			RootCAs:    rootCAs,
 			MinVersion: tls.VersionTLS12,
 		}
+
+		if d.kafkaClientCert != "" && d.kafkaClientKey != "" {
+			_, err := tls.LoadX509KeyPair(d.kafkaClientCert, d.kafkaClientKey)
+			if err != nil {
+				return fmt.Errorf("error initializing mTLS: %v", err)
+			}
+
+			kafkaConfig.Net.TLS.Config.GetClientCertificate = func(*tls.CertificateRequestInfo) (*tls.Certificate, error) {
+				cert, err := tls.LoadX509KeyPair(d.kafkaClientCert, d.kafkaClientKey)
+				if err != nil {
+					return nil, err
+				}
+				return &cert, nil
+			}
+		}
+
 	}
 
 	if d.kafkaHashing {
