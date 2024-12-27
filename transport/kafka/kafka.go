@@ -6,6 +6,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"strconv"
@@ -21,6 +22,7 @@ type KafkaDriver struct {
 	kafkaTLS        bool
 	kafkaClientCert string
 	kafkaClientKey  string
+	kafkaServerCA   string
 
 	kafkaSASL           string
 	kafkaTopic          string
@@ -89,6 +91,7 @@ func (d *KafkaDriver) Prepare() error {
 
 	flag.StringVar(&d.kafkaClientCert, "transport.kafka.tls.client", "", "Kafka client certificate")
 	flag.StringVar(&d.kafkaClientKey, "transport.kafka.tls.key", "", "Kafka client key")
+	flag.StringVar(&d.kafkaServerCA, "transport.kafka.tls.ca", "", "Kafka certificate authority")
 
 	flag.StringVar(&d.kafkaSASL, "transport.kafka.sasl", "none",
 		fmt.Sprintf(
@@ -157,6 +160,29 @@ func (d *KafkaDriver) Init() error {
 		kafkaConfig.Net.TLS.Config = &tls.Config{
 			RootCAs:    rootCAs,
 			MinVersion: tls.VersionTLS12,
+		}
+
+		if d.kafkaServerCA != "" {
+			serverCaFile, err := os.Open(d.kafkaServerCA)
+			if err != nil {
+				return fmt.Errorf("error initializing server CA: %v", err)
+			}
+			serverCaFile.Close()
+
+			serverCaBytes, err := io.ReadAll(serverCaFile)
+			if err != nil {
+				return fmt.Errorf("error reading server CA: %v", err)
+			}
+
+			serverCa, err := x509.ParseCertificate(serverCaBytes)
+			if err != nil {
+				return fmt.Errorf("error parsing server CA: %v", err)
+			}
+
+			certPool := x509.NewCertPool()
+			certPool.AddCert(serverCa)
+
+			kafkaConfig.Net.TLS.Config.RootCAs = certPool
 		}
 
 		if d.kafkaClientCert != "" && d.kafkaClientKey != "" {
