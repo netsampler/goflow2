@@ -167,9 +167,9 @@ func (d *KafkaDriver) Init() error {
 			if err != nil {
 				return fmt.Errorf("error initializing server CA: %v", err)
 			}
-			serverCaFile.Close()
 
 			serverCaBytes, err := io.ReadAll(serverCaFile)
+			serverCaFile.Close()
 			if err != nil {
 				return fmt.Errorf("error reading server CA: %v", err)
 			}
