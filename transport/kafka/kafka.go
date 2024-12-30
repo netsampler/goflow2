@@ -3,6 +3,7 @@ package kafka
 import (
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/pem"
 	"errors"
 	"flag"
 	"fmt"
@@ -178,7 +179,9 @@ func (d *KafkaDriver) Init() error {
 				return fmt.Errorf("error reading server CA: %v", err)
 			}
 
-			serverCa, err := x509.ParseCertificate(serverCaBytes)
+			block, _ := pem.Decode(serverCaBytes)
+
+			serverCa, err := x509.ParseCertificate(block.Bytes)
 			if err != nil {
 				return fmt.Errorf("error parsing server CA: %v", err)
 			}
