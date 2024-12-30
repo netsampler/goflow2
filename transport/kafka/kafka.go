@@ -19,10 +19,11 @@ import (
 )
 
 type KafkaDriver struct {
-	kafkaTLS        bool
-	kafkaClientCert string
-	kafkaClientKey  string
-	kafkaServerCA   string
+	kafkaTLS         bool
+	kafkaClientCert  string
+	kafkaClientKey   string
+	kafkaServerCA    string
+	kafkaTlsInsecure bool
 
 	kafkaSASL           string
 	kafkaTopic          string
@@ -92,6 +93,7 @@ func (d *KafkaDriver) Prepare() error {
 	flag.StringVar(&d.kafkaClientCert, "transport.kafka.tls.client", "", "Kafka client certificate")
 	flag.StringVar(&d.kafkaClientKey, "transport.kafka.tls.key", "", "Kafka client key")
 	flag.StringVar(&d.kafkaServerCA, "transport.kafka.tls.ca", "", "Kafka certificate authority")
+	flag.BoolVar(&d.kafkaTlsInsecure, "transport.kafka.tls.insecure", false, "Skips TLS verification")
 
 	flag.StringVar(&d.kafkaSASL, "transport.kafka.sasl", "none",
 		fmt.Sprintf(
@@ -161,6 +163,8 @@ func (d *KafkaDriver) Init() error {
 			RootCAs:    rootCAs,
 			MinVersion: tls.VersionTLS12,
 		}
+
+		kafkaConfig.Net.TLS.Config.InsecureSkipVerify = d.kafkaTlsInsecure
 
 		if d.kafkaServerCA != "" {
 			serverCaFile, err := os.Open(d.kafkaServerCA)
