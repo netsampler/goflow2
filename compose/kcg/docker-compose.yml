@@ -1,47 +1,40 @@
-version: "3"
 services:
   kafka:
     image: bitnami/kafka:3.9.0
+    restart: always
     ports:
-      - 9092:9092
+      - "9092:9092"
     environment:
-      - ALLOW_PLAINTEXT_LISTENER=yes
       - KAFKA_DELETE_TOPIC_ENABLE=true
-      - KAFKA_ENABLE_KRAFT=true
       - KAFKA_KRAFT_CLUSTER_ID=AAAAAAAAAAAAAAAAAAAAAA # uuid encoded in base64
       # dd if=/dev/zero of=/dev/stdout count=16 bs=1 | openssl enc -A -a
       # head -c 20 /dev/zero | base64
-      - KAFKA_CFG_BROKER_ID=1
+      - ALLOW_PLAINTEXT_LISTENER=yes
+      - KAFKA_ENABLE_KRAFT=yes
       - KAFKA_CFG_NODE_ID=1
-      - KAFKA_CFG_CONTROLLER_QUORUM_VOTERS=1@kafka:9093
-      - KAFKA_CFG_CONTROLLER_LISTENER_NAMES=CONTROLLER
-      - KAFKA_CFG_INTER_BROKER_LISTENER_NAME=IB
+      - KAFKA_CFG_BROKER_ID=1
       - KAFKA_CFG_PROCESS_ROLES=broker,controller
-      - KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP=CONTROLLER:PLAINTEXT,BROKER:PLAINTEXT,IB:PLAINTEXT
-      - KAFKA_CFG_LISTENERS=CONTROLLER://:9093,BROKER://:9092,IB://:9094
-      - KAFKA_ADVERTISED_LISTENERS=BROKER://kafka:9092,IB://:9094
-      - BITNAMI_DEBUG=yes
-    restart: always
+      - KAFKA_CFG_CONTROLLER_LISTENER_NAMES=CONTROLLER
+      - KAFKA_CFG_LISTENERS=CONTROLLER://localhost:9091,HOST://0.0.0.0:9092,INTERNAL://0.0.0.0:9093
+      - KAFKA_INTER_BROKER_LISTENER_NAME=INTERNAL
+      - KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP=CONTROLLER:PLAINTEXT,INTERNAL:PLAINTEXT,HOST:PLAINTEXT
+      - KAFKA_CFG_ADVERTISED_LISTENERS=HOST://127.0.0.1:9092,INTERNAL://kafka:9093
+      - KAFKA_CFG_CONTROLLER_QUORUM_VOTERS=1@localhost:9091
+
   grafana:
-    image: grafana/grafana:9.4.3
+    image: grafana/grafana:11.5.0
     environment:
-      - GF_INSTALL_PLUGINS=vertamedia-clickhouse-datasource
-    #  - GF_INSTALL_PLUGINS=grafana-clickhouse-datasource
-    #  - GF_PLUGINS_ALLOW_LOADING_UNSIGNED_PLUGINS=vertamedia-clickhouse-datasource
+      - GF_INSTALL_PLUGINS=grafana-clickhouse-datasource
     ports:
-      - 3000:3000
+      - "3000:3000"
     restart: always
     volumes:
-      - ./grafana/datasources-ch.yml:/etc/grafana/provisioning/datasources/datasources-ch.yml
-      - ./grafana/dashboards.yml:/etc/grafana/provisioning/dashboards/dashboards.yml
+      - ./grafana/provisioning/datasources/default.yaml:/etc/grafana/provisioning/datasources/default.yaml
+      - ./grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards
       - ./grafana/dashboards:/var/lib/grafana/dashboards
-  prometheus:
-    image: prom/prometheus:v3.0.1
-    ports:
-      - 9090:9090
-    restart: always
-    volumes:
-      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+      - ./grafana/grafana.ini:/etc/grafana/grafana.ini
+      - grafana:/var/lib/grafana
+
   goflow2:
     build:
       context: ../../
@@ -49,28 +42,49 @@ services:
       args:
         VERSION: compose
         LDFLAGS: -X main.version=compose
-    image: netsampler/goflow2
-    depends_on:
-      - kafka
     ports:
-      - 8080:8080
-      - 6343:6343/udp
-      - 2055:2055/udp
+      - "6343:6343/udp"
+      - "2055:2055/udp"
+      - "8080:8080"
     restart: always
     command:
-      - -transport.kafka.brokers=kafka:9092
+      - -transport.kafka.brokers=kafka:9093
       - -transport=kafka
       - -transport.kafka.topic=flows
       - -format=bin
-  db:
-    image: clickhouse/clickhouse-server:24.11.1.2557-alpine
-    ports:
-      - 8123:8123
-    volumes:
-      - ./clickhouse:/docker-entrypoint-initdb.d/
-      #- ../../pb/flow.proto:/var/lib/clickhouse/format_schemas/flow.proto
-      # the following files have 101:101 as owner
-      - ./clickhouse/flow.proto:/var/lib/clickhouse/format_schemas/flow.proto
-      - ./clickhouse/protocols.csv:/var/lib/clickhouse/user_files/protocols.csv
     depends_on:
       - kafka
+
+  clickhouse:
+    image: clickhouse/clickhouse-server:24.12-alpine
+    ports:
+      - "8123:8123"
+      - "9000:9000"
+      - "9363:9363"
+    volumes:
+      - ./clickhouse/flow.proto:/var/lib/clickhouse/format_schemas/flow.proto
+      - ./clickhouse/create.sql:/docker-entrypoint-initdb.d/create.sql
+      - ./clickhouse/dictionaries:/etc/clickhouse-server/dictionaries
+      - ./clickhouse/config.d/dictionaries.xml:/etc/clickhouse-server/config.d/dictionaries.xml
+      - ./clickhouse/config.d/config.xml:/etc/clickhouse-server/config.d/config.xml
+      - ./clickhouse/data:/data
+      - ./clickhouse/user_files:/var/lib/clickhouse/user_files
+      - clickhouse:/var/lib/clickhouse
+      - clickhouse-logs:/var/log/clickhouse-server
+    depends_on:
+      - kafka
+
+  prometheus:
+    image: prom/prometheus:v3.1.0
+    ports:
+      - "9090:9090"
+    restart: always
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus:/prometheus
+
+volumes:
+  clickhouse:
+  clickhouse-logs:
+  prometheus:
+  grafana:
