@@ -18,7 +18,7 @@
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 0,
-  "id": 2,
+  "id": 1,
   "links": [],
   "panels": [
     {
@@ -402,7 +402,7 @@
           },
           "pluginVersion": "4.7.0",
           "queryType": "timeseries",
-          "rawSql": "WITH flows_agg AS (\n    SELECT\n        time_flow_start,\n        src_addr,\n        bytes\n    FROM flows_raw_view\n    WHERE (time_flow_start >= $__fromTime AND time_flow_start <= $__toTime)\n)\nSELECT\n    $__timeInterval(time_flow_start) AS \"time\",\n    src_addr,\n    sum(bytes) AS bytes\nFROM flows_agg\nWHERE src_addr IN (\n    SELECT src_addr\n    FROM flows_agg\n    GROUP BY src_addr\n    ORDER BY sum(bytes) DESC\n    LIMIT 10\n)\nGROUP BY time, src_addr\nORDER BY time",
+          "rawSql": "WITH flows_agg AS (\n    SELECT\n        $__timeInterval(time_flow_start) AS \"time\",\n        src_addr,\n        sum(bytes) AS bytes\n    FROM flows_raw_view\n    WHERE (time_flow_start >= $__fromTime AND time_flow_start <= $__toTime)\n    GROUP BY time, src_addr\n)\nSELECT\n    \"time\",\n    src_addr,\n    bytes,\nFROM flows_agg\nWHERE src_addr IN (\n    SELECT src_addr\n    FROM flows_agg\n    GROUP BY src_addr\n    ORDER BY sum(bytes) DESC\n    LIMIT 10\n)\nORDER BY time",
           "refId": "A"
         }
       ],
@@ -606,7 +606,7 @@
           },
           "pluginVersion": "4.7.0",
           "queryType": "timeseries",
-          "rawSql": "WITH flows_agg AS (\n    SELECT\n        time_flow_start,\n        proto,\n        src_port,\n        bytes\n    FROM flows_raw_view\n    WHERE (time_flow_start >= $__fromTime AND time_flow_start <= $__toTime)\n)\nSELECT\n    $__timeInterval(time_flow_start) AS \"time\",\n    any(proto || '/' || toString(src_port)) as src_port_string,\n    sum(bytes) as bytes\nFROM flows_agg\nWHERE src_port IN (\n    SELECT src_port\n    FROM flows_agg\n    GROUP BY src_port\n    ORDER BY sum(bytes) DESC\n    LIMIT 10\n)\nGROUP BY time, src_port\nORDER BY time",
+          "rawSql": "WITH flows_agg AS (\n    SELECT\n        $__timeInterval(time_flow_start) AS \"time\",\n        tuple(proto, src_port) AS port,\n        sum(bytes) AS bytes\n    FROM flows_raw_view\n    WHERE (time_flow_start >= $__fromTime AND time_flow_start <= $__toTime)\n    GROUP BY time, port\n)\nSELECT\n    \"time\",\n    port.1 || '/' || toString(port.2) as src_port_string,\n    bytes\nFROM flows_agg\nWHERE port IN (\n    SELECT port\n    FROM flows_agg\n    GROUP BY port\n    ORDER BY sum(bytes) DESC\n    LIMIT 10\n)\nORDER BY time",
           "refId": "A"
         }
       ],
@@ -802,7 +802,7 @@
           },
           "pluginVersion": "4.7.0",
           "queryType": "timeseries",
-          "rawSql": "WITH flows_agg AS (\n    SELECT\n        time_flow_start,\n        dst_addr,\n        bytes\n    FROM flows_raw_view\n    WHERE (time_flow_start >= $__fromTime AND time_flow_start <= $__toTime)\n)\nSELECT\n    $__timeInterval(time_flow_start) AS \"time\",\n    dst_addr,\n    sum(bytes) as bytes\nFROM flows_agg\nWHERE dst_addr IN (\n    SELECT dst_addr\n    FROM flows_agg\n    GROUP BY dst_addr\n    ORDER BY sum(bytes) DESC\n    LIMIT 10\n)\nGROUP BY time, dst_addr\nORDER BY time",
+          "rawSql": "WITH flows_agg AS (\n    SELECT\n        $__timeInterval(time_flow_start) AS \"time\",\n        dst_addr,\n        sum(bytes) AS bytes\n    FROM flows_raw_view\n    WHERE (time_flow_start >= $__fromTime AND time_flow_start <= $__toTime)\n    GROUP BY time, dst_addr\n)\nSELECT\n    \"time\",\n    dst_addr,\n    bytes,\nFROM flows_agg\nWHERE dst_addr IN (\n    SELECT dst_addr\n    FROM flows_agg\n    GROUP BY dst_addr\n    ORDER BY sum(bytes) DESC\n    LIMIT 10\n)\nORDER BY time",
           "refId": "A"
         }
       ],
@@ -998,7 +998,7 @@
           },
           "pluginVersion": "4.7.0",
           "queryType": "timeseries",
-          "rawSql": "WITH flows_agg AS (\n    SELECT\n        time_flow_start,\n        proto,\n        dst_port,\n        bytes\n    FROM flows_raw_view\n    WHERE (time_flow_start >= $__fromTime AND time_flow_start <= $__toTime)\n)\nSELECT\n    $__timeInterval(time_flow_start) AS \"time\",\n    any(proto || '/' || toString(dst_port)) as dst_port_string,\n    sum(bytes) as bytes\nFROM flows_agg\nWHERE dst_port IN (\n    SELECT dst_port\n    FROM flows_agg\n    GROUP BY dst_port\n    ORDER BY sum(bytes) DESC\n    LIMIT 10\n)\nGROUP BY time, dst_port\nORDER BY time",
+          "rawSql": "WITH flows_agg AS (\n    SELECT\n        $__timeInterval(time_flow_start) AS \"time\",\n        tuple(proto, dst_port) AS port,\n        sum(bytes) AS bytes\n    FROM flows_raw_view\n    WHERE (time_flow_start >= $__fromTime AND time_flow_start <= $__toTime)\n    GROUP BY time, port\n)\nSELECT\n    \"time\",\n    port.1 || '/' || toString(port.2) as dst_port_string,\n    bytes\nFROM flows_agg\nWHERE port IN (\n    SELECT port\n    FROM flows_agg\n    GROUP BY port\n    ORDER BY sum(bytes) DESC\n    LIMIT 10\n)\nORDER BY time",
           "refId": "A"
         }
       ],
