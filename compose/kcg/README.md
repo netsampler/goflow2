@@ -29,4 +29,6 @@ pre-made dashboards.
 Note: if you are using Colima as the engine, it does not support UDP port forwarding. Flows won't be collected.
 It is possible to run GoFlow2 locally and feed into kafka if you add an `/etc/hosts` entry `127.0.0.1 kafka`.
 
-Note: if you want to listen to Kafka from another machine, you need to change the advertised listener in the `docker-compose.yml` file. Search for `127.0.0.1` (in `KAFKA_CFG_ADVERTISED_LISTENERS`) and replace it with the IP of the machine where Kafka is running.
+## Using Kafka
+
+If you want to listen to Kafka from another machine, you need to change the advertised listener in the `docker-compose.yml` file. Search for `127.0.0.1` in `KAFKA_CFG_ADVERTISED_LISTENERS` and replace it with the IP of the machine where Kafka is running.

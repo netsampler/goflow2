@@ -91,7 +91,10 @@
       "id": 1,
       "options": {
         "legend": {
-          "calcs": ["mean", "sum"],
+          "calcs": [
+            "mean",
+            "sum"
+          ],
           "displayMode": "list",
           "placement": "bottom",
           "showLegend": true
@@ -132,7 +135,10 @@
                 "type": "datetime"
               }
             ],
-            "groupBy": ["time_flow_start"],
+            "groupBy": [
+              "time_flow_start"
+            ],
+            "limit": 1000,
             "meta": {},
             "mode": "trend",
             "orderBy": [
@@ -150,10 +156,57 @@
             "type": "grafana-clickhouse-datasource",
             "uid": "PDEE91DDB90597936"
           },
-          "editorType": "builder",
+          "editorType": "sql",
           "format": 0,
-          "pluginVersion": "4.6.0",
-          "rawSql": "SELECT $__timeInterval(time_flow_start) as \"time\", time_flow_start, sum(bytes) as bytes FROM \"default\".\"flows_raw_view\" WHERE ( time >= $__fromTime AND time <= $__toTime ) GROUP BY time_flow_start, time ORDER BY time ASC",
+          "meta": {
+            "builderOptions": {
+              "aggregates": [
+                {
+                  "aggregateType": "sum",
+                  "alias": "bytes",
+                  "column": "bytes"
+                }
+              ],
+              "columns": [
+                {
+                  "alias": "time_flow_start",
+                  "hint": "time",
+                  "name": "time_flow_start",
+                  "type": "DateTime64(9)"
+                }
+              ],
+              "database": "default",
+              "filters": [
+                {
+                  "condition": "AND",
+                  "filterType": "custom",
+                  "hint": "time",
+                  "key": "",
+                  "operator": "WITH IN DASHBOARD TIME RANGE",
+                  "type": "datetime"
+                }
+              ],
+              "groupBy": [
+                "time_flow_start"
+              ],
+              "limit": 1000,
+              "meta": {},
+              "mode": "trend",
+              "orderBy": [
+                {
+                  "default": true,
+                  "dir": "ASC",
+                  "hint": "time",
+                  "name": ""
+                }
+              ],
+              "queryType": "timeseries",
+              "table": "flows_raw_view"
+            }
+          },
+          "pluginVersion": "4.7.0",
+          "queryType": "timeseries",
+          "rawSql": "SELECT\n    $__timeInterval(time_flow_start) AS \"time\",\n    sum(bytes) AS bytes\nFROM flows_raw_view\nWHERE (time_flow_start >= $__fromTime AND time_flow_start <= $__toTime)\nGROUP BY time\nORDER BY time ASC",
           "refId": "A"
         }
       ],
@@ -230,7 +283,10 @@
       "id": 2,
       "options": {
         "legend": {
-          "calcs": ["mean", "sum"],
+          "calcs": [
+            "mean",
+            "sum"
+          ],
           "displayMode": "table",
           "placement": "right",
           "showLegend": true,
@@ -273,7 +329,11 @@
                 "type": "datetime"
               }
             ],
-            "groupBy": ["time_flow_start", "src_addr"],
+            "groupBy": [
+              "time_flow_start",
+              "src_addr"
+            ],
+            "limit": 1000,
             "meta": {},
             "mode": "trend",
             "orderBy": [
@@ -291,10 +351,58 @@
             "type": "grafana-clickhouse-datasource",
             "uid": "PDEE91DDB90597936"
           },
-          "editorType": "builder",
+          "editorType": "sql",
           "format": 0,
-          "pluginVersion": "4.6.0",
-          "rawSql": "SELECT $__timeInterval(time_flow_start) as \"time\", time_flow_start, src_addr, sum(bytes) as bytes FROM \"default\".\"flows_raw_view\" WHERE ( time >= $__fromTime AND time <= $__toTime ) GROUP BY time_flow_start, src_addr, time ORDER BY time ASC",
+          "meta": {
+            "builderOptions": {
+              "aggregates": [
+                {
+                  "aggregateType": "sum",
+                  "alias": "bytes",
+                  "column": "bytes"
+                }
+              ],
+              "columns": [
+                {
+                  "alias": "time_flow_start",
+                  "hint": "time",
+                  "name": "time_flow_start",
+                  "type": "DateTime64(9)"
+                }
+              ],
+              "database": "default",
+              "filters": [
+                {
+                  "condition": "AND",
+                  "filterType": "custom",
+                  "hint": "time",
+                  "key": "",
+                  "operator": "WITH IN DASHBOARD TIME RANGE",
+                  "type": "datetime"
+                }
+              ],
+              "groupBy": [
+                "time_flow_start",
+                "src_addr"
+              ],
+              "limit": 1000,
+              "meta": {},
+              "mode": "trend",
+              "orderBy": [
+                {
+                  "default": true,
+                  "dir": "ASC",
+                  "hint": "time",
+                  "name": ""
+                }
+              ],
+              "queryType": "timeseries",
+              "table": "flows_raw_view"
+            }
+          },
+          "pluginVersion": "4.7.0",
+          "queryType": "timeseries",
+          "rawSql": "WITH flows_agg AS (\n    SELECT\n        time_flow_start,\n        src_addr,\n        bytes\n    FROM flows_raw_view\n    WHERE (time_flow_start >= $__fromTime AND time_flow_start <= $__toTime)\n)\nSELECT\n    $__timeInterval(time_flow_start) AS \"time\",\n    src_addr,\n    sum(bytes) AS bytes\nFROM flows_agg\nWHERE src_addr IN (\n    SELECT src_addr\n    FROM flows_agg\n    GROUP BY src_addr\n    ORDER BY sum(bytes) DESC\n    LIMIT 10\n)\nGROUP BY time, src_addr\nORDER BY time",
           "refId": "A"
         }
       ],
@@ -371,7 +479,10 @@
       "id": 3,
       "options": {
         "legend": {
-          "calcs": ["mean", "sum"],
+          "calcs": [
+            "mean",
+            "sum"
+          ],
           "displayMode": "table",
           "placement": "right",
           "showLegend": true,
@@ -414,7 +525,11 @@
                 "type": "datetime"
               }
             ],
-            "groupBy": ["time_flow_start", "src_port"],
+            "groupBy": [
+              "time_flow_start",
+              "src_port"
+            ],
+            "limit": 1000,
             "meta": {},
             "mode": "trend",
             "orderBy": [
@@ -436,10 +551,62 @@
             "type": "grafana-clickhouse-datasource",
             "uid": "PDEE91DDB90597936"
           },
-          "editorType": "builder",
+          "editorType": "sql",
           "format": 0,
-          "pluginVersion": "4.6.0",
-          "rawSql": "SELECT $__timeInterval(time_flow_start) as \"time\", time_flow_start, src_port, sum(bytes) as bytes FROM \"default\".\"flows_raw_view\" WHERE ( time >= $__fromTime AND time <= $__toTime ) GROUP BY time_flow_start, src_port, time ORDER BY time ASC, bytes DESC",
+          "meta": {
+            "builderOptions": {
+              "aggregates": [
+                {
+                  "aggregateType": "sum",
+                  "alias": "bytes",
+                  "column": "bytes"
+                }
+              ],
+              "columns": [
+                {
+                  "alias": "time_flow_start",
+                  "hint": "time",
+                  "name": "time_flow_start",
+                  "type": "DateTime64(9)"
+                }
+              ],
+              "database": "default",
+              "filters": [
+                {
+                  "condition": "AND",
+                  "filterType": "custom",
+                  "hint": "time",
+                  "key": "",
+                  "operator": "WITH IN DASHBOARD TIME RANGE",
+                  "type": "datetime"
+                }
+              ],
+              "groupBy": [
+                "time_flow_start",
+                "src_port"
+              ],
+              "limit": 1000,
+              "meta": {},
+              "mode": "trend",
+              "orderBy": [
+                {
+                  "default": true,
+                  "dir": "ASC",
+                  "hint": "time",
+                  "name": ""
+                },
+                {
+                  "dir": "DESC",
+                  "name": "bytes"
+                }
+              ],
+              "queryType": "timeseries",
+              "table": "flows_raw_view"
+            }
+          },
+          "pluginVersion": "4.7.0",
+          "queryType": "timeseries",
+          "rawSql": "WITH flows_agg AS (\n    SELECT\n        time_flow_start,\n        proto,\n        src_port,\n        bytes\n    FROM flows_raw_view\n    WHERE (time_flow_start >= $__fromTime AND time_flow_start <= $__toTime)\n)\nSELECT\n    $__timeInterval(time_flow_start) AS \"time\",\n    any(proto || '/' || toString(src_port)) as src_port_string,\n    sum(bytes) as bytes\nFROM flows_agg\nWHERE src_port IN (\n    SELECT src_port\n    FROM flows_agg\n    GROUP BY src_port\n    ORDER BY sum(bytes) DESC\n    LIMIT 10\n)\nGROUP BY time, src_port\nORDER BY time",
           "refId": "A"
         }
       ],
@@ -516,7 +683,10 @@
       "id": 4,
       "options": {
         "legend": {
-          "calcs": ["mean", "sum"],
+          "calcs": [
+            "mean",
+            "sum"
+          ],
           "displayMode": "table",
           "placement": "right",
           "showLegend": true,
@@ -559,7 +729,11 @@
                 "type": "datetime"
               }
             ],
-            "groupBy": ["time_flow_start", "dst_addr"],
+            "groupBy": [
+              "time_flow_start",
+              "dst_addr"
+            ],
+            "limit": 1000,
             "meta": {},
             "mode": "trend",
             "orderBy": [
@@ -577,10 +751,58 @@
             "type": "grafana-clickhouse-datasource",
             "uid": "PDEE91DDB90597936"
           },
-          "editorType": "builder",
+          "editorType": "sql",
           "format": 0,
-          "pluginVersion": "4.6.0",
-          "rawSql": "SELECT $__timeInterval(time_flow_start) as \"time\", time_flow_start, dst_addr, sum(bytes) as bytes FROM \"default\".\"flows_raw_view\" WHERE ( time >= $__fromTime AND time <= $__toTime ) GROUP BY time_flow_start, dst_addr, time ORDER BY time ASC",
+          "meta": {
+            "builderOptions": {
+              "aggregates": [
+                {
+                  "aggregateType": "sum",
+                  "alias": "bytes",
+                  "column": "bytes"
+                }
+              ],
+              "columns": [
+                {
+                  "alias": "time_flow_start",
+                  "hint": "time",
+                  "name": "time_flow_start",
+                  "type": "DateTime64(9)"
+                }
+              ],
+              "database": "default",
+              "filters": [
+                {
+                  "condition": "AND",
+                  "filterType": "custom",
+                  "hint": "time",
+                  "key": "",
+                  "operator": "WITH IN DASHBOARD TIME RANGE",
+                  "type": "datetime"
+                }
+              ],
+              "groupBy": [
+                "time_flow_start",
+                "dst_addr"
+              ],
+              "limit": 1000,
+              "meta": {},
+              "mode": "trend",
+              "orderBy": [
+                {
+                  "default": true,
+                  "dir": "ASC",
+                  "hint": "time",
+                  "name": ""
+                }
+              ],
+              "queryType": "timeseries",
+              "table": "flows_raw_view"
+            }
+          },
+          "pluginVersion": "4.7.0",
+          "queryType": "timeseries",
+          "rawSql": "WITH flows_agg AS (\n    SELECT\n        time_flow_start,\n        dst_addr,\n        bytes\n    FROM flows_raw_view\n    WHERE (time_flow_start >= $__fromTime AND time_flow_start <= $__toTime)\n)\nSELECT\n    $__timeInterval(time_flow_start) AS \"time\",\n    dst_addr,\n    sum(bytes) as bytes\nFROM flows_agg\nWHERE dst_addr IN (\n    SELECT dst_addr\n    FROM flows_agg\n    GROUP BY dst_addr\n    ORDER BY sum(bytes) DESC\n    LIMIT 10\n)\nGROUP BY time, dst_addr\nORDER BY time",
           "refId": "A"
         }
       ],
@@ -657,7 +879,10 @@
       "id": 5,
       "options": {
         "legend": {
-          "calcs": ["mean", "sum"],
+          "calcs": [
+            "mean",
+            "sum"
+          ],
           "displayMode": "table",
           "placement": "right",
           "showLegend": true,
@@ -700,7 +925,10 @@
                 "type": "datetime"
               }
             ],
-            "groupBy": ["time_flow_start", "dst_port"],
+            "groupBy": [
+              "time_flow_start",
+              "dst_port"
+            ],
             "limit": 0,
             "meta": {},
             "mode": "trend",
@@ -719,10 +947,58 @@
             "type": "grafana-clickhouse-datasource",
             "uid": "PDEE91DDB90597936"
           },
-          "editorType": "builder",
+          "editorType": "sql",
           "format": 0,
-          "pluginVersion": "4.6.0",
-          "rawSql": "SELECT $__timeInterval(time_flow_start) as \"time\", time_flow_start, dst_port, sum(bytes) as bytes FROM \"default\".\"flows_raw_view\" WHERE ( time >= $__fromTime AND time <= $__toTime ) GROUP BY time_flow_start, dst_port, time ORDER BY time ASC",
+          "meta": {
+            "builderOptions": {
+              "aggregates": [
+                {
+                  "aggregateType": "sum",
+                  "alias": "bytes",
+                  "column": "bytes"
+                }
+              ],
+              "columns": [
+                {
+                  "alias": "time_flow_start",
+                  "hint": "time",
+                  "name": "time_flow_start",
+                  "type": "DateTime64(9)"
+                }
+              ],
+              "database": "default",
+              "filters": [
+                {
+                  "condition": "AND",
+                  "filterType": "custom",
+                  "hint": "time",
+                  "key": "",
+                  "operator": "WITH IN DASHBOARD TIME RANGE",
+                  "type": "datetime"
+                }
+              ],
+              "groupBy": [
+                "time_flow_start",
+                "dst_port"
+              ],
+              "limit": 0,
+              "meta": {},
+              "mode": "trend",
+              "orderBy": [
+                {
+                  "default": true,
+                  "dir": "ASC",
+                  "hint": "time",
+                  "name": ""
+                }
+              ],
+              "queryType": "timeseries",
+              "table": "flows_raw_view"
+            }
+          },
+          "pluginVersion": "4.7.0",
+          "queryType": "timeseries",
+          "rawSql": "WITH flows_agg AS (\n    SELECT\n        time_flow_start,\n        proto,\n        dst_port,\n        bytes\n    FROM flows_raw_view\n    WHERE (time_flow_start >= $__fromTime AND time_flow_start <= $__toTime)\n)\nSELECT\n    $__timeInterval(time_flow_start) AS \"time\",\n    any(proto || '/' || toString(dst_port)) as dst_port_string,\n    sum(bytes) as bytes\nFROM flows_agg\nWHERE dst_port IN (\n    SELECT dst_port\n    FROM flows_agg\n    GROUP BY dst_port\n    ORDER BY sum(bytes) DESC\n    LIMIT 10\n)\nGROUP BY time, dst_port\nORDER BY time",
           "refId": "A"
         }
       ],
