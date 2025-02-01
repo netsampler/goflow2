@@ -135,9 +135,10 @@ SELECT
 FROM flows_raw
 GROUP BY date, timeslot, src_as, dst_as, `etypeMap.etype`;
 
-CREATE FUNCTION IF NOT EXISTS convertFixedStringIpToString AS (etype, addr) ->
+CREATE FUNCTION IF NOT EXISTS convertFixedStringIpToString AS (addr) ->
 (
-    if(etype = 0x0800, IPv4NumToString(reinterpretAsUInt32(substring(reverse(addr), 13,4))), IPv6NumToString(addr))
+    -- if the first 12 bytes are zero, then it's an IPv4 address, otherwise it's an IPv6 address
+    if(reinterpretAsUInt128(substring(reverse(addr), 1, 12)) = 0, IPv4NumToString(reinterpretAsUInt32(substring(reverse(addr), 13, 4))), IPv6NumToString(addr))
 );
 
 CREATE VIEW IF NOT EXISTS flows_raw_view AS
@@ -146,7 +147,7 @@ CREATE VIEW IF NOT EXISTS flows_raw_view AS
         time_received,
 
         sequence_num,
-        sampler_address,
+        convertFixedStringIpToString(sampler_address) AS sampler_address,
 
         time_flow_start,
         time_flow_end,
@@ -154,8 +155,8 @@ CREATE VIEW IF NOT EXISTS flows_raw_view AS
         bytes * max2(sampling_rate, 1) AS bytes,
         packets * max2(sampling_rate, 1) AS packets,
 
-        convertFixedStringIpToString(etype, src_addr) AS src_addr,
-        convertFixedStringIpToString(etype, dst_addr) AS dst_addr,
+        convertFixedStringIpToString(src_addr) AS src_addr,
+        convertFixedStringIpToString(dst_addr) AS dst_addr,
 
         src_as,
         dst_as,
