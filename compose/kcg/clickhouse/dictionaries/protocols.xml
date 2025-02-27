@@ -1,0 +1,32 @@
+<?xml version="1.0"?>
+<dictionaries>
+    <dictionary>
+        <name>protocol_dictionary</name>
+        <source>
+            <file>
+                <path>/data/protocols.csv</path>
+                <format>CSVWithNames</format>
+            </file>
+        </source>
+        <lifetime>0</lifetime>
+        <layout>
+            <flat />
+        </layout>
+        <structure>
+            <id>
+                <name>proto</name>
+                <type>UInt8</type>
+            </id>
+            <attribute>
+                <name>name</name>
+                <type>String</type>
+                <null_value></null_value>
+            </attribute>
+            <attribute>
+                <name>description</name>
+                <type>String</type>
+                <null_value></null_value>
+            </attribute>
+        </structure>
+    </dictionary>
+</dictionaries>
