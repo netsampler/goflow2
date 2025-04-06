@@ -22,7 +22,7 @@ services:
       - KAFKA_CFG_CONTROLLER_QUORUM_VOTERS=1@localhost:9091
 
   grafana:
-    image: grafana/grafana:11.5.2
+    image: grafana/grafana:11.6.0
     environment:
       - GF_INSTALL_PLUGINS=grafana-clickhouse-datasource
     ports:
@@ -56,7 +56,7 @@ services:
       - kafka
 
   clickhouse:
-    image: clickhouse/clickhouse-server:24.12-alpine
+    image: clickhouse/clickhouse-server:25.3-alpine
     ports:
       - "8123:8123"
       - "9000:9000"
