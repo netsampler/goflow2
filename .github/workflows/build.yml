@@ -25,6 +25,9 @@ jobs:
       with:
         fetch-depth: 0
 
+    - name: Tidy Go Modules
+      run: go mod tidy
+
     - name: Test & Vet
       run: make test vet
       
