@@ -1,6 +1,7 @@
 module github.com/netsampler/goflow2/v2
 
-go 1.21
+go 1.22
+
 toolchain go1.24.1
 
 require (
