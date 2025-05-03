@@ -153,14 +153,14 @@ To change the kafka compression type of the producer side configure the followin
 The list of codecs is available in the [Sarama documentation](https://pkg.go.dev/github.com/Shopify/sarama#CompressionCodec).
 
 
-By default, the collector will listen for IPFIX/NetFlow V9 on port 2055
+By default, the collector will listen for IPFIX/NetFlow V9/NetFlow V5 on port 2055
 and sFlow on port 6343.
 To change the sockets binding, you can set the `-listen` argument and a URI
-for each protocol (`netflow`, `sflow` and `nfl` as scheme) separated by a comma.
-For instance, to create 4 parallel sockets of sFlow and one of NetFlow V5, you can use:
+for each protocol (`netflow`, `sflow` or `flow` for both as scheme) separated by a comma.
+For instance, to create 4 parallel sockets of sFlow and one of NetFlow, you can use:
 
 ```bash
-$ ./goflow2 -listen 'sflow://:6343?count=4,nfl://:2055'
+$ ./goflow2 -listen 'sflow://:6343?count=4,netflow://:2055'
 ```
 
 More information about workers and resource usage is avaialble on the [Performance page](/docs/performance.md).
