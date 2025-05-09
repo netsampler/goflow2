@@ -114,7 +114,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	transporter, err := transport.FindTransport(*Transport)
+	transporter, err := transport.FindTransport(ctx, *Transport)
 	if err != nil {
 		slog.Error("error transporter", slog.String("error", err.Error()))
 		os.Exit(1)

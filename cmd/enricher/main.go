@@ -3,13 +3,13 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"errors"
 	"flag"
 	"fmt"
 	"io"
 	"log"
 	"log/slog"
-	"net"
 	"os"
 	"strings"
 
@@ -50,14 +50,14 @@ var (
 )
 
 func MapAsn(db *geoip2.Reader, addr []byte, dest *uint32) {
-	entry, err := db.ASN(net.IP(addr))
+	entry, err := db.ASN(addr)
 	if err != nil {
 		return
 	}
 	*dest = uint32(entry.AutonomousSystemNumber)
 }
 func MapCountry(db *geoip2.Reader, addr []byte, dest *string) {
-	entry, err := db.Country(net.IP(addr))
+	entry, err := db.Country(addr)
 	if err != nil {
 		return
 	}
@@ -92,6 +92,8 @@ func main() {
 		fmt.Println(AppVersion)
 		os.Exit(0)
 	}
+
+	ctx := context.Background()
 
 	var loglevel slog.Level
 	if err := loglevel.UnmarshalText([]byte(*LogLevel)); err != nil {
@@ -135,12 +137,12 @@ func main() {
 		log.Fatal(err)
 	}
 
-	transporter, err := transport.FindTransport(*Transport)
+	transporter, err := transport.FindTransport(ctx, *Transport)
 	if err != nil {
 		slog.Error("error transporter", slog.String("error", err.Error()))
 		os.Exit(1)
 	}
-	defer transporter.Close()
+	defer transporter.Close(ctx)
 
 	logger.Info("starting enricher")
 
@@ -167,7 +169,7 @@ func main() {
 			continue
 		}
 
-		err = transporter.Send(key, data)
+		err = transporter.Send(ctx, key, data)
 		if err != nil {
 			slog.Error("error sending message", slog.String("error", err.Error()))
 			continue

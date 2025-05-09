@@ -48,17 +48,17 @@ func (t *Transport) Send(ctx context.Context, key, data []byte) error {
 	return nil
 }
 
-func RegisterTransportDriver(name string, t TransportDriver) {
+func RegisterTransportDriver(ctx context.Context, name string, t TransportDriver) {
 	lock.Lock()
 	transportDrivers[name] = t
 	lock.Unlock()
 
-	if err := t.Prepare(context.TODO()); err != nil {
+	if err := t.Prepare(ctx); err != nil {
 		panic(err)
 	}
 }
 
-func FindTransport(name string) (*Transport, error) {
+func FindTransport(ctx context.Context, name string) (*Transport, error) {
 	lock.RLock()
 	t, ok := transportDrivers[name]
 	lock.RUnlock()
@@ -67,7 +67,7 @@ func FindTransport(name string) (*Transport, error) {
 		return nil, fmt.Errorf("%w %s not found", ErrTransport, name)
 	}
 
-	err := t.Init(context.TODO())
+	err := t.Init(ctx)
 	if err != nil {
 		err = &DriverTransportError{name, err}
 	}

@@ -131,5 +131,5 @@ func init() {
 		lock: &sync.RWMutex{},
 	}
 
-	transport.RegisterTransportDriver("file", d)
+	transport.RegisterTransportDriver(context.Background(), "file", d)
 }

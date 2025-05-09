@@ -308,5 +308,5 @@ func init() {
 		errors: make(chan error),
 	}
 
-	transport.RegisterTransportDriver("kafka", d)
+	transport.RegisterTransportDriver(context.Background(), "kafka", d)
 }
