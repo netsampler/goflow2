@@ -2,6 +2,7 @@ package utils
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"sync"
 
@@ -15,10 +16,7 @@ import (
 	"github.com/netsampler/goflow2/v2/utils/templates"
 )
 
-type FlowPipe interface {
-	DecodeFlow(msg interface{}) error
-	Close()
-}
+
 
 type flowpipe struct {
 	format    format.FormatInterface
@@ -36,7 +34,7 @@ type PipeConfig struct {
 	NetFlowTemplater templates.TemplateSystemGenerator
 }
 
-func (p *flowpipe) formatSend(flowMessageSet []producer.ProducerMessage) error {
+func (p *flowpipe) formatSend(ctx context.Context, flowMessageSet []producer.ProducerMessage) error {
 	for _, msg := range flowMessageSet {
 		// todo: pass normal
 		if p.format != nil {
@@ -44,14 +42,16 @@ func (p *flowpipe) formatSend(flowMessageSet []producer.ProducerMessage) error {
 			if err != nil {
 				return err
 			}
+
 			if p.transport != nil {
-				if err = p.transport.Send(key, data); err != nil {
+				if err = p.transport.Send(ctx, key, data); err != nil {
 					return err
 				}
 			}
 			// send to pool for reuse
 		}
 	}
+
 	return nil
 
 }
@@ -101,7 +101,7 @@ func NewSFlowPipe(cfg *PipeConfig) *SFlowPipe {
 func (p *SFlowPipe) Close() {
 }
 
-func (p *SFlowPipe) DecodeFlow(msg interface{}) error {
+func (p *SFlowPipe) DecodeFlow(ctx context.Context, msg interface{}) error {
 	pkt, ok := msg.(*Message)
 	if !ok {
 		return fmt.Errorf("flow is not *Message")
@@ -110,6 +110,7 @@ func (p *SFlowPipe) DecodeFlow(msg interface{}) error {
 	//key := pkt.Src.String()
 
 	var packet sflow.Packet
+
 	if err := sflow.DecodeMessageVersion(buf, &packet); err != nil {
 		return &PipeMessageError{pkt, err}
 	}
@@ -121,15 +122,18 @@ func (p *SFlowPipe) DecodeFlow(msg interface{}) error {
 		TimeReceived:   pkt.Received,
 		SamplerAddress: pkt.Src.Addr(),
 	}
+
 	if p.producer == nil {
 		return nil
 	}
 	flowMessageSet, err := p.producer.Produce(&packet, &args)
+
 	defer p.producer.Commit(flowMessageSet)
 	if err != nil {
 		return &PipeMessageError{pkt, err}
 	}
-	return p.formatSend(flowMessageSet)
+
+	return p.formatSend(ctx, flowMessageSet)
 }
 
 func NewNetFlowPipe(cfg *PipeConfig) *NetFlowPipe {
@@ -141,7 +145,7 @@ func NewNetFlowPipe(cfg *PipeConfig) *NetFlowPipe {
 	return p
 }
 
-func (p *NetFlowPipe) DecodeFlow(msg interface{}) error {
+func (p *NetFlowPipe) DecodeFlow(ctx context.Context, msg interface{}) error {
 	pkt, ok := msg.(*Message)
 	if !ok {
 		return fmt.Errorf("flow is not *Message")
@@ -151,12 +155,12 @@ func (p *NetFlowPipe) DecodeFlow(msg interface{}) error {
 	key := pkt.Src.String()
 
 	p.templateslock.RLock()
-	templates, ok := p.templates[key]
+	templateSystem, ok := p.templates[key]
 	p.templateslock.RUnlock()
 	if !ok {
-		templates = p.netFlowTemplater(key)
+		templateSystem = p.netFlowTemplater(key)
 		p.templateslock.Lock()
-		p.templates[key] = templates
+		p.templates[key] = templateSystem
 		p.templateslock.Unlock()
 	}
 
@@ -177,12 +181,12 @@ func (p *NetFlowPipe) DecodeFlow(msg interface{}) error {
 		}
 	case 9:
 		packetNFv9.Version = 9
-		if err := netflow.DecodeMessageNetFlow(buf, templates, &packetNFv9); err != nil {
+		if err := netflow.DecodeMessageNetFlow(buf, templateSystem, &packetNFv9); err != nil {
 			return &PipeMessageError{pkt, err}
 		}
 	case 10:
 		packetIPFIX.Version = 10
-		if err := netflow.DecodeMessageIPFIX(buf, templates, &packetIPFIX); err != nil {
+		if err := netflow.DecodeMessageIPFIX(buf, templateSystem, &packetIPFIX); err != nil {
 			return &PipeMessageError{pkt, err}
 		}
 	default:
@@ -217,7 +221,7 @@ func (p *NetFlowPipe) DecodeFlow(msg interface{}) error {
 		return &PipeMessageError{pkt, err}
 	}
 
-	return p.formatSend(flowMessageSet)
+	return p.formatSend(ctx, flowMessageSet)
 }
 
 func (p *NetFlowPipe) Close() {
@@ -241,7 +245,7 @@ func (p *AutoFlowPipe) Close() {
 	p.NetFlowPipe.Close()
 }
 
-func (p *AutoFlowPipe) DecodeFlow(msg interface{}) error {
+func (p *AutoFlowPipe) DecodeFlow(ctx context.Context, msg interface{}) error {
 	pkt, ok := msg.(*Message)
 	if !ok {
 		return fmt.Errorf("flow is not *Message")
@@ -255,9 +259,9 @@ func (p *AutoFlowPipe) DecodeFlow(msg interface{}) error {
 
 	protoNetFlow := (proto & 0xFFFF0000) >> 16
 	if proto == 5 {
-		return p.SFlowPipe.DecodeFlow(msg)
+		return p.SFlowPipe.DecodeFlow(ctx, msg)
 	} else if protoNetFlow == 5 || protoNetFlow == 9 || protoNetFlow == 10 {
-		return p.NetFlowPipe.DecodeFlow(msg)
+		return p.NetFlowPipe.DecodeFlow(ctx, msg)
 	}
 	return fmt.Errorf("could not identify protocol %d", proto)
 }

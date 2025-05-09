@@ -1,6 +1,7 @@
 package metrics
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"time"
@@ -12,7 +13,7 @@ import (
 )
 
 func PromDecoderWrapper(wrapped utils.DecoderFunc, name string) utils.DecoderFunc {
-	return func(msg interface{}) error {
+	return func(ctx context.Context, msg interface{}) error {
 		pkt, ok := msg.(*utils.Message)
 		if !ok {
 			return fmt.Errorf("flow is not *Message")
@@ -50,7 +51,7 @@ func PromDecoderWrapper(wrapped utils.DecoderFunc, name string) utils.DecoderFun
 
 		timeTrackStart := time.Now().UTC()
 
-		err := wrapped(msg)
+		err := wrapped(ctx, msg)
 
 		timeTrackStop := time.Now().UTC()
 

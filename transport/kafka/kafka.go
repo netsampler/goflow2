@@ -1,6 +1,8 @@
+// Package kafka pkg/transport/kafka/kafka.go
 package kafka
 
 import (
+	"context"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/pem"
@@ -14,9 +16,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Shopify/sarama"
 	"github.com/netsampler/goflow2/v2/transport"
-
-	sarama "github.com/Shopify/sarama"
 )
 
 type KafkaDriver struct {
@@ -45,7 +46,6 @@ type KafkaDriver struct {
 	errors chan error
 }
 
-// Error specifically for inner Kafka errors
 type KafkaTransportError struct {
 	Err error
 }
@@ -53,6 +53,7 @@ type KafkaTransportError struct {
 func (e *KafkaTransportError) Error() string {
 	return fmt.Sprintf("kafka transport %s", e.Err.Error())
 }
+
 func (e *KafkaTransportError) Unwrap() []error {
 	return []error{transport.ErrTransport, e.Err}
 }
@@ -88,7 +89,7 @@ var (
 	}
 )
 
-func (d *KafkaDriver) Prepare() error {
+func (d *KafkaDriver) Prepare(_ context.Context) error {
 	flag.BoolVar(&d.kafkaTLS, "transport.kafka.tls", false, "Use TLS to connect to Kafka")
 
 	flag.StringVar(&d.kafkaClientCert, "transport.kafka.tls.client", "", "Kafka client certificate")
@@ -120,10 +121,10 @@ func (d *KafkaDriver) Errors() <-chan error {
 	return d.errors
 }
 
-func (d *KafkaDriver) Init() error {
+func (d *KafkaDriver) Init(_ context.Context) error {
 	kafkaConfigVersion, err := sarama.ParseKafkaVersion(d.kafkaVersion)
 	if err != nil {
-		return err
+		return &KafkaTransportError{Err: err}
 	}
 
 	kafkaConfig := sarama.NewConfig()
@@ -136,19 +137,8 @@ func (d *KafkaDriver) Init() error {
 	kafkaConfig.Producer.Partitioner = sarama.NewRoundRobinPartitioner
 
 	if d.kafkaCompressionCodec != "" {
-		/*
-			// when upgrading sarama, replace with:
-			// note: if the library adds more codecs, they will be supported natively
-			var cc *sarama.CompressionCodec
-
-			if err := cc.UnmarshalText([]byte(d.kafkaCompressionCodec)); err != nil {
-				return err
-			}
-			kafkaConfig.Producer.Compression = *cc
-		*/
-
 		if cc, ok := compressionCodecs[strings.ToLower(d.kafkaCompressionCodec)]; !ok {
-			return fmt.Errorf("compression codec does not exist")
+			return &KafkaTransportError{Err: fmt.Errorf("compression codec does not exist")}
 		} else {
 			kafkaConfig.Producer.Compression = cc
 		}
@@ -157,33 +147,32 @@ func (d *KafkaDriver) Init() error {
 	if d.kafkaTLS {
 		rootCAs, err := x509.SystemCertPool()
 		if err != nil {
-			return fmt.Errorf("error initializing TLS: %v", err)
+			return &KafkaTransportError{Err: fmt.Errorf("error initializing TLS: %v", err)}
 		}
 		kafkaConfig.Net.TLS.Enable = true
 		kafkaConfig.Net.TLS.Config = &tls.Config{
 			RootCAs:    rootCAs,
 			MinVersion: tls.VersionTLS12,
 		}
-
 		kafkaConfig.Net.TLS.Config.InsecureSkipVerify = d.kafkaTlsInsecure
 
 		if d.kafkaServerCA != "" {
 			serverCaFile, err := os.Open(d.kafkaServerCA)
 			if err != nil {
-				return fmt.Errorf("error initializing server CA: %v", err)
+				return &KafkaTransportError{Err: fmt.Errorf("error initializing server CA: %v", err)}
 			}
 
 			serverCaBytes, err := io.ReadAll(serverCaFile)
 			serverCaFile.Close()
 			if err != nil {
-				return fmt.Errorf("error reading server CA: %v", err)
+				return &KafkaTransportError{Err: fmt.Errorf("error reading server CA: %v", err)}
 			}
 
 			block, _ := pem.Decode(serverCaBytes)
 
 			serverCa, err := x509.ParseCertificate(block.Bytes)
 			if err != nil {
-				return fmt.Errorf("error parsing server CA: %v", err)
+				return &KafkaTransportError{Err: fmt.Errorf("error parsing server CA: %v", err)}
 			}
 
 			certPool := x509.NewCertPool()
@@ -195,9 +184,8 @@ func (d *KafkaDriver) Init() error {
 		if d.kafkaClientCert != "" && d.kafkaClientKey != "" {
 			_, err := tls.LoadX509KeyPair(d.kafkaClientCert, d.kafkaClientKey)
 			if err != nil {
-				return fmt.Errorf("error initializing mTLS: %v", err)
+				return &KafkaTransportError{Err: fmt.Errorf("error initializing mTLS: %v", err)}
 			}
-
 			kafkaConfig.Net.TLS.Config.GetClientCertificate = func(*tls.CertificateRequestInfo) (*tls.Certificate, error) {
 				cert, err := tls.LoadX509KeyPair(d.kafkaClientCert, d.kafkaClientKey)
 				if err != nil {
@@ -206,7 +194,6 @@ func (d *KafkaDriver) Init() error {
 				return &cert, nil
 			}
 		}
-
 	}
 
 	if d.kafkaHashing {
@@ -217,19 +204,16 @@ func (d *KafkaDriver) Init() error {
 	if d.kafkaSASL != "" && kafkaSASL != KAFKA_SASL_NONE {
 		_, ok := saslAlgorithms[KafkaSASLAlgorithm(strings.ToLower(d.kafkaSASL))]
 		if !ok {
-			return errors.New("SASL algorithm does not exist")
+			return &KafkaTransportError{Err: errors.New("SASL algorithm does not exist")}
 		}
-
 		kafkaConfig.Net.SASL.Enable = true
 		kafkaConfig.Net.SASL.User = os.Getenv("KAFKA_SASL_USER")
 		kafkaConfig.Net.SASL.Password = os.Getenv("KAFKA_SASL_PASS")
 		if kafkaConfig.Net.SASL.User == "" && kafkaConfig.Net.SASL.Password == "" {
-			return fmt.Errorf("Kafka SASL config from environment was unsuccessful. KAFKA_SASL_USER and KAFKA_SASL_PASS need to be set.")
+			return &KafkaTransportError{Err: fmt.Errorf("Kafka SASL config from environment was unsuccessful. KAFKA_SASL_USER and KAFKA_SASL_PASS need to be set")}
 		}
-
 		if kafkaSASL == KAFKA_SASL_SCRAM_SHA256 || kafkaSASL == KAFKA_SASL_SCRAM_SHA512 {
 			kafkaConfig.Net.SASL.Handshake = true
-
 			if kafkaSASL == KAFKA_SASL_SCRAM_SHA512 {
 				kafkaConfig.Net.SASL.SCRAMClientGeneratorFunc = func() sarama.SCRAMClient {
 					return &XDGSCRAMClient{HashGeneratorFcn: SHA512}
@@ -253,7 +237,7 @@ func (d *KafkaDriver) Init() error {
 
 	kafkaProducer, err := sarama.NewAsyncProducer(addrs, kafkaConfig)
 	if err != nil {
-		return err
+		return &KafkaTransportError{Err: err}
 	}
 	d.producer = kafkaProducer
 
@@ -271,7 +255,6 @@ func (d *KafkaDriver) Init() error {
 				case d.errors <- err:
 				default:
 				}
-
 				if msg == nil {
 					return
 				}
@@ -281,33 +264,42 @@ func (d *KafkaDriver) Init() error {
 		}
 	}()
 
-	return err
+	return nil
 }
 
-func (d *KafkaDriver) Send(key, data []byte) error {
-	d.producer.Input() <- &sarama.ProducerMessage{
+func (d *KafkaDriver) Send(ctx context.Context, key, data []byte) error {
+	select {
+	case d.producer.Input() <- &sarama.ProducerMessage{
 		Topic: d.kafkaTopic,
 		Key:   sarama.ByteEncoder(key),
 		Value: sarama.ByteEncoder(data),
+	}:
+		return nil
+	case <-ctx.Done():
+		return &KafkaTransportError{Err: ctx.Err()}
 	}
-	return nil
 }
 
-func (d *KafkaDriver) Close() error {
-	d.producer.Close()
+func (d *KafkaDriver) Close(_ context.Context) error {
+	if err := d.producer.Close(); err != nil {
+		return &KafkaTransportError{Err: err}
+	}
+
 	close(d.q)
+
 	return nil
 }
 
-// todo: deprecate?
 func GetServiceAddresses(srv string) (addrs []string, err error) {
 	_, srvs, err := net.LookupSRV("", "", srv)
 	if err != nil {
 		return nil, fmt.Errorf("service discovery: %v\n", err)
 	}
+
 	for _, srv := range srvs {
 		addrs = append(addrs, net.JoinHostPort(srv.Target, strconv.Itoa(int(srv.Port))))
 	}
+
 	return addrs, nil
 }
 
@@ -315,5 +307,6 @@ func init() {
 	d := &KafkaDriver{
 		errors: make(chan error),
 	}
+
 	transport.RegisterTransportDriver("kafka", d)
 }

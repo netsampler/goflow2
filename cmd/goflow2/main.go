@@ -88,6 +88,9 @@ func main() {
 		os.Exit(0)
 	}
 
+	// setup context
+	ctx := context.Background()
+
 	var loglevel slog.Level
 	if err := loglevel.UnmarshalText([]byte(*LogLevel)); err != nil {
 		log.Fatal("error parsing log level")
@@ -318,7 +321,7 @@ func main() {
 
 		// starts receivers
 		// the function either returns an error
-		if err := recv.Start(hostname, int(port), decodeFunc); err != nil {
+		if err := recv.Start(ctx, hostname, int(port), decodeFunc); err != nil {
 			logger.Error("error starting", slog.String("error", listenAddrUrl.Scheme))
 			os.Exit(1)
 		} else {
@@ -417,22 +420,33 @@ func main() {
 			logger.Error("error stopping receiver", slog.String("error", err.Error()))
 		}
 	}
+
 	// then stop pipe
 	for _, pipe := range pipes {
 		pipe.Close()
 	}
+
 	// close producer
 	flowProducer.Close()
+
 	// close transporter (eg: flushes message to Kafka)
-	transporter.Close()
+	err = transporter.Close(ctx)
+	if err != nil {
+		logger.Error("error closing transporter", slog.String("error", err.Error()))
+
+		return
+	}
 	logger.Info("transporter closed")
+
 	// close http server (prometheus + health check)
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
-	if err := srv.Shutdown(ctx); err != nil {
+	ctxWithTimeout, cancel := context.WithTimeout(ctx, time.Second*5)
+	if err := srv.Shutdown(ctxWithTimeout); err != nil {
 		logger.Error("error shutting-down HTTP server", slog.String("error", err.Error()))
 	}
+
 	cancel()
 	close(q) // close errors
+
 	wg.Wait()
 
 }

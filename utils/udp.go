@@ -1,6 +1,7 @@
 package utils
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"net/netip"
@@ -8,15 +9,15 @@ import (
 	"sync"
 	"time"
 
-	reuseport "github.com/libp2p/go-reuseport"
+	"github.com/libp2p/go-reuseport"
 )
 
 type ReceiverCallback interface {
 	Dropped(msg Message)
 }
 
-// Callback used to decode a UDP message
-type DecoderFunc func(msg interface{}) error
+// DecoderFunc is a callback used to decode a UDP message
+type DecoderFunc func(ctx context.Context, msg interface{}) error
 
 type udpPacket struct {
 	src      *net.UDPAddr
@@ -147,7 +148,13 @@ func (r *UDPReceiver) receive(addr string, port int, started chan bool) error {
 		case <-q: // if routine has exited before
 		case <-r.q: // upon general close
 		}
-		pconn.Close()
+
+		err := pconn.Close()
+		if err != nil {
+			r.logError(&ReceiverError{err})
+
+			return
+		}
 	}()
 	defer close(q)
 
@@ -220,14 +227,15 @@ func (e *ReceiverError) Unwrap() error {
 }
 
 // Start the processing routines
-func (r *UDPReceiver) decoders(workers int, decodeFunc DecoderFunc) error {
+func (r *UDPReceiver) decoders(ctx context.Context, workers int, decodeFunc DecoderFunc) error {
 	for i := 0; i < workers; i++ {
 		r.wg.Add(1)
 		r.decodersCnt += 1
+
 		go func() {
 			defer r.wg.Done()
-			for pkt := range r.dispatch {
 
+			for pkt := range r.dispatch {
 				if pkt == nil {
 					return
 				}
@@ -239,7 +247,7 @@ func (r *UDPReceiver) decoders(workers int, decodeFunc DecoderFunc) error {
 						Received: pkt.received,
 					}
 
-					if err := decodeFunc(&msg); err != nil {
+					if err := decodeFunc(ctx, &msg); err != nil {
 						r.logError(&ReceiverError{err})
 					}
 				}
@@ -284,7 +292,7 @@ func (r *UDPReceiver) receivers(sockets int, addr string, port int) (rErr error)
 }
 
 // Start UDP receivers and the processing routines
-func (r *UDPReceiver) Start(addr string, port int, decodeFunc DecoderFunc) error {
+func (r *UDPReceiver) Start(ctx context.Context, addr string, port int, decodeFunc DecoderFunc) error {
 	select {
 	case <-r.ready:
 		r.ready = make(chan bool)
@@ -292,18 +300,28 @@ func (r *UDPReceiver) Start(addr string, port int, decodeFunc DecoderFunc) error
 		return fmt.Errorf("receiver is already started")
 	}
 
-	if err := r.decoders(r.workers, decodeFunc); err != nil {
-		r.Stop()
+	if err := r.decoders(ctx, r.workers, decodeFunc); err != nil {
+		err := r.Stop()
+		if err != nil {
+			r.logError(&ReceiverError{err})
+
+			return err
+		}
 		return err
 	}
 	if err := r.receivers(r.sockets, addr, port); err != nil {
-		r.Stop()
+		err := r.Stop()
+		if err != nil {
+			r.logError(&ReceiverError{err})
+
+			return err
+		}
 		return err
 	}
 	return nil
 }
 
-// Stops the routines
+// Stop stops the routines.
 func (r *UDPReceiver) Stop() error {
 	select {
 	case <-r.q:
