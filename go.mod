@@ -1,6 +1,6 @@
 module github.com/netsampler/goflow2/v2
 
-go 1.22
+go 1.23
 
 toolchain go1.24.1
 
@@ -11,6 +11,7 @@ require (
 	github.com/prometheus/client_golang v1.22.0
 	github.com/stretchr/testify v1.10.0
 	github.com/xdg-go/scram v1.1.2
+	go.uber.org/mock v0.5.2
 	google.golang.org/protobuf v1.36.6
 	gopkg.in/yaml.v3 v3.0.1
 )
