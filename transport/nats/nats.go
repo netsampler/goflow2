@@ -156,5 +156,5 @@ func (d *Driver) Close(ctx context.Context) error {
 func init() {
 	d := &Driver{}
 
-	transport.RegisterTransportDriver("nats", d)
+	transport.RegisterTransportDriver(context.Background(), "nats", d)
 }
