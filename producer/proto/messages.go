@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"hash"
 	"hash/fnv"
+	"log"
 	"reflect"
 	"strings"
 	"sync"
@@ -52,11 +53,92 @@ func (m *ProtoProducerMessage) AddLayer(name string) (ok bool) {
 
 func (m *ProtoProducerMessage) MarshalBinary() ([]byte, error) {
 	buf := bytes.NewBuffer([]byte{})
+
 	if m.skipDelimiter {
 		b, err := proto.Marshal(m)
+		if err != nil {
+			log.Printf("Marshal error: %v", err)
+			return nil, err
+		}
+
+		// Parse fields to find tag 13
+		offset := 0
+
+		for offset < len(b) {
+			num, wireType, n := protowire.ConsumeTag(b[offset:])
+
+			if n < 0 {
+				log.Printf("Invalid tag at offset %d: %x", offset, b[offset:offset+min(10, len(b)-offset)])
+
+				return b, fmt.Errorf("invalid tag at offset %d", offset)
+			}
+
+			offset += n
+
+			if num == 13 {
+				log.Printf("Found bytes field (tag 13) with WireType %d at offset %d", wireType, offset-n)
+
+				if wireType != protowire.VarintType {
+					log.Printf("Invalid wire type %d for bytes field, expected Varint (0)", wireType)
+					log.Printf("Bytes around tag 13: %x", b[max(0, offset-n-5):min(len(b), offset+10)])
+				}
+			}
+
+			switch wireType {
+			case protowire.VarintType:
+				v, n := protowire.ConsumeVarint(b[offset:])
+				if n < 0 {
+					log.Printf("Invalid varint at offset %d for tag %d: %x", offset, num, b[offset:offset+min(10, len(b)-offset)])
+					break
+				}
+
+				log.Printf("Field %d (Varint): %d", num, v)
+
+				offset += n
+			case protowire.BytesType:
+				v, n := protowire.ConsumeBytes(b[offset:])
+				if n < 0 {
+					log.Printf("Invalid bytes at offset %d for tag %d: %x", offset, num, b[offset:offset+min(10, len(b)-offset)])
+					break
+				}
+
+				log.Printf("Field %d (Bytes): %x", num, v)
+				offset += n
+			case protowire.Fixed32Type:
+				if offset+4 > len(b) {
+					log.Printf("Incomplete fixed32 at offset %d for tag %d: %x", offset, num, b[offset:offset+min(10, len(b)-offset)])
+					break
+				}
+
+				v, n := protowire.ConsumeFixed32(b[offset:])
+				log.Printf("Field %d (Fixed32): %d", num, v)
+
+				offset += n
+			case protowire.Fixed64Type:
+				if offset+8 > len(b) {
+					log.Printf("Incomplete fixed64 at offset %d for tag %d: %x", offset, num, b[offset:offset+min(10, len(b)-offset)])
+					break
+				}
+
+				v, n := protowire.ConsumeFixed64(b[offset:])
+				log.Printf("Field %d (Fixed64): %d", num, v)
+
+				offset += n
+			default:
+				log.Printf("Unknown wire type %d for tag %d at offset %d", wireType, num, offset)
+				remaining := len(b) - offset
+
+				log.Printf("Skipping %d bytes for tag %d: %x", remaining, num, b[offset:offset+remaining])
+				offset += remaining
+			}
+		}
+
+		log.Printf("Serialized bytes (hex): %x", b)
+
 		return b, err
 	} else {
 		_, err := protodelim.MarshalTo(buf, m)
+
 		return buf.Bytes(), err
 	}
 }
@@ -272,6 +354,7 @@ func (m *ProtoProducerMessage) FormatMessageReflectCustom(ext, quotes, sep, sign
 		i++
 
 	}
+
 	fstr = fstr[0:i]
 
 	return strings.Join(fstr, sep)

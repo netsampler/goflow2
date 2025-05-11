@@ -45,6 +45,7 @@ func (p *ProtoProducer) getSamplingRateSystem(args *producer.ProduceArgs) Sampli
 func (p *ProtoProducer) Produce(msg interface{}, args *producer.ProduceArgs) (flowMessageSet []producer.ProducerMessage, err error) {
 	tr := uint64(args.TimeReceived.UnixNano())
 	sa, _ := args.SamplerAddress.Unmap().MarshalBinary()
+
 	switch msgConv := msg.(type) {
 	case *netflowlegacy.PacketNetFlowV5:
 		flowMessageSet, err = ProcessMessageNetFlowLegacy(msgConv)
@@ -52,6 +53,7 @@ func (p *ProtoProducer) Produce(msg interface{}, args *producer.ProduceArgs) (fl
 		p.enrich(flowMessageSet, func(fmsg *ProtoProducerMessage) {
 			fmsg.TimeReceivedNs = tr
 			fmsg.SamplerAddress = sa
+
 		})
 	case *netflow.NFv9Packet:
 		samplingRateSystem := p.getSamplingRateSystem(args)

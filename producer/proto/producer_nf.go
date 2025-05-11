@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
+	"log"
 	"sync"
 	"time"
 
@@ -285,6 +286,18 @@ func ConvertNetFlowDataSet(flowMessage *ProtoProducerMessage, version uint16, ba
 			continue
 		}
 
+		if df.Type == netflow.NFV9_FIELD_IN_BYTES {
+			var b uint64 // bytes
+
+			if err := DecodeUNumber(v, &b); err != nil {
+				log.Printf("Failed to decode b: %v", err)
+
+				return err
+			}
+
+			flowMessage.Bytes = b
+		}
+
 		if err := MapCustomNetFlow(flowMessage, df, mapperNetFlow); err != nil {
 			return err
 		}
@@ -303,6 +316,8 @@ func ConvertNetFlowDataSet(flowMessage *ProtoProducerMessage, version uint16, ba
 		// Statistics
 		case netflow.NFV9_FIELD_IN_BYTES:
 			if err := DecodeUNumber(v, &(flowMessage.Bytes)); err != nil {
+				log.Printf("Failed to decode bytes: %v", err)
+
 				return err
 			}
 		case netflow.NFV9_FIELD_IN_PKTS:
@@ -630,6 +645,7 @@ func ConvertNetFlowDataSet(flowMessage *ProtoProducerMessage, version uint16, ba
 		}
 
 	}
+
 	return nil
 }
 
