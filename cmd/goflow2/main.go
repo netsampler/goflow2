@@ -44,6 +44,7 @@ import (
 	"github.com/netsampler/goflow2/v2/utils"
 	"github.com/netsampler/goflow2/v2/utils/debug"
 
+	"github.com/mfreeman451/goflow2/transport/nats"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"gopkg.in/yaml.v3"
 )
