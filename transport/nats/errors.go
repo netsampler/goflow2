@@ -4,7 +4,7 @@ package nats
 import (
 	"fmt"
 
-	"github.com/netsampler/goflow2/v2/transport"
+	"github.com/mfreeman451/goflow2/v2/transport"
 )
 
 type TransportError struct {

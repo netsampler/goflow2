@@ -10,7 +10,7 @@ import (
 
 	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
-	"github.com/netsampler/goflow2/v2/transport"
+	"github.com/mfreeman451/goflow2/v2/transport"
 )
 
 // Driver implements the GoFlow2 transport interface for NATS JetStream.
