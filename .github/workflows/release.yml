@@ -36,6 +36,8 @@ jobs:
         make package-deb package-rpm
         ARCH=arm64 GOARCH=arm64 GOOS=linux make build
         ARCH=arm64 make package-deb package-rpm
+        GOARCH=arm GOARM=7 GOOS=linux make build
+        GOARCH=arm GOARM=7 GOOS=linux make package-deb package-rpm
 
     - name: Create Release
       id: create_release
