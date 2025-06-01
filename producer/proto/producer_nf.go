@@ -263,6 +263,14 @@ func addrReplaceCheck(dstAddr *[]byte, v []byte, eType *uint32, ipv6 bool) {
 	}
 }
 
+func ConvertNTPEpoch(ntpTime uint64) uint64 {
+	seconds := ntpTime >> 32
+	seconds -= 2208988800
+
+	fraction := float64(ntpTime&0xffffffff) * 1.0e9 / (1 << 32)
+	return seconds*1e9 + uint64(fraction)
+}
+
 func ConvertNetFlowDataSet(flowMessage *ProtoProducerMessage, version uint16, baseTime uint32, uptime uint32, record []netflow.DataField, mapperNetFlow TemplateMapper, mapperSFlow PacketMapper) error {
 	var time uint64
 	baseTimeNs := uint64(baseTime) * 1000000000
@@ -575,12 +583,12 @@ func ConvertNetFlowDataSet(flowMessage *ProtoProducerMessage, version uint16, ba
 					if err := DecodeUNumber(v, &time); err != nil {
 						return err
 					}
-					flowMessage.TimeFlowStartNs = time * 1000
+					flowMessage.TimeFlowStartNs = ConvertNTPEpoch(time)
 				case netflow.IPFIX_FIELD_flowStartNanoseconds:
 					if err := DecodeUNumber(v, &time); err != nil {
 						return err
 					}
-					flowMessage.TimeFlowStartNs = time
+					flowMessage.TimeFlowStartNs = ConvertNTPEpoch(time)
 				case netflow.IPFIX_FIELD_flowEndSeconds:
 					if err := DecodeUNumber(v, &time); err != nil {
 						return err
@@ -595,12 +603,12 @@ func ConvertNetFlowDataSet(flowMessage *ProtoProducerMessage, version uint16, ba
 					if err := DecodeUNumber(v, &time); err != nil {
 						return err
 					}
-					flowMessage.TimeFlowEndNs = time * 1000
+					flowMessage.TimeFlowEndNs = ConvertNTPEpoch(time)
 				case netflow.IPFIX_FIELD_flowEndNanoseconds:
 					if err := DecodeUNumber(v, &time); err != nil {
 						return err
 					}
-					flowMessage.TimeFlowEndNs = time
+					flowMessage.TimeFlowEndNs = ConvertNTPEpoch(time)
 				case netflow.IPFIX_FIELD_flowStartDeltaMicroseconds:
 					if err := DecodeUNumber(v, &time); err != nil {
 						return err
