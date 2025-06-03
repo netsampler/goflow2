@@ -20,22 +20,30 @@ jobs:
       uses: actions/checkout@v1
       with:
         fetch-depth: 0
-                
+        
+    - name: Build
+      run: |
+        export VERSION=$(git describe --tags --abbrev=0 HEAD)
+        GOOS=linux   ARCH=x86_64  GOARCH=amd64 make build
+        GOOS=linux   ARCH=arm64   GOARCH=arm64 make build
+        GOOS=linux   ARCH=arm     GOARCH=arm GOARM=7 make build
+        GOOS=darwin  ARCH=x86_64  GOARCH=amd64 make build
+        GOOS=darwin  ARCH=arm64   GOARCH=arm64 make build
+        GOOS=windows ARCH=x86_64  GOARCH=amd64 EXTENSION=.exe make build
+        GOOS=windows ARCH=arm64   GOARCH=arm64 EXTENSION=.exe make build
+
     - name: Install fpm
       run: |
         sudo apt-get update
         sudo apt-get install -y rpm ruby ruby-dev
         sudo gem install fpm
         
-    - name: Build
+    - name: Package
       run: |
         export VERSION=$(git describe --tags --abbrev=0 HEAD)
-        GOOS=linux make build
-        GOOS=darwin make build
-        GOOS=windows EXTENSION=.exe make build
-        make package-deb package-rpm
-        ARCH=arm64 GOARCH=arm64 GOOS=linux make build
-        ARCH=arm64 make package-deb package-rpm
+        GOOS=linux ARCH=x86_64 GOARCH=amd64 make package-deb package-rpm
+        GOOS=linux ARCH=arm64  GOARCH=arm64 make package-deb package-rpm
+        GOOS=linux ARCH=arm    GOARCH=arm   make package-deb package-rpm
 
     - name: Create Release
       id: create_release
