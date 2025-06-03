@@ -33,10 +33,13 @@ jobs:
       
     - name: Build
       run: |
-        GOOS=linux make build
-        GOOS=darwin make build
-        GOOS=windows EXTENSION=.exe make build
-        ARCH=arm64 GOARCH=arm64 GOOS=linux make build
+        GOOS=linux   ARCH=x86_64  GOARCH=amd64 make build
+        GOOS=linux   ARCH=arm64   GOARCH=arm64 make build
+        GOOS=linux   ARCH=arm     GOARCH=arm GOARM=7 make build
+        GOOS=darwin  ARCH=x86_64  GOARCH=amd64 make build
+        GOOS=darwin  ARCH=arm64   GOARCH=arm64 make build
+        GOOS=windows ARCH=x86_64  GOARCH=amd64 EXTENSION=.exe make build
+        GOOS=windows ARCH=arm64   GOARCH=arm64 EXTENSION=.exe make build
           
     - name: Install fpm
       run: |

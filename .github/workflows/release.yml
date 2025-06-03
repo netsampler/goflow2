@@ -30,14 +30,16 @@ jobs:
     - name: Build
       run: |
         export VERSION=$(git describe --tags --abbrev=0 HEAD)
-        GOOS=linux make build
-        GOOS=darwin make build
-        GOOS=windows EXTENSION=.exe make build
-        make package-deb package-rpm
-        ARCH=arm64 GOARCH=arm64 GOOS=linux make build
-        ARCH=arm64 make package-deb package-rpm
-        ARCH=arm GOARCH=arm GOARM=7 GOOS=linux make build
-        ARCH=arm GOARCH=arm GOARM=7 GOOS=linux make package-deb package-rpm
+        GOOS=linux   ARCH=x86_64  GOARCH=amd64 make build
+        GOOS=linux   ARCH=x86_64  GOARCH=amd64 make package-deb package-rpm
+        GOOS=linux   ARCH=arm64   GOARCH=arm64 make build
+        GOOS=linux   ARCH=arm64   GOARCH=arm64 make package-deb package-rpm
+        GOOS=linux   ARCH=arm     GOARCH=arm GOARM=7 make build
+        GOOS=linux   ARCH=arm     GOARCH=arm GOARM=7 make package-deb package-rpm
+        GOOS=darwin  ARCH=x86_64  GOARCH=amd64 make build
+        GOOS=darwin  ARCH=arm64   GOARCH=arm64 make build
+        GOOS=windows ARCH=x86_64  GOARCH=amd64 EXTENSION=.exe make build
+        GOOS=windows ARCH=arm64   GOARCH=arm64 EXTENSION=.exe make build
 
     - name: Create Release
       id: create_release
