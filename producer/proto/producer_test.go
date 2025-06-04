@@ -241,3 +241,8 @@ func TestNetFlowV9Time(t *testing.T) {
 	assert.Nil(t, err)
 	assert.Equal(t, uint64(1704067199)*1e9, flowMessage.TimeFlowStartNs)
 }
+
+func TestConvertNTPEpoch(t *testing.T) {
+	e := ConvertNTPEpoch(0xebe50e38c50cc000)
+	assert.Equal(t, uint64(1748668344769725799), e)
+}
