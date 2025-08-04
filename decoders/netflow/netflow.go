@@ -224,8 +224,15 @@ func DecodeDataSetUsingFields(version uint16, payload *bytes.Buffer, listFields 
 					finalLength = int(variableLen8)
 				}
 			}
+			var value any
+			valueBytes := payload.Next(finalLength)
 
-			value := payload.Next(finalLength)
+			if templateField.Type == IPFIX_FIELD_VRFname {
+				value = string(valueBytes)
+			} else {
+				value = valueBytes
+			}
+
 			nfvalue := DataField{
 				Type:        templateField.Type,
 				PenProvided: templateField.PenProvided,
