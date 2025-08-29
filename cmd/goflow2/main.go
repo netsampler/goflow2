@@ -199,7 +199,7 @@ func main() {
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
 
-	var receivers []*utils.UDPReceiver
+	var receivers []utils.Receiver
 	var pipes []utils.FlowPipe
 
 	q := make(chan bool)
@@ -255,17 +255,8 @@ func main() {
 			queueSize = 1000000
 		}
 
-		hostname := listenAddrUrl.Hostname()
-		port, err := strconv.ParseUint(listenAddrUrl.Port(), 10, 64)
-		if err != nil {
-			slog.Error("port could not be converted to integer", slog.String("port", listenAddrUrl.Port()))
-			os.Exit(1)
-		}
-
 		logAttr := []any{
 			slog.String("scheme", listenAddrUrl.Scheme),
-			slog.String("hostname", hostname),
-			slog.Int64("port", int64(port)),
 			slog.Int("count", numSockets),
 			slog.Int64("workers", int64(numWorkers)),
 			slog.Bool("blocking", isBlocking),
@@ -281,7 +272,12 @@ func main() {
 			Blocking:         isBlocking,
 			ReceiverCallback: metrics.NewReceiverMetric(),
 		}
-		recv, err := utils.NewUDPReceiver(cfg)
+		var recv utils.Receiver
+		if listenAddrUrl.Port() == "" {
+			recv, err = utils.NewPcapReceiver(cfg)
+		} else {
+			recv, err = utils.NewUDPReceiver(cfg)
+		}
 		if err != nil {
 			logger.Error("error creating UDP receiver", slog.String("error", err.Error()))
 			os.Exit(1)
@@ -318,7 +314,7 @@ func main() {
 
 		// starts receivers
 		// the function either returns an error
-		if err := recv.Start(hostname, int(port), decodeFunc); err != nil {
+		if err := recv.Start(listenAddrUrl.Hostname(), decodeFunc); err != nil {
 			logger.Error("error starting", slog.String("error", listenAddrUrl.Scheme))
 			os.Exit(1)
 		} else {

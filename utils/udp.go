@@ -1,9 +1,11 @@
 package utils
 
 import (
+	"errors"
 	"fmt"
 	"net"
 	"net/netip"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -40,6 +42,14 @@ var packetPool = sync.Pool{
 		}
 	},
 }
+
+type Receiver interface {
+	Start(receiverArg string, decodeFunc DecoderFunc) error
+	Stop() error
+	Errors() <-chan error
+}
+
+var _ Receiver = (*UDPReceiver)(nil)
 
 type UDPReceiver struct {
 	ready    chan bool
@@ -283,8 +293,20 @@ func (r *UDPReceiver) receivers(sockets int, addr string, port int) (rErr error)
 	return rErr
 }
 
+func extractAddrPort(input string) (string, int, error) {
+	host, portStr, err := net.SplitHostPort(input)
+	if err != nil {
+		return "", 0, err
+	}
+	port, err := strconv.Atoi(portStr)
+	if err != nil {
+		return "", 0, errors.New("Error converting port")
+	}
+	return host, port, nil
+}
+
 // Start UDP receivers and the processing routines
-func (r *UDPReceiver) Start(addr string, port int, decodeFunc DecoderFunc) error {
+func (r *UDPReceiver) Start(addrport string, decodeFunc DecoderFunc) error {
 	select {
 	case <-r.ready:
 		r.ready = make(chan bool)
@@ -294,6 +316,11 @@ func (r *UDPReceiver) Start(addr string, port int, decodeFunc DecoderFunc) error
 
 	if err := r.decoders(r.workers, decodeFunc); err != nil {
 		r.Stop()
+		return err
+	}
+
+	addr, port, err := extractAddrPort(addrport)
+	if err != nil {
 		return err
 	}
 	if err := r.receivers(r.sockets, addr, port); err != nil {

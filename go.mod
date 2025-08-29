@@ -1,11 +1,12 @@
 module github.com/netsampler/goflow2/v2
 
-go 1.21
+go 1.23.0
 
-toolchain go1.21.0
+toolchain go1.24.3
 
 require (
 	github.com/Shopify/sarama v1.38.1
+	github.com/gopacket/gopacket v1.4.0
 	github.com/libp2p/go-reuseport v0.4.0
 	github.com/oschwald/geoip2-golang v1.11.0
 	github.com/prometheus/client_golang v1.21.1
@@ -43,8 +44,8 @@ require (
 	github.com/rcrowley/go-metrics v0.0.0-20201227073835-cf1acfcdf475 // indirect
 	github.com/xdg-go/pbkdf2 v1.0.0 // indirect
 	github.com/xdg-go/stringprep v1.0.4 // indirect
-	golang.org/x/crypto v0.31.0 // indirect
-	golang.org/x/net v0.33.0 // indirect
-	golang.org/x/sys v0.28.0 // indirect
-	golang.org/x/text v0.21.0 // indirect
+	golang.org/x/crypto v0.37.0 // indirect
+	golang.org/x/net v0.39.0 // indirect
+	golang.org/x/sys v0.32.0 // indirect
+	golang.org/x/text v0.24.0 // indirect
 )
