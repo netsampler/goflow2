@@ -9,7 +9,7 @@ require (
 	github.com/libp2p/go-reuseport v0.4.0
 	github.com/oschwald/geoip2-golang v1.13.0
 	github.com/prometheus/client_golang v1.23.0
-	github.com/stretchr/testify v1.11.0
+	github.com/stretchr/testify v1.11.1
 	github.com/xdg-go/scram v1.1.2
 	google.golang.org/protobuf v1.36.8
 	gopkg.in/yaml.v3 v3.0.1
