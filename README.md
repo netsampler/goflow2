@@ -240,6 +240,11 @@ There are assumptions on how many records and list items a sample can have (eg: 
 ## User stories
 
 Are you using GoFlow2 in production at scale? Add yourself here!
+### [KaSaNaa](https://github.com/KaSaNaa)
+<img src="https://github.com/KaSaNaa.png" height=50 width=50/> 
+
+- We run a large distributed network where visibility into traffic patterns is critical. Traditional NetFlow collectors struggled to keep up with the volume and lacked flexibility in exporting the data to modern analytics pipelines. We adopted GoFlow2 as our flow collector because it integrates natively with Kafka and outputs flows in JSON, making it easy to feed into ClickHouse for high-performance analytics.
+- At peak, our infrastructure ingests millions of flow records per second across multiple data centers. GoFlow2’s lightweight design and parallel worker model allow us to scale horizontally with little overhead. We configured multiple Kafka partitions to match GoFlow2 workers, ensuring balanced throughput without bottlenecks.
 
 ### Contributions
 
