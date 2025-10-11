@@ -3,6 +3,7 @@ package utils
 import (
 	"bytes"
 	"fmt"
+	"maps"
 	"sync"
 
 	"github.com/netsampler/goflow2/v2/decoders/netflow"
@@ -221,6 +222,23 @@ func (p *NetFlowPipe) DecodeFlow(msg interface{}) error {
 }
 
 func (p *NetFlowPipe) Close() {
+}
+
+// Return a copy of the template set for all known netflow sources. Useful for exporting the
+// templates via an HTTP endpoint
+func (p *NetFlowPipe) GetTemplatesForAllSources() map[string]map[uint64]interface{} {
+	p.templateslock.RLock()
+	defer p.templateslock.RUnlock()
+
+	ret := make(map[string]map[uint64]interface{})
+	for k, v := range p.templates {
+		templateRef := v.GetTemplates()
+		var templateCopy = make(netflow.FlowBaseTemplateSet)
+		maps.Copy(templateCopy, templateRef)
+		ret[k] = templateCopy
+	}
+
+	return ret
 }
 
 type AutoFlowPipe struct {
