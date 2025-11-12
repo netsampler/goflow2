@@ -1,7 +1,7 @@
 version: "3"
 services:
   kafka:
-    image: bitnami/kafka:3.9.0
+    image: soldevelo/kafka:3.9.0
     ports:
       - 9092:9092
     environment:
