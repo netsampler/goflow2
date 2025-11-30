@@ -163,7 +163,7 @@ For instance, to create 4 parallel sockets of sFlow and one of NetFlow, you can 
 $ ./goflow2 -listen 'sflow://:6343?count=4,netflow://:2055'
 ```
 
-More information about workers and resource usage is avaialble on the [Performance page](/docs/performance.md).
+More information about workers and resource usage is available on the [Performance page](/docs/performance.md).
 
 ### Docker
 
