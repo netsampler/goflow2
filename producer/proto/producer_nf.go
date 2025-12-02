@@ -1,14 +1,11 @@
 package protoproducer
 
 import (
-	"bytes"
 	"encoding/binary"
 	"fmt"
 	"sync"
-	"time"
 
 	"github.com/netsampler/goflow2/v2/decoders/netflow"
-	"github.com/netsampler/goflow2/v2/decoders/utils"
 	flowmessage "github.com/netsampler/goflow2/v2/pb"
 	"github.com/netsampler/goflow2/v2/producer"
 )
@@ -67,41 +64,6 @@ func (s *SingleSamplingRateSystem) AddSamplingRate(version uint16, obsDomainId u
 
 func (s *SingleSamplingRateSystem) GetSamplingRate(version uint16, obsDomainId uint32) (uint32, error) {
 	return s.Sampling, nil
-}
-
-func NetFlowLookFor(dataFields []netflow.DataField, typeId uint16) (bool, interface{}) {
-	for _, dataField := range dataFields {
-		if dataField.Type == typeId {
-			return true, dataField.Value
-		}
-	}
-	return false, nil
-}
-
-func NetFlowPopulate(dataFields []netflow.DataField, typeId uint16, addr interface{}) (bool, error) {
-	exists, value := NetFlowLookFor(dataFields, typeId)
-	if exists && value != nil {
-		valueBytes, ok := value.([]byte)
-		valueReader := bytes.NewBuffer(valueBytes)
-		if ok {
-			switch addrt := addr.(type) {
-			//case *(net.IP):
-			//	*addrt = valueBytes
-			case *(time.Time):
-				t := uint64(0)
-				if err := utils.BinaryRead(valueReader, binary.BigEndian, &t); err != nil {
-					return false, err
-				}
-				t64 := int64(t / 1000)
-				*addrt = time.Unix(t64, 0)
-			default:
-				if err := utils.BinaryRead(valueReader, binary.BigEndian, addr); err != nil {
-					return false, err
-				}
-			}
-		}
-	}
-	return exists, nil
 }
 
 func WriteUDecoded(o uint64, out interface{}) error {
@@ -671,18 +633,13 @@ func SearchNetFlowDataSets(version uint16, baseTime uint32, uptime uint32, dataF
 func SearchNetFlowOptionDataSets(dataFlowSet []netflow.OptionsDataFlowSet) (samplingRate uint32, found bool, err error) {
 	for _, dataFlowSetItem := range dataFlowSet {
 		for _, record := range dataFlowSetItem.Records {
-			if found, err := NetFlowPopulate(record.OptionsValues, 305, &samplingRate); err != nil || found {
-				return samplingRate, found, err
-			}
-			if found, err := NetFlowPopulate(record.OptionsValues, 50, &samplingRate); err != nil || found {
-				return samplingRate, found, err
-			}
-			if found, err := NetFlowPopulate(record.OptionsValues, 34, &samplingRate); err != nil || found {
-				return samplingRate, found, err
+			samplingOptions, err := SamplingFromOptions(record)
+			if err == nil {
+				return samplingOptions.SamplingRate(), true, nil
 			}
 		}
 	}
-	return samplingRate, found, err
+	return 0, false, nil
 }
 
 func SplitNetFlowSets(packetNFv9 netflow.NFv9Packet) ([]netflow.DataFlowSet, []netflow.TemplateFlowSet, []netflow.NFv9OptionsTemplateFlowSet, []netflow.OptionsDataFlowSet) {
