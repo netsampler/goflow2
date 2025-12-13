@@ -50,11 +50,12 @@ func BinaryRead(payload BytesBuffer, order binary.ByteOrder, data any) error {
 			*data = order.Uint64(bs)
 		case *string:
 			strlen := int(order.Uint32(bs))
-			buf := payload.Next(strlen)
+			paddedlen := (strlen + 3) &^ 3 // Pad to 4-byte boundary
+			buf := payload.Next(paddedlen)
 			if len(buf) < strlen {
 				return io.ErrUnexpectedEOF
 			}
-			*data = string(buf)
+			*data = string(buf[:strlen])
 		case []bool:
 			for i, x := range bs { // Easier to loop over the input for 8-bit values.
 				data[i] = x != 0
