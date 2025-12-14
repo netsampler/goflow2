@@ -16,9 +16,10 @@ datasources:
    password: ''
    user: ''
    database: ''
-   basicAuth: false
-   basicAuthUser: ''
-   basicAuthPassword: ''
+   basicAuth: true
+   basicAuthUser: 'default'
+   secureJsonData:
+     basicAuthPassword: 'flow'
    withCredentials: false
    isDefault: true
    secureJsonFields: {}
