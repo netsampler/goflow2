@@ -299,7 +299,6 @@ func (d *KafkaDriver) Close() error {
 	return nil
 }
 
-// todo: deprecate?
 func GetServiceAddresses(srv string) (addrs []string, err error) {
 	_, srvs, err := net.LookupSRV("", "", srv)
 	if err != nil {
