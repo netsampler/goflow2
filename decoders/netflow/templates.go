@@ -2,6 +2,7 @@ package netflow
 
 import (
 	"fmt"
+	"maps"
 	"sync"
 )
 
@@ -20,11 +21,13 @@ type NetFlowTemplateSystem interface {
 	RemoveTemplate(version uint16, obsDomainId uint32, templateId uint16) (interface{}, error)
 	GetTemplate(version uint16, obsDomainId uint32, templateId uint16) (interface{}, error)
 	AddTemplate(version uint16, obsDomainId uint32, templateId uint16, template interface{}) error
+	GetTemplates() FlowBaseTemplateSet
 }
 
 func (ts *BasicTemplateSystem) GetTemplates() FlowBaseTemplateSet {
 	ts.templateslock.RLock()
-	tmp := ts.templates
+	tmp := make(FlowBaseTemplateSet)
+	maps.Copy(tmp, ts.templates)
 	ts.templateslock.RUnlock()
 	return tmp
 }

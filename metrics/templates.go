@@ -70,3 +70,7 @@ func (s *PromTemplateSystem) RemoveTemplate(version uint16, obsDomainId uint32, 
 
 	return template, err
 }
+
+func (s *PromTemplateSystem) GetTemplates() netflow.FlowBaseTemplateSet {
+	return s.wrapped.GetTemplates()
+}

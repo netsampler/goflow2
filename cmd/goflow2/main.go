@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -305,6 +306,26 @@ func main() {
 		} else {
 			logger.Error("scheme does not exist", slog.String("error", listenAddrUrl.Scheme))
 			os.Exit(1)
+		}
+
+		// Add optional HTTP handler for templates
+		if nfP, ok := p.(*utils.NetFlowPipe); ok && *TemplatePath != "" {
+			http.HandleFunc(*TemplatePath, func(wr http.ResponseWriter, r *http.Request) {
+				templates := nfP.GetTemplatesForAllSources()
+				if body, err := json.MarshalIndent(templates, "", "  "); err != nil {
+					slog.Error("error writing JSON body for /templates", slog.String("error", err.Error()))
+					wr.WriteHeader(http.StatusInternalServerError)
+					if _, err := wr.Write([]byte("Internal Server Error\n")); err != nil {
+						slog.Error("error writing HTTP", slog.String("error", err.Error()))
+					}
+				} else {
+					wr.Header().Add("Content-Type", "application/json")
+					wr.WriteHeader(http.StatusOK)
+					if _, err := wr.Write(body); err != nil {
+						slog.Error("error writing HTTP", slog.String("error", err.Error()))
+					}
+				}
+			})
 		}
 
 		decodeFunc = p.DecodeFlow

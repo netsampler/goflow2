@@ -223,6 +223,20 @@ func (p *NetFlowPipe) DecodeFlow(msg interface{}) error {
 func (p *NetFlowPipe) Close() {
 }
 
+// Return a copy of the template set for all known netflow sources. Useful for exporting the
+// templates via an HTTP endpoint
+func (p *NetFlowPipe) GetTemplatesForAllSources() map[string]map[uint64]interface{} {
+	p.templateslock.RLock()
+	defer p.templateslock.RUnlock()
+
+	ret := make(map[string]map[uint64]interface{})
+	for k, v := range p.templates {
+		ret[k] = v.GetTemplates()
+	}
+
+	return ret
+}
+
 type AutoFlowPipe struct {
 	*SFlowPipe
 	*NetFlowPipe
