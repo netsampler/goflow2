@@ -46,6 +46,9 @@ type RecordsNetFlowV5 struct {
 type IPAddress uint32
 
 // MarshalJSON formats the IPv4 address as a JSON string.
+func IPAddressToUint32(addr IPAddress) uint32 {
+	return uint32(addr)
+}
 func (s *IPAddress) MarshalJSON() ([]byte, error) {
 	return []byte(fmt.Sprintf("\"%d.%d.%d.%d\"", *s>>24, (*s>>16)&0xFF, (*s>>8)&0xFF, *s&0xFF)), nil
 }
