@@ -3,7 +3,6 @@ package utils
 import (
 	"bytes"
 	"fmt"
-	"maps"
 	"sync"
 
 	"github.com/netsampler/goflow2/v2/decoders/netflow"
@@ -232,10 +231,7 @@ func (p *NetFlowPipe) GetTemplatesForAllSources() map[string]map[uint64]interfac
 
 	ret := make(map[string]map[uint64]interface{})
 	for k, v := range p.templates {
-		templateRef := v.GetTemplates()
-		var templateCopy = make(netflow.FlowBaseTemplateSet)
-		maps.Copy(templateCopy, templateRef)
-		ret[k] = templateCopy
+		ret[k] = v.GetTemplates()
 	}
 
 	return ret

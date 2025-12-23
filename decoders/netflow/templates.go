@@ -2,6 +2,7 @@ package netflow
 
 import (
 	"fmt"
+	"maps"
 	"sync"
 )
 
@@ -25,7 +26,8 @@ type NetFlowTemplateSystem interface {
 
 func (ts *BasicTemplateSystem) GetTemplates() FlowBaseTemplateSet {
 	ts.templateslock.RLock()
-	tmp := ts.templates
+	tmp := make(FlowBaseTemplateSet)
+	maps.Copy(tmp, ts.templates)
 	ts.templateslock.RUnlock()
 	return tmp
 }
