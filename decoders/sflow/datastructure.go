@@ -80,6 +80,17 @@ type ExtendedFunction struct {
 	Symbol string `json:"symbol"`
 }
 
+// Host sFlow extension: Devlink Trap name
+type ExtendedHwTrap struct {
+	Group string `json:"group"`
+	Trap  string `json:"trap"`
+}
+
+// Host sFlow extension: Linux drop_monitor reason
+type ExtendedLinuxDropReason struct {
+	Reason string `json:"reason"`
+}
+
 type IfCounters struct {
 	IfIndex            uint32 `json:"if-index"`
 	IfType             uint32 `json:"if-type"`

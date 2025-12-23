@@ -36,9 +36,11 @@ const (
 	FLOW_TYPE_EXT_VLAN_TUNNEL  = 1012
 
 	// According to https://sflow.org/sflow_drops.txt
-	FLOW_TYPE_EGRESS_QUEUE = 1036
-	FLOW_TYPE_EXT_ACL      = 1037
-	FLOW_TYPE_EXT_FUNCTION = 1038
+	FLOW_TYPE_EGRESS_QUEUE          = 1036
+	FLOW_TYPE_EXT_ACL               = 1037
+	FLOW_TYPE_EXT_FUNCTION          = 1038
+	FLOW_TYPE_EXT_HW_TRAP           = 1041
+	FLOW_TYPE_EXT_LINUX_DROP_REASON = 1042
 )
 
 // Opaque counter_data types according to https://sflow.org/SFLOW-STRUCTS5.txt
@@ -343,6 +345,18 @@ func DecodeFlowRecord(header *RecordHeader, payload *bytes.Buffer) (FlowRecord, 
 			return flowRecord, &RecordError{header.DataFormat, err}
 		}
 		flowRecord.Data = function
+	case FLOW_TYPE_EXT_HW_TRAP:
+		var hwTrap ExtendedHwTrap
+		if err := utils.BinaryDecoder(payload, &hwTrap.Group, &hwTrap.Trap); err != nil {
+			return flowRecord, &RecordError{header.DataFormat, err}
+		}
+		flowRecord.Data = hwTrap
+	case FLOW_TYPE_EXT_LINUX_DROP_REASON:
+		var linuxDrop ExtendedLinuxDropReason
+		if err := utils.BinaryDecoder(payload, &linuxDrop.Reason); err != nil {
+			return flowRecord, &RecordError{header.DataFormat, err}
+		}
+		flowRecord.Data = linuxDrop
 	default:
 		var rawRecord RawRecord
 		rawRecord.Data = payload.Bytes()
