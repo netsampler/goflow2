@@ -2,9 +2,10 @@ package netflowlegacy
 
 import (
 	"bytes"
-	"encoding/binary"
 	"errors"
 	"fmt"
+
+	"github.com/netsampler/goflow2/v2/decoders/utils"
 )
 
 const (
@@ -40,115 +41,93 @@ func EncodeMessage(packet *PacketNetFlowV5) ([]byte, error) {
 	totalLen := netflowV5HeaderLen + (netflowV5RecordLen * len(packet.Records))
 	buf := bytes.NewBuffer(make([]byte, 0, totalLen))
 
-	var b [4]byte
-	binary.BigEndian.PutUint16(b[:2], version)
-	if _, err := buf.Write(b[:2]); err != nil {
+	if err := utils.WriteU16(buf, version); err != nil {
 		return nil, err
 	}
-	binary.BigEndian.PutUint16(b[:2], count)
-	if _, err := buf.Write(b[:2]); err != nil {
+	if err := utils.WriteU16(buf, count); err != nil {
 		return nil, err
 	}
-	binary.BigEndian.PutUint32(b[:4], packet.SysUptime)
-	if _, err := buf.Write(b[:4]); err != nil {
+	if err := utils.WriteU32(buf, packet.SysUptime); err != nil {
 		return nil, err
 	}
-	binary.BigEndian.PutUint32(b[:4], packet.UnixSecs)
-	if _, err := buf.Write(b[:4]); err != nil {
+	if err := utils.WriteU32(buf, packet.UnixSecs); err != nil {
 		return nil, err
 	}
-	binary.BigEndian.PutUint32(b[:4], packet.UnixNSecs)
-	if _, err := buf.Write(b[:4]); err != nil {
+	if err := utils.WriteU32(buf, packet.UnixNSecs); err != nil {
 		return nil, err
 	}
-	binary.BigEndian.PutUint32(b[:4], packet.FlowSequence)
-	if _, err := buf.Write(b[:4]); err != nil {
+	if err := utils.WriteU32(buf, packet.FlowSequence); err != nil {
 		return nil, err
 	}
-	if err := buf.WriteByte(packet.EngineType); err != nil {
+	if err := utils.WriteU8(buf, packet.EngineType); err != nil {
 		return nil, err
 	}
-	if err := buf.WriteByte(packet.EngineId); err != nil {
+	if err := utils.WriteU8(buf, packet.EngineId); err != nil {
 		return nil, err
 	}
-	binary.BigEndian.PutUint16(b[:2], packet.SamplingInterval)
-	if _, err := buf.Write(b[:2]); err != nil {
+	if err := utils.WriteU16(buf, packet.SamplingInterval); err != nil {
 		return nil, err
 	}
 
 	for _, record := range packet.Records {
-		binary.BigEndian.PutUint32(b[:4], uint32(record.SrcAddr))
-		if _, err := buf.Write(b[:4]); err != nil {
+		if err := utils.WriteU32(buf, uint32(record.SrcAddr)); err != nil {
 			return nil, err
 		}
-		binary.BigEndian.PutUint32(b[:4], uint32(record.DstAddr))
-		if _, err := buf.Write(b[:4]); err != nil {
+		if err := utils.WriteU32(buf, uint32(record.DstAddr)); err != nil {
 			return nil, err
 		}
-		binary.BigEndian.PutUint32(b[:4], uint32(record.NextHop))
-		if _, err := buf.Write(b[:4]); err != nil {
+		if err := utils.WriteU32(buf, uint32(record.NextHop)); err != nil {
 			return nil, err
 		}
-		binary.BigEndian.PutUint16(b[:2], record.Input)
-		if _, err := buf.Write(b[:2]); err != nil {
+		if err := utils.WriteU16(buf, record.Input); err != nil {
 			return nil, err
 		}
-		binary.BigEndian.PutUint16(b[:2], record.Output)
-		if _, err := buf.Write(b[:2]); err != nil {
+		if err := utils.WriteU16(buf, record.Output); err != nil {
 			return nil, err
 		}
-		binary.BigEndian.PutUint32(b[:4], record.DPkts)
-		if _, err := buf.Write(b[:4]); err != nil {
+		if err := utils.WriteU32(buf, record.DPkts); err != nil {
 			return nil, err
 		}
-		binary.BigEndian.PutUint32(b[:4], record.DOctets)
-		if _, err := buf.Write(b[:4]); err != nil {
+		if err := utils.WriteU32(buf, record.DOctets); err != nil {
 			return nil, err
 		}
-		binary.BigEndian.PutUint32(b[:4], record.First)
-		if _, err := buf.Write(b[:4]); err != nil {
+		if err := utils.WriteU32(buf, record.First); err != nil {
 			return nil, err
 		}
-		binary.BigEndian.PutUint32(b[:4], record.Last)
-		if _, err := buf.Write(b[:4]); err != nil {
+		if err := utils.WriteU32(buf, record.Last); err != nil {
 			return nil, err
 		}
-		binary.BigEndian.PutUint16(b[:2], record.SrcPort)
-		if _, err := buf.Write(b[:2]); err != nil {
+		if err := utils.WriteU16(buf, record.SrcPort); err != nil {
 			return nil, err
 		}
-		binary.BigEndian.PutUint16(b[:2], record.DstPort)
-		if _, err := buf.Write(b[:2]); err != nil {
+		if err := utils.WriteU16(buf, record.DstPort); err != nil {
 			return nil, err
 		}
-		if err := buf.WriteByte(record.Pad1); err != nil {
+		if err := utils.WriteU8(buf, record.Pad1); err != nil {
 			return nil, err
 		}
-		if err := buf.WriteByte(record.TCPFlags); err != nil {
+		if err := utils.WriteU8(buf, record.TCPFlags); err != nil {
 			return nil, err
 		}
-		if err := buf.WriteByte(record.Proto); err != nil {
+		if err := utils.WriteU8(buf, record.Proto); err != nil {
 			return nil, err
 		}
-		if err := buf.WriteByte(record.Tos); err != nil {
+		if err := utils.WriteU8(buf, record.Tos); err != nil {
 			return nil, err
 		}
-		binary.BigEndian.PutUint16(b[:2], record.SrcAS)
-		if _, err := buf.Write(b[:2]); err != nil {
+		if err := utils.WriteU16(buf, record.SrcAS); err != nil {
 			return nil, err
 		}
-		binary.BigEndian.PutUint16(b[:2], record.DstAS)
-		if _, err := buf.Write(b[:2]); err != nil {
+		if err := utils.WriteU16(buf, record.DstAS); err != nil {
 			return nil, err
 		}
-		if err := buf.WriteByte(record.SrcMask); err != nil {
+		if err := utils.WriteU8(buf, record.SrcMask); err != nil {
 			return nil, err
 		}
-		if err := buf.WriteByte(record.DstMask); err != nil {
+		if err := utils.WriteU8(buf, record.DstMask); err != nil {
 			return nil, err
 		}
-		binary.BigEndian.PutUint16(b[:2], record.Pad2)
-		if _, err := buf.Write(b[:2]); err != nil {
+		if err := utils.WriteU16(buf, record.Pad2); err != nil {
 			return nil, err
 		}
 	}
