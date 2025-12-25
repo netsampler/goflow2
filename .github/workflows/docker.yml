@@ -4,6 +4,9 @@ on:
   push:
     branches: [ main ]
 
+env:
+  GHCR_REPO: ghcr.io/${{ github.repository_owner }}/
+
 jobs:
   build:
     name: Docker
@@ -32,9 +35,17 @@ jobs:
         username: ${{ secrets.DOCKERHUB_USERNAME }}
         password: ${{ secrets.DOCKERHUB_TOKEN }}
 
+    - name: Log in to GHCR
+      run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u $ --password-stdin
+
     - name: Build
       run: |
-        DOCKER_SUFFIX=-amd64 DOCKER_CMD='buildx build --push --platform linux/amd64' make docker
-        DOCKER_SUFFIX=-arm64 DOCKER_CMD='buildx build --push --platform linux/arm64/v8' make docker
+        DOCKER_SUFFIX=-amd64 DOCKER_CMD='buildx build --push --platform linux/amd64 -t $(GHCR_REPO)$(NAME):$(ABBREV)$(DOCKER_SUFFIX)' make docker
+        DOCKER_SUFFIX=-arm64 DOCKER_CMD='buildx build --push --platform linux/arm64/v8 -t $(GHCR_REPO)$(NAME):$(ABBREV)$(DOCKER_SUFFIX)' make docker
         make docker-manifest-buildx
         VERSION=latest make docker-manifest-release-buildx
+
+    - name: Publish manifests to GHCR
+      run: |
+        DOCKER_REPO=${{ env.GHCR_REPO }} make docker-manifest-buildx
+        DOCKER_REPO=${{ env.GHCR_REPO }} VERSION=latest make docker-manifest-release-buildx
