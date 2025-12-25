@@ -48,6 +48,7 @@ clean:
 
 .PHONY: build
 build: prepare
+	go generate ./transport/clickhouse/enricher
 	CGO_ENABLED=0 go build -ldflags $(LDFLAGS) -o $(OUTPUT) cmd/goflow2/main.go
 
 .PHONY: docker
