@@ -8,11 +8,14 @@ import (
 	"time"
 )
 
+// RenderFunc converts a raw field value into a display value.
 type RenderFunc func(msg *ProtoProducerMessage, fieldName string, data interface{}) interface{}
 
+// RendererID identifies a built-in renderer.
 type RendererID string
 
 const (
+	// RendererNone disables rendering.
 	RendererNone         RendererID = "none"
 	RendererIP           RendererID = "ip"
 	RendererMac          RendererID = "mac"
@@ -229,6 +232,7 @@ var (
 	}
 )
 
+// NilRenderer returns nil for any field.
 func NilRenderer(msg *ProtoProducerMessage, fieldName string, data interface{}) interface{} {
 	if dataIf, ok := data.(interface {
 		String() string
@@ -241,6 +245,7 @@ func NilRenderer(msg *ProtoProducerMessage, fieldName string, data interface{}) 
 	return data
 }
 
+// StringRenderer converts a byte slice to a string.
 func StringRenderer(msg *ProtoProducerMessage, fieldName string, data interface{}) interface{} {
 	if dataC, ok := data.([]byte); ok {
 		return string(dataC)
@@ -250,6 +255,7 @@ func StringRenderer(msg *ProtoProducerMessage, fieldName string, data interface{
 	return NilRenderer(msg, fieldName, data)
 }
 
+// DateTimeRenderer formats a Unix timestamp in seconds.
 func DateTimeRenderer(msg *ProtoProducerMessage, fieldName string, data interface{}) interface{} {
 	if dataC, ok := data.(uint64); ok {
 		ts := time.Unix(int64(dataC), 0).UTC()
@@ -267,6 +273,7 @@ func DateTimeRenderer(msg *ProtoProducerMessage, fieldName string, data interfac
 	return NilRenderer(msg, fieldName, data)
 }
 
+// DateTimeNanoRenderer formats a Unix timestamp in nanoseconds.
 func DateTimeNanoRenderer(msg *ProtoProducerMessage, fieldName string, data interface{}) interface{} {
 	if dataC, ok := data.(uint64); ok {
 		ts := time.Unix(int64(dataC)/1e9, int64(dataC)%1e9).UTC()
@@ -278,6 +285,7 @@ func DateTimeNanoRenderer(msg *ProtoProducerMessage, fieldName string, data inte
 	return NilRenderer(msg, fieldName, data)
 }
 
+// MacRenderer formats a MAC address.
 func MacRenderer(msg *ProtoProducerMessage, fieldName string, data interface{}) interface{} {
 	if dataC, ok := data.(uint64); ok {
 		var mac [8]byte
@@ -288,6 +296,7 @@ func MacRenderer(msg *ProtoProducerMessage, fieldName string, data interface{}) 
 
 }
 
+// RenderIP formats an IP address from raw bytes.
 func RenderIP(addr []byte) string {
 	if addr == nil || (len(addr) != 4 && len(addr) != 16) {
 		return ""
@@ -296,6 +305,7 @@ func RenderIP(addr []byte) string {
 	return ip.String()
 }
 
+// IPRenderer formats an IP address field.
 func IPRenderer(msg *ProtoProducerMessage, fieldName string, data interface{}) interface{} {
 	if dataC, ok := data.([]byte); ok {
 		return RenderIP(dataC)
@@ -303,6 +313,7 @@ func IPRenderer(msg *ProtoProducerMessage, fieldName string, data interface{}) i
 	return NilRenderer(msg, fieldName, data)
 }
 
+// EtypeRenderer formats EtherType values.
 func EtypeRenderer(msg *ProtoProducerMessage, fieldName string, data interface{}) interface{} {
 	if dataC, ok := data.(uint32); ok {
 		return etypeName[dataC]
@@ -312,6 +323,7 @@ func EtypeRenderer(msg *ProtoProducerMessage, fieldName string, data interface{}
 	return "unknown"
 }
 
+// ProtoName returns the protocol name for a protocol number.
 func ProtoName(protoNumber uint32) string {
 	dataC, ok := protoName[protoNumber]
 	if ok {
@@ -326,6 +338,7 @@ func ProtoName(protoNumber uint32) string {
 	return "unknown"
 }
 
+// ProtoRenderer formats protocol numbers to names.
 func ProtoRenderer(msg *ProtoProducerMessage, fieldName string, data interface{}) interface{} {
 	if dataC, ok := data.(uint32); ok {
 		return ProtoName(dataC)
@@ -335,6 +348,7 @@ func ProtoRenderer(msg *ProtoProducerMessage, fieldName string, data interface{}
 	return "unknown"
 }
 
+// NetworkRenderer formats a prefix length as a CIDR mask.
 func NetworkRenderer(msg *ProtoProducerMessage, fieldName string, data interface{}) interface{} {
 	var addr netip.Addr
 	if fieldName == "SrcNet" {
@@ -349,6 +363,7 @@ func NetworkRenderer(msg *ProtoProducerMessage, fieldName string, data interface
 	return "unknown"
 }
 
+// IcmpCodeType returns a formatted ICMP type/code string.
 func IcmpCodeType(proto, icmpCode, icmpType uint32) string {
 	if proto == 1 {
 		return icmpTypeName[icmpType]
@@ -358,6 +373,7 @@ func IcmpCodeType(proto, icmpCode, icmpType uint32) string {
 	return "unknown"
 }
 
+// ICMPRenderer formats ICMP type/code values.
 func ICMPRenderer(msg *ProtoProducerMessage, fieldName string, data interface{}) interface{} {
 	return IcmpCodeType(uint32(msg.Proto), uint32(msg.IcmpCode), uint32(msg.IcmpType))
 }

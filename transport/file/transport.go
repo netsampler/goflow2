@@ -1,16 +1,18 @@
+// Package file implements a file/stdout transport.
 package file
 
 import (
 	"flag"
-	"fmt"
-	"github.com/netsampler/goflow2/v2/transport"
 	"io"
 	"os"
 	"os/signal"
 	"sync"
 	"syscall"
+
+	"github.com/netsampler/goflow2/v2/transport"
 )
 
+// FileDriver writes formatted messages to stdout or a file.
 type FileDriver struct {
 	fileDestination string
 	lineSeparator   string
@@ -20,6 +22,7 @@ type FileDriver struct {
 	q               chan bool
 }
 
+// Prepare registers flags for file transport configuration.
 func (d *FileDriver) Prepare() error {
 	flag.StringVar(&d.fileDestination, "transport.file", "", "File/console output (empty for stdout)")
 	flag.StringVar(&d.lineSeparator, "transport.file.sep", "\n", "Line separator")
@@ -37,6 +40,7 @@ func (d *FileDriver) openFile() error {
 	return err
 }
 
+// Init initializes the output destination and reload handling.
 func (d *FileDriver) Init() error {
 	d.q = make(chan bool, 1)
 
@@ -75,14 +79,28 @@ func (d *FileDriver) Init() error {
 	return nil
 }
 
+// Send writes a formatted message and separator to the destination.
 func (d *FileDriver) Send(key, data []byte) error {
 	d.lock.RLock()
 	w := d.w
 	d.lock.RUnlock()
-	_, err := fmt.Fprint(w, string(data)+d.lineSeparator)
+	if len(data) > 0 {
+		if _, err := w.Write(data); err != nil {
+			return err
+		}
+	}
+	if d.lineSeparator == "" {
+		return nil
+	}
+	if sw, ok := w.(io.StringWriter); ok {
+		_, err := sw.WriteString(d.lineSeparator)
+		return err
+	}
+	_, err := w.Write([]byte(d.lineSeparator))
 	return err
 }
 
+// Close closes the output file and stops reload handling.
 func (d *FileDriver) Close() error {
 	if d.fileDestination != "" {
 		d.lock.Lock()

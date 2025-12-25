@@ -1,3 +1,4 @@
+// Package kafka implements a Kafka transport using sarama.
 package kafka
 
 import (
@@ -19,6 +20,7 @@ import (
 	sarama "github.com/Shopify/sarama"
 )
 
+// KafkaDriver sends formatted messages to Kafka topics.
 type KafkaDriver struct {
 	kafkaTLS         bool
 	kafkaClientCert  string
@@ -45,7 +47,7 @@ type KafkaDriver struct {
 	errors chan error
 }
 
-// Error specifically for inner Kafka errors
+// KafkaTransportError wraps errors returned by the Kafka client.
 type KafkaTransportError struct {
 	Err error
 }
@@ -57,6 +59,7 @@ func (e *KafkaTransportError) Unwrap() []error {
 	return []error{transport.ErrTransport, e.Err}
 }
 
+// KafkaSASLAlgorithm names supported SASL auth mechanisms.
 type KafkaSASLAlgorithm string
 
 const (
@@ -116,10 +119,12 @@ func (d *KafkaDriver) Prepare() error {
 	return nil
 }
 
+// Errors returns the Kafka producer error channel.
 func (d *KafkaDriver) Errors() <-chan error {
 	return d.errors
 }
 
+// Init configures the Kafka producer and establishes connections.
 func (d *KafkaDriver) Init() error {
 	kafkaConfigVersion, err := sarama.ParseKafkaVersion(d.kafkaVersion)
 	if err != nil {
@@ -284,6 +289,7 @@ func (d *KafkaDriver) Init() error {
 	return err
 }
 
+// Send publishes a message to Kafka.
 func (d *KafkaDriver) Send(key, data []byte) error {
 	d.producer.Input() <- &sarama.ProducerMessage{
 		Topic: d.kafkaTopic,
@@ -293,13 +299,14 @@ func (d *KafkaDriver) Send(key, data []byte) error {
 	return nil
 }
 
+// Close stops the producer and releases resources.
 func (d *KafkaDriver) Close() error {
 	d.producer.Close()
 	close(d.q)
 	return nil
 }
 
-// todo: deprecate?
+// GetServiceAddresses resolves SRV records into broker addresses.
 func GetServiceAddresses(srv string) (addrs []string, err error) {
 	_, srvs, err := net.LookupSRV("", "", srv)
 	if err != nil {

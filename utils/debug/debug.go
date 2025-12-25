@@ -1,3 +1,4 @@
+// Package debug provides panic-wrapping helpers for decoders and producers.
 package debug
 
 import (
@@ -5,9 +6,11 @@ import (
 )
 
 var (
+	// PanicError marks a recovered panic.
 	PanicError = fmt.Errorf("panic")
 )
 
+// PanicErrorMessage captures a recovered panic with stacktrace.
 type PanicErrorMessage struct {
 	Msg        interface{}
 	Inner      string

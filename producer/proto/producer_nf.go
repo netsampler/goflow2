@@ -28,6 +28,7 @@ type basicSamplingRateSystem struct {
 	samplinglock *sync.RWMutex
 }
 
+// CreateSamplingSystem creates a default sampling rate system.
 func CreateSamplingSystem() SamplingRateSystem {
 	ts := &basicSamplingRateSystem{
 		sampling:     make(map[basicSamplingRateKey]uint32),
@@ -69,6 +70,7 @@ func (s *SingleSamplingRateSystem) GetSamplingRate(version uint16, obsDomainId u
 	return s.Sampling, nil
 }
 
+// NetFlowLookFor searches for a field by type in a data field slice.
 func NetFlowLookFor(dataFields []netflow.DataField, typeId uint16) (bool, interface{}) {
 	for _, dataField := range dataFields {
 		if dataField.Type == typeId {
@@ -78,6 +80,7 @@ func NetFlowLookFor(dataFields []netflow.DataField, typeId uint16) (bool, interf
 	return false, nil
 }
 
+// NetFlowPopulate decodes a field by type into the provided address.
 func NetFlowPopulate(dataFields []netflow.DataField, typeId uint16, addr interface{}) (bool, error) {
 	exists, value := NetFlowLookFor(dataFields, typeId)
 	if exists && value != nil {
@@ -104,6 +107,7 @@ func NetFlowPopulate(dataFields []netflow.DataField, typeId uint16, addr interfa
 	return exists, nil
 }
 
+// WriteUDecoded writes an unsigned decoded value into the destination.
 func WriteUDecoded(o uint64, out interface{}) error {
 	switch t := out.(type) {
 	case *byte:
@@ -120,6 +124,7 @@ func WriteUDecoded(o uint64, out interface{}) error {
 	return nil
 }
 
+// WriteDecoded writes a signed decoded value into the destination.
 func WriteDecoded(o int64, out interface{}) error {
 	switch t := out.(type) {
 	case *int8:
@@ -136,6 +141,7 @@ func WriteDecoded(o int64, out interface{}) error {
 	return nil
 }
 
+// DecodeUNumber decodes a big-endian unsigned number into out.
 func DecodeUNumber(b []byte, out interface{}) error {
 	var o uint64
 	l := len(b)
@@ -162,6 +168,7 @@ func DecodeUNumber(b []byte, out interface{}) error {
 	return WriteUDecoded(o, out)
 }
 
+// DecodeUNumberLE decodes a little-endian unsigned number into out.
 func DecodeUNumberLE(b []byte, out interface{}) error {
 	var o uint64
 	l := len(b)
@@ -188,6 +195,7 @@ func DecodeUNumberLE(b []byte, out interface{}) error {
 	return WriteUDecoded(o, out)
 }
 
+// DecodeNumber decodes a big-endian signed number into out.
 func DecodeNumber(b []byte, out interface{}) error {
 	var o int64
 	l := len(b)
@@ -214,6 +222,7 @@ func DecodeNumber(b []byte, out interface{}) error {
 	return WriteDecoded(o, out)
 }
 
+// DecodeNumberLE decodes a little-endian signed number into out.
 func DecodeNumberLE(b []byte, out interface{}) error {
 	var o int64
 	l := len(b)
@@ -263,6 +272,7 @@ func addrReplaceCheck(dstAddr *[]byte, v []byte, eType *uint32, ipv6 bool) {
 	}
 }
 
+// ConvertNTPEpoch converts NTP epoch time to Unix nanoseconds.
 func ConvertNTPEpoch(ntpTime uint64) uint64 {
 	seconds := ntpTime >> 32
 	seconds -= 2208988800
@@ -271,6 +281,7 @@ func ConvertNTPEpoch(ntpTime uint64) uint64 {
 	return seconds*1e9 + uint64(fraction)
 }
 
+// ConvertNetFlowDataSet maps a data record into a flow message.
 func ConvertNetFlowDataSet(flowMessage *ProtoProducerMessage, version uint16, baseTime uint32, uptime uint32, record []netflow.DataField, mapperNetFlow TemplateMapper, mapperSFlow PacketMapper) error {
 	var time uint64
 	baseTimeNs := uint64(baseTime) * 1000000000
@@ -641,6 +652,7 @@ func ConvertNetFlowDataSet(flowMessage *ProtoProducerMessage, version uint16, ba
 	return nil
 }
 
+// SearchNetFlowDataSetsRecords converts data records into producer messages.
 func SearchNetFlowDataSetsRecords(version uint16, baseTime uint32, uptime uint32, dataRecords []netflow.DataRecord, mapperNetFlow TemplateMapper, mapperSFlow PacketMapper) (flowMessageSet []producer.ProducerMessage, err error) {
 	for _, record := range dataRecords {
 		fmsg := protoMessagePool.Get().(*ProtoProducerMessage)
@@ -655,6 +667,7 @@ func SearchNetFlowDataSetsRecords(version uint16, baseTime uint32, uptime uint32
 	return flowMessageSet, nil
 }
 
+// SearchNetFlowDataSets converts data flow sets into producer messages.
 func SearchNetFlowDataSets(version uint16, baseTime uint32, uptime uint32, dataFlowSet []netflow.DataFlowSet, mapperNetFlow TemplateMapper, mapperSFlow PacketMapper) (flowMessageSet []producer.ProducerMessage, err error) {
 	for _, dataFlowSetItem := range dataFlowSet {
 		fmsg, err := SearchNetFlowDataSetsRecords(version, baseTime, uptime, dataFlowSetItem.Records, mapperNetFlow, mapperSFlow)
@@ -668,6 +681,7 @@ func SearchNetFlowDataSets(version uint16, baseTime uint32, uptime uint32, dataF
 	return flowMessageSet, nil
 }
 
+// SearchNetFlowOptionDataSets extracts sampling rate info from options sets.
 func SearchNetFlowOptionDataSets(dataFlowSet []netflow.OptionsDataFlowSet) (samplingRate uint32, found bool, err error) {
 	for _, dataFlowSetItem := range dataFlowSet {
 		for _, record := range dataFlowSetItem.Records {
@@ -685,6 +699,7 @@ func SearchNetFlowOptionDataSets(dataFlowSet []netflow.OptionsDataFlowSet) (samp
 	return samplingRate, found, err
 }
 
+// SplitNetFlowSets partitions v9 flow sets by type.
 func SplitNetFlowSets(packetNFv9 netflow.NFv9Packet) ([]netflow.DataFlowSet, []netflow.TemplateFlowSet, []netflow.NFv9OptionsTemplateFlowSet, []netflow.OptionsDataFlowSet) {
 	var dataFlowSet []netflow.DataFlowSet
 	var templatesFlowSet []netflow.TemplateFlowSet
@@ -705,6 +720,7 @@ func SplitNetFlowSets(packetNFv9 netflow.NFv9Packet) ([]netflow.DataFlowSet, []n
 	return dataFlowSet, templatesFlowSet, optionsTemplatesFlowSet, optionsDataFlowSet
 }
 
+// SplitIPFIXSets partitions IPFIX flow sets by type.
 func SplitIPFIXSets(packetIPFIX netflow.IPFIXPacket) ([]netflow.DataFlowSet, []netflow.TemplateFlowSet, []netflow.IPFIXOptionsTemplateFlowSet, []netflow.OptionsDataFlowSet) {
 	var dataFlowSet []netflow.DataFlowSet
 	var templatesFlowSet []netflow.TemplateFlowSet
@@ -727,6 +743,7 @@ func SplitIPFIXSets(packetIPFIX netflow.IPFIXPacket) ([]netflow.DataFlowSet, []n
 
 // Convert a NetFlow datastructure to a FlowMessage protobuf
 // Does not put sampling rate
+// ProcessMessageIPFIXConfig processes an IPFIX packet using the config.
 func ProcessMessageIPFIXConfig(packet *netflow.IPFIXPacket, samplingRateSys SamplingRateSystem, config ProtoProducerConfig) (flowMessageSet []producer.ProducerMessage, err error) {
 	dataFlowSet, _, _, optionDataFlowSet := SplitIPFIXSets(*packet)
 
@@ -770,6 +787,7 @@ func ProcessMessageIPFIXConfig(packet *netflow.IPFIXPacket, samplingRateSys Samp
 
 // Convert a NetFlow datastructure to a FlowMessage protobuf
 // Does not put sampling rate
+// ProcessMessageNetFlowV9Config processes a NetFlow v9 packet using the config.
 func ProcessMessageNetFlowV9Config(packet *netflow.NFv9Packet, samplingRateSys SamplingRateSystem, config ProtoProducerConfig) (flowMessageSet []producer.ProducerMessage, err error) {
 	dataFlowSet, _, _, optionDataFlowSet := SplitNetFlowSets(*packet)
 

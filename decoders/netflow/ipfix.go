@@ -6,6 +6,7 @@ import (
 )
 
 const (
+	// IPFIX_FIELD_* constants are IPFIX information element IDs.
 	IPFIX_FIELD_Reserved                              = 0
 	IPFIX_FIELD_octetDeltaCount                       = 1
 	IPFIX_FIELD_packetDeltaCount                      = 2
@@ -445,6 +446,7 @@ const (
 	IPFIX_FIELD_natThresholdEvent                     = 467
 )
 
+// IPFIXPacket represents a decoded IPFIX packet.
 type IPFIXPacket struct {
 	Version             uint16        `json:"version"`
 	Length              uint16        `json:"length"`
@@ -454,11 +456,13 @@ type IPFIXPacket struct {
 	FlowSets            []interface{} `json:"flow-sets"`
 }
 
+// IPFIXOptionsTemplateFlowSet holds IPFIX options template records.
 type IPFIXOptionsTemplateFlowSet struct {
 	FlowSetHeader
 	Records []IPFIXOptionsTemplateRecord `json:"records"`
 }
 
+// IPFIXOptionsTemplateRecord describes scopes and option fields.
 type IPFIXOptionsTemplateRecord struct {
 	TemplateId      uint16  `json:"template-id"`
 	FieldCount      uint16  `json:"field-count"`
@@ -467,6 +471,7 @@ type IPFIXOptionsTemplateRecord struct {
 	Scopes          []Field `json:"scopes"`
 }
 
+// IPFIXTypeToString returns a string representation of an IPFIX field type.
 func IPFIXTypeToString(typeId uint16) string {
 
 	nameList := map[uint16]string{
