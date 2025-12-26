@@ -42,32 +42,10 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          - goos: linux
-            goarch: amd64
-            package: true
-          - goos: linux
-            goarch: arm64
-            package: true
-          - goos: linux
-            goarch: arm
-            goarm: "7"
-            package: true
-          - goos: darwin
-            goarch: amd64
-            package: false
-          - goos: darwin
-            goarch: arm64
-            package: false
-          - goos: windows
-            goarch: amd64
-            extension: .exe
-            package: false
-          - goos: windows
-            goarch: arm64
-            extension: .exe
-            package: false
+      matrix: ${{ fromJSON(github.event_name == 'pull_request' && '{"include":[{"goos":"linux","goarch":"amd64","package":true}]}' || '{"include":[{"goos":
+        "linux","goarch":"amd64","package":true},{"goos":"linux","goarch":"arm64","package":true},{"goos":"linux","goarch":"arm","goarm":"7","package":true},{"goos
+        ":"darwin","goarch":"amd64","package":false},{"goos":"darwin","goarch":"arm64","package":false},{"goos":"windows","goarch":"amd64","extension":".exe","pack
+        age":false},{"goos":"windows","goarch":"arm64","extension":".exe","package":false}]}') }}
     steps:
     - name: Check out code into the Go module directory
       uses: actions/checkout@v4
