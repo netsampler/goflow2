@@ -7,6 +7,7 @@ on:
 
 env:
   GHCR_REPO: ghcr.io/${{ github.repository_owner }}/
+  DOCKERHUB_REPO: ${{ secrets.DOCKERHUB_USERNAME }}/
 
 jobs:
   build:
@@ -42,10 +43,14 @@ jobs:
     - name: Build
       run: |
         export VERSION=$(git describe --tags --abbrev=0 HEAD)
-        DOCKER_SUFFIX=-amd64 DOCKER_CMD='buildx build --push --platform linux/amd64 -t $(GHCR_REPO)$(NAME):$(ABBREV)$(DOCKER_SUFFIX)' make docker
-        DOCKER_SUFFIX=-arm64 DOCKER_CMD='buildx build --push --platform linux/arm64/v8 -t $(GHCR_REPO)$(NAME):$(ABBREV)$(DOCKER_SUFFIX)' make docker
-        make docker-manifest-release-buildx
-        VERSION=latest make docker-manifest-release-buildx
+        DOCKER_SUFFIX=-amd64 DOCKER_REPO=${{ env.DOCKERHUB_REPO }} DOCKER_CMD='buildx build --push --platform linux/amd64 -t $(GHCR_REPO)$(NAME):$(ABBREV)$(DOCKER_SUFFIX)' make docker
+        DOCKER_SUFFIX=-arm64 DOCKER_REPO=${{ env.DOCKERHUB_REPO }} DOCKER_CMD='buildx build --push --platform linux/arm64/v8 -t $(GHCR_REPO)$(NAME):$(ABBREV)$(DOCKER_SUFFIX)' make docker
+
+    - name: Publish manifests to Docker Hub
+      run: |
+        export VERSION=$(git describe --tags --abbrev=0 HEAD)
+        DOCKER_REPO=${{ env.DOCKERHUB_REPO }} make docker-manifest-release-buildx
+        DOCKER_REPO=${{ env.DOCKERHUB_REPO }} VERSION=latest make docker-manifest-release-buildx
 
     - name: Publish manifests to GHCR
       run: |
