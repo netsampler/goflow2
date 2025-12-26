@@ -1,7 +1,7 @@
 EXTENSION     ?= 
 DIST_DIR      ?= dist/
 GOOS          ?= linux
-ARCH          ?= $(shell uname -m)
+GOARCH        ?= $(shell go env GOARCH)
 BUILDINFOSDET ?= 
 
 DOCKER_REPO   ?= netsampler/
@@ -22,7 +22,13 @@ DOCKER_BIN    ?= docker
 DOCKER_CMD    ?= build
 DOCKER_SUFFIX ?= 
 
-OUTPUT := $(DIST_DIR)goflow2-$(VERSION_PKG)-$(GOOS)-$(ARCH)$(EXTENSION)
+OUTPUT := $(DIST_DIR)goflow2-$(VERSION_PKG)-$(GOOS)-$(GOARCH)$(EXTENSION)
+
+# fpm expects x86_64 for amd64, but use GOARCH otherwise.
+FPM_ARCH ?= $(GOARCH)
+ifeq ($(GOARCH),amd64)
+FPM_ARCH = x86_64
+endif
 
 .PHONY: proto
 proto:
@@ -107,7 +113,7 @@ package-deb: prepare
         --maintainer "$(MAINTAINER)" \
         --description "$(DESCRIPTION)"  \
         --url "$(URL)" \
-        --architecture $(ARCH) \
+        --architecture $(FPM_ARCH) \
         --license "$(LICENSE)" \
         --package $(DIST_DIR) \
         $(OUTPUT)=/usr/bin/goflow2 \
@@ -120,7 +126,7 @@ package-rpm: prepare
         --maintainer "$(MAINTAINER)" \
         --description "$(DESCRIPTION)" \
         --url "$(URL)" \
-        --architecture $(ARCH) \
+        --architecture $(FPM_ARCH) \
         --license "$(LICENSE) "\
         --package $(DIST_DIR) \
         $(OUTPUT)=/usr/bin/goflow2 \

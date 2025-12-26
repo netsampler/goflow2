@@ -42,33 +42,26 @@ jobs:
         include:
           - goos: linux
             goarch: amd64
-            arch: x86_64
             package: true
           - goos: linux
             goarch: arm64
-            arch: arm64
             package: true
           - goos: linux
             goarch: arm
-            arch: arm
             goarm: "7"
             package: true
           - goos: darwin
             goarch: amd64
-            arch: x86_64
             package: false
           - goos: darwin
             goarch: arm64
-            arch: arm64
             package: false
           - goos: windows
             goarch: amd64
-            arch: x86_64
             extension: .exe
             package: false
           - goos: windows
             goarch: arm64
-            arch: arm64
             extension: .exe
             package: false
     steps:
@@ -94,7 +87,6 @@ jobs:
         GOOS: ${{ matrix.goos }}
         GOARCH: ${{ matrix.goarch }}
         GOARM: ${{ matrix.goarm }}
-        ARCH: ${{ matrix.arch }}
         EXTENSION: ${{ matrix.extension }}
       run: make build
           
@@ -111,14 +103,12 @@ jobs:
         GOOS: ${{ matrix.goos }}
         GOARCH: ${{ matrix.goarch }}
         GOARM: ${{ matrix.goarm }}
-        ARCH: ${{ matrix.arch }}
-      run: |
-        make package-deb package-rpm
+      run: make package-deb package-rpm
 
     - name: Upload Artifact
       uses: actions/upload-artifact@v4
       with:
-        name: dist-${{ matrix.goos }}-${{ matrix.arch }}
+        name: dist-${{ matrix.goos }}-${{ matrix.goarch }}
         path: dist/*
         retention-days: 14
 
