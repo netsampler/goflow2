@@ -89,10 +89,6 @@ docker-manifest:
 	    -t $(DOCKER_IMAGE):$(ABBREV) \
 	    $(DOCKER_IMAGE):$(ABBREV)-amd64 \
 	    $(DOCKER_IMAGE):$(ABBREV)-arm64
-	$(DOCKER_BIN) buildx imagetools create \
-	    -t $(DOCKER_IMAGE):latest \
-	    $(DOCKER_IMAGE):$(ABBREV)-amd64 \
-	    $(DOCKER_IMAGE):$(ABBREV)-arm64
 
 .PHONY: docker-manifest-release
 docker-manifest-release:
