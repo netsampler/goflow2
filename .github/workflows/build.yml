@@ -33,7 +33,7 @@ jobs:
       run: make test vet
 
   build:
-    name: Build (${{ matrix.goos }}-${{ matrix.arch }})
+    name: Build (${{ matrix.goos }}-${{ matrix.goarch }})
     needs: test
     runs-on: ubuntu-latest
     strategy:
