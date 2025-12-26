@@ -4,7 +4,7 @@ GOOS          ?= linux
 GOARCH        ?= $(shell go env GOARCH)
 BUILDINFOSDET ?= 
 
-DOCKER_REPO   ?= netsampler/
+DOCKER_IMAGE  ?= netsampler/$(NAME)
 NAME          := goflow2
 VERSION       ?= $(shell git describe --abbrev --long HEAD)
 ABBREV        ?= $(shell git rev-parse --short HEAD)
@@ -21,6 +21,9 @@ MAINTAINER    := lspgn@users.noreply.github.com
 DOCKER_BIN    ?= docker
 DOCKER_CMD    ?= build
 DOCKER_SUFFIX ?= 
+DOCKER_IMAGE_PREFIXES ?= $(DOCKER_IMAGE)
+DOCKER_TAGS ?= $(foreach image,$(DOCKER_IMAGE_PREFIXES),$(image):$(ABBREV)$(DOCKER_SUFFIX))
+DOCKER_TAG_ARGS := $(foreach tag,$(DOCKER_TAGS),-t $(tag))
 
 OUTPUT := $(DIST_DIR)goflow2-$(VERSION_PKG)-$(GOOS)-$(GOARCH)$(EXTENSION)
 
@@ -72,44 +75,46 @@ docker:
         --build-arg LICENSE="$(LICENSE)" \
         --build-arg VERSION="$(VERSION)" \
         --build-arg REV="$(COMMIT)" \
-        -t $(DOCKER_REPO)$(NAME):$(ABBREV)$(DOCKER_SUFFIX) .
+        $(DOCKER_TAG_ARGS) .
 
 .PHONY: push-docker
 push-docker:
-	$(DOCKER_BIN) push $(DOCKER_REPO)$(NAME):$(ABBREV)$(DOCKER_SUFFIX)
+	@for tag in $(DOCKER_TAGS); do \
+		$(DOCKER_BIN) push $$tag; \
+	done
 
 .PHONY: docker-manifest
 docker-manifest:
-	$(DOCKER_BIN) manifest create $(DOCKER_REPO)$(NAME):$(ABBREV) \
-	    --amend $(DOCKER_REPO)$(NAME):$(ABBREV)-amd64 \
-	    --amend $(DOCKER_REPO)$(NAME):$(ABBREV)-arm64
-	$(DOCKER_BIN) manifest push $(DOCKER_REPO)$(NAME):$(ABBREV)
+	$(DOCKER_BIN) manifest create $(DOCKER_IMAGE):$(ABBREV) \
+	    --amend $(DOCKER_IMAGE):$(ABBREV)-amd64 \
+	    --amend $(DOCKER_IMAGE):$(ABBREV)-arm64
+	$(DOCKER_BIN) manifest push $(DOCKER_IMAGE):$(ABBREV)
 
-	$(DOCKER_BIN) manifest create $(DOCKER_REPO)$(NAME):latest \
-	    --amend $(DOCKER_REPO)$(NAME):$(ABBREV)-amd64 \
-	    --amend $(DOCKER_REPO)$(NAME):$(ABBREV)-arm64
-	$(DOCKER_BIN) manifest push $(DOCKER_REPO)$(NAME):latest
+	$(DOCKER_BIN) manifest create $(DOCKER_IMAGE):latest \
+	    --amend $(DOCKER_IMAGE):$(ABBREV)-amd64 \
+	    --amend $(DOCKER_IMAGE):$(ABBREV)-arm64
+	$(DOCKER_BIN) manifest push $(DOCKER_IMAGE):latest
 
 .PHONY: docker-manifest-buildx
 docker-manifest-buildx:
 	$(DOCKER_BIN) buildx imagetools create \
-	    -t $(DOCKER_REPO)$(NAME):$(ABBREV) \
-	    $(DOCKER_REPO)$(NAME):$(ABBREV)-amd64 \
-	    $(DOCKER_REPO)$(NAME):$(ABBREV)-arm64
+	    -t $(DOCKER_IMAGE):$(ABBREV) \
+	    $(DOCKER_IMAGE):$(ABBREV)-amd64 \
+	    $(DOCKER_IMAGE):$(ABBREV)-arm64
 
 .PHONY: docker-manifest-release
 docker-manifest-release:
-	$(DOCKER_BIN) manifest create $(DOCKER_REPO)$(NAME):$(VERSION) \
-	    --amend $(DOCKER_REPO)$(NAME):$(ABBREV)-amd64 \
-	    --amend $(DOCKER_REPO)$(NAME):$(ABBREV)-arm64
-	$(DOCKER_BIN) manifest push $(DOCKER_REPO)$(NAME):$(VERSION)
+	$(DOCKER_BIN) manifest create $(DOCKER_IMAGE):$(VERSION) \
+	    --amend $(DOCKER_IMAGE):$(ABBREV)-amd64 \
+	    --amend $(DOCKER_IMAGE):$(ABBREV)-arm64
+	$(DOCKER_BIN) manifest push $(DOCKER_IMAGE):$(VERSION)
 
 .PHONY: docker-manifest-release-buildx
 docker-manifest-release-buildx:
 	$(DOCKER_BIN) buildx imagetools create \
-	    -t $(DOCKER_REPO)$(NAME):$(VERSION) \
-	    $(DOCKER_REPO)$(NAME):$(ABBREV)-amd64 \
-	    $(DOCKER_REPO)$(NAME):$(ABBREV)-arm64
+	    -t $(DOCKER_IMAGE):$(VERSION) \
+	    $(DOCKER_IMAGE):$(ABBREV)-amd64 \
+	    $(DOCKER_IMAGE):$(ABBREV)-arm64
 
 .PHONY: package-deb
 package-deb: prepare
