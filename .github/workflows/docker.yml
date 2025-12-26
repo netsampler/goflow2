@@ -8,7 +8,7 @@ on:
 
 env:
   GHCR_REPO: ghcr.io/${{ github.repository_owner }}/
-  DOCKERHUB_REPO: ${{ secrets.DOCKERHUB_USERNAME }}/
+  DOCKERHUB_REPO: docker.io/${{ secrets.DOCKERHUB_USERNAME }}/
 
 jobs:
   build:
