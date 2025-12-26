@@ -94,10 +94,3 @@ jobs:
               data: await fs.readFile(`./dist/${file}`)
             });
           }
-
-    - name: Upload Artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: dist
-        path: dist/*
-        retention-days: 14
