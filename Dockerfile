@@ -12,8 +12,10 @@ FROM scratch as prebuilt
 ARG PREBUILT_BINARY="goflow2"
 COPY ${PREBUILT_BINARY} /build/goflow2
 
-FROM alpine:latest
 ARG BIN_SOURCE="builder"
+FROM ${BIN_SOURCE} as binstage
+
+FROM alpine:latest
 ARG src_dir
 ARG VERSION=""
 ARG CREATED=""
@@ -36,6 +38,6 @@ LABEL org.opencontainers.image.revision="${REV}"
 RUN apk update --no-cache && \
     adduser -S -D -H -h / flow
 USER flow
-COPY --from=${BIN_SOURCE} /build/goflow2 /
+COPY --from=binstage /build/goflow2 /
 
 ENTRYPOINT ["./goflow2"]
