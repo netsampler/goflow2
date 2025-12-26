@@ -211,26 +211,26 @@ jobs:
     - name: Publish manifests to Docker Hub (branch)
       if: "!startsWith(github.ref, 'refs/tags/')"
       run: |
-        DOCKER_IMAGE=${{ env.DOCKERHUB_IMAGE }} make docker-manifest-buildx
-        DOCKER_IMAGE=${{ env.DOCKERHUB_IMAGE }} VERSION=latest make docker-manifest-release-buildx
+        DOCKER_IMAGE=${{ env.DOCKERHUB_IMAGE }} make docker-manifest
+        DOCKER_IMAGE=${{ env.DOCKERHUB_IMAGE }} VERSION=latest make docker-manifest-release
 
     - name: Publish manifests to GHCR (branch)
       if: "!startsWith(github.ref, 'refs/tags/')"
       run: |
-        DOCKER_IMAGE=${{ env.GHCR_IMAGE }} make docker-manifest-buildx
-        DOCKER_IMAGE=${{ env.GHCR_IMAGE }} VERSION=latest make docker-manifest-release-buildx
+        DOCKER_IMAGE=${{ env.GHCR_IMAGE }} make docker-manifest
+        DOCKER_IMAGE=${{ env.GHCR_IMAGE }} VERSION=latest make docker-manifest-release
 
     - name: Publish manifests to Docker Hub (tag)
       if: startsWith(github.ref, 'refs/tags/')
       run: |
-        DOCKER_IMAGE=${{ env.DOCKERHUB_IMAGE }} make docker-manifest-release-buildx
-        DOCKER_IMAGE=${{ env.DOCKERHUB_IMAGE }} VERSION=latest make docker-manifest-release-buildx
+        DOCKER_IMAGE=${{ env.DOCKERHUB_IMAGE }} make docker-manifest-release
+        DOCKER_IMAGE=${{ env.DOCKERHUB_IMAGE }} VERSION=latest make docker-manifest-release
 
     - name: Publish manifests to GHCR (tag)
       if: startsWith(github.ref, 'refs/tags/')
       run: |
-        DOCKER_IMAGE=${{ env.GHCR_IMAGE }} make docker-manifest-release-buildx
-        DOCKER_IMAGE=${{ env.GHCR_IMAGE }} VERSION=latest make docker-manifest-release-buildx
+        DOCKER_IMAGE=${{ env.GHCR_IMAGE }} make docker-manifest-release
+        DOCKER_IMAGE=${{ env.GHCR_IMAGE }} VERSION=latest make docker-manifest-release
 
   release:
     name: Release
