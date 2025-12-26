@@ -112,27 +112,28 @@ docker-manifest-release-buildx:
 	    $(DOCKER_REPO)$(NAME):$(ABBREV)-arm64
 
 .PHONY: package-deb
-package-deb: prepare
-	fpm -s dir -t deb -n $(NAME) -v $(VERSION_PKG) \
-        --maintainer "$(MAINTAINER)" \
-        --description "$(DESCRIPTION)"  \
-        --url "$(URL)" \
-        --architecture $(FPM_ARCH) \
-        --license "$(LICENSE)" \
-        --package $(DIST_DIR) \
-        $(OUTPUT)=/usr/bin/goflow2 \
-        package/goflow2.service=/lib/systemd/system/goflow2.service \
-        package/goflow2.env=/etc/default/goflow2
+package-deb: build
+	$(call run_fpm,deb)
 
 .PHONY: package-rpm
-package-rpm: prepare
-	fpm -s dir -t rpm -n $(NAME) -v $(VERSION_PKG) \
-        --maintainer "$(MAINTAINER)" \
-        --description "$(DESCRIPTION)" \
-        --url "$(URL)" \
-        --architecture $(FPM_ARCH) \
-        --license "$(LICENSE) "\
-        --package $(DIST_DIR) \
-        $(OUTPUT)=/usr/bin/goflow2 \
-        package/goflow2.service=/lib/systemd/system/goflow2.service \
-        package/goflow2.env=/etc/default/goflow2
+package-rpm: build
+	$(call run_fpm,rpm)
+
+.PHONY: package
+package: package-deb package-rpm
+
+FPM_COMMON_FLAGS := -s dir -n $(NAME) -v $(VERSION_PKG) \
+	--maintainer "$(MAINTAINER)" \
+	--description "$(DESCRIPTION)" \
+	--url "$(URL)" \
+	--architecture $(FPM_ARCH) \
+	--license "$(LICENSE)" \
+	--package $(DIST_DIR)
+FPM_INPUTS := \
+	$(OUTPUT)=/usr/bin/goflow2 \
+	package/goflow2.service=/lib/systemd/system/goflow2.service \
+	package/goflow2.env=/etc/default/goflow2
+
+define run_fpm
+	fpm -t $(1) $(FPM_COMMON_FLAGS) $(FPM_INPUTS)
+endef
