@@ -94,17 +94,14 @@ jobs:
         GOARCH: ${{ matrix.goarch }}
         GOARM: ${{ matrix.goarm }}
         EXTENSION: ${{ matrix.extension }}
-      run: make build
+      run: |
+        make build
+        echo "BINARY_PATH=$(make print-output)" >> "$GITHUB_ENV"
 
     - name: Set docker packaging vars
       if: matrix.package
       shell: bash
       run: |
-        binary_path="$(make print-output)"
-        if [[ -z "${binary_path}" ]]; then
-          echo "No linux/${{ matrix.goarch }} binary found in dist" >&2
-          exit 1
-        fi
         if [[ "${{ matrix.goarch }}" == "amd64" ]]; then
           echo "DOCKER_PLATFORM=linux/amd64" >> "$GITHUB_ENV"
           echo "DOCKER_PACKAGE=true" >> "$GITHUB_ENV"
@@ -116,7 +113,7 @@ jobs:
           echo "DOCKER_PACKAGE=false" >> "$GITHUB_ENV"
           exit 0
         fi
-        echo "PREBUILT_BINARY=${binary_path}" >> "$GITHUB_ENV"
+        echo "PREBUILT_BINARY=${BINARY_PATH}" >> "$GITHUB_ENV"
 
     - name: Set up QEMU
       if: matrix.package && env.DOCKER_PACKAGE == 'true'
