@@ -24,7 +24,11 @@ jobs:
     - name: Set up Go 1.x
       uses: actions/setup-go@v5
       with:
-        go-version: ^1.21
+        go-version: ^1.24
+        cache: true
+        cache-dependency-path: |
+          go.sum
+          go.mod
 
     - name: Tidy Go Modules
       run: go mod tidy
@@ -76,7 +80,11 @@ jobs:
     - name: Set up Go 1.x
       uses: actions/setup-go@v5
       with:
-        go-version: ^1.21
+        go-version: ^1.24
+        cache: true
+        cache-dependency-path: |
+          go.sum
+          go.mod
 
     - name: Set VERSION for tag builds
       if: startsWith(github.ref, 'refs/tags/')
@@ -90,12 +98,24 @@ jobs:
         EXTENSION: ${{ matrix.extension }}
       run: make build
           
+    - name: Cache user gems
+      if: matrix.package
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.gem
+          ~/.local/share/gem
+        key: ${{ runner.os }}-gems-${{ hashFiles('**/Gemfile.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-gems-
+
     - name: Install fpm
       if: matrix.package
       run: |
         sudo apt-get update
         sudo apt-get install -y rpm ruby ruby-dev
-        sudo gem install fpm
+        gem install --user-install fpm
+        echo "$(ruby -e 'print Gem.user_dir')/bin" >> $GITHUB_PATH
         
     - name: Package
       if: matrix.package

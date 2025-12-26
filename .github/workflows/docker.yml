@@ -24,15 +24,19 @@ jobs:
             suffix: -arm64
     steps:
 
-    - name: Set up Go 1.x
-      uses: actions/setup-go@v5
-      with:
-        go-version: ^1.21
-
     - name: Check out code into the Go module directory
       uses: actions/checkout@v4
       with:
         fetch-depth: 0
+
+    - name: Set up Go 1.x
+      uses: actions/setup-go@v5
+      with:
+        go-version: ^1.24
+        cache: true
+        cache-dependency-path: |
+          go.sum
+          go.mod
 
     - name: Set up QEMU
       uses: docker/setup-qemu-action@v3
