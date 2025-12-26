@@ -56,6 +56,10 @@ clean:
 build: prepare
 	CGO_ENABLED=0 go build -ldflags $(LDFLAGS) -o $(OUTPUT) cmd/goflow2/main.go
 
+.PHONY: print-output
+print-output:
+	@echo $(OUTPUT)
+
 .PHONY: docker
 docker:
 	$(DOCKER_BIN) $(DOCKER_CMD) \

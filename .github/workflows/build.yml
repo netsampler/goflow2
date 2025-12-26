@@ -100,7 +100,7 @@ jobs:
       if: matrix.package
       shell: bash
       run: |
-        binary_path="$(ls dist/goflow2-*-linux-${{ matrix.goarch }} | head -n 1)"
+        binary_path="$(make print-output)"
         if [[ -z "${binary_path}" ]]; then
           echo "No linux/${{ matrix.goarch }} binary found in dist" >&2
           exit 1
