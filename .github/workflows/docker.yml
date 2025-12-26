@@ -3,6 +3,8 @@ name: Docker
 on:
   push:
     branches: [ main ]
+    tags:
+      - 'v*'
 
 env:
   GHCR_REPO: ghcr.io/${{ github.repository_owner }}/
@@ -39,17 +41,35 @@ jobs:
     - name: Log in to GHCR
       run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u $ --password-stdin
 
+    - name: Set VERSION for tag builds
+      if: startsWith(github.ref, 'refs/tags/')
+      run: echo "VERSION=$(git describe --tags --abbrev=0 HEAD)" >> $GITHUB_ENV
+
     - name: Build
       run: |
         DOCKER_SUFFIX=-amd64 DOCKER_REPO=${{ env.DOCKERHUB_REPO }} DOCKER_CMD='buildx build --push --platform linux/amd64 -t $(GHCR_REPO)$(NAME):$(ABBREV)$(DOCKER_SUFFIX)' make docker
         DOCKER_SUFFIX=-arm64 DOCKER_REPO=${{ env.DOCKERHUB_REPO }} DOCKER_CMD='buildx build --push --platform linux/arm64/v8 -t $(GHCR_REPO)$(NAME):$(ABBREV)$(DOCKER_SUFFIX)' make docker
 
-    - name: Publish manifests to Docker Hub
+    - name: Publish manifests to Docker Hub (branch)
+      if: "!startsWith(github.ref, 'refs/tags/')"
       run: |
         DOCKER_REPO=${{ env.DOCKERHUB_REPO }} make docker-manifest-buildx
         DOCKER_REPO=${{ env.DOCKERHUB_REPO }} VERSION=latest make docker-manifest-release-buildx
 
-    - name: Publish manifests to GHCR
+    - name: Publish manifests to GHCR (branch)
+      if: "!startsWith(github.ref, 'refs/tags/')"
       run: |
         DOCKER_REPO=${{ env.GHCR_REPO }} make docker-manifest-buildx
+        DOCKER_REPO=${{ env.GHCR_REPO }} VERSION=latest make docker-manifest-release-buildx
+
+    - name: Publish manifests to Docker Hub (tag)
+      if: startsWith(github.ref, 'refs/tags/')
+      run: |
+        DOCKER_REPO=${{ env.DOCKERHUB_REPO }} make docker-manifest-release-buildx
+        DOCKER_REPO=${{ env.DOCKERHUB_REPO }} VERSION=latest make docker-manifest-release-buildx
+
+    - name: Publish manifests to GHCR (tag)
+      if: startsWith(github.ref, 'refs/tags/')
+      run: |
+        DOCKER_REPO=${{ env.GHCR_REPO }} make docker-manifest-release-buildx
         DOCKER_REPO=${{ env.GHCR_REPO }} VERSION=latest make docker-manifest-release-buildx
