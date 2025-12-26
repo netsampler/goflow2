@@ -8,7 +8,12 @@ WORKDIR /build
 
 RUN go build -ldflags "${LDFLAGS}" -o goflow2 cmd/goflow2/main.go
 
+FROM scratch as prebuilt
+ARG PREBUILT_BINARY="goflow2"
+COPY ${PREBUILT_BINARY} /build/goflow2
+
 FROM alpine:latest
+ARG BIN_SOURCE="builder"
 ARG src_dir
 ARG VERSION=""
 ARG CREATED=""
@@ -31,6 +36,6 @@ LABEL org.opencontainers.image.revision="${REV}"
 RUN apk update --no-cache && \
     adduser -S -D -H -h / flow
 USER flow
-COPY --from=builder /build/goflow2 /
+COPY --from=${BIN_SOURCE} /build/goflow2 /
 
 ENTRYPOINT ["./goflow2"]
