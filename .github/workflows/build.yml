@@ -97,7 +97,7 @@ jobs:
       run: make build
 
     - name: Set docker packaging vars
-      if: matrix.package && github.event_name != 'pull_request' && (matrix.goarch == 'amd64' || matrix.goarch == 'arm64')
+      if: matrix.package
       shell: bash
       run: |
         binary_path="$(ls dist/goflow2-*-linux-${{ matrix.goarch }} | head -n 1)"
@@ -107,36 +107,44 @@ jobs:
         fi
         if [[ "${{ matrix.goarch }}" == "amd64" ]]; then
           echo "DOCKER_PLATFORM=linux/amd64" >> "$GITHUB_ENV"
-        else
+        elif [[ "${{ matrix.goarch }}" == "arm64" ]]; then
           echo "DOCKER_PLATFORM=linux/arm64/v8" >> "$GITHUB_ENV"
+        else
+          echo "Unsupported GOARCH for docker packaging: ${{ matrix.goarch }}" >&2
+          exit 1
         fi
         echo "PREBUILT_BINARY=${binary_path}" >> "$GITHUB_ENV"
 
     - name: Set up QEMU
-      if: matrix.package && github.event_name != 'pull_request' && (matrix.goarch == 'amd64' || matrix.goarch == 'arm64')
+      if: matrix.package
       uses: docker/setup-qemu-action@v3
 
     - name: Set up Docker Buildx
-      if: matrix.package && github.event_name != 'pull_request' && (matrix.goarch == 'amd64' || matrix.goarch == 'arm64')
+      if: matrix.package
       uses: docker/setup-buildx-action@v3
 
     - name: Login to DockerHub
-      if: matrix.package && github.event_name != 'pull_request' && (matrix.goarch == 'amd64' || matrix.goarch == 'arm64')
+      if: matrix.package && github.event_name != 'pull_request'
       uses: docker/login-action@v3
       with:
         username: ${{ secrets.DOCKERHUB_USERNAME }}
         password: ${{ secrets.DOCKERHUB_TOKEN }}
 
     - name: Log in to GHCR
-      if: matrix.package && github.event_name != 'pull_request' && (matrix.goarch == 'amd64' || matrix.goarch == 'arm64')
+      if: matrix.package && github.event_name != 'pull_request'
       run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u $ --password-stdin
 
     - name: Docker package
-      if: matrix.package && github.event_name != 'pull_request' && (matrix.goarch == 'amd64' || matrix.goarch == 'arm64')
+      if: matrix.package
       run: |
+        if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+          DOCKER_PUSH_FLAG="--load"
+        else
+          DOCKER_PUSH_FLAG="--push"
+        fi
         DOCKER_SUFFIX=-${{ matrix.goarch }} \
         DOCKER_REPO=${{ env.DOCKERHUB_REPO }} \
-        DOCKER_CMD='buildx build --push --platform $$DOCKER_PLATFORM --build-arg BIN_SOURCE=prebuilt --build-arg PREBUILT_BINARY=$$PREBUILT_BINARY -t $(GHCR_REPO)$(NAME):$(ABBREV)$${DOCKER_SUFFIX}' \
+        DOCKER_CMD="buildx build $$DOCKER_PUSH_FLAG --platform $$DOCKER_PLATFORM --build-arg BIN_SOURCE=prebuilt --build-arg PREBUILT_BINARY=$$PREBUILT_BINARY -t $(GHCR_REPO)$(NAME):$(ABBREV)$${DOCKER_SUFFIX}" \
         make docker
           
     - name: Cache user gems
