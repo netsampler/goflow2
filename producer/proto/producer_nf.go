@@ -551,20 +551,31 @@ func ConvertNetFlowDataSet(flowMessage *ProtoProducerMessage, version uint16, ba
 			if version == 9 {
 				// NetFlow v9 time works with a differential based on router's uptime
 				uptimeNs := uint64(uptime) * 1e6 // uptime is in milliseconds in NetFlow v9, converts to nanoseconds
+				const rolloverNs = (uint64(^uint32(0)) + 1) * 1e6 // max value of uint32, converted to nanoseconds
 				switch df.Type {
 				case netflow.NFV9_FIELD_FIRST_SWITCHED:
 					var timeFirstSwitched uint32
 					if err := DecodeUNumber(v, &timeFirstSwitched); err != nil {
 						return err
 					}
-					timeDiff := (uptimeNs - uint64(timeFirstSwitched)*1e6)
+					var timeDiff uint64
+					if uptimeNs > (uint64(timeFirstSwitched)*1e6) {
+					    timeDiff = (uptimeNs - uint64(timeFirstSwitched)*1e6)
+					} else { // sampler uptime has rolled over
+						timeDiff = (uptimeNs + rolloverNs) - uint64(timeFirstSwitched)*1e6
+					}
 					flowMessage.TimeFlowStartNs = baseTimeNs - timeDiff
 				case netflow.NFV9_FIELD_LAST_SWITCHED:
 					var timeLastSwitched uint32
 					if err := DecodeUNumber(v, &timeLastSwitched); err != nil {
 						return err
 					}
-					timeDiff := (uptimeNs - uint64(timeLastSwitched)*1e6)
+					var timeDiff uint64
+					if uptimeNs >= (uint64(timeLastSwitched)*1e6) {
+					    timeDiff = (uptimeNs - uint64(timeLastSwitched)*1e6)
+					} else { // sampler uptime has rolled over
+						timeDiff = (uptimeNs + rolloverNs) - uint64(timeLastSwitched)*1e6
+					}
 					flowMessage.TimeFlowEndNs = baseTimeNs - timeDiff
 				}
 			} else if version == 10 {
