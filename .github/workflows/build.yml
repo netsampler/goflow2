@@ -144,7 +144,7 @@ jobs:
         fi
         DOCKER_SUFFIX=-${{ matrix.goarch }} \
         DOCKER_REPO=${{ env.DOCKERHUB_REPO }} \
-        DOCKER_CMD="buildx build $$DOCKER_PUSH_FLAG --platform $$DOCKER_PLATFORM --build-arg BIN_SOURCE=prebuilt --build-arg PREBUILT_BINARY=$$PREBUILT_BINARY -t $(GHCR_REPO)$(NAME):$(ABBREV)$${DOCKER_SUFFIX}" \
+        DOCKER_CMD="buildx build $DOCKER_PUSH_FLAG --platform $DOCKER_PLATFORM --build-arg BIN_SOURCE=prebuilt --build-arg PREBUILT_BINARY=$PREBUILT_BINARY -t \$(GHCR_REPO)\$(NAME):\$(ABBREV)\$(DOCKER_SUFFIX)" \
         make docker
           
     - name: Cache user gems
