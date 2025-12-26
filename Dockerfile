@@ -1,5 +1,5 @@
 ARG BIN_SOURCE="builder"
-FROM golang:alpine as builder
+FROM golang:alpine AS builder
 ARG LDFLAGS=""
 
 RUN apk --update --no-cache add git build-base gcc
@@ -9,11 +9,11 @@ WORKDIR /build
 
 RUN go build -ldflags "${LDFLAGS}" -o goflow2 cmd/goflow2/main.go
 
-FROM scratch as prebuilt
+FROM scratch AS prebuilt
 ARG PREBUILT_BINARY="goflow2"
 COPY ${PREBUILT_BINARY} /build/goflow2
 
-FROM ${BIN_SOURCE} as binstage
+FROM ${BIN_SOURCE} AS binstage
 
 FROM alpine:latest
 ARG src_dir
