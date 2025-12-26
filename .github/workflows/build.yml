@@ -3,6 +3,8 @@ name: Build
 on:
   push:
     branches: [ main ]
+    tags:
+      - 'v*'
   pull_request:
     branches: [ main ]
 
@@ -24,6 +26,10 @@ jobs:
       # otherwise, display previous tag
       with:
         fetch-depth: 0
+
+    - name: Set VERSION for tag builds
+      if: startsWith(github.ref, 'refs/tags/')
+      run: echo "VERSION=$(git describe --tags --abbrev=0 HEAD)" >> $GITHUB_ENV
 
     - name: Tidy Go Modules
       run: go mod tidy
@@ -59,3 +65,32 @@ jobs:
         name: dist
         path: dist/*
         retention-days: 14
+
+    - name: Create Release
+      if: startsWith(github.ref, 'refs/tags/')
+      id: create_release
+      uses: actions/create-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: ${{ github.ref }}
+        release_name: Release ${{ github.ref }}
+        draft: false
+        prerelease: false
+
+    - name: Upload Release Asset
+      if: startsWith(github.ref, 'refs/tags/')
+      uses: actions/github-script@v2
+      with:
+        github-token: ${{secrets.GITHUB_TOKEN}}
+        script: |
+          const fs = require('fs').promises;
+          const upload_url = '${{ steps.create_release.outputs.upload_url }}';
+          for (let file of await fs.readdir('./dist')) {
+            console.log('uploading', file);
+            await github.repos.uploadReleaseAsset({
+              url: upload_url,
+              name: file,
+              data: await fs.readFile(`./dist/${file}`)
+            });
+          }
