@@ -3,59 +3,271 @@ name: Build
 on:
   push:
     branches: [ main ]
+    tags:
+      - 'v*'
   pull_request:
     branches: [ main ]
 
+env:
+  GHCR_IMAGE: ghcr.io/${{ github.repository_owner }}/goflow2
+  DOCKERHUB_IMAGE: docker.io/${{ github.repository_owner }}/goflow2
+
 jobs:
-  build:
-    name: Build
+  test:
+    name: Test
     runs-on: ubuntu-latest
     steps:
-
-    - name: Set up Go 1.x
-      uses: actions/setup-go@v2
-      with:
-        go-version: ^1.21
-
     - name: Check out code into the Go module directory
-      uses: actions/checkout@v1
-      # note: @v2 seem to be https://github.com/actions/checkout/issues/290
+      uses: actions/checkout@v4
+      # note: see https://github.com/actions/checkout/issues/290
       # which only works IF the tags are pushed before/same time as the commit
       # otherwise, display previous tag
       with:
         fetch-depth: 0
+
+    - name: Set up Go 1.x
+      uses: actions/setup-go@v5
+      with:
+        go-version: ^1.24
+        cache: true
+        cache-dependency-path: |
+          go.sum
+          go.mod
 
     - name: Tidy Go Modules
       run: go mod tidy
 
     - name: Test & Vet
       run: make test vet
-      
-    - name: Build
+
+  matrix:
+    name: Select Matrix
+    runs-on: ubuntu-latest
+    outputs:
+      include: ${{ steps.set-matrix.outputs.include }}
+    steps:
+    - name: Set matrix for event
+      id: set-matrix
+      shell: bash
       run: |
-        GOOS=linux   ARCH=x86_64  GOARCH=amd64 make build
-        GOOS=linux   ARCH=arm64   GOARCH=arm64 make build
-        GOOS=linux   ARCH=arm     GOARCH=arm GOARM=7 make build
-        GOOS=darwin  ARCH=x86_64  GOARCH=amd64 make build
-        GOOS=darwin  ARCH=arm64   GOARCH=arm64 make build
-        GOOS=windows ARCH=x86_64  GOARCH=amd64 EXTENSION=.exe make build
-        GOOS=windows ARCH=arm64   GOARCH=arm64 EXTENSION=.exe make build
+        if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+          echo 'include=[{"goos":"linux","goarch":"amd64","package":true}]' >> "$GITHUB_OUTPUT"
+        else
+          echo 'include=[{"goos":"linux","goarch":"amd64","package":true},{"goos":"linux","goarch":"arm64","package":true},{"goos":"linux","goarch":"arm","goarm":"7","package":true},{"goos":"darwin","goarch":"amd64","package":false},{"goos":"darwin","goarch":"arm64","package":false},{"goos":"windows","goarch":"amd64","extension":".exe","package":false},{"goos":"windows","goarch":"arm64","extension":".exe","package":false}]' >> "$GITHUB_OUTPUT"
+        fi
+
+  build:
+    name: Build (${{ matrix.goos }}-${{ matrix.goarch }})
+    needs:
+    - test
+    - matrix
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.matrix.outputs.include) }}
+    steps:
+    - name: Check out code into the Go module directory
+      uses: actions/checkout@v4
+      # note: see https://github.com/actions/checkout/issues/290
+      # which only works IF the tags are pushed before/same time as the commit
+      # otherwise, display previous tag
+      with:
+        fetch-depth: 0
+
+    - name: Set up Go 1.x
+      uses: actions/setup-go@v5
+      with:
+        go-version: ^1.24
+        cache: true
+        cache-dependency-path: |
+          go.sum
+          go.mod
+
+    - name: Set VERSION for tag builds
+      if: startsWith(github.ref, 'refs/tags/')
+      run: echo "VERSION=$(git describe --tags --abbrev=0 HEAD)" >> $GITHUB_ENV
+
+    - name: Build
+      env:
+        GOOS: ${{ matrix.goos }}
+        GOARCH: ${{ matrix.goarch }}
+        GOARM: ${{ matrix.goarm }}
+        EXTENSION: ${{ matrix.extension }}
+      run: |
+        make build
+        echo "BINARY_PATH=$(make print-output)" >> "$GITHUB_ENV"
+
+    - name: Set docker packaging vars
+      if: matrix.package
+      shell: bash
+      run: |
+        if [[ "${{ matrix.goarch }}" == "amd64" ]]; then
+          echo "DOCKER_PLATFORM=linux/amd64" >> "$GITHUB_ENV"
+          echo "DOCKER_PACKAGE=true" >> "$GITHUB_ENV"
+        elif [[ "${{ matrix.goarch }}" == "arm64" ]]; then
+          echo "DOCKER_PLATFORM=linux/arm64/v8" >> "$GITHUB_ENV"
+          echo "DOCKER_PACKAGE=true" >> "$GITHUB_ENV"
+        else
+          echo "Unsupported GOARCH for docker packaging: ${{ matrix.goarch }}" >&2
+          echo "DOCKER_PACKAGE=false" >> "$GITHUB_ENV"
+          exit 0
+        fi
+        echo "PREBUILT_BINARY=${BINARY_PATH}" >> "$GITHUB_ENV"
+
+    - name: Set up QEMU
+      if: matrix.package && env.DOCKER_PACKAGE == 'true'
+      uses: docker/setup-qemu-action@v3
+
+    - name: Set up Docker Buildx
+      if: matrix.package && env.DOCKER_PACKAGE == 'true'
+      uses: docker/setup-buildx-action@v3
+
+    - name: Login to DockerHub
+      if: matrix.package && env.DOCKER_PACKAGE == 'true' && github.event_name != 'pull_request'
+      uses: docker/login-action@v3
+      with:
+        username: ${{ secrets.DOCKERHUB_USERNAME }}
+        password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+    - name: Log in to GHCR
+      if: matrix.package && env.DOCKER_PACKAGE == 'true' && github.event_name != 'pull_request'
+      run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u $ --password-stdin
+
+    - name: Docker package
+      if: matrix.package && env.DOCKER_PACKAGE == 'true'
+      run: |
+        if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+          DOCKER_PUSH_FLAG="--load"
+        else
+          DOCKER_PUSH_FLAG="--push"
+        fi
+        DOCKER_SUFFIX=-${{ matrix.goarch }} \
+        DOCKER_IMAGE_PREFIXES="${{ env.DOCKERHUB_IMAGE }} ${{ env.GHCR_IMAGE }}" \
+        DOCKER_CMD="buildx build $DOCKER_PUSH_FLAG --platform $DOCKER_PLATFORM --build-arg BIN_SOURCE=prebuilt --build-arg PREBUILT_BINARY=$PREBUILT_BINARY" \
+        make docker
           
+    - name: Cache user gems
+      if: matrix.package
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.gem
+          ~/.local/share/gem
+        key: ${{ runner.os }}-gems-${{ hashFiles('**/Gemfile.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-gems-
+
     - name: Install fpm
+      if: matrix.package
       run: |
         sudo apt-get update
         sudo apt-get install -y rpm ruby ruby-dev
-        sudo gem install fpm
+        gem install --user-install fpm
+        echo "$(ruby -e 'print Gem.user_dir')/bin" >> $GITHUB_PATH
         
     - name: Package
-      run: |
-        GOOS=linux ARCH=x86_64 GOARCH=amd64 make package-deb package-rpm
-        GOOS=linux ARCH=arm64  GOARCH=arm64 make package-deb package-rpm
-        GOOS=linux ARCH=arm    GOARCH=arm   make package-deb package-rpm
+      if: matrix.package
+      env:
+        GOOS: ${{ matrix.goos }}
+        GOARCH: ${{ matrix.goarch }}
+        GOARM: ${{ matrix.goarm }}
+      run: make package-deb package-rpm
 
     - name: Upload Artifact
       uses: actions/upload-artifact@v4
       with:
-        name: dist
+        name: dist-${{ matrix.goos }}-${{ matrix.goarch }}
         path: dist/*
         retention-days: 14
+
+  manifest:
+    name: Docker Manifests
+    runs-on: ubuntu-latest
+    needs: build
+    if: github.event_name != 'pull_request'
+    steps:
+    - name: Check out code into the Go module directory
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Login to DockerHub
+      uses: docker/login-action@v3
+      with:
+        username: ${{ secrets.DOCKERHUB_USERNAME }}
+        password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+    - name: Log in to GHCR
+      run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u $ --password-stdin
+
+    - name: Set VERSION for tag builds
+      if: startsWith(github.ref, 'refs/tags/')
+      run: echo "VERSION=$(git describe --tags --abbrev=0 HEAD)" >> $GITHUB_ENV
+
+    - name: Publish manifests to Docker Hub (branch)
+      if: "!startsWith(github.ref, 'refs/tags/')"
+      run: |
+        DOCKER_IMAGE=${{ env.DOCKERHUB_IMAGE }} make docker-manifest-buildx
+        DOCKER_IMAGE=${{ env.DOCKERHUB_IMAGE }} VERSION=latest make docker-manifest-release-buildx
+
+    - name: Publish manifests to GHCR (branch)
+      if: "!startsWith(github.ref, 'refs/tags/')"
+      run: |
+        DOCKER_IMAGE=${{ env.GHCR_IMAGE }} make docker-manifest-buildx
+        DOCKER_IMAGE=${{ env.GHCR_IMAGE }} VERSION=latest make docker-manifest-release-buildx
+
+    - name: Publish manifests to Docker Hub (tag)
+      if: startsWith(github.ref, 'refs/tags/')
+      run: |
+        DOCKER_IMAGE=${{ env.DOCKERHUB_IMAGE }} make docker-manifest-release-buildx
+        DOCKER_IMAGE=${{ env.DOCKERHUB_IMAGE }} VERSION=latest make docker-manifest-release-buildx
+
+    - name: Publish manifests to GHCR (tag)
+      if: startsWith(github.ref, 'refs/tags/')
+      run: |
+        DOCKER_IMAGE=${{ env.GHCR_IMAGE }} make docker-manifest-release-buildx
+        DOCKER_IMAGE=${{ env.GHCR_IMAGE }} VERSION=latest make docker-manifest-release-buildx
+
+  release:
+    name: Release
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    steps:
+    - name: Download Artifacts
+      uses: actions/download-artifact@v4
+      with:
+        path: dist
+        pattern: dist-*
+        merge-multiple: true
+
+    - name: Create Release
+      id: create_release
+      uses: actions/create-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: ${{ github.ref }}
+        release_name: Release ${{ github.ref }}
+        draft: false
+        prerelease: false
+
+    - name: Upload Release Asset
+      uses: actions/github-script@v7
+      with:
+        github-token: ${{secrets.GITHUB_TOKEN}}
+        script: |
+          const fs = require('fs').promises;
+          const upload_url = '${{ steps.create_release.outputs.upload_url }}';
+          for (let file of await fs.readdir('./dist')) {
+            console.log('uploading', file);
+            await github.repos.uploadReleaseAsset({
+              url: upload_url,
+              name: file,
+              data: await fs.readFile(`./dist/${file}`)
+            });
+          }

@@ -2,12 +2,11 @@
 EXTENSION     ?= 
 DIST_DIR      ?= dist/
 GOOS          ?= linux
-ARCH          ?= $(shell uname -m)
+GOARCH        ?= $(shell go env GOARCH)
 BUILDINFOSDET ?= 
 
-# Project metadata used for builds, packaging, and docker.
-DOCKER_REPO   ?= netsampler/
 NAME          := goflow2
+DOCKER_IMAGE  ?= netsampler/$(NAME)
 VERSION       ?= $(shell git describe --abbrev --long HEAD)
 ABBREV        ?= $(shell git rev-parse --short HEAD)
 COMMIT        ?= $(shell git rev-parse HEAD)
@@ -23,9 +22,17 @@ MAINTAINER    := lspgn@users.noreply.github.com
 DOCKER_BIN    ?= docker
 DOCKER_CMD    ?= build
 DOCKER_SUFFIX ?= 
+DOCKER_IMAGE_PREFIXES ?= $(DOCKER_IMAGE)
+DOCKER_TAGS ?= $(foreach image,$(DOCKER_IMAGE_PREFIXES),$(image):$(ABBREV)$(DOCKER_SUFFIX))
+DOCKER_TAG_ARGS := $(foreach tag,$(DOCKER_TAGS),-t $(tag))
 
-# Default binary output path.
-OUTPUT := $(DIST_DIR)goflow2-$(VERSION_PKG)-$(GOOS)-$(ARCH)$(EXTENSION)
+OUTPUT := $(DIST_DIR)goflow2-$(VERSION_PKG)-$(GOOS)-$(GOARCH)$(EXTENSION)
+
+# fpm expects x86_64 for amd64, but use GOARCH otherwise.
+FPM_ARCH ?= $(GOARCH)
+ifeq ($(GOARCH),amd64)
+FPM_ARCH = x86_64
+endif
 
 .PHONY: proto
 # Generate Go protobuf bindings.
@@ -59,6 +66,10 @@ clean:
 build: prepare
 	CGO_ENABLED=0 go build -ldflags $(LDFLAGS) -o $(OUTPUT) cmd/goflow2/main.go
 
+.PHONY: print-output
+print-output:
+	@echo $(OUTPUT)
+
 .PHONY: docker
 # Build docker image for the current version.
 docker:
@@ -72,74 +83,75 @@ docker:
         --build-arg LICENSE="$(LICENSE)" \
         --build-arg VERSION="$(VERSION)" \
         --build-arg REV="$(COMMIT)" \
-        -t $(DOCKER_REPO)$(NAME):$(ABBREV)$(DOCKER_SUFFIX) .
+        $(DOCKER_TAG_ARGS) .
 
 .PHONY: push-docker
 # Push docker image tagged with the current abbrev.
 push-docker:
-	$(DOCKER_BIN) push $(DOCKER_REPO)$(NAME):$(ABBREV)$(DOCKER_SUFFIX)
+	@for tag in $(DOCKER_TAGS); do \
+		$(DOCKER_BIN) push $$tag; \
+	done
 
 .PHONY: docker-manifest
 # Create and push multi-arch manifest for abbrev and latest tags.
 docker-manifest:
-	$(DOCKER_BIN) manifest create $(DOCKER_REPO)$(NAME):$(ABBREV) \
-	    --amend $(DOCKER_REPO)$(NAME):$(ABBREV)-amd64 \
-	    --amend $(DOCKER_REPO)$(NAME):$(ABBREV)-arm64
-	$(DOCKER_BIN) manifest push $(DOCKER_REPO)$(NAME):$(ABBREV)
+	$(DOCKER_BIN) manifest create $(DOCKER_IMAGE):$(ABBREV) \
+	    --amend $(DOCKER_IMAGE):$(ABBREV)-amd64 \
+	    --amend $(DOCKER_IMAGE):$(ABBREV)-arm64
+	$(DOCKER_BIN) manifest push $(DOCKER_IMAGE):$(ABBREV)
 
-	$(DOCKER_BIN) manifest create $(DOCKER_REPO)$(NAME):latest \
-	    --amend $(DOCKER_REPO)$(NAME):$(ABBREV)-amd64 \
-	    --amend $(DOCKER_REPO)$(NAME):$(ABBREV)-arm64
-	$(DOCKER_BIN) manifest push $(DOCKER_REPO)$(NAME):latest
+	$(DOCKER_BIN) manifest create $(DOCKER_IMAGE):latest \
+	    --amend $(DOCKER_IMAGE):$(ABBREV)-amd64 \
+	    --amend $(DOCKER_IMAGE):$(ABBREV)-arm64
+	$(DOCKER_BIN) manifest push $(DOCKER_IMAGE):latest
 
 .PHONY: docker-manifest-buildx
 # Create multi-arch manifest using buildx imagetools (abbrev tag).
 docker-manifest-buildx:
 	$(DOCKER_BIN) buildx imagetools create \
-	    -t $(DOCKER_REPO)$(NAME):$(ABBREV) \
-	    $(DOCKER_REPO)$(NAME):$(ABBREV)-amd64 \
-	    $(DOCKER_REPO)$(NAME):$(ABBREV)-arm64
+	    -t $(DOCKER_IMAGE):$(ABBREV) \
+	    $(DOCKER_IMAGE):$(ABBREV)-amd64 \
+	    $(DOCKER_IMAGE):$(ABBREV)-arm64
 
 .PHONY: docker-manifest-release
 # Create and push multi-arch manifest for release version.
 docker-manifest-release:
-	$(DOCKER_BIN) manifest create $(DOCKER_REPO)$(NAME):$(VERSION) \
-	    --amend $(DOCKER_REPO)$(NAME):$(ABBREV)-amd64 \
-	    --amend $(DOCKER_REPO)$(NAME):$(ABBREV)-arm64
-	$(DOCKER_BIN) manifest push $(DOCKER_REPO)$(NAME):$(VERSION)
+	$(DOCKER_BIN) manifest create $(DOCKER_IMAGE):$(VERSION) \
+	    --amend $(DOCKER_IMAGE):$(ABBREV)-amd64 \
+	    --amend $(DOCKER_IMAGE):$(ABBREV)-arm64
+	$(DOCKER_BIN) manifest push $(DOCKER_IMAGE):$(VERSION)
 
 .PHONY: docker-manifest-release-buildx
 # Create release manifest using buildx imagetools.
 docker-manifest-release-buildx:
 	$(DOCKER_BIN) buildx imagetools create \
-	    -t $(DOCKER_REPO)$(NAME):$(VERSION) \
-	    $(DOCKER_REPO)$(NAME):$(ABBREV)-amd64 \
-	    $(DOCKER_REPO)$(NAME):$(ABBREV)-arm64
+	    -t $(DOCKER_IMAGE):$(VERSION) \
+	    $(DOCKER_IMAGE):$(ABBREV)-amd64 \
+	    $(DOCKER_IMAGE):$(ABBREV)-arm64
 
 .PHONY: package-deb
-# Build a Debian package using fpm.
-package-deb: prepare
-	fpm -s dir -t deb -n $(NAME) -v $(VERSION_PKG) \
-        --maintainer "$(MAINTAINER)" \
-        --description "$(DESCRIPTION)"  \
-        --url "$(URL)" \
-        --architecture $(ARCH) \
-        --license "$(LICENSE)" \
-        --package $(DIST_DIR) \
-        $(OUTPUT)=/usr/bin/goflow2 \
-        package/goflow2.service=/lib/systemd/system/goflow2.service \
-        package/goflow2.env=/etc/default/goflow2
+package-deb: build
+	$(call run_fpm,deb)
 
 .PHONY: package-rpm
-# Build an RPM package using fpm.
-package-rpm: prepare
-	fpm -s dir -t rpm -n $(NAME) -v $(VERSION_PKG) \
-        --maintainer "$(MAINTAINER)" \
-        --description "$(DESCRIPTION)" \
-        --url "$(URL)" \
-        --architecture $(ARCH) \
-        --license "$(LICENSE) "\
-        --package $(DIST_DIR) \
-        $(OUTPUT)=/usr/bin/goflow2 \
-        package/goflow2.service=/lib/systemd/system/goflow2.service \
-        package/goflow2.env=/etc/default/goflow2
+package-rpm: build
+	$(call run_fpm,rpm)
+
+.PHONY: package
+package: package-deb package-rpm
+
+FPM_COMMON_FLAGS := -s dir -n $(NAME) -v $(VERSION_PKG) \
+	--maintainer "$(MAINTAINER)" \
+	--description "$(DESCRIPTION)" \
+	--url "$(URL)" \
+	--architecture $(FPM_ARCH) \
+	--license "$(LICENSE)" \
+	--package $(DIST_DIR)
+FPM_INPUTS := \
+	$(OUTPUT)=/usr/bin/goflow2 \
+	package/goflow2.service=/lib/systemd/system/goflow2.service \
+	package/goflow2.env=/etc/default/goflow2
+
+define run_fpm
+	fpm -t $(1) $(FPM_COMMON_FLAGS) $(FPM_INPUTS)
+endef
