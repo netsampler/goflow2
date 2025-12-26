@@ -1,3 +1,4 @@
+ARG BIN_SOURCE="builder"
 FROM golang:alpine as builder
 ARG LDFLAGS=""
 
@@ -12,7 +13,6 @@ FROM scratch as prebuilt
 ARG PREBUILT_BINARY="goflow2"
 COPY ${PREBUILT_BINARY} /build/goflow2
 
-ARG BIN_SOURCE="builder"
 FROM ${BIN_SOURCE} as binstage
 
 FROM alpine:latest
