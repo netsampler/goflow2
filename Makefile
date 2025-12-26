@@ -4,8 +4,8 @@ GOOS          ?= linux
 GOARCH        ?= $(shell go env GOARCH)
 BUILDINFOSDET ?= 
 
-DOCKER_IMAGE  ?= netsampler/$(NAME)
 NAME          := goflow2
+DOCKER_IMAGE  ?= netsampler/$(NAME)
 VERSION       ?= $(shell git describe --abbrev --long HEAD)
 ABBREV        ?= $(shell git rev-parse --short HEAD)
 COMMIT        ?= $(shell git rev-parse HEAD)
