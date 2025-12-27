@@ -7,22 +7,16 @@ import (
 	"github.com/netsampler/goflow2/v2/decoders/netflow"
 )
 
-// ManagedTemplateSystem adds lifecycle management to a NetFlow template system.
-type ManagedTemplateSystem interface {
-	netflow.NetFlowTemplateSystem
-	Close() error
-}
-
 // TemplateSystemGenerator creates a template system for a source key.
-type TemplateSystemGenerator func(key string) ManagedTemplateSystem
+type TemplateSystemGenerator func(key string) netflow.NetFlowTemplateSystem
 
 // DefaultTemplateGenerator creates a basic in-memory template system.
-func DefaultTemplateGenerator(key string) ManagedTemplateSystem {
-	return netflow.CreateTemplateSystem().(ManagedTemplateSystem)
+func DefaultTemplateGenerator(key string) netflow.NetFlowTemplateSystem {
+	return netflow.CreateTemplateSystem()
 }
 
 // BasicTemplateSystemGenerator creates a basic in-memory template system.
-func BasicTemplateSystemGenerator(key string) ManagedTemplateSystem {
+func BasicTemplateSystemGenerator(key string) netflow.NetFlowTemplateSystem {
 	return DefaultTemplateGenerator(key)
 }
 
@@ -44,12 +38,12 @@ func NewJSONFileTemplateSystemGenerator(writer AtomicWriter, wrapped TemplateSys
 
 // Generator returns a TemplateSystemGenerator for NetFlow sources.
 func (g *JSONFileTemplateGenerator) Generator() TemplateSystemGenerator {
-	return func(key string) ManagedTemplateSystem {
-		var base ManagedTemplateSystem
+	return func(key string) netflow.NetFlowTemplateSystem {
+		var base netflow.NetFlowTemplateSystem
 		if g.wrapped != nil {
 			base = g.wrapped(key)
 		} else {
-			base = netflow.CreateTemplateSystem().(ManagedTemplateSystem)
+			base = netflow.CreateTemplateSystem()
 		}
 		if g.writer == nil {
 			return base
@@ -66,15 +60,15 @@ func (g *JSONFileTemplateGenerator) Close() error {
 	return g.writer.Close()
 }
 
-// TemplateSystemRemover deletes a template system for a source key.
-type TemplateSystemRemover interface {
-	Remove(key string)
-}
-
-// Remove deletes a template system from a remover if provided.
+// Remove deletes a template system for a source key.
 func Remove(remover TemplateSystemRemover, key string) {
 	if remover == nil {
 		return
 	}
 	remover.Remove(key)
+}
+
+// TemplateSystemRemover deletes a template system for a source key.
+type TemplateSystemRemover interface {
+	Remove(key string)
 }

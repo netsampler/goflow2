@@ -12,16 +12,16 @@ import (
 // PromTemplateSystem wraps a template system to record metrics.
 type PromTemplateSystem struct {
 	key     string
-	wrapped templates.ManagedTemplateSystem
+	wrapped netflow.NetFlowTemplateSystem
 }
 
 // NewDefaultPromTemplateSystem creates a PromTemplateSystem with default storage.
-func NewDefaultPromTemplateSystem(key string) templates.ManagedTemplateSystem {
-	return NewPromTemplateSystem(key, netflow.CreateTemplateSystem().(templates.ManagedTemplateSystem))
+func NewDefaultPromTemplateSystem(key string) netflow.NetFlowTemplateSystem {
+	return NewPromTemplateSystem(key, netflow.CreateTemplateSystem())
 }
 
 // NewPromTemplateSystem wraps a template system and records template metrics.
-func NewPromTemplateSystem(key string, wrapped templates.ManagedTemplateSystem) templates.ManagedTemplateSystem {
+func NewPromTemplateSystem(key string, wrapped netflow.NetFlowTemplateSystem) netflow.NetFlowTemplateSystem {
 	return &PromTemplateSystem{
 		key:     key,
 		wrapped: wrapped,
@@ -30,12 +30,12 @@ func NewPromTemplateSystem(key string, wrapped templates.ManagedTemplateSystem) 
 
 // NewPromTemplateSystemGenerator wraps another generator (or the default system) with Prometheus metrics.
 func NewPromTemplateSystemGenerator(wrapped templates.TemplateSystemGenerator) templates.TemplateSystemGenerator {
-	return func(key string) templates.ManagedTemplateSystem {
-		var base templates.ManagedTemplateSystem
+	return func(key string) netflow.NetFlowTemplateSystem {
+		var base netflow.NetFlowTemplateSystem
 		if wrapped != nil {
 			base = wrapped(key)
 		} else {
-			base = netflow.CreateTemplateSystem().(templates.ManagedTemplateSystem)
+			base = netflow.CreateTemplateSystem()
 		}
 		return NewPromTemplateSystem(key, base)
 	}
@@ -90,9 +90,4 @@ func (s *PromTemplateSystem) RemoveTemplate(version uint16, obsDomainId uint32, 
 // GetTemplates returns all templates from the wrapped system.
 func (s *PromTemplateSystem) GetTemplates() netflow.FlowBaseTemplateSet {
 	return s.wrapped.GetTemplates()
-}
-
-// Close closes the wrapped template system.
-func (s *PromTemplateSystem) Close() error {
-	return s.wrapped.Close()
 }

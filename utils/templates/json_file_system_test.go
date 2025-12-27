@@ -13,7 +13,7 @@ func TestJSONFileTemplateSystem_PersistsAndLoads(t *testing.T) {
 	dir := t.TempDir()
 	path := dir + "/templates.json"
 
-	base := netflow.CreateTemplateSystem().(ManagedTemplateSystem)
+	base := netflow.CreateTemplateSystem()
 	writer := NewAtomicFileWriter(path)
 	system := NewJSONFileTemplateSystem("router-a", base, writer, 0)
 
@@ -50,7 +50,7 @@ func TestJSONFileTemplateSystem_PersistsAndLoads(t *testing.T) {
 		t.Fatalf("missing version key")
 	}
 
-	reloadedBase := netflow.CreateTemplateSystem().(ManagedTemplateSystem)
+	reloadedBase := netflow.CreateTemplateSystem()
 	reloaded := NewJSONFileTemplateSystem("router-a", reloadedBase, writer, 0)
 	reloadedTemplate, err := reloaded.GetTemplate(9, 1, 256)
 	if err != nil {
@@ -69,7 +69,7 @@ func TestJSONFileTemplateSystem_CorruptFile(t *testing.T) {
 		t.Fatalf("write corrupt JSON: %v", err)
 	}
 
-	base := netflow.CreateTemplateSystem().(ManagedTemplateSystem)
+	base := netflow.CreateTemplateSystem()
 	writer := NewAtomicFileWriter(path)
 	system := NewJSONFileTemplateSystem("router-a", base, writer, 0)
 	if len(system.GetTemplates()) != 0 {
