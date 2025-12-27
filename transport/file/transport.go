@@ -63,7 +63,10 @@ func (d *FileDriver) Init() error {
 				select {
 				case <-c:
 					d.lock.Lock()
-					d.file.Close()
+					if err := d.file.Close(); err != nil {
+						d.lock.Unlock()
+						return
+					}
 					err := d.openFile()
 					d.lock.Unlock()
 					if err != nil {
@@ -98,14 +101,17 @@ func (d *FileDriver) Send(key, data []byte) error {
 
 // Close closes the output file and stops reload handling.
 func (d *FileDriver) Close() error {
+	var closeErr error
 	if d.fileDestination != "" {
 		d.lock.Lock()
-		d.file.Close()
+		if err := d.file.Close(); err != nil {
+			closeErr = err
+		}
 		d.lock.Unlock()
 		signal.Ignore(syscall.SIGHUP)
 	}
 	close(d.q)
-	return nil
+	return closeErr
 }
 
 func init() {

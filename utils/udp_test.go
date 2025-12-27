@@ -1,8 +1,8 @@
 package utils
 
 import (
-	"fmt"
 	"net"
+	"strconv"
 	"testing"
 
 	//"github.com/stretchr/testify/assert"
@@ -10,7 +10,7 @@ import (
 )
 
 func TestUDPReceiver(t *testing.T) {
-	addr := "[::1]"
+	addr := "::1"
 	port, err := getFreeUDPPort()
 	require.NoError(t, err)
 	t.Logf("starting UDP receiver on %s:%d\n", addr, port)
@@ -20,13 +20,21 @@ func TestUDPReceiver(t *testing.T) {
 
 	require.NoError(t, r.Start(addr, port, nil))
 	sendMessage := func(msg string) error {
-		conn, err := net.Dial("udp", fmt.Sprintf("%s:%d", addr, port))
+		conn, err := net.Dial("udp", net.JoinHostPort(addr, strconv.Itoa(port)))
 		if err != nil {
 			return err
 		}
-		defer conn.Close()
 		_, err = conn.Write([]byte(msg))
-		return err
+		if err != nil {
+			if closeErr := conn.Close(); closeErr != nil {
+				return closeErr
+			}
+			return err
+		}
+		if err := conn.Close(); err != nil {
+			return err
+		}
+		return nil
 	}
 	require.NoError(t, sendMessage("message"))
 	t.Log("sending message\n")
@@ -34,7 +42,7 @@ func TestUDPReceiver(t *testing.T) {
 }
 
 func TestUDPClose(t *testing.T) {
-	addr := "[::1]"
+	addr := "::1"
 	port, err := getFreeUDPPort()
 	require.NoError(t, err)
 	t.Logf("starting UDP receiver on %s:%d\n", addr, port)
@@ -58,6 +66,9 @@ func getFreeUDPPort() (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	defer l.Close()
-	return l.LocalAddr().(*net.UDPAddr).Port, nil
+	port := l.LocalAddr().(*net.UDPAddr).Port
+	if err := l.Close(); err != nil {
+		return 0, err
+	}
+	return port, nil
 }

@@ -513,12 +513,13 @@ func DecodeMessageVersion(payload *bytes.Buffer, templates NetFlowTemplateSystem
 		return &DecoderError{"IPFIX/NetFlowV9 version", err}
 	}
 
-	if version == 9 {
+	switch version {
+	case 9:
 		if err := DecodeMessageNetFlow(payload, templates, packetNFv9); err != nil {
 			return &DecoderError{"NetFlowV9", err}
 		}
 		return nil
-	} else if version == 10 {
+	case 10:
 		if err := DecodeMessageIPFIX(payload, templates, packetIPFIX); err != nil {
 			return &DecoderError{"IPFIX", err}
 		}

@@ -351,9 +351,10 @@ func ProtoRenderer(msg *ProtoProducerMessage, fieldName string, data interface{}
 // NetworkRenderer formats a prefix length as a CIDR mask.
 func NetworkRenderer(msg *ProtoProducerMessage, fieldName string, data interface{}) interface{} {
 	var addr netip.Addr
-	if fieldName == "SrcNet" {
+	switch fieldName {
+	case "SrcNet":
 		addr, _ = netip.AddrFromSlice(msg.SrcAddr)
-	} else if fieldName == "DstNet" {
+	case "DstNet":
 		addr, _ = netip.AddrFromSlice(msg.DstAddr)
 	}
 	if dataC, ok := data.(uint32); ok {
@@ -365,9 +366,10 @@ func NetworkRenderer(msg *ProtoProducerMessage, fieldName string, data interface
 
 // IcmpCodeType returns a formatted ICMP type/code string.
 func IcmpCodeType(proto, icmpCode, icmpType uint32) string {
-	if proto == 1 {
+	switch proto {
+	case 1:
 		return icmpTypeName[icmpType]
-	} else if proto == 58 {
+	case 58:
 		return icmp6TypeName[icmpType]
 	}
 	return "unknown"

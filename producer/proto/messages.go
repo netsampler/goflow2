@@ -96,7 +96,9 @@ func (m *ProtoProducerMessage) baseKey(h hash.Hash) {
 				continue
 			}
 		}
-		h.Write([]byte(fmt.Sprintf("%v", fieldValue.Interface())))
+		if _, err := fmt.Fprintf(h, "%v", fieldValue.Interface()); err != nil {
+			return
+		}
 	}
 }
 
@@ -152,14 +154,15 @@ func (m *ProtoProducerMessage) mapUnknown() map[string]interface{} {
 
 			var dest interface{}
 			var value interface{}
-			if dataType == protowire.VarintType {
+			switch dataType {
+			case protowire.VarintType:
 				v, _ := protowire.ConsumeVarint(data)
 				value = v
-			} else if dataType == protowire.BytesType {
+			case protowire.BytesType:
 				v, _ := protowire.ConsumeString(data)
 				//value = hex.EncodeToString([]byte(v)) // removed, this conversion is left to the renderer
 				value = []byte(v)
-			} else {
+			default:
 				continue
 			}
 			if pbField.Array {

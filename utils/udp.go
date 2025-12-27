@@ -153,7 +153,9 @@ func (r *UDPReceiver) receive(addr string, port int, started chan bool) error {
 		case <-q: // if routine has exited before
 		case <-r.q: // upon general close
 		}
-		pconn.Close()
+		if err := pconn.Close(); err != nil {
+			r.logError(err)
+		}
 	}()
 	defer close(q)
 
