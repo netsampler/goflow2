@@ -1,4 +1,4 @@
-name: Build
+name: Main
 
 on:
   push:
@@ -49,11 +49,9 @@ jobs:
       id: set-matrix
       shell: bash
       run: |
-        # Trim the matrix for PRs to keep checks fast.
         if [[ "${{ github.event_name }}" == "pull_request" ]]; then
           echo 'include=[{"goos":"linux","goarch":"amd64","package":true}]' >> "$GITHUB_OUTPUT"
         else
-          # Full build matrix for tags and pushes.
           echo 'include=[{"goos":"linux","goarch":"amd64","package":true},{"goos":"linux","goarch":"arm64","package":true},{"goos":"linux","goarch":"arm","goarm":"7","package":true},{"goos":"darwin","goarch":"amd64","package":false},{"goos":"darwin","goarch":"arm64","package":false},{"goos":"windows","goarch":"amd64","extension":".exe","package":false},{"goos":"windows","goarch":"arm64","extension":".exe","package":false}]' >> "$GITHUB_OUTPUT"
         fi
 
@@ -85,7 +83,6 @@ jobs:
 
     - name: Set VERSION for tag builds
       if: startsWith(github.ref, 'refs/tags/')
-      # Pin VERSION to the latest annotated tag for packaging.
       run: echo "VERSION=$(git describe --tags --abbrev=0 HEAD)" >> $GITHUB_ENV
 
     - name: Build
@@ -101,8 +98,8 @@ jobs:
     - name: Set docker packaging vars
       if: matrix.package
       shell: bash
+      # Package Docker images only for supported linux arch targets.
       run: |
-        # Package Docker images only for supported linux arch targets.
         if [[ "${{ matrix.goarch }}" == "amd64" ]]; then
           echo "DOCKER_PLATFORM=linux/amd64" >> "$GITHUB_ENV"
           echo "DOCKER_PACKAGE=true" >> "$GITHUB_ENV"
@@ -137,8 +134,8 @@ jobs:
 
     - name: Docker package
       if: matrix.package && env.DOCKER_PACKAGE == 'true'
+      # PRs load the image locally; main pushes to registries.
       run: |
-        # PRs load the image locally; main pushes to registries.
         if [[ "${{ github.event_name }}" == "pull_request" ]]; then
           DOCKER_PUSH_FLAG="--load"
         else
@@ -174,8 +171,8 @@ jobs:
 
     - name: Install fpm
       if: matrix.package
+      # fpm builds both rpm and deb artifacts from the Go binaries.
       run: |
-        # fpm builds both rpm and deb artifacts from the Go binaries.
         if [[ "${{ steps.cache-apt.outputs.cache-hit }}" != "true" ]]; then
           sudo apt-get update
         fi
@@ -223,14 +220,13 @@ jobs:
 
     - name: Set VERSION for tag builds
       if: startsWith(github.ref, 'refs/tags/')
-      # Use the latest tag as the manifest version.
       run: echo "VERSION=$(git describe --tags --abbrev=0 HEAD)" >> $GITHUB_ENV
 
     - name: Publish manifests (branch)
       if: "!startsWith(github.ref, 'refs/tags/')"
       shell: bash
+      # Publish branch-specific and latest tags to both registries.
       run: |
-        # Publish branch-specific and latest tags to both registries.
         images=("${{ env.DOCKERHUB_IMAGE }}" "${{ env.GHCR_IMAGE }}")
         for image in "${images[@]}"; do
           DOCKER_IMAGE="$image" make docker-manifest
@@ -240,8 +236,8 @@ jobs:
     - name: Publish manifests (tag)
       if: startsWith(github.ref, 'refs/tags/')
       shell: bash
+      # Tag releases get a versioned manifest plus latest.
       run: |
-        # Tag releases get a versioned manifest plus latest.
         images=("${{ env.DOCKERHUB_IMAGE }}" "${{ env.GHCR_IMAGE }}")
         for image in "${images[@]}"; do
           DOCKER_IMAGE="$image" DOCKER_MANIFEST_TAG="${VERSION}" make docker-manifest
