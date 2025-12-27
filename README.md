@@ -140,6 +140,14 @@ $ ./goflow2 -transport=kafka \
   -format=bin
 ```
 
+To send data over a socket (TCP/UDP/Unix), use the socket transport:
+
+```bash
+$ ./goflow2 -transport=socket \
+  -transport.socket.network=unix \
+  -transport.socket.address=/tmp/goflow2.sock
+```
+
 By default, the distribution will be randomized.
 In order to partition the field, you need to configure the `key`
 in the formatter.

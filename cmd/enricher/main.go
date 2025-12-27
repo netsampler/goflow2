@@ -26,6 +26,7 @@ import (
 	"github.com/netsampler/goflow2/v2/transport"
 	_ "github.com/netsampler/goflow2/v2/transport/file"
 	_ "github.com/netsampler/goflow2/v2/transport/kafka"
+	_ "github.com/netsampler/goflow2/v2/transport/socket"
 
 	"github.com/oschwald/geoip2-golang"
 	"google.golang.org/protobuf/encoding/protodelim"
