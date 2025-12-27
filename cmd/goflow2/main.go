@@ -74,7 +74,7 @@ var (
 	TemplateFile          = flag.String("templates.file", "", "Read/write NetFlow/IPFIX templates JSON file")
 	TemplateFlush         = flag.Duration("templates.flush", time.Second*5, "Interval to batch template JSON flushes")
 	TemplateEvictAfter    = flag.Duration("templates.evict.after", 0, "Evict template systems after inactivity (0 to disable)")
-	TemplateEvictInterval = flag.Duration("templates.evict.interval", 10*time.Minute, "Interval to scan for inactive template systems")
+	TemplateEvictInterval = flag.Duration("templates.evict.interval", time.Minute, "Interval to scan for inactive template systems")
 
 	MappingFile = flag.String("mapping", "", "Configuration file for custom mappings")
 
