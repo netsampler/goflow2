@@ -583,6 +583,13 @@ func ConvertNetFlowDataSet(flowMessage *ProtoProducerMessage, version uint16, ba
 				}
 			case 10:
 				switch df.Type {
+				case netflow.IPFIX_FIELD_flowStartSysUpTime:
+					flowMessage.TimeFlowStartNs = uint64(binary.BigEndian.Uint32(v)) * 1e6
+				case netflow.IPFIX_FIELD_flowEndSysUpTime:
+					flowMessage.TimeFlowEndNs = uint64(binary.BigEndian.Uint32(v)) * 1e6
+				case netflow.IPFIX_FIELD_systemInitTimeMilliseconds:
+					flowMessage.TimeFlowStartNs += binary.BigEndian.Uint64(v) * 1e6
+					flowMessage.TimeFlowEndNs += binary.BigEndian.Uint64(v) * 1e6
 				case netflow.IPFIX_FIELD_flowStartSeconds:
 					if err := DecodeUNumber(v, &time); err != nil {
 						return err
