@@ -36,8 +36,33 @@ jobs:
     - name: Tidy Go Modules
       run: go mod tidy
 
-    - name: Test & Vet
-      run: make test vet
+    - name: Install linters
+      run: |
+        go install honnef.co/go/tools/cmd/staticcheck@latest
+        go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+        echo "$(go env GOPATH)/bin" >> $GITHUB_PATH
+
+    - name: Test
+      run: make test
+
+    - name: Vet
+      run: make vet
+
+    - name: Test (race)
+      continue-on-error: true
+      run: make test-race
+
+    - name: Test (coverage)
+      continue-on-error: true
+      run: make test-cover
+
+    - name: Lint
+      continue-on-error: true
+      run: make lint
+
+    - name: Staticcheck
+      continue-on-error: true
+      run: make staticcheck
 
   matrix:
     name: Select Matrix

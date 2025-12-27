@@ -52,6 +52,25 @@ vet:
 test:
 	go test -v ./...
 
+.PHONY: test-race
+test-race:
+	go test -race ./...
+
+.PHONY: test-cover
+test-cover:
+	go test -cover ./...
+
+.PHONY: staticcheck
+staticcheck:
+	staticcheck ./...
+
+.PHONY: lint
+lint:
+	golangci-lint run
+
+.PHONY: check
+check: vet test lint staticcheck
+
 .PHONY: prepare
 # Ensure dist directory exists.
 prepare:
