@@ -160,6 +160,17 @@ jobs:
         restore-keys: |
           ${{ runner.os }}-gems-
 
+    - name: Cache apt lists and archives
+      if: matrix.package
+      uses: actions/cache@v4
+      with:
+        path: |
+          /var/cache/apt/archives
+          /var/lib/apt/lists
+        key: ${{ runner.os }}-apt-${{ hashFiles('.github/workflows/main.yml') }}
+        restore-keys: |
+          ${{ runner.os }}-apt-
+
     - name: Install fpm
       if: matrix.package
       run: |
