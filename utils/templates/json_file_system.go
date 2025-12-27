@@ -52,6 +52,32 @@ type jsonTemplateEntry struct {
 	Template json.RawMessage `json:"template"`
 }
 
+// Load/preload flow (JSON snapshots):
+//   startup
+//     |
+//     |  JSONFileTemplateGenerator.TemplateSourceKeys()
+//     v
+//   TemplateSystemRegistry.PreloadSources(keys)
+//     |
+//     |  for each key
+//     v
+//   NewJSONFileTemplateSystem(key)
+//     |
+//     v
+//   load() -> JSON file -> add templates into wrapped system
+//
+//   runtime updates (per key)
+//     |
+//     |  AddTemplate/RemoveTemplate
+//     v
+//   writeSnapshot() [debounced]
+//     |
+//     v
+//   flushLoop() -> flushSnapshot()
+//     |
+//     v
+//   JSON file updated under routers[key]
+
 // NewJSONFileTemplateSystem wraps a template system and writes JSON snapshots to a shared file.
 func NewJSONFileTemplateSystem(key string, wrapped netflow.NetFlowTemplateSystem, writer AtomicWriter, interval time.Duration) netflow.NetFlowTemplateSystem {
 	if interval <= 0 {
