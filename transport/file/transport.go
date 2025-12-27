@@ -92,10 +92,6 @@ func (d *FileDriver) Send(key, data []byte) error {
 	if d.lineSeparator == "" {
 		return nil
 	}
-	if sw, ok := w.(io.StringWriter); ok {
-		_, err := sw.WriteString(d.lineSeparator)
-		return err
-	}
 	_, err := w.Write([]byte(d.lineSeparator))
 	return err
 }
