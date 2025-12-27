@@ -44,6 +44,7 @@ import (
 	"github.com/netsampler/goflow2/v2/metrics"
 	"github.com/netsampler/goflow2/v2/utils"
 	"github.com/netsampler/goflow2/v2/utils/debug"
+	"github.com/netsampler/goflow2/v2/utils/templates"
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"gopkg.in/yaml.v3"
@@ -69,7 +70,12 @@ var (
 
 	Addr = flag.String("addr", ":8080", "HTTP server address")
 
-	TemplatePath = flag.String("templates.path", "/templates", "NetFlow/IPFIX templates list")
+	TemplatePath          = flag.String("templates.path", "/templates", "NetFlow/IPFIX templates list")
+	TemplateFile          = flag.String("templates.file", "", "Read/write NetFlow/IPFIX templates JSON file")
+	TemplateFlush         = flag.Duration("templates.flush", time.Second*5, "Interval to batch template JSON flushes")
+	TemplateEvictAfter    = flag.Duration("templates.evict.after", 0, "Evict template systems after inactivity (0 to disable)")
+	TemplateEvictInterval = flag.Duration("templates.evict.interval", time.Minute, "Interval to scan for inactive template systems")
+	TemplateTouchOnAccess = flag.Bool("templates.touch.on_access", false, "Extend template lifetimes when templates are accessed")
 
 	MappingFile = flag.String("mapping", "", "Configuration file for custom mappings")
 
@@ -108,6 +114,12 @@ func main() {
 	}
 
 	slog.SetDefault(logger)
+
+	var templateWriter templates.AtomicWriter
+	var templateGenerator *templates.JSONFileTemplateGenerator
+	if *TemplateFile != "" {
+		templateWriter = templates.NewAtomicFileWriter(*TemplateFile)
+	}
 
 	formatter, err := format.FindFormat(*Format)
 	if err != nil {
@@ -294,11 +306,18 @@ func main() {
 			os.Exit(1)
 		}
 
+		promTemplater := metrics.NewPromTemplateSystemGenerator(templates.DefaultTemplateGenerator)
+		if templateGenerator == nil {
+			templateGenerator = templates.NewJSONFileTemplateSystemGenerator(templateWriter, promTemplater, *TemplateFlush)
+		}
 		cfgPipe := &utils.PipeConfig{
-			Format:           formatter,
-			Transport:        transporter,
-			Producer:         flowProducer,
-			NetFlowTemplater: metrics.NewDefaultPromTemplateSystem, // wrap template system to get Prometheus info
+			Format:                formatter,
+			Transport:             transporter,
+			Producer:              flowProducer,
+			NetFlowTemplater:      templateGenerator.Generator(), // wrap template system to get Prometheus info and optional JSON file snapshots
+			TemplateEvictAfter:    *TemplateEvictAfter,
+			TemplateEvictInterval: *TemplateEvictInterval,
+			TemplateTouchOnAccess: *TemplateTouchOnAccess,
 		}
 
 		var decodeFunc utils.DecoderFunc
@@ -308,6 +327,13 @@ func main() {
 			p = utils.NewSFlowPipe(cfgPipe)
 		case "netflow":
 			p = utils.NewNetFlowPipe(cfgPipe)
+			if templateGenerator != nil {
+				if nfP, ok := p.(*utils.NetFlowPipe); ok {
+					if err := nfP.PreloadTemplateSources(templateGenerator); err != nil {
+						logger.Error("error preloading template sources", slog.String("error", err.Error()))
+					}
+				}
+			}
 		case "flow":
 			p = utils.NewFlowPipe(cfgPipe)
 		default:
@@ -462,6 +488,16 @@ func main() {
 		logger.Error("error shutting-down HTTP server", slog.String("error", err.Error()))
 	}
 	cancel()
+	if templateGenerator != nil {
+		if err := templateGenerator.Close(); err != nil {
+			logger.Warn("error closing template generator", slog.String("error", err.Error()))
+		}
+	}
+	if templateWriter != nil {
+		if err := templateWriter.Close(); err != nil {
+			logger.Warn("error closing template writer", slog.String("error", err.Error()))
+		}
+	}
 	close(q) // close errors
 	wg.Wait()
 

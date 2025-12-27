@@ -88,3 +88,8 @@ func CreateTemplateSystem() NetFlowTemplateSystem {
 	}
 	return ts
 }
+
+// Close is a no-op for the in-memory store.
+func (ts *BasicTemplateSystem) Close() error {
+	return nil
+}

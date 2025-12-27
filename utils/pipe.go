@@ -4,7 +4,7 @@ package utils
 import (
 	"bytes"
 	"fmt"
-	"sync"
+	"time"
 
 	"github.com/netsampler/goflow2/v2/decoders/netflow"
 	"github.com/netsampler/goflow2/v2/decoders/netflowlegacy"
@@ -37,6 +37,10 @@ type PipeConfig struct {
 	Producer  producer.ProducerInterface
 
 	NetFlowTemplater templates.TemplateSystemGenerator
+
+	TemplateEvictAfter    time.Duration
+	TemplateEvictInterval time.Duration
+	TemplateTouchOnAccess bool
 }
 
 func (p *flowpipe) formatSend(flowMessageSet []producer.ProducerMessage) error {
@@ -80,8 +84,7 @@ type SFlowPipe struct {
 type NetFlowPipe struct {
 	flowpipe
 
-	templateslock *sync.RWMutex
-	templates     map[string]netflow.NetFlowTemplateSystem
+	templateRegistry *templates.TemplateSystemRegistry
 }
 
 // PipeMessageError wraps a decode/produce error with source message metadata.
@@ -143,9 +146,9 @@ func (p *SFlowPipe) DecodeFlow(msg interface{}) error {
 // NewNetFlowPipe creates a flow pipe configured for NetFlow/IPFIX packets.
 func NewNetFlowPipe(cfg *PipeConfig) *NetFlowPipe {
 	p := &NetFlowPipe{
-		templateslock: &sync.RWMutex{},
-		templates:     make(map[string]netflow.NetFlowTemplateSystem),
+		templateRegistry: templates.NewTemplateSystemRegistry(cfg.NetFlowTemplater, cfg.TemplateEvictAfter, cfg.TemplateEvictInterval),
 	}
+	p.templateRegistry.SetTouchOnAccess(cfg.TemplateTouchOnAccess)
 	p.parseConfig(cfg)
 	return p
 }
@@ -160,15 +163,7 @@ func (p *NetFlowPipe) DecodeFlow(msg interface{}) error {
 
 	key := pkt.Src.String()
 
-	p.templateslock.RLock()
-	templates, ok := p.templates[key]
-	p.templateslock.RUnlock()
-	if !ok {
-		templates = p.netFlowTemplater(key)
-		p.templateslock.Lock()
-		p.templates[key] = templates
-		p.templateslock.Unlock()
-	}
+	templates := p.templateRegistry.Get(key)
 
 	var packetV5 netflowlegacy.PacketNetFlowV5
 	var packetNFv9 netflow.NFv9Packet
@@ -231,18 +226,26 @@ func (p *NetFlowPipe) DecodeFlow(msg interface{}) error {
 }
 
 func (p *NetFlowPipe) Close() {
+	p.templateRegistry.Close()
+}
+
+// PreloadTemplateSources initializes template systems for known source keys.
+func (p *NetFlowPipe) PreloadTemplateSources(loader templates.TemplateSourceLoader) error {
+	return p.templateRegistry.PreloadSources(loader)
+}
+
+// Remove deletes a template system from memory for a source key.
+func (p *NetFlowPipe) Remove(key string) {
+	templates.Remove(p.templateRegistry, key)
 }
 
 // GetTemplatesForAllSources returns a copy of templates for all known NetFlow sources.
 func (p *NetFlowPipe) GetTemplatesForAllSources() map[string]map[uint64]interface{} {
-	p.templateslock.RLock()
-	defer p.templateslock.RUnlock()
-
-	ret := make(map[string]map[uint64]interface{})
-	for k, v := range p.templates {
-		ret[k] = v.GetTemplates()
+	snapshot := p.templateRegistry.Snapshot()
+	ret := make(map[string]map[uint64]interface{}, len(snapshot))
+	for key, templates := range snapshot {
+		ret[key] = templates
 	}
-
 	return ret
 }
 
