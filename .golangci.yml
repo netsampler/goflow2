@@ -1,7 +1,5 @@
-version: 2
+version: "2"
 run:
   timeout: 5m
-
-issues:
-  exclude-files:
+  skip-files:
     - ".*\\.pb\\.go$"
