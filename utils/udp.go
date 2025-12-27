@@ -52,7 +52,7 @@ type UDPReceiver struct {
 	dispatch chan *udpPacket
 	errCh    chan error // linked to receiver, never closed
 
-	blocking    bool
+	blocking     bool
 	dispatchSize int
 
 	workers int
