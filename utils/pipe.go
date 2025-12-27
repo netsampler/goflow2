@@ -227,6 +227,11 @@ func (p *NetFlowPipe) Close() {
 	p.templateRegistry.Close()
 }
 
+// PreloadTemplateSources initializes template systems for known source keys.
+func (p *NetFlowPipe) PreloadTemplateSources(loader templates.TemplateSourceLoader) error {
+	return p.templateRegistry.PreloadSources(loader)
+}
+
 // Remove deletes a template system from memory for a source key.
 func (p *NetFlowPipe) Remove(key string) {
 	templates.Remove(p.templateRegistry, key)

@@ -319,6 +319,35 @@ func (s *JSONFileTemplateSystem) load() {
 	}
 }
 
+// TemplateSourceKeys returns router keys discovered in the JSON snapshot file.
+func (g *JSONFileTemplateGenerator) TemplateSourceKeys() ([]string, error) {
+	if g == nil || g.writer == nil {
+		return nil, nil
+	}
+
+	payload, err := g.writer.Read()
+	if err != nil && err != io.EOF {
+		return nil, err
+	}
+	if len(payload) == 0 {
+		return nil, nil
+	}
+
+	var file jsonTemplateFile
+	if err := json.Unmarshal(payload, &file); err != nil {
+		return nil, err
+	}
+	if file.Routers == nil {
+		return nil, nil
+	}
+
+	keys := make([]string, 0, len(file.Routers))
+	for key := range file.Routers {
+		keys = append(keys, key)
+	}
+	return keys, nil
+}
+
 func splitTemplateKey(key uint64) (uint16, uint32, uint16) {
 	version := uint16(key >> 48)
 	obsDomainID := uint32((key >> 16) & 0xffffffff)

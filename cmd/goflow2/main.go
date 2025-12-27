@@ -325,6 +325,13 @@ func main() {
 			p = utils.NewSFlowPipe(cfgPipe)
 		case "netflow":
 			p = utils.NewNetFlowPipe(cfgPipe)
+			if templateGenerator != nil {
+				if nfP, ok := p.(*utils.NetFlowPipe); ok {
+					if err := nfP.PreloadTemplateSources(templateGenerator); err != nil {
+						logger.Error("error preloading template sources", slog.String("error", err.Error()))
+					}
+				}
+			}
 		case "flow":
 			p = utils.NewFlowPipe(cfgPipe)
 		default:

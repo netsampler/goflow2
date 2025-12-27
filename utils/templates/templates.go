@@ -12,6 +12,11 @@ import (
 // metrics) without changing the NetFlow decoder.
 type TemplateSystemGenerator func(key string) netflow.NetFlowTemplateSystem
 
+// TemplateSourceLoader provides source keys for preloading template systems.
+type TemplateSourceLoader interface {
+	TemplateSourceKeys() ([]string, error)
+}
+
 // DefaultTemplateGenerator creates a basic in-memory template system.
 func DefaultTemplateGenerator(key string) netflow.NetFlowTemplateSystem {
 	return netflow.CreateTemplateSystem()

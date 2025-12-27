@@ -114,6 +114,21 @@ func (m *TemplateSystemRegistry) Snapshot() map[string]netflow.FlowBaseTemplateS
 	return ret
 }
 
+// PreloadSources creates template systems for known source keys.
+func (m *TemplateSystemRegistry) PreloadSources(loader TemplateSourceLoader) error {
+	if loader == nil {
+		return nil
+	}
+	keys, err := loader.TemplateSourceKeys()
+	if err != nil {
+		return err
+	}
+	for _, key := range keys {
+		m.Get(key)
+	}
+	return nil
+}
+
 func (m *TemplateSystemRegistry) touch(key string, now time.Time) {
 	m.lock.Lock()
 	m.lastSeen[key] = now
