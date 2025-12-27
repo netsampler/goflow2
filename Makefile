@@ -24,6 +24,7 @@ DOCKER_SUFFIX ?=
 DOCKER_IMAGE_PREFIXES ?= $(DOCKER_IMAGE)
 DOCKER_TAGS ?= $(foreach image,$(DOCKER_IMAGE_PREFIXES),$(image):$(ABBREV)$(DOCKER_SUFFIX))
 DOCKER_TAG_ARGS := $(foreach tag,$(DOCKER_TAGS),-t $(tag))
+DOCKER_MANIFEST_TAG ?= $(ABBREV)
 
 OUTPUT := $(DIST_DIR)goflow2-$(VERSION_PKG)-$(GOOS)-$(GOARCH)$(EXTENSION)
 
@@ -86,14 +87,7 @@ push-docker:
 .PHONY: docker-manifest
 docker-manifest:
 	$(DOCKER_BIN) buildx imagetools create \
-	    -t $(DOCKER_IMAGE):$(ABBREV) \
-	    $(DOCKER_IMAGE):$(ABBREV)-amd64 \
-	    $(DOCKER_IMAGE):$(ABBREV)-arm64
-
-.PHONY: docker-manifest-release
-docker-manifest-release:
-	$(DOCKER_BIN) buildx imagetools create \
-	    -t $(DOCKER_IMAGE):$(VERSION) \
+	    -t $(DOCKER_IMAGE):$(DOCKER_MANIFEST_TAG) \
 	    $(DOCKER_IMAGE):$(ABBREV)-amd64 \
 	    $(DOCKER_IMAGE):$(ABBREV)-arm64
 
