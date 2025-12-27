@@ -1,0 +1,93 @@
+name: Regenerate Protobuf
+
+on:
+  schedule:
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  regen:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ^1.24
+          cache: true
+          cache-dependency-path: |
+            go.sum
+            go.mod
+
+      - name: Install protoc
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y protobuf-compiler
+
+      - name: Install protoc-gen-go
+        run: |
+          go install google.golang.org/protobuf/cmd/protoc-gen-go@latest
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+
+      - name: Regenerate protobuf
+        run: make proto
+
+      - name: Detect changes
+        id: diff
+        run: |
+          if git diff --quiet; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Commit changes
+        if: steps.diff.outputs.changed == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -B ci/proto-regen
+          git add pb/ cmd/enricher/pb/
+          git commit -m "Regenerate protobuf"
+          git push --force-with-lease origin HEAD:ci/proto-regen
+
+      - name: Create pull request
+        if: steps.diff.outputs.changed == 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const head = `${owner}:ci/proto-regen`;
+            const base = "main";
+
+            const { data: pulls } = await github.rest.pulls.list({
+              owner,
+              repo,
+              head,
+              state: "open",
+            });
+
+            if (pulls.length) {
+              core.info(`PR already open: ${pulls[0].html_url}`);
+              return;
+            }
+
+            const pr = await github.rest.pulls.create({
+              owner,
+              repo,
+              title: "Regenerate protobuf",
+              head,
+              base,
+              body: "Automated protobuf regeneration.",
+            });
+
+            core.info(`Created PR: ${pr.data.html_url}`);
