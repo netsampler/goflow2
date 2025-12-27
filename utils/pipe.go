@@ -83,7 +83,7 @@ type SFlowPipe struct {
 type NetFlowPipe struct {
 	flowpipe
 
-	manager *templates.TemplateSystemManager
+	templateRegistry *templates.TemplateSystemRegistry
 }
 
 // PipeMessageError wraps a decode/produce error with source message metadata.
@@ -145,7 +145,7 @@ func (p *SFlowPipe) DecodeFlow(msg interface{}) error {
 // NewNetFlowPipe creates a flow pipe configured for NetFlow/IPFIX packets.
 func NewNetFlowPipe(cfg *PipeConfig) *NetFlowPipe {
 	p := &NetFlowPipe{
-		manager: templates.NewTemplateSystemManager(cfg.NetFlowTemplater, cfg.TemplateEvictAfter, cfg.TemplateEvictInterval),
+		templateRegistry: templates.NewTemplateSystemRegistry(cfg.NetFlowTemplater, cfg.TemplateEvictAfter, cfg.TemplateEvictInterval),
 	}
 	p.parseConfig(cfg)
 	return p
@@ -161,7 +161,7 @@ func (p *NetFlowPipe) DecodeFlow(msg interface{}) error {
 
 	key := pkt.Src.String()
 
-	templates := p.manager.Get(key)
+	templates := p.templateRegistry.Get(key)
 
 	var packetV5 netflowlegacy.PacketNetFlowV5
 	var packetNFv9 netflow.NFv9Packet
@@ -224,17 +224,17 @@ func (p *NetFlowPipe) DecodeFlow(msg interface{}) error {
 }
 
 func (p *NetFlowPipe) Close() {
-	p.manager.Close()
+	p.templateRegistry.Close()
 }
 
 // Remove deletes a template system from memory for a source key.
 func (p *NetFlowPipe) Remove(key string) {
-	templates.Remove(p.manager, key)
+	templates.Remove(p.templateRegistry, key)
 }
 
 // GetTemplatesForAllSources returns a copy of templates for all known NetFlow sources.
 func (p *NetFlowPipe) GetTemplatesForAllSources() map[string]map[uint64]interface{} {
-	snapshot := p.manager.Snapshot()
+	snapshot := p.templateRegistry.Snapshot()
 	ret := make(map[string]map[uint64]interface{}, len(snapshot))
 	for key, templates := range snapshot {
 		ret[key] = templates

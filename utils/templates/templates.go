@@ -8,6 +8,8 @@ import (
 )
 
 // TemplateSystemGenerator creates a template system for a source key.
+// Generators let callers compose behaviors (in-memory storage, JSON snapshots,
+// metrics) without changing the NetFlow decoder.
 type TemplateSystemGenerator func(key string) netflow.NetFlowTemplateSystem
 
 // DefaultTemplateGenerator creates a basic in-memory template system.
@@ -21,6 +23,7 @@ func BasicTemplateSystemGenerator(key string) netflow.NetFlowTemplateSystem {
 }
 
 // JSONFileTemplateGenerator builds template systems backed by a shared JSON file.
+// Each generated system snapshots its current templates while sharing a writer.
 type JSONFileTemplateGenerator struct {
 	writer   AtomicWriter
 	wrapped  TemplateSystemGenerator

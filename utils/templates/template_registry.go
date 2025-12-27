@@ -8,8 +8,9 @@ import (
 	"github.com/netsampler/goflow2/v2/decoders/netflow"
 )
 
-// TemplateSystemManager owns template systems and handles eviction.
-type TemplateSystemManager struct {
+// TemplateSystemRegistry owns per-source template systems and handles eviction.
+// It lazily creates systems via the generator when new sources arrive.
+type TemplateSystemRegistry struct {
 	generator     TemplateSystemGenerator
 	templates     map[string]netflow.NetFlowTemplateSystem
 	lastSeen      map[string]time.Time
@@ -19,12 +20,12 @@ type TemplateSystemManager struct {
 	stopCh        chan struct{}
 }
 
-// NewTemplateSystemManager creates a manager with optional eviction.
-func NewTemplateSystemManager(generator TemplateSystemGenerator, evictAfter, evictInterval time.Duration) *TemplateSystemManager {
+// NewTemplateSystemRegistry creates a registry with optional eviction.
+func NewTemplateSystemRegistry(generator TemplateSystemGenerator, evictAfter, evictInterval time.Duration) *TemplateSystemRegistry {
 	if generator == nil {
 		generator = DefaultTemplateGenerator
 	}
-	manager := &TemplateSystemManager{
+	manager := &TemplateSystemRegistry{
 		generator:     generator,
 		templates:     make(map[string]netflow.NetFlowTemplateSystem),
 		lastSeen:      make(map[string]time.Time),
@@ -43,7 +44,7 @@ func NewTemplateSystemManager(generator TemplateSystemGenerator, evictAfter, evi
 }
 
 // Get returns the template system for a key, creating one if needed.
-func (m *TemplateSystemManager) Get(key string) netflow.NetFlowTemplateSystem {
+func (m *TemplateSystemRegistry) Get(key string) netflow.NetFlowTemplateSystem {
 	now := time.Now()
 
 	m.lock.RLock()
@@ -63,7 +64,7 @@ func (m *TemplateSystemManager) Get(key string) netflow.NetFlowTemplateSystem {
 }
 
 // Remove deletes a template system for a key.
-func (m *TemplateSystemManager) Remove(key string) {
+func (m *TemplateSystemRegistry) Remove(key string) {
 	var tmpl netflow.NetFlowTemplateSystem
 	m.lock.Lock()
 	if existing, ok := m.templates[key]; ok {
@@ -88,7 +89,7 @@ func (m *TemplateSystemManager) Remove(key string) {
 }
 
 // Close stops eviction and closes all template systems.
-func (m *TemplateSystemManager) Close() {
+func (m *TemplateSystemRegistry) Close() {
 	close(m.stopCh)
 	m.lock.RLock()
 	keys := make([]string, 0, len(m.templates))
@@ -102,7 +103,7 @@ func (m *TemplateSystemManager) Close() {
 }
 
 // Snapshot returns templates for all known sources.
-func (m *TemplateSystemManager) Snapshot() map[string]netflow.FlowBaseTemplateSet {
+func (m *TemplateSystemRegistry) Snapshot() map[string]netflow.FlowBaseTemplateSet {
 	// Snapshot current template maps; callers expect a point-in-time view.
 	m.lock.RLock()
 	defer m.lock.RUnlock()
@@ -113,13 +114,13 @@ func (m *TemplateSystemManager) Snapshot() map[string]netflow.FlowBaseTemplateSe
 	return ret
 }
 
-func (m *TemplateSystemManager) touch(key string, now time.Time) {
+func (m *TemplateSystemRegistry) touch(key string, now time.Time) {
 	m.lock.Lock()
 	m.lastSeen[key] = now
 	m.lock.Unlock()
 }
 
-func (m *TemplateSystemManager) evictLoop() {
+func (m *TemplateSystemRegistry) evictLoop() {
 	ticker := time.NewTicker(m.evictInterval)
 	defer ticker.Stop()
 	for {
@@ -133,7 +134,7 @@ func (m *TemplateSystemManager) evictLoop() {
 	}
 }
 
-func (m *TemplateSystemManager) evictStale() {
+func (m *TemplateSystemRegistry) evictStale() {
 	if m.evictAfter <= 0 {
 		return
 	}
