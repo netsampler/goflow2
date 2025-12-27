@@ -91,3 +91,8 @@ func (s *PromTemplateSystem) RemoveTemplate(version uint16, obsDomainId uint32, 
 func (s *PromTemplateSystem) GetTemplates() netflow.FlowBaseTemplateSet {
 	return s.wrapped.GetTemplates()
 }
+
+// Close closes the wrapped template system.
+func (s *PromTemplateSystem) Close() error {
+	return s.wrapped.Close()
+}

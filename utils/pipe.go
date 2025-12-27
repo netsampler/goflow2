@@ -235,17 +235,7 @@ func (p *NetFlowPipe) Close() {
 	defer p.templateslock.RUnlock()
 
 	for _, tmpl := range p.templates {
-		if closer, ok := tmpl.(interface {
-			Close() error
-		}); ok {
-			_ = closer.Close()
-			continue
-		}
-		if flusher, ok := tmpl.(interface {
-			Flush()
-		}); ok {
-			flusher.Flush()
-		}
+		_ = tmpl.Close()
 	}
 }
 

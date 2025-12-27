@@ -122,7 +122,7 @@ func (s *JSONFileTemplateSystem) Close() error {
 		close(s.closeCh)
 		s.flushSnapshot()
 	})
-	return nil
+	return s.wrapped.Close()
 }
 
 // Flush forces an immediate write of the JSON snapshot.
