@@ -84,10 +84,10 @@ jobs:
             const pr = await github.rest.pulls.create({
               owner,
               repo,
-              title: "Regenerate protobuf",
+              title: "chore(proto): regenerate protobuf",
               head,
               base,
-              body: "Automated protobuf regeneration.",
+              body: "Automated protobuf regeneration via .github/workflows/proto-regen.yml.",
             });
 
             core.info(`Created PR: ${pr.data.html_url}`);
