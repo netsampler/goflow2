@@ -112,6 +112,7 @@ func main() {
 	slog.SetDefault(logger)
 
 	var templateWriter templates.AtomicWriter
+	var templateGenerator *templates.JSONFileTemplateGenerator
 	if *TemplateFile != "" {
 		templateWriter = templates.NewAtomicFileWriter(*TemplateFile)
 	}
@@ -302,12 +303,14 @@ func main() {
 		}
 
 		promTemplater := metrics.NewPromTemplateSystemGenerator(templates.DefaultTemplateGenerator)
-		jsonTemplater := templates.NewJSONFileTemplateSystemGenerator(templateWriter, promTemplater)
+		if templateGenerator == nil {
+			templateGenerator = templates.NewJSONFileTemplateSystemGenerator(templateWriter, promTemplater)
+		}
 		cfgPipe := &utils.PipeConfig{
 			Format:           formatter,
 			Transport:        transporter,
 			Producer:         flowProducer,
-			NetFlowTemplater: jsonTemplater, // wrap template system to get Prometheus info and optional JSON file snapshots
+			NetFlowTemplater: templateGenerator.Generator(), // wrap template system to get Prometheus info and optional JSON file snapshots
 		}
 
 		var decodeFunc utils.DecoderFunc
@@ -471,6 +474,16 @@ func main() {
 		logger.Error("error shutting-down HTTP server", slog.String("error", err.Error()))
 	}
 	cancel()
+	if templateGenerator != nil {
+		if err := templateGenerator.Close(); err != nil {
+			logger.Warn("error closing template generator", slog.String("error", err.Error()))
+		}
+	}
+	if templateWriter != nil {
+		if err := templateWriter.Close(); err != nil {
+			logger.Warn("error closing template writer", slog.String("error", err.Error()))
+		}
+	}
 	close(q) // close errors
 	wg.Wait()
 

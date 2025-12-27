@@ -14,6 +14,7 @@ import (
 type AtomicWriter interface {
 	Read() ([]byte, error)
 	WriteAtomic(payload []byte) error
+	Close() error
 }
 
 type atomicFileWriter struct {
@@ -82,6 +83,10 @@ func (w *atomicFileWriter) WriteAtomic(payload []byte) error {
 	if err := syncDir(dir); err != nil {
 		slog.Warn("error syncing template directory", slog.String("error", err.Error()))
 	}
+	return nil
+}
+
+func (w *atomicFileWriter) Close() error {
 	return nil
 }
 
