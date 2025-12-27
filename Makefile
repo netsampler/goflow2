@@ -83,6 +83,7 @@ clean:
 .PHONY: build
 # Build the goflow2 binary.
 build: prepare
+	go generate ./transport/clickhouse/enricher
 	CGO_ENABLED=0 go build -ldflags $(LDFLAGS) -o $(OUTPUT) cmd/goflow2/main.go
 
 .PHONY: print-output
