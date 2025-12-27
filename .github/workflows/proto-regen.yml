@@ -56,7 +56,7 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git checkout -B ci/proto-regen
           git add pb/ cmd/enricher/pb/
-          git commit -m "Regenerate protobuf"
+          git commit -m "chore(proto): regenerate protobuf"
           git push --force-with-lease origin HEAD:ci/proto-regen
 
       - name: Create pull request
