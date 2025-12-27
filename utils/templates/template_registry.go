@@ -17,6 +17,7 @@ type TemplateSystemRegistry struct {
 	lock          *sync.RWMutex
 	evictAfter    time.Duration
 	evictInterval time.Duration
+	touchOnAccess bool
 	stopCh        chan struct{}
 }
 
@@ -55,7 +56,7 @@ func (m *TemplateSystemRegistry) Get(key string) netflow.NetFlowTemplateSystem {
 		return templates
 	}
 
-	templates = newTemplateTrackingSystem(m.generator(key))
+	templates = newTemplateTrackingSystem(m.generator(key), m.accessTouchFn(key))
 	m.lock.Lock()
 	m.templates[key] = templates
 	m.lastSeen[key] = now
@@ -114,6 +115,13 @@ func (m *TemplateSystemRegistry) Snapshot() map[string]netflow.FlowBaseTemplateS
 	return ret
 }
 
+// SetTouchOnAccess updates whether template access extends source lifetime.
+func (m *TemplateSystemRegistry) SetTouchOnAccess(enabled bool) {
+	m.lock.Lock()
+	m.touchOnAccess = enabled
+	m.lock.Unlock()
+}
+
 // PreloadSources creates template systems for known source keys.
 func (m *TemplateSystemRegistry) PreloadSources(loader TemplateSourceLoader) error {
 	if loader == nil {
@@ -127,6 +135,18 @@ func (m *TemplateSystemRegistry) PreloadSources(loader TemplateSourceLoader) err
 		m.Get(key)
 	}
 	return nil
+}
+
+func (m *TemplateSystemRegistry) accessTouchFn(key string) func() {
+	m.lock.RLock()
+	enabled := m.touchOnAccess
+	m.lock.RUnlock()
+	if !enabled {
+		return nil
+	}
+	return func() {
+		m.touch(key, time.Now())
+	}
 }
 
 func (m *TemplateSystemRegistry) touch(key string, now time.Time) {

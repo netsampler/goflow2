@@ -75,6 +75,7 @@ var (
 	TemplateFlush         = flag.Duration("templates.flush", time.Second*5, "Interval to batch template JSON flushes")
 	TemplateEvictAfter    = flag.Duration("templates.evict.after", 0, "Evict template systems after inactivity (0 to disable)")
 	TemplateEvictInterval = flag.Duration("templates.evict.interval", time.Minute, "Interval to scan for inactive template systems")
+	TemplateTouchOnAccess = flag.Bool("templates.touch.on_access", false, "Extend template lifetimes when templates are accessed")
 
 	MappingFile = flag.String("mapping", "", "Configuration file for custom mappings")
 
@@ -316,6 +317,7 @@ func main() {
 			NetFlowTemplater:      templateGenerator.Generator(), // wrap template system to get Prometheus info and optional JSON file snapshots
 			TemplateEvictAfter:    *TemplateEvictAfter,
 			TemplateEvictInterval: *TemplateEvictInterval,
+			TemplateTouchOnAccess: *TemplateTouchOnAccess,
 		}
 
 		var decodeFunc utils.DecoderFunc

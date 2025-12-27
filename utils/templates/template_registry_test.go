@@ -164,3 +164,37 @@ func TestTemplateSystemRegistryEvictStaleTemplates(t *testing.T) {
 		t.Fatalf("expected templateB to remain: %v", err)
 	}
 }
+
+func TestTemplateSystemRegistryTouchOnAccess(t *testing.T) {
+	registry := NewTemplateSystemRegistry(DefaultTemplateGenerator, time.Second, time.Minute)
+	registry.SetTouchOnAccess(true)
+
+	key := "touch-router"
+	system := registry.Get(key)
+	template := netflow.TemplateRecord{
+		TemplateId: 256,
+		FieldCount: 1,
+		Fields: []netflow.Field{
+			{Type: 1, Length: 4},
+		},
+	}
+	if err := system.AddTemplate(9, 1, 256, template); err != nil {
+		t.Fatalf("add template: %v", err)
+	}
+
+	registry.lock.Lock()
+	registry.lastSeen[key] = time.Now().Add(-2 * time.Second)
+	registry.lock.Unlock()
+
+	if _, err := system.GetTemplate(9, 1, 256); err != nil {
+		t.Fatalf("get template: %v", err)
+	}
+
+	registry.lock.RLock()
+	seen := registry.lastSeen[key]
+	registry.lock.RUnlock()
+
+	if time.Since(seen) > time.Second {
+		t.Fatalf("expected lastSeen to be refreshed on template access")
+	}
+}

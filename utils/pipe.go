@@ -40,6 +40,7 @@ type PipeConfig struct {
 
 	TemplateEvictAfter    time.Duration
 	TemplateEvictInterval time.Duration
+	TemplateTouchOnAccess bool
 }
 
 func (p *flowpipe) formatSend(flowMessageSet []producer.ProducerMessage) error {
@@ -147,6 +148,7 @@ func NewNetFlowPipe(cfg *PipeConfig) *NetFlowPipe {
 	p := &NetFlowPipe{
 		templateRegistry: templates.NewTemplateSystemRegistry(cfg.NetFlowTemplater, cfg.TemplateEvictAfter, cfg.TemplateEvictInterval),
 	}
+	p.templateRegistry.SetTouchOnAccess(cfg.TemplateTouchOnAccess)
 	p.parseConfig(cfg)
 	return p
 }

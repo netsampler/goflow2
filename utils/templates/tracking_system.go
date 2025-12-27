@@ -12,15 +12,17 @@ type templateTrackingSystem struct {
 	wrapped  netflow.NetFlowTemplateSystem
 	mu       sync.Mutex
 	lastSeen map[uint64]time.Time
+	onAccess func()
 }
 
-func newTemplateTrackingSystem(wrapped netflow.NetFlowTemplateSystem) netflow.NetFlowTemplateSystem {
+func newTemplateTrackingSystem(wrapped netflow.NetFlowTemplateSystem, onAccess func()) netflow.NetFlowTemplateSystem {
 	if wrapped == nil {
 		return wrapped
 	}
 	return &templateTrackingSystem{
 		wrapped:  wrapped,
 		lastSeen: make(map[uint64]time.Time),
+		onAccess: onAccess,
 	}
 }
 
@@ -50,6 +52,9 @@ func (s *templateTrackingSystem) RemoveTemplate(version uint16, obsDomainId uint
 		s.mu.Lock()
 		delete(s.lastSeen, templateKey(version, obsDomainId, templateId))
 		s.mu.Unlock()
+		if s.onAccess != nil {
+			s.onAccess()
+		}
 	}
 	return template, err
 }
@@ -87,6 +92,9 @@ func (s *templateTrackingSystem) touch(key uint64) {
 	s.mu.Lock()
 	s.lastSeen[key] = time.Now()
 	s.mu.Unlock()
+	if s.onAccess != nil {
+		s.onAccess()
+	}
 }
 
 func (s *templateTrackingSystem) EvictStaleTemplates(cutoff time.Time) int {
