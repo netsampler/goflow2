@@ -24,7 +24,6 @@ type NetFlowTemplateSystem interface {
 	GetTemplate(version uint16, obsDomainId uint32, templateId uint16) (interface{}, error)
 	AddTemplate(version uint16, obsDomainId uint32, templateId uint16, template interface{}) error
 	GetTemplates() FlowBaseTemplateSet
-	Close() error
 }
 
 func (ts *BasicTemplateSystem) GetTemplates() FlowBaseTemplateSet {
@@ -75,11 +74,6 @@ func (ts *BasicTemplateSystem) RemoveTemplate(version uint16, obsDomainId uint32
 	return nil, ErrorTemplateNotFound
 }
 
-// Close satisfies NetFlowTemplateSystem and is a no-op for the in-memory store.
-func (ts *BasicTemplateSystem) Close() error {
-	return nil
-}
-
 // BasicTemplateSystem keeps templates in-memory with a RW lock.
 type BasicTemplateSystem struct {
 	templates     FlowBaseTemplateSet
@@ -93,4 +87,9 @@ func CreateTemplateSystem() NetFlowTemplateSystem {
 		templateslock: &sync.RWMutex{},
 	}
 	return ts
+}
+
+// Close is a no-op for the in-memory store.
+func (ts *BasicTemplateSystem) Close() error {
+	return nil
 }

@@ -22,7 +22,7 @@ var (
 // JSONFileTemplateSystem wraps a template system and writes JSON snapshots to a shared file.
 type JSONFileTemplateSystem struct {
 	key     string
-	wrapped netflow.NetFlowTemplateSystem
+	wrapped ManagedTemplateSystem
 	writer  AtomicWriter
 	mu      *sync.Mutex
 	flushCh chan struct{}
@@ -52,7 +52,7 @@ type jsonTemplateEntry struct {
 }
 
 // NewJSONFileTemplateSystem wraps a template system and writes JSON snapshots to a shared file.
-func NewJSONFileTemplateSystem(key string, wrapped netflow.NetFlowTemplateSystem, writer AtomicWriter) netflow.NetFlowTemplateSystem {
+func NewJSONFileTemplateSystem(key string, wrapped ManagedTemplateSystem, writer AtomicWriter) ManagedTemplateSystem {
 	system := &JSONFileTemplateSystem{
 		key:     key,
 		wrapped: wrapped,

@@ -12,16 +12,16 @@ import (
 // PromTemplateSystem wraps a template system to record metrics.
 type PromTemplateSystem struct {
 	key     string
-	wrapped netflow.NetFlowTemplateSystem
+	wrapped templates.ManagedTemplateSystem
 }
 
 // NewDefaultPromTemplateSystem creates a PromTemplateSystem with default storage.
-func NewDefaultPromTemplateSystem(key string) netflow.NetFlowTemplateSystem {
-	return NewPromTemplateSystem(key, netflow.CreateTemplateSystem())
+func NewDefaultPromTemplateSystem(key string) templates.ManagedTemplateSystem {
+	return NewPromTemplateSystem(key, netflow.CreateTemplateSystem().(templates.ManagedTemplateSystem))
 }
 
 // NewPromTemplateSystem wraps a template system and records template metrics.
-func NewPromTemplateSystem(key string, wrapped netflow.NetFlowTemplateSystem) netflow.NetFlowTemplateSystem {
+func NewPromTemplateSystem(key string, wrapped templates.ManagedTemplateSystem) templates.ManagedTemplateSystem {
 	return &PromTemplateSystem{
 		key:     key,
 		wrapped: wrapped,
@@ -30,12 +30,12 @@ func NewPromTemplateSystem(key string, wrapped netflow.NetFlowTemplateSystem) ne
 
 // NewPromTemplateSystemGenerator wraps another generator (or the default system) with Prometheus metrics.
 func NewPromTemplateSystemGenerator(wrapped templates.TemplateSystemGenerator) templates.TemplateSystemGenerator {
-	return func(key string) netflow.NetFlowTemplateSystem {
-		var base netflow.NetFlowTemplateSystem
+	return func(key string) templates.ManagedTemplateSystem {
+		var base templates.ManagedTemplateSystem
 		if wrapped != nil {
 			base = wrapped(key)
 		} else {
-			base = netflow.CreateTemplateSystem()
+			base = netflow.CreateTemplateSystem().(templates.ManagedTemplateSystem)
 		}
 		return NewPromTemplateSystem(key, base)
 	}

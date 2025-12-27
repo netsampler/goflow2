@@ -81,7 +81,7 @@ type NetFlowPipe struct {
 	flowpipe
 
 	templateslock *sync.RWMutex
-	templates     map[string]netflow.NetFlowTemplateSystem
+	templates     map[string]templates.ManagedTemplateSystem
 }
 
 // PipeMessageError wraps a decode/produce error with source message metadata.
@@ -144,7 +144,7 @@ func (p *SFlowPipe) DecodeFlow(msg interface{}) error {
 func NewNetFlowPipe(cfg *PipeConfig) *NetFlowPipe {
 	p := &NetFlowPipe{
 		templateslock: &sync.RWMutex{},
-		templates:     make(map[string]netflow.NetFlowTemplateSystem),
+		templates:     make(map[string]templates.ManagedTemplateSystem),
 	}
 	p.parseConfig(cfg)
 	return p
@@ -237,6 +237,13 @@ func (p *NetFlowPipe) Close() {
 	for _, tmpl := range p.templates {
 		_ = tmpl.Close()
 	}
+}
+
+// Remove deletes a template system from memory for a source key.
+func (p *NetFlowPipe) Remove(key string) {
+	p.templateslock.Lock()
+	defer p.templateslock.Unlock()
+	delete(p.templates, key)
 }
 
 // GetTemplatesForAllSources returns a copy of templates for all known NetFlow sources.
