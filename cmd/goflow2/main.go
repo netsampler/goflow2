@@ -124,7 +124,8 @@ func main() {
 	var flowProducer producer.ProducerInterface
 	// instanciate a producer
 	// unlike transport and format, the producer requires extensive configurations and can be chained
-	if *Produce == "sample" {
+	switch *Produce {
+	case "sample":
 		var cfgProducer *protoproducer.ProducerConfig
 		if *MappingFile != "" {
 			f, err := os.Open(*MappingFile)
@@ -133,7 +134,9 @@ func main() {
 				os.Exit(1)
 			}
 			cfgProducer, err = LoadMapping(f)
-			f.Close()
+			if err := f.Close(); err != nil {
+				slog.Warn("error closing mapping", slog.String("error", err.Error()))
+			}
 			if err != nil {
 				slog.Error("error loading mapping", slog.String("error", err.Error()))
 				os.Exit(1)
@@ -150,9 +153,9 @@ func main() {
 			slog.Error("error producer", slog.String("error", err.Error()))
 			os.Exit(1)
 		}
-	} else if *Produce == "raw" {
+	case "raw":
 		flowProducer = &rawproducer.RawProducer{}
-	} else {
+	default:
 		slog.Error("producer does not exist", slog.String("error", err.Error()), slog.String("producer", *Produce))
 		os.Exit(1)
 	}
@@ -300,13 +303,14 @@ func main() {
 
 		var decodeFunc utils.DecoderFunc
 		var p utils.FlowPipe
-		if listenAddrUrl.Scheme == "sflow" {
+		switch listenAddrUrl.Scheme {
+		case "sflow":
 			p = utils.NewSFlowPipe(cfgPipe)
-		} else if listenAddrUrl.Scheme == "netflow" {
+		case "netflow":
 			p = utils.NewNetFlowPipe(cfgPipe)
-		} else if listenAddrUrl.Scheme == "flow" {
+		case "flow":
 			p = utils.NewFlowPipe(cfgPipe)
-		} else {
+		default:
 			logger.Error("scheme does not exist", slog.String("error", listenAddrUrl.Scheme))
 			os.Exit(1)
 		}
@@ -448,7 +452,9 @@ func main() {
 	// close producer
 	flowProducer.Close()
 	// close transporter (eg: flushes message to Kafka)
-	transporter.Close()
+	if err := transporter.Close(); err != nil {
+		logger.Error("error closing transport", slog.String("error", err.Error()))
+	}
 	logger.Info("transporter closed")
 	// close http server (prometheus + health check)
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)

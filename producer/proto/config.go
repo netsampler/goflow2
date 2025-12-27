@@ -6,6 +6,7 @@ import (
 
 // EndianType identifies endianness for mapped fields.
 type EndianType string
+
 // ProtoType identifies the protobuf encoding type for mapped fields.
 type ProtoType string
 

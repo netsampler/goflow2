@@ -290,9 +290,10 @@ func ConvertNetFlowDataSet(flowMessage *ProtoProducerMessage, version uint16, ba
 	flowMessage.TimeFlowStartNs = baseTimeNs
 	flowMessage.TimeFlowEndNs = baseTimeNs
 
-	if version == 9 {
+	switch version {
+	case 9:
 		flowMessage.Type = flowmessage.FlowMessage_NETFLOW_V9
-	} else if version == 10 {
+	case 10:
 		flowMessage.Type = flowmessage.FlowMessage_IPFIX
 	}
 
@@ -391,9 +392,10 @@ func ConvertNetFlowDataSet(flowMessage *ProtoProducerMessage, version uint16, ba
 		// IP
 		case netflow.NFV9_FIELD_IP_PROTOCOL_VERSION:
 			if len(v) > 0 {
-				if v[0] == 4 {
+				switch v[0] {
+				case 4:
 					flowMessage.Etype = 0x800
-				} else if v[0] == 6 {
+				case 6:
 					flowMessage.Etype = 0x86dd
 				}
 			}
@@ -559,7 +561,8 @@ func ConvertNetFlowDataSet(flowMessage *ProtoProducerMessage, version uint16, ba
 			flowMessage.MplsIp = append(flowMessage.MplsIp, v)
 
 		default:
-			if version == 9 {
+			switch version {
+			case 9:
 				// NetFlow v9 time works with a differential based on router's uptime
 				uptimeNs := uint64(uptime) * 1e6 // uptime is in milliseconds in NetFlow v9, converts to nanoseconds
 				switch df.Type {
@@ -578,7 +581,7 @@ func ConvertNetFlowDataSet(flowMessage *ProtoProducerMessage, version uint16, ba
 					timeDiff := (uptimeNs - uint64(timeLastSwitched)*1e6)
 					flowMessage.TimeFlowEndNs = baseTimeNs - timeDiff
 				}
-			} else if version == 10 {
+			case 10:
 				switch df.Type {
 				case netflow.IPFIX_FIELD_flowStartSeconds:
 					if err := DecodeUNumber(v, &time); err != nil {
