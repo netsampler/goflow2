@@ -21,13 +21,14 @@ var (
 
 // JSONFileTemplateSystem wraps a template system and writes JSON snapshots to a shared file.
 type JSONFileTemplateSystem struct {
-	key     string
-	wrapped ManagedTemplateSystem
-	writer  AtomicWriter
-	mu      *sync.Mutex
-	flushCh chan struct{}
-	closeCh chan struct{}
-	once    sync.Once
+	key      string
+	wrapped  ManagedTemplateSystem
+	writer   AtomicWriter
+	mu       *sync.Mutex
+	flushCh  chan struct{}
+	closeCh  chan struct{}
+	once     sync.Once
+	interval time.Duration
 }
 
 type jsonTemplateFile struct {
@@ -52,14 +53,18 @@ type jsonTemplateEntry struct {
 }
 
 // NewJSONFileTemplateSystem wraps a template system and writes JSON snapshots to a shared file.
-func NewJSONFileTemplateSystem(key string, wrapped ManagedTemplateSystem, writer AtomicWriter) ManagedTemplateSystem {
+func NewJSONFileTemplateSystem(key string, wrapped ManagedTemplateSystem, writer AtomicWriter, interval time.Duration) ManagedTemplateSystem {
+	if interval <= 0 {
+		interval = 5 * time.Second
+	}
 	system := &JSONFileTemplateSystem{
-		key:     key,
-		wrapped: wrapped,
-		writer:  writer,
-		mu:      templateWriterLock(writer),
-		flushCh: make(chan struct{}, 1),
-		closeCh: make(chan struct{}),
+		key:      key,
+		wrapped:  wrapped,
+		writer:   writer,
+		mu:       templateWriterLock(writer),
+		flushCh:  make(chan struct{}, 1),
+		closeCh:  make(chan struct{}),
+		interval: interval,
 	}
 	system.load()
 	go system.flushLoop()
@@ -152,7 +157,7 @@ func (s *JSONFileTemplateSystem) flushLoop() {
 	var timer *time.Timer
 	for range s.flushCh {
 		if timer == nil {
-			timer = time.NewTimer(250 * time.Millisecond)
+			timer = time.NewTimer(s.interval)
 		} else {
 			if !timer.Stop() {
 				select {
@@ -160,7 +165,7 @@ func (s *JSONFileTemplateSystem) flushLoop() {
 				default:
 				}
 			}
-			timer.Reset(250 * time.Millisecond)
+			timer.Reset(s.interval)
 		}
 
 		for {
@@ -172,7 +177,7 @@ func (s *JSONFileTemplateSystem) flushLoop() {
 					default:
 					}
 				}
-				timer.Reset(250 * time.Millisecond)
+				timer.Reset(s.interval)
 			case <-timer.C:
 				s.flushSnapshot()
 				timer = nil

@@ -15,7 +15,7 @@ func TestJSONFileTemplateSystem_PersistsAndLoads(t *testing.T) {
 
 	base := netflow.CreateTemplateSystem().(ManagedTemplateSystem)
 	writer := NewAtomicFileWriter(path)
-	system := NewJSONFileTemplateSystem("router-a", base, writer)
+	system := NewJSONFileTemplateSystem("router-a", base, writer, 0)
 
 	template := netflow.TemplateRecord{
 		TemplateId: 256,
@@ -51,7 +51,7 @@ func TestJSONFileTemplateSystem_PersistsAndLoads(t *testing.T) {
 	}
 
 	reloadedBase := netflow.CreateTemplateSystem().(ManagedTemplateSystem)
-	reloaded := NewJSONFileTemplateSystem("router-a", reloadedBase, writer)
+	reloaded := NewJSONFileTemplateSystem("router-a", reloadedBase, writer, 0)
 	reloadedTemplate, err := reloaded.GetTemplate(9, 1, 256)
 	if err != nil {
 		t.Fatalf("get template: %v", err)
@@ -71,7 +71,7 @@ func TestJSONFileTemplateSystem_CorruptFile(t *testing.T) {
 
 	base := netflow.CreateTemplateSystem().(ManagedTemplateSystem)
 	writer := NewAtomicFileWriter(path)
-	system := NewJSONFileTemplateSystem("router-a", base, writer)
+	system := NewJSONFileTemplateSystem("router-a", base, writer, 0)
 	if len(system.GetTemplates()) != 0 {
 		t.Fatalf("expected empty templates on corrupt file")
 	}

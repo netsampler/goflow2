@@ -2,6 +2,8 @@
 package templates
 
 import (
+	"time"
+
 	"github.com/netsampler/goflow2/v2/decoders/netflow"
 )
 
@@ -26,15 +28,17 @@ func BasicTemplateSystemGenerator(key string) ManagedTemplateSystem {
 
 // JSONFileTemplateGenerator builds template systems backed by a shared JSON file.
 type JSONFileTemplateGenerator struct {
-	writer  AtomicWriter
-	wrapped TemplateSystemGenerator
+	writer   AtomicWriter
+	wrapped  TemplateSystemGenerator
+	interval time.Duration
 }
 
 // NewJSONFileTemplateSystemGenerator wraps a generator with JSON file persistence.
-func NewJSONFileTemplateSystemGenerator(writer AtomicWriter, wrapped TemplateSystemGenerator) *JSONFileTemplateGenerator {
+func NewJSONFileTemplateSystemGenerator(writer AtomicWriter, wrapped TemplateSystemGenerator, interval time.Duration) *JSONFileTemplateGenerator {
 	return &JSONFileTemplateGenerator{
-		writer:  writer,
-		wrapped: wrapped,
+		writer:   writer,
+		wrapped:  wrapped,
+		interval: interval,
 	}
 }
 
@@ -50,7 +54,7 @@ func (g *JSONFileTemplateGenerator) Generator() TemplateSystemGenerator {
 		if g.writer == nil {
 			return base
 		}
-		return NewJSONFileTemplateSystem(key, base, g.writer)
+		return NewJSONFileTemplateSystem(key, base, g.writer, g.interval)
 	}
 }
 

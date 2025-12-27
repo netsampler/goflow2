@@ -70,8 +70,9 @@ var (
 
 	Addr = flag.String("addr", ":8080", "HTTP server address")
 
-	TemplatePath = flag.String("templates.path", "/templates", "NetFlow/IPFIX templates list")
-	TemplateFile = flag.String("templates.file", "", "Read/write NetFlow/IPFIX templates JSON file")
+	TemplatePath  = flag.String("templates.path", "/templates", "NetFlow/IPFIX templates list")
+	TemplateFile  = flag.String("templates.file", "", "Read/write NetFlow/IPFIX templates JSON file")
+	TemplateFlush = flag.Duration("templates.flush", time.Second*5, "Interval to batch template JSON flushes")
 
 	MappingFile = flag.String("mapping", "", "Configuration file for custom mappings")
 
@@ -304,7 +305,7 @@ func main() {
 
 		promTemplater := metrics.NewPromTemplateSystemGenerator(templates.DefaultTemplateGenerator)
 		if templateGenerator == nil {
-			templateGenerator = templates.NewJSONFileTemplateSystemGenerator(templateWriter, promTemplater)
+			templateGenerator = templates.NewJSONFileTemplateSystemGenerator(templateWriter, promTemplater, *TemplateFlush)
 		}
 		cfgPipe := &utils.PipeConfig{
 			Format:           formatter,
