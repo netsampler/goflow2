@@ -115,3 +115,52 @@ func TestTemplateSystemRegistryEvictLoop(t *testing.T) {
 
 	t.Fatalf("expected template system to be evicted by evictLoop")
 }
+
+func TestTemplateSystemRegistryEvictStaleTemplates(t *testing.T) {
+	registry := NewTemplateSystemRegistry(DefaultTemplateGenerator, time.Second, time.Minute)
+
+	key := "router-templates"
+	system := registry.Get(key)
+	templateA := netflow.TemplateRecord{
+		TemplateId: 256,
+		FieldCount: 1,
+		Fields: []netflow.Field{
+			{Type: 1, Length: 4},
+		},
+	}
+	templateB := netflow.TemplateRecord{
+		TemplateId: 257,
+		FieldCount: 1,
+		Fields: []netflow.Field{
+			{Type: 2, Length: 8},
+		},
+	}
+	if err := system.AddTemplate(9, 1, 256, templateA); err != nil {
+		t.Fatalf("add templateA: %v", err)
+	}
+	if err := system.AddTemplate(9, 1, 257, templateB); err != nil {
+		t.Fatalf("add templateB: %v", err)
+	}
+
+	tracker, ok := system.(*templateTrackingSystem)
+	if !ok {
+		t.Fatalf("expected template tracking system wrapper")
+	}
+
+	staleKey := templateKey(9, 1, 256)
+	tracker.mu.Lock()
+	tracker.lastSeen[staleKey] = time.Now().Add(-2 * time.Second)
+	tracker.mu.Unlock()
+
+	registry.evictStale()
+
+	if len(system.GetTemplates()) != 1 {
+		t.Fatalf("expected 1 template after eviction, got %d", len(system.GetTemplates()))
+	}
+	if _, err := system.GetTemplate(9, 1, 256); err == nil {
+		t.Fatalf("expected templateA to be evicted")
+	}
+	if _, err := system.GetTemplate(9, 1, 257); err != nil {
+		t.Fatalf("expected templateB to remain: %v", err)
+	}
+}

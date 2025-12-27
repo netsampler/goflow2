@@ -55,7 +55,7 @@ func (m *TemplateSystemRegistry) Get(key string) netflow.NetFlowTemplateSystem {
 		return templates
 	}
 
-	templates = m.generator(key)
+	templates = newTemplateTrackingSystem(m.generator(key))
 	m.lock.Lock()
 	m.templates[key] = templates
 	m.lastSeen[key] = now
@@ -157,6 +157,11 @@ func (m *TemplateSystemRegistry) evictStale() {
 	var keys []string
 	m.lock.RLock()
 	for key, tmpl := range m.templates {
+		if evictor, ok := tmpl.(interface {
+			EvictStaleTemplates(cutoff time.Time) int
+		}); ok {
+			evictor.EvictStaleTemplates(now.Add(-m.evictAfter))
+		}
 		seen := m.lastSeen[key]
 		// Drop empty systems immediately; otherwise evict idle ones.
 		if len(tmpl.GetTemplates()) == 0 {
