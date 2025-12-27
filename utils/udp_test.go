@@ -2,8 +2,8 @@ package utils
 
 import (
 	"net"
-	"sync/atomic"
 	"strconv"
+	"sync/atomic"
 	"testing"
 	"time"
 
