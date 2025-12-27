@@ -1,3 +1,4 @@
+// Command goflow2 receives NetFlow/sFlow packets and exports flow messages.
 package main
 
 import (
@@ -51,6 +52,7 @@ import (
 var (
 	version    = ""
 	buildinfos = ""
+	// AppVersion is a display string for the current build.
 	AppVersion = "GoFlow2 " + version + " " + buildinfos
 
 	ListenAddresses = flag.String("listen", "sflow://:6343,netflow://:2055", "listen addresses")
@@ -74,6 +76,7 @@ var (
 	Version = flag.Bool("v", false, "Print version")
 )
 
+// LoadMapping reads a YAML mapping configuration.
 func LoadMapping(f io.Reader) (*protoproducer.ProducerConfig, error) {
 	config := &protoproducer.ProducerConfig{}
 	dec := yaml.NewDecoder(f)

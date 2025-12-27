@@ -2,6 +2,7 @@ package sflow
 
 import "github.com/netsampler/goflow2/v2/decoders/utils"
 
+// SampledHeader holds raw sampled header metadata.
 type SampledHeader struct {
 	Protocol       uint32 `json:"protocol"`
 	FrameLength    uint32 `json:"frame-length"`
@@ -10,6 +11,7 @@ type SampledHeader struct {
 	HeaderData     []byte `json:"header-data"`
 }
 
+// SampledEthernet holds Ethernet header fields for sampled frames.
 type SampledEthernet struct {
 	Length  uint32           `json:"length"`
 	SrcMac  utils.MacAddress `json:"src-mac"`
@@ -17,6 +19,7 @@ type SampledEthernet struct {
 	EthType uint32           `json:"eth-type"`
 }
 
+// SampledIPBase contains shared IP header fields for sampled packets.
 type SampledIPBase struct {
 	Length   uint32          `json:"length"`
 	Protocol uint32          `json:"protocol"`
@@ -27,16 +30,19 @@ type SampledIPBase struct {
 	TcpFlags uint32          `json:"tcp-flags"`
 }
 
+// SampledIPv4 extends SampledIPBase with IPv4 fields.
 type SampledIPv4 struct {
 	SampledIPBase
 	Tos uint32 `json:"tos"`
 }
 
+// SampledIPv6 extends SampledIPBase with IPv6 fields.
 type SampledIPv6 struct {
 	SampledIPBase
 	Priority uint32 `json:"priority"`
 }
 
+// ExtendedSwitch carries VLAN and priority information.
 type ExtendedSwitch struct {
 	SrcVlan     uint32 `json:"src-vlan"`
 	SrcPriority uint32 `json:"src-priority"`
@@ -44,6 +50,7 @@ type ExtendedSwitch struct {
 	DstPriority uint32 `json:"dst-priority"`
 }
 
+// ExtendedRouter carries next-hop and mask metadata.
 type ExtendedRouter struct {
 	NextHopIPVersion uint32          `json:"next-hop-ip-version"`
 	NextHop          utils.IPAddress `json:"next-hop"`
@@ -51,6 +58,7 @@ type ExtendedRouter struct {
 	DstMaskLen       uint32          `json:"dst-mask-len"`
 }
 
+// ExtendedGateway carries BGP gateway attributes and AS paths.
 type ExtendedGateway struct {
 	NextHopIPVersion  uint32          `json:"next-hop-ip-version"`
 	NextHop           utils.IPAddress `json:"next-hop"`
@@ -66,20 +74,24 @@ type ExtendedGateway struct {
 	LocalPref         uint32          `json:"local-pref"`
 }
 
+// EgressQueue reports a queue identifier for drop records.
 type EgressQueue struct {
 	Queue uint32 `json:"queue"`
 }
 
+// ExtendedACL describes an ACL match.
 type ExtendedACL struct {
 	Number    uint32 `json:"number"`
 	Name      string `json:"name"`
 	Direction uint32 `json:"direction"` // 0:unknown, 1:ingress, 2:egress
 }
 
+// ExtendedFunction identifies a forwarding function.
 type ExtendedFunction struct {
 	Symbol string `json:"symbol"`
 }
 
+// IfCounters stores interface counter statistics.
 type IfCounters struct {
 	IfIndex            uint32 `json:"if-index"`
 	IfType             uint32 `json:"if-type"`
@@ -102,6 +114,7 @@ type IfCounters struct {
 	IfPromiscuousMode  uint32 `json:"if-promiscuous-mode"`
 }
 
+// EthernetCounters stores Ethernet-specific counter statistics.
 type EthernetCounters struct {
 	Dot3StatsAlignmentErrors           uint32 `json:"dot3-stats-aligment-errors"`
 	Dot3StatsFCSErrors                 uint32 `json:"dot3-stats-fcse-errors"`
@@ -118,6 +131,7 @@ type EthernetCounters struct {
 	Dot3StatsSymbolErrors              uint32 `json:"dot3-stats-symbol-errors"`
 }
 
+// RawRecord stores unparsed record bytes.
 type RawRecord struct {
 	Data []byte `json:"data"`
 }

@@ -8,6 +8,7 @@ import (
 	"github.com/netsampler/goflow2/v2/producer"
 )
 
+// ConvertNetFlowLegacyRecord maps a NetFlow v5 record into a flow message.
 func ConvertNetFlowLegacyRecord(flowMessage *ProtoProducerMessage, baseTime uint64, uptime uint32, record netflowlegacy.RecordsNetFlowV5) {
 	flowMessage.Type = flowmessage.FlowMessage_NETFLOW_V5
 
@@ -42,6 +43,7 @@ func ConvertNetFlowLegacyRecord(flowMessage *ProtoProducerMessage, baseTime uint
 	flowMessage.Bytes = uint64(record.DOctets)
 }
 
+// SearchNetFlowLegacyRecords converts v5 records into producer messages.
 func SearchNetFlowLegacyRecords(baseTime uint64, uptime uint32, dataRecords []netflowlegacy.RecordsNetFlowV5) (flowMessageSet []producer.ProducerMessage) {
 	for _, record := range dataRecords {
 		fmsg := protoMessagePool.Get().(*ProtoProducerMessage)
@@ -52,6 +54,7 @@ func SearchNetFlowLegacyRecords(baseTime uint64, uptime uint32, dataRecords []ne
 	return flowMessageSet
 }
 
+// ProcessMessageNetFlowLegacy converts a v5 packet into producer messages.
 func ProcessMessageNetFlowLegacy(packet *netflowlegacy.PacketNetFlowV5) ([]producer.ProducerMessage, error) {
 	seqnum := packet.FlowSequence
 	samplingRate := packet.SamplingInterval & 0x3FFF

@@ -8,18 +8,18 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 )
 
+// PromTemplateSystem wraps a template system to record metrics.
 type PromTemplateSystem struct {
 	key     string
 	wrapped netflow.NetFlowTemplateSystem
 }
 
-// A default Prometheus template generator function to be used by a pipe
+// NewDefaultPromTemplateSystem creates a PromTemplateSystem with default storage.
 func NewDefaultPromTemplateSystem(key string) netflow.NetFlowTemplateSystem {
 	return NewPromTemplateSystem(key, netflow.CreateTemplateSystem())
 }
 
-// Creates a Prometheus template system that wraps another template system.
-// The key argument is providing the router information for metrics.
+// NewPromTemplateSystem wraps a template system and records template metrics.
 func NewPromTemplateSystem(key string, wrapped netflow.NetFlowTemplateSystem) netflow.NetFlowTemplateSystem {
 	return &PromTemplateSystem{
 		key:     key,
@@ -54,10 +54,12 @@ func (s *PromTemplateSystem) AddTemplate(version uint16, obsDomainId uint32, tem
 	return err
 }
 
+// GetTemplate retrieves a template from the wrapped system.
 func (s *PromTemplateSystem) GetTemplate(version uint16, obsDomainId uint32, templateId uint16) (interface{}, error) {
 	return s.wrapped.GetTemplate(version, obsDomainId, templateId)
 }
 
+// RemoveTemplate removes a template and updates metrics.
 func (s *PromTemplateSystem) RemoveTemplate(version uint16, obsDomainId uint32, templateId uint16) (interface{}, error) {
 
 	template, err := s.wrapped.RemoveTemplate(version, obsDomainId, templateId)
@@ -71,6 +73,7 @@ func (s *PromTemplateSystem) RemoveTemplate(version uint16, obsDomainId uint32, 
 	return template, err
 }
 
+// GetTemplates returns all templates from the wrapped system.
 func (s *PromTemplateSystem) GetTemplates() netflow.FlowBaseTemplateSet {
 	return s.wrapped.GetTemplates()
 }

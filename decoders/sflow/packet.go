@@ -2,6 +2,7 @@ package sflow
 
 import "github.com/netsampler/goflow2/v2/decoders/utils"
 
+// Packet represents a decoded sFlow datagram.
 type Packet struct {
 	Version        uint32          `json:"version"`
 	IPVersion      uint32          `json:"ip-version"`
@@ -13,6 +14,7 @@ type Packet struct {
 	Samples        []interface{}   `json:"samples"`
 }
 
+// SampleHeader contains common sample header fields.
 type SampleHeader struct {
 	Format uint32 `json:"format"`
 	Length uint32 `json:"length"`
@@ -22,6 +24,7 @@ type SampleHeader struct {
 	SourceIdValue        uint32 `json:"source-id-value"`
 }
 
+// FlowSample represents a standard flow sample.
 type FlowSample struct {
 	Header SampleHeader `json:"header"`
 
@@ -34,6 +37,7 @@ type FlowSample struct {
 	Records          []FlowRecord `json:"records"`
 }
 
+// CounterSample represents a standard counter sample.
 type CounterSample struct {
 	Header SampleHeader `json:"header"`
 
@@ -41,6 +45,7 @@ type CounterSample struct {
 	Records             []CounterRecord `json:"records"`
 }
 
+// ExpandedFlowSample represents an expanded flow sample.
 type ExpandedFlowSample struct {
 	Header SampleHeader `json:"header"`
 
@@ -55,7 +60,7 @@ type ExpandedFlowSample struct {
 	Records          []FlowRecord `json:"records"`
 }
 
-// DropSample data structure according to https://sflow.org/sflow_drops.txt
+// DropSample represents a drop sample as defined by the sFlow drops spec.
 type DropSample struct {
 	Header SampleHeader `json:"header"`
 
@@ -67,16 +72,19 @@ type DropSample struct {
 	Records          []FlowRecord `json:"records"`
 }
 
+// RecordHeader identifies the record format and length.
 type RecordHeader struct {
 	DataFormat uint32 `json:"data-format"`
 	Length     uint32 `json:"length"`
 }
 
+// FlowRecord wraps a flow record header and decoded data.
 type FlowRecord struct {
 	Header RecordHeader `json:"header"`
 	Data   interface{}  `json:"data"`
 }
 
+// CounterRecord wraps a counter record header and decoded data.
 type CounterRecord struct {
 	Header RecordHeader `json:"header"`
 	Data   interface{}  `json:"data"`

@@ -16,12 +16,13 @@ import (
 	flowmessage "github.com/netsampler/goflow2/v2/pb"
 )
 
-// ProtoProducerMessageIf interface to a flow message, used by parsers and tests
+// ProtoProducerMessageIf provides access to flow message helpers.
 type ProtoProducerMessageIf interface {
 	GetFlowMessage() *ProtoProducerMessage                   // access the underlying structure
 	MapCustom(key string, v []byte, cfg MappableField) error // inject custom field
 }
 
+// ProtoProducerMessage wraps the protobuf FlowMessage with formatting helpers.
 type ProtoProducerMessage struct {
 	flowmessage.FlowMessage
 
@@ -40,16 +41,19 @@ func (m *ProtoProducerMessage) GetFlowMessage() *ProtoProducerMessage {
 	return m
 }
 
+// MapCustom injects a custom field into the message.
 func (m *ProtoProducerMessage) MapCustom(key string, v []byte, cfg MappableField) error {
 	return MapCustom(m, v, cfg)
 }
 
+// AddLayer appends a layer name to the layer stack.
 func (m *ProtoProducerMessage) AddLayer(name string) (ok bool) {
 	value, ok := flowmessage.FlowMessage_LayerStack_value[name]
 	m.LayerStack = append(m.LayerStack, flowmessage.FlowMessage_LayerStack(value))
 	return ok
 }
 
+// MarshalBinary encodes the message, optionally skipping the delimiter.
 func (m *ProtoProducerMessage) MarshalBinary() ([]byte, error) {
 	buf := bytes.NewBuffer([]byte{})
 	if m.skipDelimiter {
@@ -61,6 +65,7 @@ func (m *ProtoProducerMessage) MarshalBinary() ([]byte, error) {
 	}
 }
 
+// MarshalText renders the message using the reflective text formatter.
 func (m *ProtoProducerMessage) MarshalText() ([]byte, error) {
 	return []byte(m.FormatMessageReflectText("")), nil
 }
@@ -104,18 +109,22 @@ func (m *ProtoProducerMessage) Key() []byte {
 	return h.Sum(nil)
 }
 
+// MarshalJSON renders the message using the reflective JSON formatter.
 func (m *ProtoProducerMessage) MarshalJSON() ([]byte, error) {
 	return []byte(m.FormatMessageReflectJSON("")), nil
 }
 
+// FormatMessageReflectText renders a text representation using configured fields.
 func (m *ProtoProducerMessage) FormatMessageReflectText(ext string) string {
 	return m.FormatMessageReflectCustom(ext, "", " ", "=", false)
 }
 
+// FormatMessageReflectJSON renders a JSON-like representation using configured fields.
 func (m *ProtoProducerMessage) FormatMessageReflectJSON(ext string) string {
 	return fmt.Sprintf("{%s}", m.FormatMessageReflectCustom(ext, "\"", ",", ":", true))
 }
 
+// ExtractTag retrieves a named struct tag or returns the original field name.
 func ExtractTag(name, original string, tag reflect.StructTag) string {
 	lookup, ok := tag.Lookup(name)
 	if !ok {
@@ -173,6 +182,7 @@ func (m *ProtoProducerMessage) mapUnknown() map[string]interface{} {
 	return unkMap
 }
 
+// FormatMessageReflectCustom renders a custom-delimited representation.
 func (m *ProtoProducerMessage) FormatMessageReflectCustom(ext, quotes, sep, sign string, null bool) string {
 	vfm := reflect.ValueOf(m)
 	vfm = reflect.Indirect(vfm)

@@ -34,13 +34,14 @@ type DataFlowSet struct {
 	Records []DataRecord `json:"records"`
 }
 
-// RawFlowSet is a a set that could not be decoded due to the absence of a template
+// RawFlowSet is a set that could not be decoded due to missing template data.
 type RawFlowSet struct {
 	FlowSetHeader
 
 	Records []byte `json:"records"`
 }
 
+// OptionsDataFlowSet holds options data records tied to templates.
 type OptionsDataFlowSet struct {
 	FlowSetHeader
 
@@ -66,6 +67,7 @@ type TemplateRecord struct {
 	Fields []Field `json:"fields"`
 }
 
+// DataRecord stores decoded field values for a flow record.
 type DataRecord struct {
 	Values []DataField `json:"values"`
 }
@@ -94,6 +96,7 @@ type Field struct {
 	Pen uint32 `json:"pen"`
 }
 
+// DataField is a typed value extracted from a data record.
 type DataField struct {
 	// A numeric value that represents the type of field.
 	PenProvided bool   `json:"pen-provided"`
@@ -105,6 +108,7 @@ type DataField struct {
 	//Value []byte
 }
 
+// String renders a human-readable representation of a raw flow set.
 func (flowSet RawFlowSet) String() string {
 	str := fmt.Sprintf("       Id %v\n", flowSet.Id)
 	str += fmt.Sprintf("       Length: %v\n", len(flowSet.Records))
@@ -113,6 +117,7 @@ func (flowSet RawFlowSet) String() string {
 	return str
 }
 
+// String renders a human-readable representation of options data flow sets.
 func (flowSet OptionsDataFlowSet) String(TypeToString func(uint16) string, ScopeToString func(uint16) string) string {
 	str := fmt.Sprintf("       Id %v\n", flowSet.Id)
 	str += fmt.Sprintf("       Length: %v\n", flowSet.Length)
@@ -136,6 +141,7 @@ func (flowSet OptionsDataFlowSet) String(TypeToString func(uint16) string, Scope
 	return str
 }
 
+// String renders a human-readable representation of data flow sets.
 func (flowSet DataFlowSet) String(TypeToString func(uint16) string) string {
 	str := fmt.Sprintf("       Id %v\n", flowSet.Id)
 	str += fmt.Sprintf("       Length: %v\n", flowSet.Length)
@@ -153,6 +159,7 @@ func (flowSet DataFlowSet) String(TypeToString func(uint16) string) string {
 	return str
 }
 
+// String renders a human-readable representation of template flow sets.
 func (flowSet TemplateFlowSet) String(TypeToString func(uint16) string) string {
 	str := fmt.Sprintf("       Id %v\n", flowSet.Id)
 	str += fmt.Sprintf("       Length: %v\n", flowSet.Length)

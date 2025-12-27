@@ -1,3 +1,4 @@
+# Build output knobs (override via env/CLI).
 EXTENSION     ?= 
 DIST_DIR      ?= dist/
 GOOS          ?= linux
@@ -35,20 +36,24 @@ FPM_ARCH = x86_64
 endif
 
 .PHONY: proto
+# Generate Go protobuf bindings.
 proto:
 	@echo generating protobuf
 	protoc --go_opt=paths=source_relative --go_out=. pb/*.proto
 	protoc --go_opt=paths=source_relative --go_out=. cmd/enricher/pb/*.proto
 
 .PHONY: vet
+# Run Go static analysis on the main package.
 vet:
 	go vet cmd/goflow2/main.go
 
 .PHONY: test
+# Run Go test suite.
 test:
 	go test -v ./...
 
 .PHONY: prepare
+# Ensure dist directory exists.
 prepare:
 	mkdir -p $(DIST_DIR)
 
@@ -57,6 +62,7 @@ clean:
 	rm -rf $(DIST_DIR)
 
 .PHONY: build
+# Build the goflow2 binary.
 build: prepare
 	CGO_ENABLED=0 go build -ldflags $(LDFLAGS) -o $(OUTPUT) cmd/goflow2/main.go
 
@@ -65,6 +71,7 @@ print-output:
 	@echo $(OUTPUT)
 
 .PHONY: docker
+# Build docker image for the current version.
 docker:
 	$(DOCKER_BIN) $(DOCKER_CMD) \
         --build-arg LDFLAGS=$(LDFLAGS) \
@@ -79,12 +86,14 @@ docker:
         $(DOCKER_TAG_ARGS) .
 
 .PHONY: push-docker
+# Push docker image tagged with the current abbrev.
 push-docker:
 	@for tag in $(DOCKER_TAGS); do \
 		$(DOCKER_BIN) push $$tag; \
 	done
 
 .PHONY: docker-manifest
+# Create and push multi-arch manifest for abbrev and latest tags.
 docker-manifest:
 	$(DOCKER_BIN) buildx imagetools create \
 	    -t $(DOCKER_IMAGE):$(DOCKER_MANIFEST_TAG) \

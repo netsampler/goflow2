@@ -1,3 +1,4 @@
+// Package metrics exposes Prometheus collectors for flow processing.
 package metrics
 
 import (
@@ -5,10 +6,12 @@ import (
 )
 
 const (
+	// NAMESPACE is the Prometheus namespace prefix for goflow2 metrics.
 	NAMESPACE = "goflow2"
 )
 
 var (
+	// MetricReceivedDroppedPackets counts packets dropped before processing.
 	MetricReceivedDroppedPackets = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Name:      "flow_dropped_packets_total",
@@ -17,6 +20,7 @@ var (
 		},
 		[]string{"remote_ip", "local_ip", "local_port"},
 	)
+	// MetricReceivedDroppedBytes counts bytes dropped before processing.
 	MetricReceivedDroppedBytes = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Name:      "flow_dropped_bytes_total",
@@ -25,6 +29,7 @@ var (
 		},
 		[]string{"remote_ip", "local_ip", "local_port"},
 	)
+	// MetricTrafficBytes counts bytes received by the application.
 	MetricTrafficBytes = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Name:      "flow_traffic_bytes_total",
@@ -33,6 +38,7 @@ var (
 		},
 		[]string{"remote_ip", "local_ip", "local_port", "type"},
 	)
+	// MetricTrafficPackets counts packets received by the application.
 	MetricTrafficPackets = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Name:      "flow_traffic_packets_total",
@@ -40,6 +46,7 @@ var (
 			Namespace: NAMESPACE},
 		[]string{"remote_ip", "local_ip", "local_port", "type"},
 	)
+	// MetricPacketSizeSum summarizes packet sizes.
 	MetricPacketSizeSum = prometheus.NewSummaryVec(
 		prometheus.SummaryOpts{
 			Name:      "flow_traffic_size_bytes",
@@ -48,6 +55,7 @@ var (
 		},
 		[]string{"remote_ip", "local_ip", "local_port", "type"},
 	)
+	// DecoderErrors counts decoder errors by router and name.
 	DecoderErrors = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Name:      "flow_decoder_error_total",
@@ -55,6 +63,7 @@ var (
 			Namespace: NAMESPACE},
 		[]string{"router", "name"},
 	)
+	// DecoderTime summarizes decoding time.
 	DecoderTime = prometheus.NewSummaryVec(
 		prometheus.SummaryOpts{
 			Name:      "flow_decoding_time_seconds",
@@ -63,6 +72,7 @@ var (
 		},
 		[]string{"name"},
 	)
+	// NetFlowStats counts processed NetFlow packets by router and version.
 	NetFlowStats = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Name:      "flow_process_nf_total",
@@ -70,6 +80,7 @@ var (
 			Namespace: NAMESPACE},
 		[]string{"router", "version"},
 	)
+	// NetFlowErrors counts NetFlow processing errors.
 	NetFlowErrors = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Name:      "flow_process_nf_errors_total",
@@ -77,6 +88,7 @@ var (
 			Namespace: NAMESPACE},
 		[]string{"router", "error"},
 	)
+	// NetFlowSetRecordsStatsSum counts flow set records by type.
 	NetFlowSetRecordsStatsSum = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Name:      "flow_process_nf_flowset_records_total",
@@ -84,6 +96,7 @@ var (
 			Namespace: NAMESPACE},
 		[]string{"router", "version", "type"}, // data-template, data, opts...
 	)
+	// NetFlowSetStatsSum counts flow sets by type.
 	NetFlowSetStatsSum = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Name:      "flow_process_nf_flowset_total",
@@ -91,6 +104,7 @@ var (
 			Namespace: NAMESPACE},
 		[]string{"router", "version", "type"}, // data-template, data, opts...
 	)
+	// NetFlowTimeStatsSum summarizes flow-to-processing latency.
 	NetFlowTimeStatsSum = prometheus.NewSummaryVec(
 		prometheus.SummaryOpts{
 			Name:      "flow_process_nf_delay_seconds",
@@ -99,6 +113,7 @@ var (
 		},
 		[]string{"router", "version"},
 	)
+	// NetFlowTemplatesStats counts templates observed by router and version.
 	NetFlowTemplatesStats = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Name:      "flow_process_nf_templates_total",
@@ -106,6 +121,7 @@ var (
 			Namespace: NAMESPACE},
 		[]string{"router", "version", "obs_domain_id", "template_id", "type"}, // options/template
 	)
+	// SFlowStats counts processed sFlow packets.
 	SFlowStats = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Name:      "flow_process_sf_total",
@@ -113,6 +129,7 @@ var (
 			Namespace: NAMESPACE},
 		[]string{"router", "agent", "version"},
 	)
+	// SFlowSampleStatsSum counts sFlow samples by type.
 	SFlowSampleStatsSum = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Name:      "flow_process_sf_samples_total",
@@ -120,6 +137,7 @@ var (
 			Namespace: NAMESPACE},
 		[]string{"router", "agent", "version", "type"}, // counter, flow, expanded...
 	)
+	// SFlowSampleRecordsStatsSum counts sFlow sample records by type.
 	SFlowSampleRecordsStatsSum = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Name:      "flow_process_sf_samples_records_total",

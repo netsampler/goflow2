@@ -1,3 +1,4 @@
+// Package sflow decodes sFlow v5 datagrams.
 package sflow
 
 import (
@@ -51,6 +52,7 @@ const (
 	COUNTER_TYPE_CPU       = 1001
 )
 
+// DecoderError wraps an sFlow decode error.
 type DecoderError struct {
 	Err error
 }
@@ -63,6 +65,7 @@ func (e *DecoderError) Unwrap() error {
 	return e.Err
 }
 
+// FlowError annotates an error with the sFlow sample format and sequence.
 type FlowError struct {
 	Format uint32
 	Seq    uint32
@@ -77,6 +80,7 @@ func (e *FlowError) Unwrap() error {
 	return e.Err
 }
 
+// RecordError annotates an error with the record data format.
 type RecordError struct {
 	DataFormat uint32
 	Err        error
@@ -90,6 +94,7 @@ func (e *RecordError) Unwrap() error {
 	return e.Err
 }
 
+// DecodeIP reads an sFlow IP address with version from the payload.
 func DecodeIP(payload *bytes.Buffer) (uint32, []byte, error) {
 	var ipVersion uint32
 	if err := utils.BinaryDecoder(payload, &ipVersion); err != nil {
@@ -113,6 +118,7 @@ func DecodeIP(payload *bytes.Buffer) (uint32, []byte, error) {
 	return ipVersion, ip, nil
 }
 
+// DecodeCounterRecord decodes a counter record based on its data format.
 func DecodeCounterRecord(header *RecordHeader, payload *bytes.Buffer) (CounterRecord, error) {
 	counterRecord := CounterRecord{
 		Header: *header,
@@ -173,6 +179,7 @@ func DecodeCounterRecord(header *RecordHeader, payload *bytes.Buffer) (CounterRe
 	return counterRecord, nil
 }
 
+// DecodeFlowRecord decodes a flow record based on its data format.
 func DecodeFlowRecord(header *RecordHeader, payload *bytes.Buffer) (FlowRecord, error) {
 	flowRecord := FlowRecord{
 		Header: *header,

@@ -10,6 +10,7 @@ import (
 )
 
 // Using a data slice, returns a chunk corresponding
+// GetBytes slices a byte region with optional left shift for bit offsets.
 func GetBytes(d []byte, offset, length int, shift bool) []byte {
 
 	/*
@@ -97,14 +98,17 @@ func GetBytes(d []byte, offset, length int, shift bool) []byte {
 	return dFinal
 }
 
+// IsUInt reports whether a reflect.Kind is an unsigned integer type.
 func IsUInt(k reflect.Kind) bool {
 	return k == reflect.Uint8 || k == reflect.Uint16 || k == reflect.Uint32 || k == reflect.Uint64
 }
 
+// IsInt reports whether a reflect.Kind is a signed integer type.
 func IsInt(k reflect.Kind) bool {
 	return k == reflect.Int8 || k == reflect.Int16 || k == reflect.Int32 || k == reflect.Int64
 }
 
+// MapCustomNetFlow maps a NetFlow data field into a flow message using a mapper.
 func MapCustomNetFlow(flowMessage *ProtoProducerMessage, df netflow.DataField, mapper TemplateMapper) error {
 	if mapper == nil {
 		return nil
@@ -119,6 +123,7 @@ func MapCustomNetFlow(flowMessage *ProtoProducerMessage, df netflow.DataField, m
 	return nil
 }
 
+// MapCustom maps raw bytes into a flow message field using a mapper.
 func MapCustom(flowMessage *ProtoProducerMessage, v []byte, cfg MappableField) error {
 	vfm := reflect.ValueOf(flowMessage)
 	vfm = reflect.Indirect(vfm)

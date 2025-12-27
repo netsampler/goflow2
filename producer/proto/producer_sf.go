@@ -6,6 +6,7 @@ import (
 	"github.com/netsampler/goflow2/v2/producer"
 )
 
+// GetSFlowFlowSamples returns only flow samples from an sFlow packet.
 func GetSFlowFlowSamples(packet *sflow.Packet) []interface{} {
 	var flowSamples []interface{}
 	for _, sample := range packet.Samples {
@@ -19,10 +20,12 @@ func GetSFlowFlowSamples(packet *sflow.Packet) []interface{} {
 	return flowSamples
 }
 
+// ParseSampledHeader parses sampled header data without custom mapping.
 func ParseSampledHeader(flowMessage *ProtoProducerMessage, sampledHeader *sflow.SampledHeader) error {
 	return ParseSampledHeaderConfig(flowMessage, sampledHeader, nil)
 }
 
+// ParseSampledHeaderConfig parses sampled header data with an optional mapper.
 func ParseSampledHeaderConfig(flowMessage *ProtoProducerMessage, sampledHeader *sflow.SampledHeader, config PacketMapper) error {
 	data := (*sampledHeader).HeaderData
 	switch (*sampledHeader).Protocol {
@@ -38,6 +41,7 @@ func ParseSampledHeaderConfig(flowMessage *ProtoProducerMessage, sampledHeader *
 	return nil
 }
 
+// SearchSFlowSampleConfig maps an sFlow sample into a flow message.
 func SearchSFlowSampleConfig(flowMessage *ProtoProducerMessage, flowSample interface{}, config PacketMapper) error {
 	var records []sflow.FlowRecord
 	flowMessage.Type = flowmessage.FlowMessage_SFLOW_5
@@ -116,6 +120,7 @@ func SearchSFlowSampleConfig(flowMessage *ProtoProducerMessage, flowSample inter
 
 }
 
+// SearchSFlowSamplesConfig maps sFlow samples into producer messages.
 func SearchSFlowSamplesConfig(samples []interface{}, config PacketMapper) (flowMessageSet []producer.ProducerMessage, err error) {
 	for _, flowSample := range samples {
 		fmsg := protoMessagePool.Get().(*ProtoProducerMessage)
@@ -128,7 +133,7 @@ func SearchSFlowSamplesConfig(samples []interface{}, config PacketMapper) (flowM
 	return flowMessageSet, nil
 }
 
-// Converts an sFlow message
+// ProcessMessageSFlowConfig converts an sFlow packet into producer messages.
 func ProcessMessageSFlowConfig(packet *sflow.Packet, config ProtoProducerConfig) (flowMessageSet []producer.ProducerMessage, err error) {
 	seqnum := packet.SequenceNumber
 	agent := packet.AgentIP

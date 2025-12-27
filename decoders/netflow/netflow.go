@@ -1,3 +1,4 @@
+// Package netflow decodes NetFlow v9 and IPFIX packets.
 package netflow
 
 import (
@@ -9,6 +10,7 @@ import (
 	"github.com/netsampler/goflow2/v2/decoders/utils"
 )
 
+// DecoderError wraps a NetFlow decode error with its decoder name.
 type DecoderError struct {
 	Decoder string
 	Err     error
@@ -22,6 +24,7 @@ func (e *DecoderError) Unwrap() error {
 	return e.Err
 }
 
+// FlowError annotates an error with flow metadata.
 type FlowError struct {
 	Version     uint16
 	Type        string
@@ -38,6 +41,7 @@ func (e *FlowError) Unwrap() error {
 	return e.Err
 }
 
+// DecodeNFv9OptionsTemplateSet decodes a v9 options template flow set.
 func DecodeNFv9OptionsTemplateSet(payload *bytes.Buffer) ([]NFv9OptionsTemplateRecord, error) {
 	var records []NFv9OptionsTemplateRecord
 	var err error
@@ -84,6 +88,7 @@ func DecodeNFv9OptionsTemplateSet(payload *bytes.Buffer) ([]NFv9OptionsTemplateR
 	return records, err
 }
 
+// DecodeField decodes a field and optional enterprise number.
 func DecodeField(payload *bytes.Buffer, field *Field, pen bool) error {
 	if err := utils.BinaryDecoder(payload,
 		&field.Type,
@@ -100,6 +105,7 @@ func DecodeField(payload *bytes.Buffer, field *Field, pen bool) error {
 	return nil
 }
 
+// DecodeIPFIXOptionsTemplateSet decodes an IPFIX options template flow set.
 func DecodeIPFIXOptionsTemplateSet(payload *bytes.Buffer) ([]IPFIXOptionsTemplateRecord, error) {
 	var records []IPFIXOptionsTemplateRecord
 	var err error
@@ -143,6 +149,7 @@ func DecodeIPFIXOptionsTemplateSet(payload *bytes.Buffer) ([]IPFIXOptionsTemplat
 	return records, nil
 }
 
+// DecodeTemplateSet decodes a template flow set for NetFlow v9 or IPFIX.
 func DecodeTemplateSet(version uint16, payload *bytes.Buffer) ([]TemplateRecord, error) {
 	var records []TemplateRecord
 	var err error
@@ -187,6 +194,7 @@ func DecodeTemplateSet(version uint16, payload *bytes.Buffer) ([]TemplateRecord,
 	return records, nil
 }
 
+// GetTemplateSize returns the total byte length of a template's fixed fields.
 func GetTemplateSize(version uint16, template []Field) int {
 	sum := 0
 	for _, templateField := range template {

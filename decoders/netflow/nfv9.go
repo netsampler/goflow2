@@ -6,6 +6,7 @@ import (
 )
 
 const (
+	// NFV9_FIELD_* constants are NetFlow v9 information element IDs.
 	NFV9_FIELD_IN_BYTES                     = 1
 	NFV9_FIELD_IN_PKTS                      = 2
 	NFV9_FIELD_FLOWS                        = 3
@@ -101,6 +102,7 @@ const (
 	NFV9_FIELD_layer2packetSectionData      = 104
 )
 
+// NFv9Packet represents a decoded NetFlow v9 packet.
 type NFv9Packet struct {
 	Version        uint16        `json:"version"`
 	Count          uint16        `json:"count"`
@@ -111,11 +113,13 @@ type NFv9Packet struct {
 	FlowSets       []interface{} `json:"flow-sets"`
 }
 
+// NFv9OptionsTemplateFlowSet holds v9 options template records.
 type NFv9OptionsTemplateFlowSet struct {
 	FlowSetHeader
 	Records []NFv9OptionsTemplateRecord `json:"records"`
 }
 
+// NFv9OptionsTemplateRecord describes scopes and option fields.
 type NFv9OptionsTemplateRecord struct {
 	TemplateId   uint16  `json:"template-id"`
 	ScopeLength  uint16  `json:"scope-length"`
@@ -124,6 +128,7 @@ type NFv9OptionsTemplateRecord struct {
 	Options      []Field `json:"options"`
 }
 
+// NFv9TypeToString returns a string representation of a v9 field type.
 func NFv9TypeToString(typeId uint16) string {
 
 	nameList := map[uint16]string{

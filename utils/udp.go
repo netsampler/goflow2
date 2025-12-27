@@ -11,11 +11,12 @@ import (
 	reuseport "github.com/libp2p/go-reuseport"
 )
 
+// ReceiverCallback is notified when packets are dropped.
 type ReceiverCallback interface {
 	Dropped(msg Message)
 }
 
-// Callback used to decode a UDP message
+// DecoderFunc decodes a received UDP message.
 type DecoderFunc func(msg interface{}) error
 
 type udpPacket struct {
@@ -26,6 +27,7 @@ type udpPacket struct {
 	received time.Time
 }
 
+// Message carries a received UDP payload and metadata.
 type Message struct {
 	Src      netip.AddrPort
 	Dst      netip.AddrPort
@@ -41,6 +43,7 @@ var packetPool = sync.Pool{
 	},
 }
 
+// UDPReceiver receives UDP packets and dispatches them to decoders.
 type UDPReceiver struct {
 	ready    chan bool
 	q        chan bool
@@ -57,6 +60,7 @@ type UDPReceiver struct {
 	cb ReceiverCallback
 }
 
+// UDPReceiverConfig configures UDP receiver workers and sockets.
 type UDPReceiverConfig struct {
 	Workers   int
 	Sockets   int
@@ -66,6 +70,7 @@ type UDPReceiverConfig struct {
 	ReceiverCallback ReceiverCallback
 }
 
+// NewUDPReceiver creates a UDP receiver with the provided configuration.
 func NewUDPReceiver(cfg *UDPReceiverConfig) (*UDPReceiver, error) {
 	r := &UDPReceiver{
 		wg:      &sync.WaitGroup{},
@@ -125,6 +130,7 @@ func (r *UDPReceiver) logError(err error) {
 	}
 }
 
+// Errors returns a channel of receiver errors.
 func (r *UDPReceiver) Errors() <-chan error {
 	return r.errCh
 }
@@ -207,6 +213,7 @@ func (r *UDPReceiver) receiveRoutine(udpconn *net.UDPConn) (err error) {
 
 }
 
+// ReceiverError wraps errors from UDP receive routines.
 type ReceiverError struct {
 	Err error
 }
@@ -219,7 +226,7 @@ func (e *ReceiverError) Unwrap() error {
 	return e.Err
 }
 
-// Start the processing routines
+// Start the processing routines.
 func (r *UDPReceiver) decoders(workers int, decodeFunc DecoderFunc) error {
 	for i := 0; i < workers; i++ {
 		r.wg.Add(1)
@@ -252,7 +259,7 @@ func (r *UDPReceiver) decoders(workers int, decodeFunc DecoderFunc) error {
 	return nil
 }
 
-// Starts the UDP receiving workers
+// receivers starts the UDP socket routines.
 func (r *UDPReceiver) receivers(sockets int, addr string, port int) (rErr error) {
 	for i := 0; i < sockets; i++ {
 		if rErr != nil { // do not instanciate the rest of the receivers
@@ -283,7 +290,7 @@ func (r *UDPReceiver) receivers(sockets int, addr string, port int) (rErr error)
 	return rErr
 }
 
-// Start UDP receivers and the processing routines
+// Start runs UDP receivers and processing routines.
 func (r *UDPReceiver) Start(addr string, port int, decodeFunc DecoderFunc) error {
 	select {
 	case <-r.ready:
@@ -307,7 +314,7 @@ func (r *UDPReceiver) Start(addr string, port int, decodeFunc DecoderFunc) error
 	return nil
 }
 
-// Stops the routines
+// Stop stops the receiver and worker routines.
 func (r *UDPReceiver) Stop() error {
 	select {
 	case <-r.q:
