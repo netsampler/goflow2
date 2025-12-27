@@ -80,3 +80,38 @@ func TestTemplateSystemRegistryEvictStale(t *testing.T) {
 		t.Fatalf("expected stale template system to be evicted")
 	}
 }
+
+func TestTemplateSystemRegistryEvictLoop(t *testing.T) {
+	registry := NewTemplateSystemRegistry(DefaultTemplateGenerator, 10*time.Millisecond, 5*time.Millisecond)
+	t.Cleanup(registry.Close)
+
+	key := "loop-router"
+	system := registry.Get(key)
+	template := netflow.TemplateRecord{
+		TemplateId: 256,
+		FieldCount: 1,
+		Fields: []netflow.Field{
+			{Type: 1, Length: 4},
+		},
+	}
+	if err := system.AddTemplate(9, 1, 256, template); err != nil {
+		t.Fatalf("add template: %v", err)
+	}
+
+	registry.lock.Lock()
+	registry.lastSeen[key] = time.Now().Add(-time.Second)
+	registry.lock.Unlock()
+
+	deadline := time.Now().Add(200 * time.Millisecond)
+	for time.Now().Before(deadline) {
+		registry.lock.RLock()
+		_, ok := registry.templates[key]
+		registry.lock.RUnlock()
+		if !ok {
+			return
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+
+	t.Fatalf("expected template system to be evicted by evictLoop")
+}
