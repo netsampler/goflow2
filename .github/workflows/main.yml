@@ -162,6 +162,7 @@ jobs:
 
     - name: Cache apt lists and archives
       if: matrix.package
+      id: cache-apt
       uses: actions/cache@v4
       with:
         path: |
@@ -175,7 +176,9 @@ jobs:
       if: matrix.package
       run: |
         # fpm builds both rpm and deb artifacts from the Go binaries.
-        sudo apt-get update
+        if [[ "${{ steps.cache-apt.outputs.cache-hit }}" != "true" ]]; then
+          sudo apt-get update
+        fi
         sudo apt-get install -y rpm ruby ruby-dev
         gem install --user-install fpm
         echo "$(ruby -e 'print Gem.user_dir')/bin" >> $GITHUB_PATH
