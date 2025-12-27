@@ -143,6 +143,7 @@ func (s *JSONFileTemplateSystem) writeSnapshot() {
 		return
 	}
 
+	// Non-blocking enqueue; coalesce multiple updates into a single flush.
 	select {
 	case s.flushCh <- struct{}{}:
 	default:
@@ -156,6 +157,7 @@ func (s *JSONFileTemplateSystem) flushLoop() {
 
 	var timer *time.Timer
 	for range s.flushCh {
+		// Debounce writes to avoid frequent disk updates during bursts.
 		if timer == nil {
 			timer = time.NewTimer(s.interval)
 		} else {
@@ -179,6 +181,7 @@ func (s *JSONFileTemplateSystem) flushLoop() {
 				}
 				timer.Reset(s.interval)
 			case <-timer.C:
+				// Flush the latest snapshot after the quiet period.
 				s.flushSnapshot()
 				timer = nil
 				goto next
@@ -202,6 +205,7 @@ func (s *JSONFileTemplateSystem) flushSnapshot() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	// Read-modify-write to keep multiple sources in a shared JSON file.
 	file := jsonTemplateFile{Routers: map[string]jsonRouterTemplates{}}
 	payload, err := s.writer.Read()
 	if err == nil && len(payload) > 0 {
@@ -216,6 +220,7 @@ func (s *JSONFileTemplateSystem) flushSnapshot() {
 	if file.Routers == nil {
 		file.Routers = map[string]jsonRouterTemplates{}
 	}
+	// Replace this router's view with the current in-memory templates.
 	routerTemplates := jsonRouterTemplates{Versions: map[string]jsonVersionTemplates{}}
 
 	for key, template := range s.wrapped.GetTemplates() {
@@ -262,6 +267,7 @@ func (s *JSONFileTemplateSystem) load() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	// Seed the in-memory system from the persisted snapshot.
 	payload, err := s.writer.Read()
 	if err != nil && err != io.EOF {
 		slog.Error("error reading template JSON file", slog.String("error", err.Error()))

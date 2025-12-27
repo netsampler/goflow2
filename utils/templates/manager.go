@@ -103,6 +103,7 @@ func (m *TemplateSystemManager) Close() {
 
 // Snapshot returns templates for all known sources.
 func (m *TemplateSystemManager) Snapshot() map[string]netflow.FlowBaseTemplateSet {
+	// Snapshot current template maps; callers expect a point-in-time view.
 	m.lock.RLock()
 	defer m.lock.RUnlock()
 	ret := make(map[string]netflow.FlowBaseTemplateSet)
@@ -126,6 +127,7 @@ func (m *TemplateSystemManager) evictLoop() {
 		case <-m.stopCh:
 			return
 		case <-ticker.C:
+			// Periodic pass to evict idle sources or empty template sets.
 			m.evictStale()
 		}
 	}
@@ -140,6 +142,7 @@ func (m *TemplateSystemManager) evictStale() {
 	m.lock.RLock()
 	for key, tmpl := range m.templates {
 		seen := m.lastSeen[key]
+		// Drop empty systems immediately; otherwise evict idle ones.
 		if len(tmpl.GetTemplates()) == 0 {
 			keys = append(keys, key)
 			continue
