@@ -4,16 +4,22 @@ import (
 	"github.com/netsampler/goflow2/v2/decoders/netflow"
 )
 
+// EndianType identifies endianness for mapped fields.
 type EndianType string
+
+// ProtoType identifies the protobuf encoding type for mapped fields.
 type ProtoType string
 
 var (
+	// BigEndian and LittleEndian are supported endianness values.
 	BigEndian    EndianType = "big"
 	LittleEndian EndianType = "little"
 
+	// ProtoString and ProtoVarint are supported protobuf encodings.
 	ProtoString ProtoType = "string"
 	ProtoVarint ProtoType = "varint"
 
+	// ProtoTypeMap normalizes string values to ProtoType.
 	ProtoTypeMap = map[string]ProtoType{
 		string(ProtoString): ProtoString,
 		string(ProtoVarint): ProtoVarint,

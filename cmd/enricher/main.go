@@ -1,3 +1,4 @@
+// Command enricher enriches flow messages with GeoIP metadata.
 package main
 
 import (
@@ -33,6 +34,7 @@ import (
 var (
 	version    = ""
 	buildinfos = ""
+	// AppVersion is a display string for the current build.
 	AppVersion = "Enricher " + version + " " + buildinfos
 
 	DbAsn     = flag.String("db.asn", "", "IP->ASN database")
@@ -49,6 +51,7 @@ var (
 	Version = flag.Bool("v", false, "Print version")
 )
 
+// MapAsn populates ASN data for an IP address.
 func MapAsn(db *geoip2.Reader, addr []byte, dest *uint32) {
 	entry, err := db.ASN(net.IP(addr))
 	if err != nil {
@@ -56,6 +59,8 @@ func MapAsn(db *geoip2.Reader, addr []byte, dest *uint32) {
 	}
 	*dest = uint32(entry.AutonomousSystemNumber)
 }
+
+// MapCountry populates country data for an IP address.
 func MapCountry(db *geoip2.Reader, addr []byte, dest *string) {
 	entry, err := db.Country(net.IP(addr))
 	if err != nil {
@@ -64,21 +69,24 @@ func MapCountry(db *geoip2.Reader, addr []byte, dest *string) {
 	*dest = entry.Country.IsoCode
 }
 
+// MapFlow enriches a flow message using GeoIP databases.
 func MapFlow(dbAsn, dbCountry *geoip2.Reader, msg *ProtoProducerMessage) {
 	if dbAsn != nil {
-		MapAsn(dbAsn, msg.SrcAddr, &(msg.FlowMessageExt.SrcAs))
-		MapAsn(dbAsn, msg.DstAddr, &(msg.FlowMessageExt.DstAs))
+		MapAsn(dbAsn, msg.SrcAddr, &msg.SrcAs)
+		MapAsn(dbAsn, msg.DstAddr, &msg.DstAs)
 	}
 	if dbCountry != nil {
-		MapCountry(dbCountry, msg.SrcAddr, &(msg.FlowMessageExt.SrcCountry))
-		MapCountry(dbCountry, msg.DstAddr, &(msg.FlowMessageExt.DstCountry))
+		MapCountry(dbCountry, msg.SrcAddr, &msg.SrcCountry)
+		MapCountry(dbCountry, msg.DstAddr, &msg.DstCountry)
 	}
 }
 
+// ProtoProducerMessage wraps the generated flow message for serialization.
 type ProtoProducerMessage struct {
 	flowmessage.FlowMessageExt
 }
 
+// MarshalBinary encodes the message with a length delimiter.
 func (m *ProtoProducerMessage) MarshalBinary() ([]byte, error) {
 	buf := bytes.NewBuffer([]byte{})
 	_, err := protodelim.MarshalTo(buf, m)
@@ -118,7 +126,11 @@ func main() {
 			slog.Error("error opening asn db", slog.String("error", err.Error()))
 			os.Exit(1)
 		}
-		defer dbAsn.Close()
+		defer func() {
+			if err := dbAsn.Close(); err != nil {
+				slog.Warn("error closing asn db", slog.String("error", err.Error()))
+			}
+		}()
 	}
 
 	if *DbCountry != "" {
@@ -127,7 +139,11 @@ func main() {
 			slog.Error("error opening country db", slog.String("error", err.Error()))
 			os.Exit(1)
 		}
-		defer dbCountry.Close()
+		defer func() {
+			if err := dbCountry.Close(); err != nil {
+				slog.Warn("error closing country db", slog.String("error", err.Error()))
+			}
+		}()
 	}
 
 	formatter, err := format.FindFormat(*Format)
@@ -140,7 +156,11 @@ func main() {
 		slog.Error("error transporter", slog.String("error", err.Error()))
 		os.Exit(1)
 	}
-	defer transporter.Close()
+	defer func() {
+		if err := transporter.Close(); err != nil {
+			slog.Warn("error closing transport", slog.String("error", err.Error()))
+		}
+	}()
 
 	logger.Info("starting enricher")
 

@@ -1,3 +1,4 @@
+// Package kafka implements a Kafka transport using sarama.
 package kafka
 
 import (
@@ -19,6 +20,7 @@ import (
 	sarama "github.com/Shopify/sarama"
 )
 
+// KafkaDriver sends formatted messages to Kafka topics.
 type KafkaDriver struct {
 	kafkaTLS         bool
 	kafkaClientCert  string
@@ -45,7 +47,7 @@ type KafkaDriver struct {
 	errors chan error
 }
 
-// Error specifically for inner Kafka errors
+// KafkaTransportError wraps errors returned by the Kafka client.
 type KafkaTransportError struct {
 	Err error
 }
@@ -57,6 +59,7 @@ func (e *KafkaTransportError) Unwrap() []error {
 	return []error{transport.ErrTransport, e.Err}
 }
 
+// KafkaSASLAlgorithm names supported SASL auth mechanisms.
 type KafkaSASLAlgorithm string
 
 const (
@@ -116,10 +119,12 @@ func (d *KafkaDriver) Prepare() error {
 	return nil
 }
 
+// Errors returns the Kafka producer error channel.
 func (d *KafkaDriver) Errors() <-chan error {
 	return d.errors
 }
 
+// Init configures the Kafka producer and establishes connections.
 func (d *KafkaDriver) Init() error {
 	kafkaConfigVersion, err := sarama.ParseKafkaVersion(d.kafkaVersion)
 	if err != nil {
@@ -174,9 +179,14 @@ func (d *KafkaDriver) Init() error {
 			}
 
 			serverCaBytes, err := io.ReadAll(serverCaFile)
-			serverCaFile.Close()
 			if err != nil {
+				if closeErr := serverCaFile.Close(); closeErr != nil {
+					return fmt.Errorf("error closing server CA: %v", closeErr)
+				}
 				return fmt.Errorf("error reading server CA: %v", err)
+			}
+			if err := serverCaFile.Close(); err != nil {
+				return fmt.Errorf("error closing server CA: %v", err)
 			}
 
 			block, _ := pem.Decode(serverCaBytes)
@@ -217,25 +227,26 @@ func (d *KafkaDriver) Init() error {
 	if d.kafkaSASL != "" && kafkaSASL != KAFKA_SASL_NONE {
 		_, ok := saslAlgorithms[KafkaSASLAlgorithm(strings.ToLower(d.kafkaSASL))]
 		if !ok {
-			return errors.New("SASL algorithm does not exist")
+			return errors.New("sasl algorithm does not exist")
 		}
 
 		kafkaConfig.Net.SASL.Enable = true
 		kafkaConfig.Net.SASL.User = os.Getenv("KAFKA_SASL_USER")
 		kafkaConfig.Net.SASL.Password = os.Getenv("KAFKA_SASL_PASS")
 		if kafkaConfig.Net.SASL.User == "" && kafkaConfig.Net.SASL.Password == "" {
-			return fmt.Errorf("Kafka SASL config from environment was unsuccessful. KAFKA_SASL_USER and KAFKA_SASL_PASS need to be set.")
+			return fmt.Errorf("kafka SASL config from environment was unsuccessful: KAFKA_SASL_USER and KAFKA_SASL_PASS need to be set")
 		}
 
 		if kafkaSASL == KAFKA_SASL_SCRAM_SHA256 || kafkaSASL == KAFKA_SASL_SCRAM_SHA512 {
 			kafkaConfig.Net.SASL.Handshake = true
 
-			if kafkaSASL == KAFKA_SASL_SCRAM_SHA512 {
+			switch kafkaSASL {
+			case KAFKA_SASL_SCRAM_SHA512:
 				kafkaConfig.Net.SASL.SCRAMClientGeneratorFunc = func() sarama.SCRAMClient {
 					return &XDGSCRAMClient{HashGeneratorFcn: SHA512}
 				}
 				kafkaConfig.Net.SASL.Mechanism = sarama.SASLTypeSCRAMSHA512
-			} else if kafkaSASL == KAFKA_SASL_SCRAM_SHA256 {
+			case KAFKA_SASL_SCRAM_SHA256:
 				kafkaConfig.Net.SASL.SCRAMClientGeneratorFunc = func() sarama.SCRAMClient {
 					return &XDGSCRAMClient{HashGeneratorFcn: SHA256}
 				}
@@ -284,6 +295,7 @@ func (d *KafkaDriver) Init() error {
 	return err
 }
 
+// Send publishes a message to Kafka.
 func (d *KafkaDriver) Send(key, data []byte) error {
 	d.producer.Input() <- &sarama.ProducerMessage{
 		Topic: d.kafkaTopic,
@@ -293,17 +305,21 @@ func (d *KafkaDriver) Send(key, data []byte) error {
 	return nil
 }
 
+// Close stops the producer and releases resources.
 func (d *KafkaDriver) Close() error {
-	d.producer.Close()
+	if err := d.producer.Close(); err != nil {
+		close(d.q)
+		return err
+	}
 	close(d.q)
 	return nil
 }
 
-// todo: deprecate?
+// GetServiceAddresses resolves SRV records into broker addresses.
 func GetServiceAddresses(srv string) (addrs []string, err error) {
 	_, srvs, err := net.LookupSRV("", "", srv)
 	if err != nil {
-		return nil, fmt.Errorf("service discovery: %v\n", err)
+		return nil, fmt.Errorf("service discovery: %v", err)
 	}
 	for _, srv := range srvs {
 		addrs = append(addrs, net.JoinHostPort(srv.Target, strconv.Itoa(int(srv.Port))))

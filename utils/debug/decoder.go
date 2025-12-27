@@ -6,6 +6,7 @@ import (
 	"github.com/netsampler/goflow2/v2/utils"
 )
 
+// PanicDecoderWrapper wraps a decoder to recover panics as errors.
 func PanicDecoderWrapper(wrapped utils.DecoderFunc) utils.DecoderFunc {
 	return func(msg interface{}) (err error) {
 		defer func() {

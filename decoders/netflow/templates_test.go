@@ -6,7 +6,9 @@ import (
 
 func benchTemplatesAdd(ts NetFlowTemplateSystem, obs uint32, N int, b *testing.B) {
 	for n := 0; n <= N; n++ {
-		ts.AddTemplate(10, obs, uint16(n), n)
+		if err := ts.AddTemplate(10, obs, uint16(n), n); err != nil {
+			b.Fatal(err)
+		}
 	}
 }
 

@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestProcessEthernet(t *testing.T) {
@@ -18,7 +19,7 @@ func TestProcessEthernet(t *testing.T) {
 	_, err := ParseEthernet(&flowMessage, data, ParseConfig{})
 	assert.NoError(t, err)
 
-	b, _ := json.Marshal(flowMessage.FlowMessage)
+	b, _ := json.Marshal(&flowMessage.FlowMessage)
 	t.Log(string(b))
 
 	assert.Equal(t, uint32(0x86dd), flowMessage.Etype)
@@ -31,7 +32,7 @@ func TestProcessDot1Q(t *testing.T) {
 	_, err := Parse8021Q(&flowMessage, data, ParseConfig{})
 	assert.NoError(t, err)
 
-	b, _ := json.Marshal(flowMessage.FlowMessage)
+	b, _ := json.Marshal(&flowMessage.FlowMessage)
 	t.Log(string(b))
 
 	assert.Equal(t, uint32(20), flowMessage.VlanId)
@@ -46,7 +47,7 @@ func TestProcessMPLS(t *testing.T) {
 	_, err := ParseMPLS(&flowMessage, data, ParseConfig{})
 	assert.NoError(t, err)
 
-	b, _ := json.Marshal(flowMessage.FlowMessage)
+	b, _ := json.Marshal(&flowMessage.FlowMessage)
 	t.Log(string(b))
 
 	assert.Equal(t, []uint32{18, 16}, flowMessage.MplsLabel)
@@ -66,7 +67,7 @@ func TestProcessIPv4(t *testing.T) {
 	_, err := ParseIPv4(&flowMessage, data, ParseConfig{})
 	assert.NoError(t, err)
 
-	b, _ := json.Marshal(flowMessage.FlowMessage)
+	b, _ := json.Marshal(&flowMessage.FlowMessage)
 	t.Log(string(b))
 
 	assert.Equal(t, []byte{10, 0, 0, 1}, flowMessage.SrcAddr)
@@ -85,7 +86,7 @@ func TestProcessIPv6(t *testing.T) {
 	_, err := ParseIPv6(&flowMessage, data, ParseConfig{})
 	assert.NoError(t, err)
 
-	b, _ := json.Marshal(flowMessage.FlowMessage)
+	b, _ := json.Marshal(&flowMessage.FlowMessage)
 	t.Log(string(b))
 
 	assert.Equal(t, []byte{0xfd, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01}, flowMessage.SrcAddr)
@@ -103,7 +104,7 @@ func TestProcessIPv6HeaderFragment(t *testing.T) {
 	_, err := ParseIPv6HeaderFragment(&flowMessage, data, ParseConfig{})
 	assert.NoError(t, err)
 
-	b, _ := json.Marshal(flowMessage.FlowMessage)
+	b, _ := json.Marshal(&flowMessage.FlowMessage)
 	t.Log(string(b))
 
 	assert.Equal(t, uint32(2810719913), flowMessage.FragmentId)
@@ -118,7 +119,7 @@ func TestProcessIPv6HeaderRouting(t *testing.T) {
 	_, err := ParseIPv6HeaderRouting(&flowMessage, data, ParseConfig{})
 	assert.NoError(t, err)
 
-	b, _ := json.Marshal(flowMessage.FlowMessage)
+	b, _ := json.Marshal(&flowMessage.FlowMessage)
 	t.Log(string(b))
 }
 
@@ -130,7 +131,7 @@ func TestProcessICMP(t *testing.T) {
 	_, err := ParseICMP(&flowMessage, data, ParseConfig{})
 	assert.NoError(t, err)
 
-	b, _ := json.Marshal(flowMessage.FlowMessage)
+	b, _ := json.Marshal(&flowMessage.FlowMessage)
 	t.Log(string(b))
 
 	assert.Equal(t, uint32(1), flowMessage.IcmpType)
@@ -145,7 +146,7 @@ func TestProcessICMPv6(t *testing.T) {
 	_, err := ParseICMPv6(&flowMessage, data, ParseConfig{})
 	assert.NoError(t, err)
 
-	b, _ := json.Marshal(flowMessage.FlowMessage)
+	b, _ := json.Marshal(&flowMessage.FlowMessage)
 	t.Log(string(b))
 
 	assert.Equal(t, uint32(128), flowMessage.IcmpType)
@@ -170,7 +171,7 @@ func TestProcessPacketBase(t *testing.T) {
 	err := ParsePacket(&flowMessage, data, nil, nil)
 	assert.NoError(t, err)
 
-	b, _ := json.Marshal(flowMessage.FlowMessage)
+	b, _ := json.Marshal(&flowMessage.FlowMessage)
 	t.Log(string(b))
 
 	layers := []uint32{0, 6, 5, 2, 8}
@@ -209,7 +210,7 @@ func TestProcessPacketGRE(t *testing.T) {
 	err := ParsePacket(&flowMessage, data, nil, nil)
 	assert.NoError(t, err)
 
-	b, _ := json.Marshal(flowMessage.FlowMessage)
+	b, _ := json.Marshal(&flowMessage.FlowMessage)
 	t.Log(string(b))
 
 	layers := []uint32{0, 2, 9, 1, 7}
@@ -282,7 +283,7 @@ func TestProcessPacketMapping(t *testing.T) {
 	err := ParsePacket(&flowMessage, data, configm, nil)
 	assert.NoError(t, err)
 
-	b, _ := json.Marshal(flowMessage.FlowMessage)
+	b, _ := json.Marshal(&flowMessage.FlowMessage)
 	t.Log(string(b))
 }
 
@@ -384,7 +385,7 @@ func TestProcessPacketMappingEncap(t *testing.T) {
 	err := configm.GetPacketMapper().ParsePacket(&flowMessage, data)
 	assert.NoError(t, err)
 
-	b, _ := json.Marshal(flowMessage.FlowMessage)
+	b, _ := json.Marshal(&flowMessage.FlowMessage)
 	t.Log(string(b))
 
 	flowMessage.skipDelimiter = true
@@ -422,7 +423,7 @@ func TestProcessPacketMappingPort(t *testing.T) {
 
 	pe := NewBaseParserEnvironment()
 
-	pe.RegisterPort("udp", PortDirDst, 53, ParserInfo{
+	require.NoError(t, pe.RegisterPort("udp", PortDirDst, 53, ParserInfo{
 		Parser: func(flowMessage *ProtoProducerMessage, data []byte, pc ParseConfig) (res ParseResult, err error) {
 			domain = data[13 : 13+11]
 			flowMessage.AddLayer("Custom")
@@ -430,7 +431,7 @@ func TestProcessPacketMappingPort(t *testing.T) {
 			res.Size = len(data)
 			return res, err
 		},
-	})
+	}))
 
 	err := ParsePacket(&flowMessage, data, nil, pe)
 	assert.NoError(t, err)
@@ -478,9 +479,10 @@ func TestProcessPacketMappingGeneve(t *testing.T) {
 
 	pe := NewBaseParserEnvironment()
 
-	gp, _ := pe.GetParser("geneve")
+	gp, ok := pe.GetParser("geneve")
+	require.True(t, ok)
 
-	pe.RegisterPort("udp", PortDirBoth, 6081, gp)
+	require.NoError(t, pe.RegisterPort("udp", PortDirBoth, 6081, gp))
 
 	err := ParsePacket(&flowMessage, data, nil, pe)
 	assert.NoError(t, err)

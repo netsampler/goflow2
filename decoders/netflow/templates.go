@@ -2,29 +2,34 @@ package netflow
 
 import (
 	"fmt"
+	"maps"
 	"sync"
 )
 
 var (
+	// ErrorTemplateNotFound is returned when a template lookup fails.
 	ErrorTemplateNotFound = fmt.Errorf("Error template not found")
 )
 
+// FlowBaseTemplateSet is a map keyed by version/obs-domain/template ID.
 type FlowBaseTemplateSet map[uint64]interface{}
 
 func templateKey(version uint16, obsDomainId uint32, templateId uint16) uint64 {
 	return (uint64(version) << 48) | (uint64(obsDomainId) << 16) | uint64(templateId)
 }
 
-// Store interface that allows storing, removing and retrieving template data
+// NetFlowTemplateSystem stores NetFlow and IPFIX templates.
 type NetFlowTemplateSystem interface {
 	RemoveTemplate(version uint16, obsDomainId uint32, templateId uint16) (interface{}, error)
 	GetTemplate(version uint16, obsDomainId uint32, templateId uint16) (interface{}, error)
 	AddTemplate(version uint16, obsDomainId uint32, templateId uint16, template interface{}) error
+	GetTemplates() FlowBaseTemplateSet
 }
 
 func (ts *BasicTemplateSystem) GetTemplates() FlowBaseTemplateSet {
 	ts.templateslock.RLock()
-	tmp := ts.templates
+	tmp := make(FlowBaseTemplateSet)
+	maps.Copy(tmp, ts.templates)
 	ts.templateslock.RUnlock()
 	return tmp
 }
@@ -69,13 +74,13 @@ func (ts *BasicTemplateSystem) RemoveTemplate(version uint16, obsDomainId uint32
 	return nil, ErrorTemplateNotFound
 }
 
+// BasicTemplateSystem keeps templates in-memory with a RW lock.
 type BasicTemplateSystem struct {
 	templates     FlowBaseTemplateSet
 	templateslock *sync.RWMutex
 }
 
-// Creates a basic store for NetFlow and IPFIX templates.
-// Everyting is stored in memory.
+// CreateTemplateSystem creates an in-memory store for NetFlow and IPFIX templates.
 func CreateTemplateSystem() NetFlowTemplateSystem {
 	ts := &BasicTemplateSystem{
 		templates:     make(FlowBaseTemplateSet),

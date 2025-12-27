@@ -1,3 +1,4 @@
+// Package utils provides flow pipeline and transport helpers.
 package utils
 
 import (
@@ -15,6 +16,7 @@ import (
 	"github.com/netsampler/goflow2/v2/utils/templates"
 )
 
+// FlowPipe describes a flow decoder/formatter pipeline.
 type FlowPipe interface {
 	DecodeFlow(msg interface{}) error
 	Close()
@@ -28,6 +30,7 @@ type flowpipe struct {
 	netFlowTemplater templates.TemplateSystemGenerator
 }
 
+// PipeConfig wires formatter, transport, and producer dependencies.
 type PipeConfig struct {
 	Format    format.FormatInterface
 	Transport transport.TransportInterface
@@ -68,10 +71,12 @@ func (p *flowpipe) parseConfig(cfg *PipeConfig) {
 
 }
 
+// SFlowPipe decodes sFlow packets and forwards them to a producer.
 type SFlowPipe struct {
 	flowpipe
 }
 
+// NetFlowPipe decodes NetFlow/IPFIX packets and forwards them to a producer.
 type NetFlowPipe struct {
 	flowpipe
 
@@ -79,6 +84,7 @@ type NetFlowPipe struct {
 	templates     map[string]netflow.NetFlowTemplateSystem
 }
 
+// PipeMessageError wraps a decode/produce error with source message metadata.
 type PipeMessageError struct {
 	Message *Message
 	Err     error
@@ -92,6 +98,7 @@ func (e *PipeMessageError) Unwrap() error {
 	return e.Err
 }
 
+// NewSFlowPipe creates a flow pipe configured for sFlow packets.
 func NewSFlowPipe(cfg *PipeConfig) *SFlowPipe {
 	p := &SFlowPipe{}
 	p.parseConfig(cfg)
@@ -101,6 +108,7 @@ func NewSFlowPipe(cfg *PipeConfig) *SFlowPipe {
 func (p *SFlowPipe) Close() {
 }
 
+// DecodeFlow decodes a sFlow payload and emits producer messages.
 func (p *SFlowPipe) DecodeFlow(msg interface{}) error {
 	pkt, ok := msg.(*Message)
 	if !ok {
@@ -132,6 +140,7 @@ func (p *SFlowPipe) DecodeFlow(msg interface{}) error {
 	return p.formatSend(flowMessageSet)
 }
 
+// NewNetFlowPipe creates a flow pipe configured for NetFlow/IPFIX packets.
 func NewNetFlowPipe(cfg *PipeConfig) *NetFlowPipe {
 	p := &NetFlowPipe{
 		templateslock: &sync.RWMutex{},
@@ -141,6 +150,7 @@ func NewNetFlowPipe(cfg *PipeConfig) *NetFlowPipe {
 	return p
 }
 
+// DecodeFlow decodes a NetFlow/IPFIX payload and emits producer messages.
 func (p *NetFlowPipe) DecodeFlow(msg interface{}) error {
 	pkt, ok := msg.(*Message)
 	if !ok {
@@ -223,11 +233,26 @@ func (p *NetFlowPipe) DecodeFlow(msg interface{}) error {
 func (p *NetFlowPipe) Close() {
 }
 
+// GetTemplatesForAllSources returns a copy of templates for all known NetFlow sources.
+func (p *NetFlowPipe) GetTemplatesForAllSources() map[string]map[uint64]interface{} {
+	p.templateslock.RLock()
+	defer p.templateslock.RUnlock()
+
+	ret := make(map[string]map[uint64]interface{})
+	for k, v := range p.templates {
+		ret[k] = v.GetTemplates()
+	}
+
+	return ret
+}
+
+// AutoFlowPipe dispatches to sFlow or NetFlow pipes based on payload.
 type AutoFlowPipe struct {
 	*SFlowPipe
 	*NetFlowPipe
 }
 
+// NewFlowPipe creates a combined sFlow and NetFlow decoder.
 func NewFlowPipe(cfg *PipeConfig) *AutoFlowPipe {
 	p := &AutoFlowPipe{
 		SFlowPipe:   NewSFlowPipe(cfg),
@@ -241,6 +266,7 @@ func (p *AutoFlowPipe) Close() {
 	p.NetFlowPipe.Close()
 }
 
+// DecodeFlow detects the protocol and routes to the appropriate decoder.
 func (p *AutoFlowPipe) DecodeFlow(msg interface{}) error {
 	pkt, ok := msg.(*Message)
 	if !ok {

@@ -4,6 +4,7 @@ import (
 	"fmt"
 )
 
+// PacketNetFlowV5 represents a decoded NetFlow v5 packet.
 type PacketNetFlowV5 struct {
 	Version          uint16             `json:"version"`
 	Count            uint16             `json:"count"`
@@ -17,6 +18,7 @@ type PacketNetFlowV5 struct {
 	Records          []RecordsNetFlowV5 `json:"records"`
 }
 
+// RecordsNetFlowV5 represents a single NetFlow v5 record entry.
 type RecordsNetFlowV5 struct {
 	SrcAddr  IPAddress `json:"src-addr"`
 	DstAddr  IPAddress `json:"dst-addr"`
@@ -40,12 +42,10 @@ type RecordsNetFlowV5 struct {
 	Pad2     uint16    `json:"pad2"`
 }
 
-type IPAddress uint32 // purely for the formatting purpose
+// IPAddress is a NetFlow legacy IPv4 address rendered as dotted decimal.
+type IPAddress uint32
 
-func IPAddressToUint32(addr IPAddress) uint32 {
-	return uint32(addr)
-}
-
+// MarshalJSON formats the IPv4 address as a JSON string.
 func (s *IPAddress) MarshalJSON() ([]byte, error) {
 	return []byte(fmt.Sprintf("\"%d.%d.%d.%d\"", *s>>24, (*s>>16)&0xFF, (*s>>8)&0xFF, *s&0xFF)), nil
 }
