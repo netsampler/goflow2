@@ -287,27 +287,34 @@ jobs:
 
     - name: Create Release
       id: create_release
-      uses: actions/create-release@v1
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      uses: actions/github-script@v7
       with:
-        tag_name: ${{ github.ref }}
-        release_name: Release ${{ github.ref }}
-        draft: false
-        prerelease: false
+        github-token: ${{ secrets.GITHUB_TOKEN }}
+        script: |
+          const tag = process.env.GITHUB_REF_NAME;
+          const { data } = await github.rest.repos.createRelease({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            tag_name: tag,
+            name: `Release ${tag}`,
+            draft: false,
+            prerelease: false,
+          });
+          core.setOutput('upload_url', data.upload_url);
 
     - name: Upload Release Asset
       uses: actions/github-script@v7
       with:
-        github-token: ${{secrets.GITHUB_TOKEN}}
+        github-token: ${{ secrets.GITHUB_TOKEN }}
         script: |
           const fs = require('fs').promises;
-          const upload_url = '${{ steps.create_release.outputs.upload_url }}';
-          for (let file of await fs.readdir('./dist')) {
+          const path = require('path');
+          const uploadUrl = '${{ steps.create_release.outputs.upload_url }}';
+          for (const file of await fs.readdir('./dist')) {
             console.log('uploading', file);
-            await github.repos.uploadReleaseAsset({
-              url: upload_url,
+            await github.rest.repos.uploadReleaseAsset({
+              url: uploadUrl,
               name: file,
-              data: await fs.readFile(`./dist/${file}`)
+              data: await fs.readFile(path.join('dist', file)),
             });
           }
