@@ -4,6 +4,7 @@ import (
 	"strconv"
 
 	"github.com/netsampler/goflow2/v2/decoders/netflow"
+	"github.com/netsampler/goflow2/v2/utils/templates"
 
 	"github.com/prometheus/client_golang/prometheus"
 )
@@ -24,6 +25,19 @@ func NewPromTemplateSystem(key string, wrapped netflow.NetFlowTemplateSystem) ne
 	return &PromTemplateSystem{
 		key:     key,
 		wrapped: wrapped,
+	}
+}
+
+// NewPromTemplateSystemGenerator wraps another generator (or the default system) with Prometheus metrics.
+func NewPromTemplateSystemGenerator(wrapped templates.TemplateSystemGenerator) templates.TemplateSystemGenerator {
+	return func(key string) netflow.NetFlowTemplateSystem {
+		var base netflow.NetFlowTemplateSystem
+		if wrapped != nil {
+			base = wrapped(key)
+		} else {
+			base = netflow.CreateTemplateSystem()
+		}
+		return NewPromTemplateSystem(key, base)
 	}
 }
 

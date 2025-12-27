@@ -12,3 +12,19 @@ type TemplateSystemGenerator func(key string) netflow.NetFlowTemplateSystem
 func DefaultTemplateGenerator(key string) netflow.NetFlowTemplateSystem {
 	return netflow.CreateTemplateSystem()
 }
+
+// NewJSONFileTemplateSystemGenerator wraps a generator with JSON file persistence.
+func NewJSONFileTemplateSystemGenerator(path string, wrapped TemplateSystemGenerator) TemplateSystemGenerator {
+	return func(key string) netflow.NetFlowTemplateSystem {
+		var base netflow.NetFlowTemplateSystem
+		if wrapped != nil {
+			base = wrapped(key)
+		} else {
+			base = netflow.CreateTemplateSystem()
+		}
+		if path == "" {
+			return base
+		}
+		return NewJSONFileTemplateSystem(key, base, path)
+	}
+}

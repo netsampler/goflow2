@@ -44,6 +44,7 @@ import (
 	"github.com/netsampler/goflow2/v2/metrics"
 	"github.com/netsampler/goflow2/v2/utils"
 	"github.com/netsampler/goflow2/v2/utils/debug"
+	"github.com/netsampler/goflow2/v2/utils/templates"
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"gopkg.in/yaml.v3"
@@ -70,6 +71,7 @@ var (
 	Addr = flag.String("addr", ":8080", "HTTP server address")
 
 	TemplatePath = flag.String("templates.path", "/templates", "NetFlow/IPFIX templates list")
+	TemplateFile = flag.String("templates.file", "", "Read/write NetFlow/IPFIX templates JSON file")
 
 	MappingFile = flag.String("mapping", "", "Configuration file for custom mappings")
 
@@ -294,11 +296,13 @@ func main() {
 			os.Exit(1)
 		}
 
+		promTemplater := metrics.NewPromTemplateSystemGenerator(templates.DefaultTemplateGenerator)
+		jsonTemplater := templates.NewJSONFileTemplateSystemGenerator(*TemplateFile, promTemplater)
 		cfgPipe := &utils.PipeConfig{
 			Format:           formatter,
 			Transport:        transporter,
 			Producer:         flowProducer,
-			NetFlowTemplater: metrics.NewDefaultPromTemplateSystem, // wrap template system to get Prometheus info
+			NetFlowTemplater: jsonTemplater, // wrap template system to get Prometheus info and optional JSON file snapshots
 		}
 
 		var decodeFunc utils.DecoderFunc
