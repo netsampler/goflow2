@@ -6,7 +6,7 @@ import (
 )
 
 var (
-  // ErrPanic marks a recovered panic.
+	// ErrPanic marks a recovered panic.
 	ErrPanic = fmt.Errorf("panic")
 )
 

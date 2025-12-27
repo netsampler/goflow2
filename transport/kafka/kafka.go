@@ -179,9 +179,14 @@ func (d *KafkaDriver) Init() error {
 			}
 
 			serverCaBytes, err := io.ReadAll(serverCaFile)
-			serverCaFile.Close()
 			if err != nil {
+				if closeErr := serverCaFile.Close(); closeErr != nil {
+					return fmt.Errorf("error closing server CA: %v", closeErr)
+				}
 				return fmt.Errorf("error reading server CA: %v", err)
+			}
+			if err := serverCaFile.Close(); err != nil {
+				return fmt.Errorf("error closing server CA: %v", err)
 			}
 
 			block, _ := pem.Decode(serverCaBytes)
@@ -235,12 +240,13 @@ func (d *KafkaDriver) Init() error {
 		if kafkaSASL == KAFKA_SASL_SCRAM_SHA256 || kafkaSASL == KAFKA_SASL_SCRAM_SHA512 {
 			kafkaConfig.Net.SASL.Handshake = true
 
-			if kafkaSASL == KAFKA_SASL_SCRAM_SHA512 {
+			switch kafkaSASL {
+			case KAFKA_SASL_SCRAM_SHA512:
 				kafkaConfig.Net.SASL.SCRAMClientGeneratorFunc = func() sarama.SCRAMClient {
 					return &XDGSCRAMClient{HashGeneratorFcn: SHA512}
 				}
 				kafkaConfig.Net.SASL.Mechanism = sarama.SASLTypeSCRAMSHA512
-			} else if kafkaSASL == KAFKA_SASL_SCRAM_SHA256 {
+			case KAFKA_SASL_SCRAM_SHA256:
 				kafkaConfig.Net.SASL.SCRAMClientGeneratorFunc = func() sarama.SCRAMClient {
 					return &XDGSCRAMClient{HashGeneratorFcn: SHA256}
 				}
@@ -301,7 +307,10 @@ func (d *KafkaDriver) Send(key, data []byte) error {
 
 // Close stops the producer and releases resources.
 func (d *KafkaDriver) Close() error {
-	d.producer.Close()
+	if err := d.producer.Close(); err != nil {
+		close(d.q)
+		return err
+	}
 	close(d.q)
 	return nil
 }
