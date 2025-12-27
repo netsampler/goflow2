@@ -23,7 +23,7 @@ var (
 type JSONFileTemplateSystem struct {
 	key     string
 	wrapped netflow.NetFlowTemplateSystem
-	writer  io.ReadWriteSeeker
+	writer  AtomicWriter
 	mu      *sync.Mutex
 	flushCh chan struct{}
 	closeCh chan struct{}
@@ -52,7 +52,7 @@ type jsonTemplateEntry struct {
 }
 
 // NewJSONFileTemplateSystem wraps a template system and writes JSON snapshots to a shared file.
-func NewJSONFileTemplateSystem(key string, wrapped netflow.NetFlowTemplateSystem, writer io.ReadWriteSeeker) netflow.NetFlowTemplateSystem {
+func NewJSONFileTemplateSystem(key string, wrapped netflow.NetFlowTemplateSystem, writer AtomicWriter) netflow.NetFlowTemplateSystem {
 	system := &JSONFileTemplateSystem{
 		key:     key,
 		wrapped: wrapped,
@@ -64,6 +64,25 @@ func NewJSONFileTemplateSystem(key string, wrapped netflow.NetFlowTemplateSystem
 	system.load()
 	go system.flushLoop()
 	return system
+}
+
+func templateWriterLock(writer AtomicWriter) *sync.Mutex {
+	if writer == nil {
+		return &sync.Mutex{}
+	}
+	value := reflect.ValueOf(writer)
+	if value.Kind() != reflect.Ptr {
+		return &sync.Mutex{}
+	}
+	key := value.Pointer()
+	templateWriterLocksMu.Lock()
+	defer templateWriterLocksMu.Unlock()
+	if lock, ok := templateWriterLocks[key]; ok {
+		return lock
+	}
+	lock := &sync.Mutex{}
+	templateWriterLocks[key] = lock
+	return lock
 }
 
 // AddTemplate stores a template and optionally writes the snapshot as JSON.
@@ -179,7 +198,7 @@ func (s *JSONFileTemplateSystem) flushSnapshot() {
 	defer s.mu.Unlock()
 
 	file := jsonTemplateFile{Routers: map[string]jsonRouterTemplates{}}
-	payload, err := readAllAtStart(s.writer)
+	payload, err := s.writer.Read()
 	if err == nil && len(payload) > 0 {
 		if err := json.Unmarshal(payload, &file); err != nil {
 			slog.Error("error decoding template JSON file", slog.String("error", err.Error()))
@@ -225,7 +244,7 @@ func (s *JSONFileTemplateSystem) flushSnapshot() {
 		slog.Error("error encoding template JSON file", slog.String("error", err.Error()))
 		return
 	}
-	if err := writeAllAtStart(s.writer, payload); err != nil {
+	if err := s.writer.WriteAtomic(payload); err != nil {
 		slog.Error("error writing template JSON file", slog.String("error", err.Error()))
 	}
 }
@@ -238,7 +257,7 @@ func (s *JSONFileTemplateSystem) load() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	payload, err := readAllAtStart(s.writer)
+	payload, err := s.writer.Read()
 	if err != nil && err != io.EOF {
 		slog.Error("error reading template JSON file", slog.String("error", err.Error()))
 		return
@@ -289,25 +308,6 @@ func (s *JSONFileTemplateSystem) load() {
 	}
 }
 
-func templateWriterLock(writer io.ReadWriteSeeker) *sync.Mutex {
-	if writer == nil {
-		return &sync.Mutex{}
-	}
-	value := reflect.ValueOf(writer)
-	if value.Kind() != reflect.Ptr {
-		return &sync.Mutex{}
-	}
-	key := value.Pointer()
-	templateWriterLocksMu.Lock()
-	defer templateWriterLocksMu.Unlock()
-	if lock, ok := templateWriterLocks[key]; ok {
-		return lock
-	}
-	lock := &sync.Mutex{}
-	templateWriterLocks[key] = lock
-	return lock
-}
-
 func splitTemplateKey(key uint64) (uint16, uint32, uint16) {
 	version := uint16(key >> 48)
 	obsDomainID := uint32((key >> 16) & 0xffffffff)
@@ -354,34 +354,4 @@ func decodeTemplate(entry jsonTemplateEntry) (interface{}, error) {
 	default:
 		return nil, fmt.Errorf("unknown template type %q", entry.Type)
 	}
-}
-
-func readAllAtStart(reader io.ReadSeeker) ([]byte, error) {
-	if _, err := reader.Seek(0, io.SeekStart); err != nil {
-		return nil, err
-	}
-	return io.ReadAll(reader)
-}
-
-func writeAllAtStart(writer io.ReadWriteSeeker, payload []byte) error {
-	if _, err := writer.Seek(0, io.SeekStart); err != nil {
-		return err
-	}
-	if resetWriter, ok := writer.(interface {
-		Truncate(int64) error
-	}); ok {
-		if err := resetWriter.Truncate(0); err != nil {
-			return err
-		}
-	}
-	_, err := writer.Write(payload)
-	if err != nil {
-		return err
-	}
-	if syncer, ok := writer.(interface {
-		Sync() error
-	}); ok {
-		return syncer.Sync()
-	}
-	return nil
 }

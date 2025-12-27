@@ -2,8 +2,6 @@
 package templates
 
 import (
-	"io"
-
 	"github.com/netsampler/goflow2/v2/decoders/netflow"
 )
 
@@ -16,7 +14,7 @@ func DefaultTemplateGenerator(key string) netflow.NetFlowTemplateSystem {
 }
 
 // NewJSONFileTemplateSystemGenerator wraps a generator with JSON file persistence.
-func NewJSONFileTemplateSystemGenerator(writer io.ReadWriteSeeker, wrapped TemplateSystemGenerator) TemplateSystemGenerator {
+func NewJSONFileTemplateSystemGenerator(writer AtomicWriter, wrapped TemplateSystemGenerator) TemplateSystemGenerator {
 	return func(key string) netflow.NetFlowTemplateSystem {
 		var base netflow.NetFlowTemplateSystem
 		if wrapped != nil {

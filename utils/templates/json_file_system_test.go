@@ -10,17 +10,12 @@ import (
 )
 
 func TestJSONFileTemplateSystem_PersistsAndLoads(t *testing.T) {
-	file, err := os.CreateTemp("", "templates-*.json")
-	if err != nil {
-		t.Fatalf("create temp file: %v", err)
-	}
-	defer func() {
-		_ = file.Close()
-		_ = os.Remove(file.Name())
-	}()
+	dir := t.TempDir()
+	path := dir + "/templates.json"
 
 	base := netflow.CreateTemplateSystem()
-	system := NewJSONFileTemplateSystem("router-a", base, file)
+	writer := NewAtomicFileWriter(path)
+	system := NewJSONFileTemplateSystem("router-a", base, writer)
 
 	template := netflow.TemplateRecord{
 		TemplateId: 256,
@@ -32,9 +27,13 @@ func TestJSONFileTemplateSystem_PersistsAndLoads(t *testing.T) {
 	if err := system.AddTemplate(9, 1, 256, template); err != nil {
 		t.Fatalf("add template: %v", err)
 	}
-	system.Flush()
+	if flusher, ok := system.(interface {
+		Flush()
+	}); ok {
+		flusher.Flush()
+	}
 
-	payload, err := os.ReadFile(file.Name())
+	payload, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatalf("read file: %v", err)
 	}
@@ -52,7 +51,7 @@ func TestJSONFileTemplateSystem_PersistsAndLoads(t *testing.T) {
 	}
 
 	reloadedBase := netflow.CreateTemplateSystem()
-	reloaded := NewJSONFileTemplateSystem("router-a", reloadedBase, file)
+	reloaded := NewJSONFileTemplateSystem("router-a", reloadedBase, writer)
 	reloadedTemplate, err := reloaded.GetTemplate(9, 1, 256)
 	if err != nil {
 		t.Fatalf("get template: %v", err)
@@ -63,21 +62,16 @@ func TestJSONFileTemplateSystem_PersistsAndLoads(t *testing.T) {
 }
 
 func TestJSONFileTemplateSystem_CorruptFile(t *testing.T) {
-	file, err := os.CreateTemp("", "templates-*.json")
-	if err != nil {
-		t.Fatalf("create temp file: %v", err)
-	}
-	defer func() {
-		_ = file.Close()
-		_ = os.Remove(file.Name())
-	}()
+	dir := t.TempDir()
+	path := dir + "/templates.json"
 
-	if _, err := file.WriteString("{bad json"); err != nil {
+	if err := os.WriteFile(path, []byte("{bad json"), 0o644); err != nil {
 		t.Fatalf("write corrupt JSON: %v", err)
 	}
 
 	base := netflow.CreateTemplateSystem()
-	system := NewJSONFileTemplateSystem("router-a", base, file)
+	writer := NewAtomicFileWriter(path)
+	system := NewJSONFileTemplateSystem("router-a", base, writer)
 	if len(system.GetTemplates()) != 0 {
 		t.Fatalf("expected empty templates on corrupt file")
 	}

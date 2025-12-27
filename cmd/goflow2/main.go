@@ -111,14 +111,9 @@ func main() {
 
 	slog.SetDefault(logger)
 
-	var templateFile *os.File
+	var templateWriter templates.AtomicWriter
 	if *TemplateFile != "" {
-		f, err := os.OpenFile(*TemplateFile, os.O_RDWR|os.O_CREATE, 0o644)
-		if err != nil {
-			slog.Error("error opening template file", slog.String("error", err.Error()))
-			os.Exit(1)
-		}
-		templateFile = f
+		templateWriter = templates.NewAtomicFileWriter(*TemplateFile)
 	}
 
 	formatter, err := format.FindFormat(*Format)
@@ -307,7 +302,7 @@ func main() {
 		}
 
 		promTemplater := metrics.NewPromTemplateSystemGenerator(templates.DefaultTemplateGenerator)
-		jsonTemplater := templates.NewJSONFileTemplateSystemGenerator(templateFile, promTemplater)
+		jsonTemplater := templates.NewJSONFileTemplateSystemGenerator(templateWriter, promTemplater)
 		cfgPipe := &utils.PipeConfig{
 			Format:           formatter,
 			Transport:        transporter,
@@ -470,11 +465,6 @@ func main() {
 		logger.Error("error closing transport", slog.String("error", err.Error()))
 	}
 	logger.Info("transporter closed")
-	if templateFile != nil {
-		if err := templateFile.Close(); err != nil {
-			logger.Warn("error closing template file", slog.String("error", err.Error()))
-		}
-	}
 	// close http server (prometheus + health check)
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
 	if err := srv.Shutdown(ctx); err != nil {
