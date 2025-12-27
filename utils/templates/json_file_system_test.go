@@ -32,6 +32,7 @@ func TestJSONFileTemplateSystem_PersistsAndLoads(t *testing.T) {
 	if err := system.AddTemplate(9, 1, 256, template); err != nil {
 		t.Fatalf("add template: %v", err)
 	}
+	system.Flush()
 
 	payload, err := os.ReadFile(file.Name())
 	if err != nil {
