@@ -6,8 +6,8 @@ import (
 )
 
 var (
-	// PanicError marks a recovered panic.
-	PanicError = fmt.Errorf("panic")
+  // ErrPanic marks a recovered panic.
+	ErrPanic = fmt.Errorf("panic")
 )
 
 // PanicErrorMessage captures a recovered panic with stacktrace.
@@ -18,9 +18,9 @@ type PanicErrorMessage struct {
 }
 
 func (e *PanicErrorMessage) Error() string {
-	return fmt.Sprintf("%s", e.Inner)
+	return e.Inner
 }
 
 func (e *PanicErrorMessage) Unwrap() []error {
-	return []error{PanicError}
+	return []error{ErrPanic}
 }

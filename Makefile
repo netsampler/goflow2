@@ -20,11 +20,12 @@ BUILDINFOS    ?=  ($(DATE)$(BUILDINFOSDET))
 LDFLAGS       ?= '-X main.version=$(VERSION) -X main.buildinfos=$(BUILDINFOS)'
 MAINTAINER    := lspgn@users.noreply.github.com
 DOCKER_BIN    ?= docker
-DOCKER_CMD    ?= build
+DOCKER_CMD    ?= buildx build
 DOCKER_SUFFIX ?= 
 DOCKER_IMAGE_PREFIXES ?= $(DOCKER_IMAGE)
 DOCKER_TAGS ?= $(foreach image,$(DOCKER_IMAGE_PREFIXES),$(image):$(ABBREV)$(DOCKER_SUFFIX))
 DOCKER_TAG_ARGS := $(foreach tag,$(DOCKER_TAGS),-t $(tag))
+DOCKER_MANIFEST_TAG ?= $(ABBREV)
 
 OUTPUT := $(DIST_DIR)goflow2-$(VERSION_PKG)-$(GOOS)-$(GOARCH)$(EXTENSION)
 
@@ -56,8 +57,7 @@ test:
 prepare:
 	mkdir -p $(DIST_DIR)
 
-PHONY: clean
-# Remove build artifacts.
+.PHONY: clean
 clean:
 	rm -rf $(DIST_DIR)
 
@@ -95,37 +95,8 @@ push-docker:
 .PHONY: docker-manifest
 # Create and push multi-arch manifest for abbrev and latest tags.
 docker-manifest:
-	$(DOCKER_BIN) manifest create $(DOCKER_IMAGE):$(ABBREV) \
-	    --amend $(DOCKER_IMAGE):$(ABBREV)-amd64 \
-	    --amend $(DOCKER_IMAGE):$(ABBREV)-arm64
-	$(DOCKER_BIN) manifest push $(DOCKER_IMAGE):$(ABBREV)
-
-	$(DOCKER_BIN) manifest create $(DOCKER_IMAGE):latest \
-	    --amend $(DOCKER_IMAGE):$(ABBREV)-amd64 \
-	    --amend $(DOCKER_IMAGE):$(ABBREV)-arm64
-	$(DOCKER_BIN) manifest push $(DOCKER_IMAGE):latest
-
-.PHONY: docker-manifest-buildx
-# Create multi-arch manifest using buildx imagetools (abbrev tag).
-docker-manifest-buildx:
 	$(DOCKER_BIN) buildx imagetools create \
-	    -t $(DOCKER_IMAGE):$(ABBREV) \
-	    $(DOCKER_IMAGE):$(ABBREV)-amd64 \
-	    $(DOCKER_IMAGE):$(ABBREV)-arm64
-
-.PHONY: docker-manifest-release
-# Create and push multi-arch manifest for release version.
-docker-manifest-release:
-	$(DOCKER_BIN) manifest create $(DOCKER_IMAGE):$(VERSION) \
-	    --amend $(DOCKER_IMAGE):$(ABBREV)-amd64 \
-	    --amend $(DOCKER_IMAGE):$(ABBREV)-arm64
-	$(DOCKER_BIN) manifest push $(DOCKER_IMAGE):$(VERSION)
-
-.PHONY: docker-manifest-release-buildx
-# Create release manifest using buildx imagetools.
-docker-manifest-release-buildx:
-	$(DOCKER_BIN) buildx imagetools create \
-	    -t $(DOCKER_IMAGE):$(VERSION) \
+	    -t $(DOCKER_IMAGE):$(DOCKER_MANIFEST_TAG) \
 	    $(DOCKER_IMAGE):$(ABBREV)-amd64 \
 	    $(DOCKER_IMAGE):$(ABBREV)-arm64
 

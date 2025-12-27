@@ -34,15 +34,6 @@ var (
 		9999,
 		false,
 	}
-	parserPayload = ParserInfo{
-		nil,
-		"payload",
-		[]string{"payload", "7"},
-		100,
-		9998,
-		false,
-	}
-
 	parserEthernet = ParserInfo{
 		nil, //ParseEthernet2,
 		"ethernet",
@@ -268,7 +259,7 @@ func (e *BaseParserEnvironment) RegisterPort(proto string, dir RegPortDir, port 
 // NextParserEtype looks up the next parser by EtherType.
 func (e *BaseParserEnvironment) NextParserEtype(etherType []byte) (ParserInfo, error) {
 	info, err := e.innerNextParserEtype(etherType)
-	etypeNum := uint16(etherType[0]<<8) | uint16(etherType[1])
+	etypeNum := uint16(etherType[0])<<8 | uint16(etherType[1])
 	info.ConfigKeyList = append(info.ConfigKeyList, fmt.Sprintf("etype%d", etypeNum), fmt.Sprintf("etype0x%.4x", etypeNum))
 	return info, err
 }

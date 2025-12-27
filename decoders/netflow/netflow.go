@@ -412,7 +412,7 @@ func DecodeMessageCommonFlowSet(payload *bytes.Buffer, templates NetFlowTemplate
 		dataReader := bytes.NewBuffer(rawfs.Records)
 
 		if templates == nil {
-			return flowSet, &FlowError{version, "Templates", obsDomainId, fsheader.Id, fmt.Errorf("No templates")}
+			return flowSet, &FlowError{version, "Templates", obsDomainId, fsheader.Id, fmt.Errorf("no templates")}
 		}
 
 		template, err := templates.GetTemplate(version, obsDomainId, fsheader.Id)
