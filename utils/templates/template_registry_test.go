@@ -4,6 +4,9 @@ import (
 	"encoding/json"
 	"os"
 	"testing"
+	"time"
+
+	"github.com/netsampler/goflow2/v2/decoders/netflow"
 )
 
 func TestTemplateSystemRegistryPreloadSources(t *testing.T) {
@@ -37,5 +40,43 @@ func TestTemplateSystemRegistryPreloadSources(t *testing.T) {
 	}
 	if _, ok := snapshot["router-a"]; !ok {
 		t.Fatalf("expected router-a to be preloaded")
+	}
+}
+
+func TestTemplateSystemRegistryEvictStale(t *testing.T) {
+	registry := NewTemplateSystemRegistry(DefaultTemplateGenerator, time.Second, time.Minute)
+
+	emptyKey := "empty-router"
+	registry.Get(emptyKey)
+
+	staleKey := "stale-router"
+	system := registry.Get(staleKey)
+	template := netflow.TemplateRecord{
+		TemplateId: 256,
+		FieldCount: 1,
+		Fields: []netflow.Field{
+			{Type: 1, Length: 4},
+		},
+	}
+	if err := system.AddTemplate(9, 1, 256, template); err != nil {
+		t.Fatalf("add template: %v", err)
+	}
+
+	registry.lock.Lock()
+	registry.lastSeen[staleKey] = time.Now().Add(-2 * time.Second)
+	registry.lock.Unlock()
+
+	registry.evictStale()
+
+	registry.lock.RLock()
+	_, emptyExists := registry.templates[emptyKey]
+	_, staleExists := registry.templates[staleKey]
+	registry.lock.RUnlock()
+
+	if emptyExists {
+		t.Fatalf("expected empty template system to be evicted")
+	}
+	if staleExists {
+		t.Fatalf("expected stale template system to be evicted")
 	}
 }
