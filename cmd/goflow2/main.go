@@ -12,9 +12,11 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -23,6 +25,10 @@ import (
 
 	// decoders
 	"github.com/netsampler/goflow2/v2/decoders/netflow"
+
+	"github.com/google/gopacket"
+	"github.com/google/gopacket/layers"
+	"github.com/google/gopacket/pcapgo"
 
 	// various formatters
 	"github.com/netsampler/goflow2/v2/format"
@@ -75,6 +81,108 @@ var (
 
 	Version = flag.Bool("v", false, "Print version")
 )
+
+func addrFromIP(ip net.IP) (netip.Addr, bool) {
+	if v4 := ip.To4(); v4 != nil {
+		var addr [4]byte
+		copy(addr[:], v4)
+		return netip.AddrFrom4(addr), true
+	}
+	if v6 := ip.To16(); v6 != nil {
+		var addr [16]byte
+		copy(addr[:], v6)
+		return netip.AddrFrom16(addr), true
+	}
+	return netip.Addr{}, false
+}
+
+func openPacketSource(path string) (*os.File, gopacket.PacketDataSource, layers.LinkType, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, nil, 0, err
+	}
+
+	ng, err := pcapgo.NewNgReader(f, pcapgo.DefaultNgReaderOptions)
+	if err == nil {
+		return f, ng, ng.LinkType(), nil
+	}
+	if _, seekErr := f.Seek(0, io.SeekStart); seekErr != nil {
+		f.Close()
+		return nil, nil, 0, seekErr
+	}
+	r, err := pcapgo.NewReader(f)
+	if err != nil {
+		f.Close()
+		return nil, nil, 0, err
+	}
+	return f, r, r.LinkType(), nil
+}
+
+func readPcap(path string, decode utils.DecoderFunc, logger *slog.Logger) {
+	f, source, linkType, err := openPacketSource(path)
+	if err != nil {
+		logger.Error("open pcap failed", slog.String("error", err.Error()))
+		return
+	}
+	defer f.Close()
+
+	packetSource := gopacket.NewPacketSource(source, linkType)
+	for packet := range packetSource.Packets() {
+		if errLayer := packet.ErrorLayer(); errLayer != nil {
+			logger.Error("packet decode error", slog.String("error", errLayer.Error().Error()))
+			continue
+		}
+
+		udpLayer := packet.Layer(layers.LayerTypeUDP)
+		if udpLayer == nil {
+			continue
+		}
+		udp, ok := udpLayer.(*layers.UDP)
+		if !ok {
+			continue
+		}
+
+		var srcIP net.IP
+		var dstIP net.IP
+		if ip4Layer := packet.Layer(layers.LayerTypeIPv4); ip4Layer != nil {
+			if ip4, ok := ip4Layer.(*layers.IPv4); ok {
+				srcIP = ip4.SrcIP
+				dstIP = ip4.DstIP
+			}
+		} else if ip6Layer := packet.Layer(layers.LayerTypeIPv6); ip6Layer != nil {
+			if ip6, ok := ip6Layer.(*layers.IPv6); ok {
+				srcIP = ip6.SrcIP
+				dstIP = ip6.DstIP
+			}
+		} else {
+			logger.Error("packet missing IP layer")
+			continue
+		}
+
+		srcAddr, ok := addrFromIP(srcIP)
+		if !ok {
+			logger.Error("invalid src IP", slog.String("ip", srcIP.String()))
+			continue
+		}
+		dstAddr, ok := addrFromIP(dstIP)
+		if !ok {
+			logger.Error("invalid dst IP", slog.String("ip", dstIP.String()))
+			continue
+		}
+
+		msg := &utils.Message{
+			Src:      netip.AddrPortFrom(srcAddr, uint16(udp.SrcPort)),
+			Dst:      netip.AddrPortFrom(dstAddr, uint16(udp.DstPort)),
+			Payload:  append([]byte(nil), udp.Payload...),
+			Received: packet.Metadata().Timestamp,
+		}
+
+		if err := decode(msg); err != nil {
+			logger.Error("decode error", slog.String("error", err.Error()))
+		}
+	}
+
+}
 
 // LoadMapping reads a YAML mapping configuration.
 func LoadMapping(f io.Reader) (*protoproducer.ProducerConfig, error) {
@@ -207,11 +315,62 @@ func main() {
 	var pipes []utils.FlowPipe
 
 	q := make(chan bool)
+	pcapWg := &sync.WaitGroup{}
+	var pcapDone chan struct{}
+	var pcapCount int
 	for _, listenAddress := range strings.Split(*ListenAddresses, ",") {
+		listenAddress = strings.TrimSpace(listenAddress)
+		if listenAddress == "" {
+			continue
+		}
 		listenAddrUrl, err := url.Parse(listenAddress)
 		if err != nil {
 			logger.Error("error parsing address", slog.String("error", err.Error()))
 			os.Exit(1)
+		}
+		if listenAddrUrl.Scheme == "file" {
+			pcapPath := listenAddrUrl.Path
+			if pcapPath == "" && listenAddrUrl.Opaque != "" {
+				pcapPath = listenAddrUrl.Opaque
+			}
+			if pcapPath == "" {
+				logger.Error("pcap path missing", slog.String("listen", listenAddress))
+				os.Exit(1)
+			}
+			if listenAddrUrl.Host != "" && listenAddrUrl.Host != "localhost" {
+				logger.Error("pcap file host not supported", slog.String("host", listenAddrUrl.Host))
+				os.Exit(1)
+			}
+			if decodedPath, err := url.PathUnescape(pcapPath); err == nil {
+				pcapPath = decodedPath
+			} else {
+				logger.Error("pcap path decode failed", slog.String("error", err.Error()))
+				os.Exit(1)
+			}
+			pcapPath = filepath.FromSlash(pcapPath)
+
+			pcapCount++
+			cfgPipe := &utils.PipeConfig{
+				Format:           formatter,
+				Transport:        transporter,
+				Producer:         flowProducer,
+				NetFlowTemplater: metrics.NewDefaultPromTemplateSystem,
+			}
+			p := utils.NewFlowPipe(cfgPipe)
+			pipes = append(pipes, p)
+			decodeFunc := p.DecodeFlow
+			decodeFunc = debug.PanicDecoderWrapper(decodeFunc)
+			decodeFunc = metrics.PromDecoderWrapper(decodeFunc, "pcap")
+
+			pcapWg.Add(1)
+			go func(path string) {
+				defer pcapWg.Done()
+				plogger := logger.With(slog.String("pcap", path))
+				plogger.Info("starting pcap read")
+				readPcap(path, decodeFunc, plogger)
+				plogger.Info("pcap read done")
+			}(pcapPath)
+			continue
 		}
 		numSockets := 1
 		if listenAddrUrl.Query().Has("count") {
@@ -394,6 +553,16 @@ func main() {
 		}
 	}
 
+	if pcapCount > 0 {
+		pcapDone = make(chan struct{})
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			pcapWg.Wait()
+			close(pcapDone)
+		}()
+	}
+
 	// special routine to handle kafka errors transmitted as a stream
 	wg.Add(1)
 	go func() {
@@ -431,7 +600,15 @@ func main() {
 
 	collecting = true
 
-	<-c
+	var pcapWait <-chan struct{}
+	if pcapDone != nil {
+		pcapWait = pcapDone
+	}
+
+	select {
+	case <-c:
+	case <-pcapWait:
+	}
 
 	collecting = false
 
