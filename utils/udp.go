@@ -130,7 +130,7 @@ func (r *UDPReceiver) Errors() <-chan error {
 }
 
 func (r *UDPReceiver) receive(addr string, port int, started chan bool) error {
-	if strings.IndexRune(addr, ':') >= 0 && strings.IndexRune(addr, '[') == -1 {
+	if strings.ContainsRune(addr, ':') && !strings.ContainsRune(addr, '[') {
 		addr = "[" + addr + "]"
 	}
 
@@ -293,11 +293,15 @@ func (r *UDPReceiver) Start(addr string, port int, decodeFunc DecoderFunc) error
 	}
 
 	if err := r.decoders(r.workers, decodeFunc); err != nil {
-		r.Stop()
+		if stopErr := r.Stop(); stopErr != nil {
+			return stopErr
+		}
 		return err
 	}
 	if err := r.receivers(r.sockets, addr, port); err != nil {
-		r.Stop()
+		if stopErr := r.Stop(); stopErr != nil {
+			return stopErr
+		}
 		return err
 	}
 	return nil

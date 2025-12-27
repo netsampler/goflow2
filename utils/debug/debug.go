@@ -5,7 +5,7 @@ import (
 )
 
 var (
-	PanicError = fmt.Errorf("panic")
+	ErrPanic = fmt.Errorf("panic")
 )
 
 type PanicErrorMessage struct {
@@ -15,9 +15,9 @@ type PanicErrorMessage struct {
 }
 
 func (e *PanicErrorMessage) Error() string {
-	return fmt.Sprintf("%s", e.Inner)
+	return e.Inner
 }
 
 func (e *PanicErrorMessage) Unwrap() []error {
-	return []error{PanicError}
+	return []error{ErrPanic}
 }

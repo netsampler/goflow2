@@ -84,7 +84,9 @@ func benchBinaryRead(b *testing.B, buf *testBuf, dest any, cmp bool) {
 		fct = testBinaryRead
 	}
 	for n := 0; n < b.N; n++ {
-		fct(buf, dest)
+		if err := fct(buf, dest); err != nil {
+			b.Fatal(err)
+		}
 		buf.Reset()
 	}
 }

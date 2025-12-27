@@ -355,7 +355,7 @@ func main() {
 						if errors.Is(err, net.ErrClosed) {
 							logger.Info("closed receiver")
 							continue
-						} else if !errors.Is(err, netflow.ErrorTemplateNotFound) && !errors.Is(err, debug.PanicError) {
+						} else if !errors.Is(err, netflow.ErrorTemplateNotFound) && !errors.Is(err, debug.ErrPanic) {
 							logger.Error("error", slog.String("error", err.Error()))
 							continue
 						}
@@ -372,7 +372,7 @@ func main() {
 
 							if errors.Is(err, netflow.ErrorTemplateNotFound) {
 								logger.Warn("template error")
-							} else if errors.Is(err, debug.PanicError) {
+							} else if errors.Is(err, debug.ErrPanic) {
 								var pErrMsg *debug.PanicErrorMessage
 								if errors.As(err, &pErrMsg) {
 									attrs = append(attrs,
