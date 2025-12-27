@@ -70,9 +70,11 @@ var (
 
 	Addr = flag.String("addr", ":8080", "HTTP server address")
 
-	TemplatePath  = flag.String("templates.path", "/templates", "NetFlow/IPFIX templates list")
-	TemplateFile  = flag.String("templates.file", "", "Read/write NetFlow/IPFIX templates JSON file")
-	TemplateFlush = flag.Duration("templates.flush", time.Second*5, "Interval to batch template JSON flushes")
+	TemplatePath          = flag.String("templates.path", "/templates", "NetFlow/IPFIX templates list")
+	TemplateFile          = flag.String("templates.file", "", "Read/write NetFlow/IPFIX templates JSON file")
+	TemplateFlush         = flag.Duration("templates.flush", time.Second*5, "Interval to batch template JSON flushes")
+	TemplateEvictAfter    = flag.Duration("templates.evict.after", 0, "Evict template systems after inactivity (0 to disable)")
+	TemplateEvictInterval = flag.Duration("templates.evict.interval", 10*time.Minute, "Interval to scan for inactive template systems")
 
 	MappingFile = flag.String("mapping", "", "Configuration file for custom mappings")
 
@@ -308,10 +310,12 @@ func main() {
 			templateGenerator = templates.NewJSONFileTemplateSystemGenerator(templateWriter, promTemplater, *TemplateFlush)
 		}
 		cfgPipe := &utils.PipeConfig{
-			Format:           formatter,
-			Transport:        transporter,
-			Producer:         flowProducer,
-			NetFlowTemplater: templateGenerator.Generator(), // wrap template system to get Prometheus info and optional JSON file snapshots
+			Format:                formatter,
+			Transport:             transporter,
+			Producer:              flowProducer,
+			NetFlowTemplater:      templateGenerator.Generator(), // wrap template system to get Prometheus info and optional JSON file snapshots
+			TemplateEvictAfter:    *TemplateEvictAfter,
+			TemplateEvictInterval: *TemplateEvictInterval,
 		}
 
 		var decodeFunc utils.DecoderFunc

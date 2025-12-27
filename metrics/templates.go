@@ -15,6 +15,13 @@ type PromTemplateSystem struct {
 	wrapped netflow.NetFlowTemplateSystem
 }
 
+func splitTemplateKey(key uint64) (uint16, uint32, uint16) {
+	version := uint16(key >> 48)
+	obsDomainID := uint32((key >> 16) & 0xffffffff)
+	templateID := uint16(key & 0xffff)
+	return version, obsDomainID, templateID
+}
+
 // NewDefaultPromTemplateSystem creates a PromTemplateSystem with default storage.
 func NewDefaultPromTemplateSystem(key string) netflow.NetFlowTemplateSystem {
 	return NewPromTemplateSystem(key, netflow.CreateTemplateSystem())
@@ -90,4 +97,14 @@ func (s *PromTemplateSystem) RemoveTemplate(version uint16, obsDomainId uint32, 
 // GetTemplates returns all templates from the wrapped system.
 func (s *PromTemplateSystem) GetTemplates() netflow.FlowBaseTemplateSet {
 	return s.wrapped.GetTemplates()
+}
+
+// Cleanup removes Prometheus metrics for all templates in the wrapped system.
+func (s *PromTemplateSystem) Cleanup() {
+	templates := s.wrapped.GetTemplates()
+	for key, template := range templates {
+		version, obsDomainID, templateID := splitTemplateKey(key)
+		labels := s.getLabels(version, obsDomainID, templateID, template)
+		NetFlowTemplatesStats.Delete(labels)
+	}
 }

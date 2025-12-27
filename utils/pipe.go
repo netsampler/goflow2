@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/netsampler/goflow2/v2/decoders/netflow"
 	"github.com/netsampler/goflow2/v2/decoders/netflowlegacy"
@@ -37,6 +38,9 @@ type PipeConfig struct {
 	Producer  producer.ProducerInterface
 
 	NetFlowTemplater templates.TemplateSystemGenerator
+
+	TemplateEvictAfter    time.Duration
+	TemplateEvictInterval time.Duration
 }
 
 func (p *flowpipe) formatSend(flowMessageSet []producer.ProducerMessage) error {
@@ -82,6 +86,10 @@ type NetFlowPipe struct {
 
 	templateslock *sync.RWMutex
 	templates     map[string]netflow.NetFlowTemplateSystem
+	lastSeen      map[string]time.Time
+	evictAfter    time.Duration
+	evictInterval time.Duration
+	evictStop     chan struct{}
 }
 
 // PipeMessageError wraps a decode/produce error with source message metadata.
@@ -145,8 +153,18 @@ func NewNetFlowPipe(cfg *PipeConfig) *NetFlowPipe {
 	p := &NetFlowPipe{
 		templateslock: &sync.RWMutex{},
 		templates:     make(map[string]netflow.NetFlowTemplateSystem),
+		lastSeen:      make(map[string]time.Time),
+		evictStop:     make(chan struct{}),
 	}
 	p.parseConfig(cfg)
+	p.evictAfter = cfg.TemplateEvictAfter
+	p.evictInterval = cfg.TemplateEvictInterval
+	if p.evictAfter > 0 {
+		if p.evictInterval <= 0 {
+			p.evictInterval = time.Minute
+		}
+		go p.evictLoop()
+	}
 	return p
 }
 
@@ -167,8 +185,10 @@ func (p *NetFlowPipe) DecodeFlow(msg interface{}) error {
 		templates = p.netFlowTemplater(key)
 		p.templateslock.Lock()
 		p.templates[key] = templates
+		p.lastSeen[key] = time.Now()
 		p.templateslock.Unlock()
 	}
+	p.updateLastSeen(key)
 
 	var packetV5 netflowlegacy.PacketNetFlowV5
 	var packetNFv9 netflow.NFv9Packet
@@ -231,6 +251,7 @@ func (p *NetFlowPipe) DecodeFlow(msg interface{}) error {
 }
 
 func (p *NetFlowPipe) Close() {
+	close(p.evictStop)
 	p.templateslock.RLock()
 	defer p.templateslock.RUnlock()
 
@@ -245,9 +266,64 @@ func (p *NetFlowPipe) Close() {
 
 // Remove deletes a template system from memory for a source key.
 func (p *NetFlowPipe) Remove(key string) {
+	var tmpl netflow.NetFlowTemplateSystem
 	p.templateslock.Lock()
-	defer p.templateslock.Unlock()
-	delete(p.templates, key)
+	if existing, ok := p.templates[key]; ok {
+		tmpl = existing
+		delete(p.templates, key)
+		delete(p.lastSeen, key)
+	}
+	p.templateslock.Unlock()
+	if tmpl == nil {
+		return
+	}
+	if cleaner, ok := tmpl.(interface {
+		Cleanup()
+	}); ok {
+		cleaner.Cleanup()
+	}
+	if closer, ok := tmpl.(interface {
+		Close() error
+	}); ok {
+		_ = closer.Close()
+	}
+}
+
+func (p *NetFlowPipe) updateLastSeen(key string) {
+	p.templateslock.Lock()
+	p.lastSeen[key] = time.Now()
+	p.templateslock.Unlock()
+}
+
+func (p *NetFlowPipe) evictLoop() {
+	ticker := time.NewTicker(p.evictInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-p.evictStop:
+			return
+		case <-ticker.C:
+			p.evictStale()
+		}
+	}
+}
+
+func (p *NetFlowPipe) evictStale() {
+	if p.evictAfter <= 0 {
+		return
+	}
+	now := time.Now()
+	var keys []string
+	p.templateslock.RLock()
+	for key, seen := range p.lastSeen {
+		if now.Sub(seen) > p.evictAfter {
+			keys = append(keys, key)
+		}
+	}
+	p.templateslock.RUnlock()
+	for _, key := range keys {
+		templates.Remove(p, key)
+	}
 }
 
 // GetTemplatesForAllSources returns a copy of templates for all known NetFlow sources.
