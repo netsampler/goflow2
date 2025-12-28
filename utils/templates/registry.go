@@ -91,16 +91,17 @@ func (r *InMemoryRegistry) GetSystem(key string) netflow.NetFlowTemplateSystem {
 		return system
 	}
 
-	system = &pruningTemplateSystem{
+	pruningSystem := &pruningTemplateSystem{
 		key:     key,
 		parent:  r,
 		wrapped: r.generator(key),
 	}
-	if snapshot := system.wrapped.GetTemplates(); len(snapshot) > 0 {
-		system.lock.Lock()
-		system.count = len(snapshot)
-		system.lock.Unlock()
+	if snapshot := pruningSystem.wrapped.GetTemplates(); len(snapshot) > 0 {
+		pruningSystem.lock.Lock()
+		pruningSystem.count = len(snapshot)
+		pruningSystem.lock.Unlock()
 	}
+	system = pruningSystem
 	r.lock.Lock()
 	if existing, ok := r.systems[key]; ok {
 		r.lock.Unlock()

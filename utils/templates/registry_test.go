@@ -15,10 +15,10 @@ func TestInMemoryRegistryPrunesEmptySystem(t *testing.T) {
 	registry := NewInMemoryRegistry(nil)
 	system := registry.GetSystem("router1")
 
-	if err := system.AddTemplate(9, 1, 256, netflow.TemplateRecord{TemplateId: 256}); err != nil {
+	if _, err := system.AddTemplate(9, 1, 256, netflow.TemplateRecord{TemplateId: 256}); err != nil {
 		t.Fatalf("add template: %v", err)
 	}
-	if _, err := system.RemoveTemplate(9, 1, 256); err != nil {
+	if _, _, err := system.RemoveTemplate(9, 1, 256); err != nil {
 		t.Fatalf("remove template: %v", err)
 	}
 	if got := registry.GetAll(); len(got) != 0 {
@@ -30,13 +30,13 @@ func TestInMemoryRegistryRetainsNonEmptySystem(t *testing.T) {
 	registry := NewInMemoryRegistry(nil)
 	system := registry.GetSystem("router1")
 
-	if err := system.AddTemplate(9, 1, 256, netflow.TemplateRecord{TemplateId: 256}); err != nil {
+	if _, err := system.AddTemplate(9, 1, 256, netflow.TemplateRecord{TemplateId: 256}); err != nil {
 		t.Fatalf("add template: %v", err)
 	}
-	if err := system.AddTemplate(9, 1, 257, netflow.TemplateRecord{TemplateId: 257}); err != nil {
+	if _, err := system.AddTemplate(9, 1, 257, netflow.TemplateRecord{TemplateId: 257}); err != nil {
 		t.Fatalf("add template: %v", err)
 	}
-	if _, err := system.RemoveTemplate(9, 1, 256); err != nil {
+	if _, _, err := system.RemoveTemplate(9, 1, 256); err != nil {
 		t.Fatalf("remove template: %v", err)
 	}
 
@@ -54,19 +54,48 @@ func TestExpiringRegistryExpiresAndPrunes(t *testing.T) {
 	registry := NewExpiringRegistry(base, time.Minute)
 
 	start := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
-	registry.now = func() time.Time { return start }
+	now := start
+	registry.now = func() time.Time { return now }
 
 	system := registry.GetSystem("router1")
-	if err := system.AddTemplate(9, 1, 256, netflow.TemplateRecord{TemplateId: 256}); err != nil {
+	if _, err := system.AddTemplate(9, 1, 256, netflow.TemplateRecord{TemplateId: 256}); err != nil {
 		t.Fatalf("add template: %v", err)
 	}
 
-	registry.now = func() time.Time { return start.Add(2 * time.Minute) }
+	now = start.Add(2 * time.Minute)
 	if removed := registry.ExpireStale(); removed != 1 {
 		t.Fatalf("expected 1 template expired, got %d", removed)
 	}
 	if got := registry.GetAll(); len(got) != 0 {
 		t.Fatalf("expected no systems after expiry, got %d", len(got))
+	}
+}
+
+func TestExpiringRegistryExtendsOnAccess(t *testing.T) {
+	base := NewInMemoryRegistry(nil)
+	registry := NewExpiringRegistry(base, time.Minute)
+	registry.SetExtendOnAccess(true)
+
+	start := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+	now := start
+	registry.now = func() time.Time { return now }
+
+	system := registry.GetSystem("router1")
+	if _, err := system.AddTemplate(9, 1, 256, netflow.TemplateRecord{TemplateId: 256}); err != nil {
+		t.Fatalf("add template: %v", err)
+	}
+
+	now = start.Add(30 * time.Second)
+	if _, err := system.GetTemplate(9, 1, 256); err != nil {
+		t.Fatalf("get template: %v", err)
+	}
+
+	now = start.Add(90 * time.Second)
+	if removed := registry.ExpireStale(); removed != 0 {
+		t.Fatalf("expected no templates expired, got %d", removed)
+	}
+	if got := registry.GetAll(); len(got) != 1 {
+		t.Fatalf("expected templates retained after access, got %d", len(got))
 	}
 }
 
@@ -79,7 +108,7 @@ func TestJSONRegistryPersistAndPrune(t *testing.T) {
 	t.Cleanup(registry.Close)
 
 	system := registry.GetSystem("router1")
-	if err := system.AddTemplate(9, 1, 256, netflow.TemplateRecord{TemplateId: 256}); err != nil {
+	if _, err := system.AddTemplate(9, 1, 256, netflow.TemplateRecord{TemplateId: 256}); err != nil {
 		t.Fatalf("add template: %v", err)
 	}
 
@@ -88,7 +117,7 @@ func TestJSONRegistryPersistAndPrune(t *testing.T) {
 		t.Fatalf("expected 1 router persisted, got %d", len(raw))
 	}
 
-	if _, err := system.RemoveTemplate(9, 1, 256); err != nil {
+	if _, _, err := system.RemoveTemplate(9, 1, 256); err != nil {
 		t.Fatalf("remove template: %v", err)
 	}
 

@@ -70,11 +70,12 @@ var (
 
 	Addr = flag.String("addr", ":8080", "HTTP server address")
 
-	TemplatePath           = flag.String("templates.path", "/templates", "NetFlow/IPFIX templates list")
-	TemplatesTTL           = flag.Duration("templates.ttl", 0, "NetFlow/IPFIX templates TTL (0 disables expiry)")
-	TemplatesSweepInterval = flag.Duration("templates.sweep-interval", time.Minute, "NetFlow/IPFIX template sweep interval")
-	TemplatesJSONPath      = flag.String("templates.json.path", "", "NetFlow/IPFIX templates JSON output path (empty disables persistence)")
-	TemplatesJSONInterval  = flag.Duration("templates.json.interval", time.Second*5, "NetFlow/IPFIX templates JSON write interval")
+	TemplatePath            = flag.String("templates.path", "/templates", "NetFlow/IPFIX templates list")
+	TemplatesTTL            = flag.Duration("templates.ttl", 0, "NetFlow/IPFIX templates TTL (0 disables expiry)")
+	TemplatesSweepInterval  = flag.Duration("templates.sweep-interval", time.Minute, "NetFlow/IPFIX template sweep interval")
+	TemplatesExtendOnAccess = flag.Bool("templates.ttl.extend-on-access", false, "Extend template TTL on access")
+	TemplatesJSONPath       = flag.String("templates.json.path", "", "NetFlow/IPFIX templates JSON output path (empty disables persistence)")
+	TemplatesJSONInterval   = flag.Duration("templates.json.interval", time.Second*5, "NetFlow/IPFIX templates JSON write interval")
 
 	MappingFile = flag.String("mapping", "", "Configuration file for custom mappings")
 
@@ -305,7 +306,9 @@ func main() {
 		}
 		netFlowRegistry = metrics.NewPromTemplateRegistry(netFlowRegistry)
 		if *TemplatesTTL > 0 {
-			netFlowRegistry = templates.NewExpiringRegistry(netFlowRegistry, *TemplatesTTL)
+			expiring := templates.NewExpiringRegistry(netFlowRegistry, *TemplatesTTL)
+			expiring.SetExtendOnAccess(*TemplatesExtendOnAccess)
+			netFlowRegistry = expiring
 		}
 		if *TemplatesJSONPath != "" {
 			if err := templates.PreloadJSONTemplates(*TemplatesJSONPath, netFlowRegistry); err != nil {
@@ -319,6 +322,7 @@ func main() {
 			NetFlowRegistry: netFlowRegistry, // wrap template system to get Prometheus info
 			TemplatesTTL:    *TemplatesTTL,
 			SweepInterval:   *TemplatesSweepInterval,
+			ExtendOnAccess:  *TemplatesExtendOnAccess,
 		}
 
 		var decodeFunc utils.DecoderFunc

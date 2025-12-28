@@ -24,13 +24,14 @@ type ExpirableSystem interface {
 
 // ExpiringTemplateSystem tracks template update times and supports expiry.
 type ExpiringTemplateSystem struct {
-	wrapped netflow.NetFlowTemplateSystem
-	lock    sync.Mutex
-	updated map[TemplateKey]time.Time
-	ttl     time.Duration
-	now     func() time.Time
-	key     string
-	reg     *ExpiringRegistry
+	wrapped        netflow.NetFlowTemplateSystem
+	lock           sync.Mutex
+	updated        map[TemplateKey]time.Time
+	ttl            time.Duration
+	now            func() time.Time
+	key            string
+	reg            *ExpiringRegistry
+	extendOnAccess bool
 }
 
 // NewExpiringTemplateSystem wraps a template system with expiry tracking.
@@ -63,9 +64,25 @@ func (s *ExpiringTemplateSystem) AddTemplate(version uint16, obsDomainId uint32,
 	return update, nil
 }
 
+// SetExtendOnAccess toggles whether accesses refresh the template's expiry time.
+func (s *ExpiringTemplateSystem) SetExtendOnAccess(enable bool) {
+	s.lock.Lock()
+	s.extendOnAccess = enable
+	s.lock.Unlock()
+}
+
 // GetTemplate forwards template lookup to the wrapped system.
 func (s *ExpiringTemplateSystem) GetTemplate(version uint16, obsDomainId uint32, templateId uint16) (interface{}, error) {
-	return s.wrapped.GetTemplate(version, obsDomainId, templateId)
+	template, err := s.wrapped.GetTemplate(version, obsDomainId, templateId)
+	if err != nil {
+		return template, err
+	}
+	s.lock.Lock()
+	if s.extendOnAccess {
+		s.updated[TemplateKey{Version: version, ObsDomainID: obsDomainId, TemplateID: templateId}] = s.now()
+	}
+	s.lock.Unlock()
+	return template, nil
 }
 
 // RemoveTemplate removes a template and its tracking entry.
@@ -101,7 +118,7 @@ func (s *ExpiringTemplateSystem) ExpireBefore(cutoff time.Time) int {
 
 	removed := 0
 	for _, key := range expired {
-		if _, removed, err := s.RemoveTemplate(key.Version, key.ObsDomainID, key.TemplateID); err == nil && removed {
+		if _, removedTemplate, err := s.RemoveTemplate(key.Version, key.ObsDomainID, key.TemplateID); err == nil && removedTemplate {
 			removed++
 		}
 	}
@@ -118,16 +135,17 @@ func (s *ExpiringTemplateSystem) ExpireStale() int {
 
 // ExpiringRegistry provides expiry controls for all router template systems.
 type ExpiringRegistry struct {
-	lock        sync.RWMutex
-	wrapped     Registry
-	systems     map[string]*ExpiringTemplateSystem
-	counts      map[string]int
-	ttl         time.Duration
-	now         func() time.Time
-	sweeperLock sync.Mutex
-	sweeperStop chan struct{}
-	sweeperDone chan struct{}
-	closeOnce   sync.Once
+	lock           sync.RWMutex
+	wrapped        Registry
+	systems        map[string]*ExpiringTemplateSystem
+	counts         map[string]int
+	ttl            time.Duration
+	now            func() time.Time
+	extendOnAccess bool
+	sweeperLock    sync.Mutex
+	sweeperStop    chan struct{}
+	sweeperDone    chan struct{}
+	closeOnce      sync.Once
 }
 
 // NewExpiringRegistry wraps a registry with expiry tracking.
@@ -136,11 +154,11 @@ func NewExpiringRegistry(wrapped Registry, ttl time.Duration) *ExpiringRegistry 
 		wrapped = NewInMemoryRegistry(nil)
 	}
 	return &ExpiringRegistry{
-		wrapped:     wrapped,
-		systems:     make(map[string]*ExpiringTemplateSystem),
-		counts:      make(map[string]int),
-		ttl:         ttl,
-		now:         time.Now,
+		wrapped: wrapped,
+		systems: make(map[string]*ExpiringTemplateSystem),
+		counts:  make(map[string]int),
+		ttl:     ttl,
+		now:     time.Now,
 	}
 }
 
@@ -158,6 +176,7 @@ func (r *ExpiringRegistry) GetSystem(key string) netflow.NetFlowTemplateSystem {
 	system.now = r.now
 	system.key = key
 	system.reg = r
+	system.extendOnAccess = r.extendOnAccess
 
 	r.lock.Lock()
 	if existing, ok := r.systems[key]; ok {
@@ -168,6 +187,20 @@ func (r *ExpiringRegistry) GetSystem(key string) netflow.NetFlowTemplateSystem {
 	r.counts[key] = 0
 	r.lock.Unlock()
 	return system
+}
+
+// SetExtendOnAccess toggles whether template accesses refresh their expiry time.
+func (r *ExpiringRegistry) SetExtendOnAccess(enable bool) {
+	r.lock.Lock()
+	r.extendOnAccess = enable
+	systems := make([]*ExpiringTemplateSystem, 0, len(r.systems))
+	for _, system := range r.systems {
+		systems = append(systems, system)
+	}
+	r.lock.Unlock()
+	for _, system := range systems {
+		system.SetExtendOnAccess(enable)
+	}
 }
 
 // GetAll returns all templates for every router.

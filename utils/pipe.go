@@ -30,6 +30,7 @@ type flowpipe struct {
 	netFlowRegistry templates.Registry
 	templatesTTL    time.Duration
 	sweepInterval   time.Duration
+	extendOnAccess  bool
 }
 
 // PipeConfig wires formatter, transport, and producer dependencies.
@@ -41,6 +42,7 @@ type PipeConfig struct {
 	NetFlowRegistry templates.Registry
 	TemplatesTTL    time.Duration
 	SweepInterval   time.Duration
+	ExtendOnAccess  bool
 }
 
 func (p *flowpipe) formatSend(flowMessageSet []producer.ProducerMessage) error {
@@ -69,6 +71,7 @@ func (p *flowpipe) parseConfig(cfg *PipeConfig) {
 	p.producer = cfg.Producer
 	p.templatesTTL = cfg.TemplatesTTL
 	p.sweepInterval = cfg.SweepInterval
+	p.extendOnAccess = cfg.ExtendOnAccess
 	if cfg.NetFlowRegistry != nil {
 		p.netFlowRegistry = cfg.NetFlowRegistry
 	} else {
@@ -80,6 +83,7 @@ func (p *flowpipe) parseConfig(cfg *PipeConfig) {
 			expiring = templates.NewExpiringRegistry(p.netFlowRegistry, p.templatesTTL)
 			p.netFlowRegistry = expiring
 		}
+		expiring.SetExtendOnAccess(p.extendOnAccess)
 		if p.sweepInterval > 0 {
 			expiring.StartSweeper(p.sweepInterval)
 		}
