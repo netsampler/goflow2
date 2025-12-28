@@ -3,8 +3,10 @@ package templates
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"sync"
 	"time"
 
@@ -43,6 +45,45 @@ func NewJSONRegistry(path string, interval time.Duration, wrapped Registry) *JSO
 	}
 	r.start()
 	return r
+}
+
+// PreloadJSONTemplates loads templates from a JSON file into the registry.
+func PreloadJSONTemplates(path string, registry Registry) error {
+	if path == "" || registry == nil {
+		return nil
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	if len(data) == 0 {
+		return nil
+	}
+
+	var raw map[string]map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+
+	for routerKey, templates := range raw {
+		system := registry.GetSystem(routerKey)
+		for keyStr, payload := range templates {
+			key, err := strconv.ParseUint(keyStr, 10, 64)
+			if err != nil {
+				return fmt.Errorf("invalid template key %q: %w", keyStr, err)
+			}
+			version, obsDomainId, templateId := decodeTemplateKey(key)
+			template, err := decodeTemplatePayload(version, payload)
+			if err != nil {
+				return fmt.Errorf("invalid template payload for %q/%s: %w", routerKey, keyStr, err)
+			}
+			if err := system.AddTemplate(version, obsDomainId, templateId, template); err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
 }
 
 // GetSystem returns a wrapped template system for a router.
@@ -225,4 +266,37 @@ func writeAtomic(path string, data []byte, perm os.FileMode) error {
 		return err
 	}
 	return os.Rename(tmpPath, path)
+}
+
+func decodeTemplateKey(key uint64) (uint16, uint32, uint16) {
+	version := uint16(key >> 48)
+	obsDomainId := uint32((key >> 16) & 0xFFFFFFFF)
+	templateId := uint16(key & 0xFFFF)
+	return version, obsDomainId, templateId
+}
+
+func decodeTemplatePayload(version uint16, payload json.RawMessage) (interface{}, error) {
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(payload, &fields); err != nil {
+		return nil, err
+	}
+	if _, ok := fields["scope-length"]; ok && version == 9 {
+		var record netflow.NFv9OptionsTemplateRecord
+		if err := json.Unmarshal(payload, &record); err != nil {
+			return nil, err
+		}
+		return record, nil
+	}
+	if _, ok := fields["scope-field-count"]; ok && version == 10 {
+		var record netflow.IPFIXOptionsTemplateRecord
+		if err := json.Unmarshal(payload, &record); err != nil {
+			return nil, err
+		}
+		return record, nil
+	}
+	var record netflow.TemplateRecord
+	if err := json.Unmarshal(payload, &record); err != nil {
+		return nil, err
+	}
+	return record, nil
 }
