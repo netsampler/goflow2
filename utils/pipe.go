@@ -232,9 +232,7 @@ func (p *NetFlowPipe) DecodeFlow(msg interface{}) error {
 }
 
 func (p *NetFlowPipe) Close() {
-	if closer, ok := p.netFlowRegistry.(templates.RegistryCloser); ok {
-		closer.Close()
-	}
+	p.netFlowRegistry.Close()
 }
 
 // GetTemplatesForAllSources returns a copy of templates for all known NetFlow sources.

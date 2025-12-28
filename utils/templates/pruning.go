@@ -68,6 +68,11 @@ func (r *PruningRegistry) GetAll() map[string]netflow.FlowBaseTemplateSet {
 	return ret
 }
 
+// Close forwards Close to the wrapped registry.
+func (r *PruningRegistry) Close() {
+	r.wrapped.Close()
+}
+
 type pruningTemplateSystem struct {
 	key     string
 	parent  *PruningRegistry

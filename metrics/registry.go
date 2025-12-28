@@ -79,7 +79,5 @@ func (r *PromTemplateRegistry) StartSweeper(interval time.Duration) {
 
 // Close forwards Close to the wrapped registry.
 func (r *PromTemplateRegistry) Close() {
-	if closer, ok := r.wrapped.(templates.RegistryCloser); ok {
-		closer.Close()
-	}
+	r.wrapped.Close()
 }

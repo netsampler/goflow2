@@ -13,11 +13,6 @@ type SweepingRegistry interface {
 	StartSweeper(interval time.Duration)
 }
 
-// RegistryCloser allows stopping background registry work.
-type RegistryCloser interface {
-	Close()
-}
-
 // TemplateKey identifies a template entry for expiry tracking.
 type TemplateKey struct {
 	Version     uint16
@@ -287,9 +282,7 @@ func (r *ExpiringRegistry) Close() {
 		r.sweeperLock.Lock()
 		if r.sweeperStop == nil {
 			r.sweeperLock.Unlock()
-			if closer, ok := r.wrapped.(RegistryCloser); ok {
-				closer.Close()
-			}
+			r.wrapped.Close()
 			return
 		}
 		stop := r.sweeperStop
@@ -300,8 +293,6 @@ func (r *ExpiringRegistry) Close() {
 
 		close(stop)
 		<-done
-		if closer, ok := r.wrapped.(RegistryCloser); ok {
-			closer.Close()
-		}
+		r.wrapped.Close()
 	})
 }

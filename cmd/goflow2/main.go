@@ -213,7 +213,7 @@ func main() {
 
 	var receivers []*utils.UDPReceiver
 	var pipes []utils.FlowPipe
-	var registryClosers []templates.RegistryCloser
+	var registries []templates.Registry
 
 	q := make(chan bool)
 	for _, listenAddress := range strings.Split(*ListenAddresses, ",") {
@@ -315,9 +315,7 @@ func main() {
 				logger.Warn("error preloading templates JSON", slog.String("error", err.Error()))
 			}
 		}
-		if closer, ok := netFlowRegistry.(templates.RegistryCloser); ok {
-			registryClosers = append(registryClosers, closer)
-		}
+		registries = append(registries, netFlowRegistry)
 		cfgPipe := &utils.PipeConfig{
 			Format:          formatter,
 			Transport:       transporter,
@@ -472,8 +470,8 @@ func main() {
 		}
 	}
 	// flush template registries before shutting down pipes/transports
-	for _, closer := range registryClosers {
-		closer.Close()
+	for _, registry := range registries {
+		registry.Close()
 	}
 	// then stop pipe
 	for _, pipe := range pipes {

@@ -156,9 +156,7 @@ func (r *JSONRegistry) Close() {
 		close(r.stopCh)
 		<-r.doneCh
 		r.flush()
-		if closer, ok := r.wrapped.(RegistryCloser); ok {
-			closer.Close()
-		}
+		r.wrapped.Close()
 	})
 }
 

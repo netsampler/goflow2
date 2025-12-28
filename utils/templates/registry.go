@@ -11,6 +11,7 @@ import (
 type Registry interface {
 	GetSystem(key string) netflow.NetFlowTemplateSystem
 	GetAll() map[string]netflow.FlowBaseTemplateSet
+	Close()
 }
 
 // InMemoryRegistry stores template systems in-memory keyed by router.
@@ -62,4 +63,8 @@ func (r *InMemoryRegistry) GetAll() map[string]netflow.FlowBaseTemplateSet {
 		ret[key] = system.GetTemplates()
 	}
 	return ret
+}
+
+// Close is a no-op for the in-memory registry.
+func (r *InMemoryRegistry) Close() {
 }
