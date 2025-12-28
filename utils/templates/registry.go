@@ -21,6 +21,34 @@ type InMemoryRegistry struct {
 	generator TemplateSystemGenerator
 }
 
+type pruningTemplateSystem struct {
+	key     string
+	parent  *InMemoryRegistry
+	wrapped netflow.NetFlowTemplateSystem
+}
+
+func (s *pruningTemplateSystem) AddTemplate(version uint16, obsDomainId uint32, templateId uint16, template interface{}) error {
+	return s.wrapped.AddTemplate(version, obsDomainId, templateId, template)
+}
+
+func (s *pruningTemplateSystem) GetTemplate(version uint16, obsDomainId uint32, templateId uint16) (interface{}, error) {
+	return s.wrapped.GetTemplate(version, obsDomainId, templateId)
+}
+
+func (s *pruningTemplateSystem) RemoveTemplate(version uint16, obsDomainId uint32, templateId uint16) (interface{}, error) {
+	template, err := s.wrapped.RemoveTemplate(version, obsDomainId, templateId)
+	if err == nil && len(s.wrapped.GetTemplates()) == 0 {
+		s.parent.lock.Lock()
+		delete(s.parent.systems, s.key)
+		s.parent.lock.Unlock()
+	}
+	return template, err
+}
+
+func (s *pruningTemplateSystem) GetTemplates() netflow.FlowBaseTemplateSet {
+	return s.wrapped.GetTemplates()
+}
+
 // NewInMemoryRegistry creates a registry with an optional system generator.
 func NewInMemoryRegistry(generator TemplateSystemGenerator) *InMemoryRegistry {
 	if generator == nil {
@@ -41,7 +69,11 @@ func (r *InMemoryRegistry) GetSystem(key string) netflow.NetFlowTemplateSystem {
 		return system
 	}
 
-	system = r.generator(key)
+	system = &pruningTemplateSystem{
+		key:     key,
+		parent:  r,
+		wrapped: r.generator(key),
+	}
 	r.lock.Lock()
 	if existing, ok := r.systems[key]; ok {
 		r.lock.Unlock()

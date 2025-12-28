@@ -306,8 +306,6 @@ func main() {
 		netFlowRegistry = metrics.NewPromTemplateRegistry(netFlowRegistry)
 		if *TemplatesTTL > 0 {
 			netFlowRegistry = templates.NewExpiringRegistry(netFlowRegistry, *TemplatesTTL)
-		} else {
-			netFlowRegistry = templates.NewPruningRegistry(netFlowRegistry)
 		}
 		if *TemplatesJSONPath != "" {
 			if err := templates.PreloadJSONTemplates(*TemplatesJSONPath, netFlowRegistry); err != nil {
