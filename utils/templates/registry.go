@@ -16,7 +16,7 @@ type Registry interface {
 
 // InMemoryRegistry stores template systems in-memory keyed by router.
 type InMemoryRegistry struct {
-	lock      *sync.RWMutex
+	lock      sync.RWMutex
 	systems   map[string]netflow.NetFlowTemplateSystem
 	generator TemplateSystemGenerator
 }
@@ -27,7 +27,6 @@ func NewInMemoryRegistry(generator TemplateSystemGenerator) *InMemoryRegistry {
 		generator = DefaultTemplateGenerator
 	}
 	return &InMemoryRegistry{
-		lock:      &sync.RWMutex{},
 		systems:   make(map[string]netflow.NetFlowTemplateSystem),
 		generator: generator,
 	}

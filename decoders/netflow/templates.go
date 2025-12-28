@@ -28,7 +28,7 @@ type NetFlowTemplateSystem interface {
 
 func (ts *BasicTemplateSystem) GetTemplates() FlowBaseTemplateSet {
 	ts.templateslock.RLock()
-	tmp := make(FlowBaseTemplateSet)
+	tmp := make(FlowBaseTemplateSet, len(ts.templates))
 	maps.Copy(tmp, ts.templates)
 	ts.templateslock.RUnlock()
 	return tmp
@@ -38,15 +38,6 @@ func (ts *BasicTemplateSystem) AddTemplate(version uint16, obsDomainId uint32, t
 	ts.templateslock.Lock()
 	defer ts.templateslock.Unlock()
 
-	/*var templateId uint16
-	switch templateIdConv := template.(type) {
-	case IPFIXOptionsTemplateRecord:
-		templateId = templateIdConv.TemplateId
-	case NFv9OptionsTemplateRecord:
-		templateId = templateIdConv.TemplateId
-	case TemplateRecord:
-		templateId = templateIdConv.TemplateId
-	}*/
 	key := templateKey(version, obsDomainId, templateId)
 	ts.templates[key] = template
 	return nil

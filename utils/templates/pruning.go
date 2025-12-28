@@ -9,7 +9,7 @@ import (
 
 // PruningRegistry removes router entries when their template set becomes empty.
 type PruningRegistry struct {
-	lock    *sync.Mutex
+	lock    sync.RWMutex
 	wrapped Registry
 	systems map[string]netflow.NetFlowTemplateSystem
 }
@@ -20,7 +20,6 @@ func NewPruningRegistry(wrapped Registry) *PruningRegistry {
 		wrapped = NewInMemoryRegistry(nil)
 	}
 	return &PruningRegistry{
-		lock:    &sync.Mutex{},
 		wrapped: wrapped,
 		systems: make(map[string]netflow.NetFlowTemplateSystem),
 	}
@@ -28,9 +27,9 @@ func NewPruningRegistry(wrapped Registry) *PruningRegistry {
 
 // GetSystem returns a wrapped template system for a router.
 func (r *PruningRegistry) GetSystem(key string) netflow.NetFlowTemplateSystem {
-	r.lock.Lock()
+	r.lock.RLock()
 	system, ok := r.systems[key]
-	r.lock.Unlock()
+	r.lock.RUnlock()
 	if ok {
 		return system
 	}
@@ -54,12 +53,12 @@ func (r *PruningRegistry) GetSystem(key string) netflow.NetFlowTemplateSystem {
 
 // GetAll returns all templates for every router.
 func (r *PruningRegistry) GetAll() map[string]netflow.FlowBaseTemplateSet {
-	r.lock.Lock()
+	r.lock.RLock()
 	systems := make(map[string]netflow.NetFlowTemplateSystem, len(r.systems))
 	for key, system := range r.systems {
 		systems[key] = system
 	}
-	r.lock.Unlock()
+	r.lock.RUnlock()
 
 	ret := make(map[string]netflow.FlowBaseTemplateSet, len(systems))
 	for key, system := range systems {

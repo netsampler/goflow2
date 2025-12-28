@@ -30,7 +30,7 @@ type ExpirableSystem interface {
 // ExpiringTemplateSystem tracks template update times and supports expiry.
 type ExpiringTemplateSystem struct {
 	wrapped netflow.NetFlowTemplateSystem
-	lock    *sync.Mutex
+	lock    sync.Mutex
 	updated map[TemplateKey]time.Time
 	ttl     time.Duration
 	now     func() time.Time
@@ -45,7 +45,6 @@ func NewExpiringTemplateSystem(wrapped netflow.NetFlowTemplateSystem, ttl time.D
 	}
 	return &ExpiringTemplateSystem{
 		wrapped: wrapped,
-		lock:    &sync.Mutex{},
 		updated: make(map[TemplateKey]time.Time),
 		ttl:     ttl,
 		now:     time.Now,
@@ -121,13 +120,13 @@ func (s *ExpiringTemplateSystem) ExpireStale() int {
 
 // ExpiringRegistry provides expiry controls for all router template systems.
 type ExpiringRegistry struct {
-	lock        *sync.Mutex
+	lock        sync.RWMutex
 	wrapped     Registry
 	systems     map[string]*ExpiringTemplateSystem
 	counts      map[string]int
 	ttl         time.Duration
 	now         func() time.Time
-	sweeperLock *sync.Mutex
+	sweeperLock sync.Mutex
 	sweeperStop chan struct{}
 	sweeperDone chan struct{}
 	closeOnce   sync.Once
@@ -139,21 +138,19 @@ func NewExpiringRegistry(wrapped Registry, ttl time.Duration) *ExpiringRegistry 
 		wrapped = NewInMemoryRegistry(nil)
 	}
 	return &ExpiringRegistry{
-		lock:        &sync.Mutex{},
 		wrapped:     wrapped,
 		systems:     make(map[string]*ExpiringTemplateSystem),
 		counts:      make(map[string]int),
 		ttl:         ttl,
 		now:         time.Now,
-		sweeperLock: &sync.Mutex{},
 	}
 }
 
 // GetSystem returns a wrapped template system for a router.
 func (r *ExpiringRegistry) GetSystem(key string) netflow.NetFlowTemplateSystem {
-	r.lock.Lock()
+	r.lock.RLock()
 	system, ok := r.systems[key]
-	r.lock.Unlock()
+	r.lock.RUnlock()
 	if ok {
 		return system
 	}
@@ -177,12 +174,12 @@ func (r *ExpiringRegistry) GetSystem(key string) netflow.NetFlowTemplateSystem {
 
 // GetAll returns all templates for every router.
 func (r *ExpiringRegistry) GetAll() map[string]netflow.FlowBaseTemplateSet {
-	r.lock.Lock()
+	r.lock.RLock()
 	systems := make(map[string]netflow.NetFlowTemplateSystem, len(r.systems))
 	for key, system := range r.systems {
 		systems[key] = system
 	}
-	r.lock.Unlock()
+	r.lock.RUnlock()
 
 	ret := make(map[string]netflow.FlowBaseTemplateSet, len(systems))
 	for key, system := range systems {
@@ -213,7 +210,7 @@ func (r *ExpiringRegistry) decrement(key string) int {
 
 // ExpireBefore removes templates older than the cutoff across all routers.
 func (r *ExpiringRegistry) ExpireBefore(cutoff time.Time) int {
-	r.lock.Lock()
+	r.lock.RLock()
 	systems := make([]struct {
 		key    string
 		system *ExpiringTemplateSystem
@@ -227,7 +224,7 @@ func (r *ExpiringRegistry) ExpireBefore(cutoff time.Time) int {
 			system: system,
 		})
 	}
-	r.lock.Unlock()
+	r.lock.RUnlock()
 
 	removed := 0
 	for _, entry := range systems {

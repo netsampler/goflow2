@@ -15,7 +15,7 @@ import (
 
 // JSONRegistry persists templates to a JSON file with batched updates.
 type JSONRegistry struct {
-	lock      *sync.Mutex
+	lock      sync.RWMutex
 	wrapped   Registry
 	systems   map[string]netflow.NetFlowTemplateSystem
 	path      string
@@ -23,7 +23,7 @@ type JSONRegistry struct {
 	changeCh  chan struct{}
 	stopCh    chan struct{}
 	doneCh    chan struct{}
-	flushLock *sync.Mutex
+	flushLock sync.Mutex
 	closeOnce sync.Once
 }
 
@@ -33,7 +33,6 @@ func NewJSONRegistry(path string, interval time.Duration, wrapped Registry) *JSO
 		wrapped = NewInMemoryRegistry(nil)
 	}
 	r := &JSONRegistry{
-		lock:      &sync.Mutex{},
 		wrapped:   wrapped,
 		systems:   make(map[string]netflow.NetFlowTemplateSystem),
 		path:      path,
@@ -41,7 +40,6 @@ func NewJSONRegistry(path string, interval time.Duration, wrapped Registry) *JSO
 		changeCh:  make(chan struct{}, 1),
 		stopCh:    make(chan struct{}),
 		doneCh:    make(chan struct{}),
-		flushLock: &sync.Mutex{},
 	}
 	r.start()
 	return r
@@ -110,9 +108,9 @@ func PreloadJSONTemplates(path string, registry Registry) error {
 
 // GetSystem returns a wrapped template system for a router.
 func (r *JSONRegistry) GetSystem(key string) netflow.NetFlowTemplateSystem {
-	r.lock.Lock()
+	r.lock.RLock()
 	system, ok := r.systems[key]
-	r.lock.Unlock()
+	r.lock.RUnlock()
 	if ok {
 		return system
 	}
@@ -136,12 +134,12 @@ func (r *JSONRegistry) GetSystem(key string) netflow.NetFlowTemplateSystem {
 
 // GetAll returns all templates for every router.
 func (r *JSONRegistry) GetAll() map[string]netflow.FlowBaseTemplateSet {
-	r.lock.Lock()
+	r.lock.RLock()
 	systems := make(map[string]netflow.NetFlowTemplateSystem, len(r.systems))
 	for key, system := range r.systems {
 		systems[key] = system
 	}
-	r.lock.Unlock()
+	r.lock.RUnlock()
 
 	ret := make(map[string]netflow.FlowBaseTemplateSet, len(systems))
 	for key, system := range systems {
