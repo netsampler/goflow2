@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -25,18 +26,16 @@ func newChainedRegistry(b *testing.B) *ExpiringRegistry {
 	return expiring
 }
 
-func newChainedRegistryWithJSONFlush(b *testing.B) *ExpiringRegistry {
+func newChainedRegistryWithJSONInterval(b *testing.B, interval time.Duration) (*ExpiringRegistry, *JSONRegistry) {
 	b.Helper()
 	dir := b.TempDir()
 	path := filepath.Join(dir, "templates.json")
 
 	base := NewInMemoryRegistry(nil)
-	jsonRegistry := NewJSONRegistry(path, 0, base)
-	b.Cleanup(jsonRegistry.Close)
+	jsonRegistry := NewJSONRegistry(path, interval, base)
 
 	expiring := NewExpiringRegistry(jsonRegistry, time.Minute)
-	b.Cleanup(expiring.Close)
-	return expiring
+	return expiring, jsonRegistry
 }
 
 func BenchmarkChainedRegistryAdd(b *testing.B) {
@@ -73,15 +72,47 @@ func BenchmarkChainedRegistryAddGet(b *testing.B) {
 }
 
 func BenchmarkChainedRegistryAddWithJSONFlush(b *testing.B) {
-	registry := newChainedRegistryWithJSONFlush(b)
-	system := registry.GetSystem("router1")
+	intervals := []struct {
+		name     string
+		interval time.Duration
+	}{
+		{name: "immediate", interval: 0},
+		{name: "5ms", interval: 5 * time.Millisecond},
+		{name: "50ms", interval: 50 * time.Millisecond},
+	}
 
-	b.ReportAllocs()
-	b.ResetTimer()
-	for n := 0; n < b.N; n++ {
-		if _, err := system.AddTemplate(9, 1, uint16(n), netflow.TemplateRecord{TemplateId: uint16(n)}); err != nil {
-			b.Fatalf("add template: %v", err)
-		}
+	for _, entry := range intervals {
+		b.Run(entry.name, func(b *testing.B) {
+			registry, jsonRegistry := newChainedRegistryWithJSONInterval(b, entry.interval)
+			system := registry.GetSystem("router1")
+
+			var flushes atomic.Int64
+			jsonRegistry.flushHook = func() {
+				flushes.Add(1)
+			}
+
+			b.ReportAllocs()
+			b.ResetTimer()
+			for n := 0; n < b.N; n++ {
+				if _, err := system.AddTemplate(9, 1, uint16(n), netflow.TemplateRecord{TemplateId: uint16(n)}); err != nil {
+					b.Fatalf("add template: %v", err)
+				}
+			}
+			b.StopTimer()
+
+			if entry.interval > 0 {
+				time.Sleep(entry.interval * 2)
+			}
+
+			totalFlushes := flushes.Load()
+			b.ReportMetric(float64(totalFlushes), "flushes")
+			if b.N > 0 {
+				b.ReportMetric(float64(totalFlushes)/float64(b.N), "flush/op")
+			}
+
+			jsonRegistry.flushHook = nil
+			registry.Close()
+		})
 	}
 }
 

@@ -24,6 +24,7 @@ type JSONRegistry struct {
 	stopCh    chan struct{}
 	doneCh    chan struct{}
 	flushLock sync.Mutex
+	flushHook func()
 	closeOnce sync.Once
 }
 
@@ -33,13 +34,13 @@ func NewJSONRegistry(path string, interval time.Duration, wrapped Registry) *JSO
 		wrapped = NewInMemoryRegistry(nil)
 	}
 	r := &JSONRegistry{
-		wrapped:   wrapped,
-		systems:   make(map[string]netflow.NetFlowTemplateSystem),
-		path:      path,
-		interval:  interval,
-		changeCh:  make(chan struct{}, 1),
-		stopCh:    make(chan struct{}),
-		doneCh:    make(chan struct{}),
+		wrapped:  wrapped,
+		systems:  make(map[string]netflow.NetFlowTemplateSystem),
+		path:     path,
+		interval: interval,
+		changeCh: make(chan struct{}, 1),
+		stopCh:   make(chan struct{}),
+		doneCh:   make(chan struct{}),
 	}
 	r.start()
 	return r
@@ -212,6 +213,9 @@ func (r *JSONRegistry) flush() {
 
 	if r.path == "" {
 		return
+	}
+	if r.flushHook != nil {
+		r.flushHook()
 	}
 
 	snapshot := r.wrapped.GetAll()
