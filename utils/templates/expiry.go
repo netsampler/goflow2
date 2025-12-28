@@ -8,6 +8,16 @@ import (
 	"github.com/netsampler/goflow2/v2/decoders/netflow"
 )
 
+// SweepingRegistry allows starting a periodic expiry sweeper.
+type SweepingRegistry interface {
+	StartSweeper(interval time.Duration)
+}
+
+// RegistryCloser allows stopping background registry work.
+type RegistryCloser interface {
+	Close()
+}
+
 // TemplateKey identifies a template entry for expiry tracking.
 type TemplateKey struct {
 	Version     uint16
@@ -111,11 +121,14 @@ func (s *ExpiringTemplateSystem) ExpireStale() int {
 
 // ExpiringRegistry provides expiry controls for all router template systems.
 type ExpiringRegistry struct {
-	lock    *sync.Mutex
-	wrapped Registry
-	systems map[string]*ExpiringTemplateSystem
-	ttl     time.Duration
-	now     func() time.Time
+	lock        *sync.Mutex
+	wrapped     Registry
+	systems     map[string]*ExpiringTemplateSystem
+	ttl         time.Duration
+	now         func() time.Time
+	sweeperLock *sync.Mutex
+	sweeperStop chan struct{}
+	sweeperDone chan struct{}
 }
 
 // NewExpiringRegistry wraps a registry with expiry tracking.
@@ -124,11 +137,12 @@ func NewExpiringRegistry(wrapped Registry, ttl time.Duration) *ExpiringRegistry 
 		wrapped = NewInMemoryRegistry(nil)
 	}
 	return &ExpiringRegistry{
-		lock:    &sync.Mutex{},
-		wrapped: wrapped,
-		systems: make(map[string]*ExpiringTemplateSystem),
-		ttl:     ttl,
-		now:     time.Now,
+		lock:        &sync.Mutex{},
+		wrapped:     wrapped,
+		systems:     make(map[string]*ExpiringTemplateSystem),
+		ttl:         ttl,
+		now:         time.Now,
+		sweeperLock: &sync.Mutex{},
 	}
 }
 
@@ -182,4 +196,53 @@ func (r *ExpiringRegistry) ExpireStale() int {
 		return 0
 	}
 	return r.ExpireBefore(r.now().Add(-r.ttl))
+}
+
+// StartSweeper begins periodic expiry using the configured TTL.
+func (r *ExpiringRegistry) StartSweeper(interval time.Duration) {
+	if interval <= 0 {
+		return
+	}
+
+	r.sweeperLock.Lock()
+	if r.sweeperStop != nil {
+		r.sweeperLock.Unlock()
+		return
+	}
+	r.sweeperStop = make(chan struct{})
+	r.sweeperDone = make(chan struct{})
+	stop := r.sweeperStop
+	done := r.sweeperDone
+	r.sweeperLock.Unlock()
+
+	go func() {
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		defer close(done)
+		for {
+			select {
+			case <-ticker.C:
+				r.ExpireStale()
+			case <-stop:
+				return
+			}
+		}
+	}()
+}
+
+// Close stops the sweeper goroutine if it is running.
+func (r *ExpiringRegistry) Close() {
+	r.sweeperLock.Lock()
+	if r.sweeperStop == nil {
+		r.sweeperLock.Unlock()
+		return
+	}
+	stop := r.sweeperStop
+	done := r.sweeperDone
+	r.sweeperStop = nil
+	r.sweeperDone = nil
+	r.sweeperLock.Unlock()
+
+	close(stop)
+	<-done
 }

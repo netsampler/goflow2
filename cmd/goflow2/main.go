@@ -69,7 +69,9 @@ var (
 
 	Addr = flag.String("addr", ":8080", "HTTP server address")
 
-	TemplatePath = flag.String("templates.path", "/templates", "NetFlow/IPFIX templates list")
+	TemplatePath           = flag.String("templates.path", "/templates", "NetFlow/IPFIX templates list")
+	TemplatesTTL           = flag.Duration("templates.ttl", 0, "NetFlow/IPFIX templates TTL (0 disables expiry)")
+	TemplatesSweepInterval = flag.Duration("templates.sweep-interval", time.Minute, "NetFlow/IPFIX template sweep interval")
 
 	MappingFile = flag.String("mapping", "", "Configuration file for custom mappings")
 
@@ -299,6 +301,8 @@ func main() {
 			Transport:       transporter,
 			Producer:        flowProducer,
 			NetFlowRegistry: metrics.NewDefaultPromTemplateRegistry(), // wrap template system to get Prometheus info
+			TemplatesTTL:    *TemplatesTTL,
+			SweepInterval:   *TemplatesSweepInterval,
 		}
 
 		var decodeFunc utils.DecoderFunc

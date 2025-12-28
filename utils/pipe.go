@@ -4,6 +4,7 @@ package utils
 import (
 	"bytes"
 	"fmt"
+	"time"
 
 	"github.com/netsampler/goflow2/v3/decoders/netflow"
 	"github.com/netsampler/goflow2/v3/decoders/netflowlegacy"
@@ -27,6 +28,8 @@ type flowpipe struct {
 	producer  producer.ProducerInterface
 
 	netFlowRegistry templates.Registry
+	templatesTTL    time.Duration
+	sweepInterval   time.Duration
 }
 
 // PipeConfig wires formatter, transport, and producer dependencies.
@@ -36,6 +39,8 @@ type PipeConfig struct {
 	Producer  producer.ProducerInterface
 
 	NetFlowRegistry templates.Registry
+	TemplatesTTL    time.Duration
+	SweepInterval   time.Duration
 }
 
 func (p *flowpipe) formatSend(flowMessageSet []producer.ProducerMessage) error {
@@ -62,10 +67,17 @@ func (p *flowpipe) parseConfig(cfg *PipeConfig) {
 	p.format = cfg.Format
 	p.transport = cfg.Transport
 	p.producer = cfg.Producer
+	p.templatesTTL = cfg.TemplatesTTL
+	p.sweepInterval = cfg.SweepInterval
 	if cfg.NetFlowRegistry != nil {
 		p.netFlowRegistry = cfg.NetFlowRegistry
 	} else {
 		p.netFlowRegistry = templates.NewInMemoryRegistry(nil)
+	}
+	if p.templatesTTL > 0 {
+		if _, ok := p.netFlowRegistry.(*templates.ExpiringRegistry); !ok {
+			p.netFlowRegistry = templates.NewExpiringRegistry(p.netFlowRegistry, p.templatesTTL)
+		}
 	}
 
 }
@@ -140,6 +152,9 @@ func (p *SFlowPipe) DecodeFlow(msg interface{}) error {
 func NewNetFlowPipe(cfg *PipeConfig) *NetFlowPipe {
 	p := &NetFlowPipe{}
 	p.parseConfig(cfg)
+	if sweeper, ok := p.netFlowRegistry.(templates.SweepingRegistry); ok && p.sweepInterval > 0 {
+		sweeper.StartSweeper(p.sweepInterval)
+	}
 	return p
 }
 
@@ -215,6 +230,9 @@ func (p *NetFlowPipe) DecodeFlow(msg interface{}) error {
 }
 
 func (p *NetFlowPipe) Close() {
+	if closer, ok := p.netFlowRegistry.(templates.RegistryCloser); ok {
+		closer.Close()
+	}
 }
 
 // GetTemplatesForAllSources returns a copy of templates for all known NetFlow sources.
