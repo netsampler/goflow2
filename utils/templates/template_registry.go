@@ -1,4 +1,26 @@
 // Package templates provides NetFlow/IPFIX template system helpers.
+//
+// Registry/generator flow:
+//   decode packet
+//     |
+//     v
+//   key := source (router)
+//     |
+//     v
+//   TemplateSystemRegistry.Get(key)
+//     |            |
+//     |            +-- cache hit -> return system
+//     |
+//     +-- cache miss -> TemplateSystemGenerator(key)
+//                       |
+//                       v
+//                  NetFlowTemplateSystem (per source)
+//                       |
+//                       v
+//                  Add/Get templates + optional JSON snapshotting
+//                       |
+//                       v
+//                  evictStale() prunes stale templates/sources
 package templates
 
 import (
@@ -9,7 +31,7 @@ import (
 )
 
 // TemplateSystemRegistry owns per-source template systems and handles eviction.
-// It lazily creates systems via the generator when new sources arrive.
+// It is a cache/manager that asks the generator to build systems on demand.
 type TemplateSystemRegistry struct {
 	generator     TemplateSystemGenerator
 	templates     map[string]netflow.NetFlowTemplateSystem

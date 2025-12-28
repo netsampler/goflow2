@@ -198,3 +198,82 @@ func TestTemplateSystemRegistryTouchOnAccess(t *testing.T) {
 		t.Fatalf("expected lastSeen to be refreshed on template access")
 	}
 }
+
+func TestTemplateSystemRegistryEvictionPersistsToDisk(t *testing.T) {
+	dir := t.TempDir()
+	path := dir + "/templates.json"
+
+	writer := NewAtomicFileWriter(path)
+	generator := NewJSONFileTemplateSystemGenerator(writer, DefaultTemplateGenerator, 0)
+	registry := NewTemplateSystemRegistry(generator.Generator(), time.Second, time.Minute)
+
+	key := "router-a"
+	system := registry.Get(key)
+	template := netflow.TemplateRecord{
+		TemplateId: 256,
+		FieldCount: 1,
+		Fields: []netflow.Field{
+			{Type: 1, Length: 4},
+		},
+	}
+	if err := system.AddTemplate(9, 1, 256, template); err != nil {
+		t.Fatalf("add template: %v", err)
+	}
+	if flusher, ok := system.(interface {
+		Flush()
+	}); ok {
+		flusher.Flush()
+	}
+
+	payload, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read file: %v", err)
+	}
+	var stored jsonTemplateFile
+	if err := json.Unmarshal(payload, &stored); err != nil {
+		t.Fatalf("unmarshal JSON: %v", err)
+	}
+	if router, ok := stored.Routers[key]; ok {
+		if version, ok := router.Versions["9"]; ok {
+			if obs, ok := version.ObsDomains["1"]; ok {
+				if _, ok := obs.Templates["256"]; !ok {
+					t.Fatalf("expected template to be persisted before eviction")
+				}
+			}
+		}
+	}
+
+	tracker, ok := system.(*templateTrackingSystem)
+	if !ok {
+		t.Fatalf("expected template tracking system wrapper")
+	}
+	tracker.mu.Lock()
+	tracker.lastSeen[templateKey(9, 1, 256)] = time.Now().Add(-2 * time.Second)
+	tracker.mu.Unlock()
+
+	registry.evictStale()
+
+	if flusher, ok := system.(interface {
+		Flush()
+	}); ok {
+		flusher.Flush()
+	}
+
+	payload, err = os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read file: %v", err)
+	}
+	stored = jsonTemplateFile{}
+	if err := json.Unmarshal(payload, &stored); err != nil {
+		t.Fatalf("unmarshal JSON: %v", err)
+	}
+	if router, ok := stored.Routers[key]; ok {
+		if version, ok := router.Versions["9"]; ok {
+			if obs, ok := version.ObsDomains["1"]; ok {
+				if _, ok := obs.Templates["256"]; ok {
+					t.Fatalf("expected template to be removed from JSON after eviction")
+				}
+			}
+		}
+	}
+}

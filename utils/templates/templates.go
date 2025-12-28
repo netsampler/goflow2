@@ -8,6 +8,7 @@ import (
 )
 
 // TemplateSystemGenerator creates a template system for a source key.
+// It is a factory: the registry asks it to build per-source systems on demand.
 // Generators let callers compose behaviors (in-memory storage, JSON snapshots,
 // metrics) without changing the NetFlow decoder.
 type TemplateSystemGenerator func(key string) netflow.NetFlowTemplateSystem
