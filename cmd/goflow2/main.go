@@ -312,8 +312,7 @@ func main() {
 		}
 		if *TemplatesJSONPath != "" {
 			if err := templates.PreloadJSONTemplates(*TemplatesJSONPath, netFlowRegistry); err != nil {
-				logger.Error("error preloading templates JSON", slog.String("error", err.Error()))
-				os.Exit(1)
+				logger.Warn("error preloading templates JSON", slog.String("error", err.Error()))
 			}
 		}
 		if closer, ok := netFlowRegistry.(templates.RegistryCloser); ok {

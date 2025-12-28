@@ -54,6 +54,9 @@ func PreloadJSONTemplates(path string, registry Registry) error {
 	}
 	data, err := os.ReadFile(path)
 	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
 		return err
 	}
 	if len(data) == 0 {
@@ -65,8 +68,16 @@ func PreloadJSONTemplates(path string, registry Registry) error {
 		return err
 	}
 
+	type templateOp struct {
+		routerKey   string
+		version     uint16
+		obsDomainId uint32
+		templateId  uint16
+		template    interface{}
+	}
+	var ops []templateOp
+
 	for routerKey, templates := range raw {
-		system := registry.GetSystem(routerKey)
 		for keyStr, payload := range templates {
 			key, err := strconv.ParseUint(keyStr, 10, 64)
 			if err != nil {
@@ -77,9 +88,20 @@ func PreloadJSONTemplates(path string, registry Registry) error {
 			if err != nil {
 				return fmt.Errorf("invalid template payload for %q/%s: %w", routerKey, keyStr, err)
 			}
-			if err := system.AddTemplate(version, obsDomainId, templateId, template); err != nil {
-				return err
-			}
+			ops = append(ops, templateOp{
+				routerKey:   routerKey,
+				version:     version,
+				obsDomainId: obsDomainId,
+				templateId:  templateId,
+				template:    template,
+			})
+		}
+	}
+
+	for _, op := range ops {
+		system := registry.GetSystem(op.routerKey)
+		if err := system.AddTemplate(op.version, op.obsDomainId, op.templateId, op.template); err != nil {
+			return err
 		}
 	}
 
