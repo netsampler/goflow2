@@ -98,11 +98,40 @@ func DecodeField(payload *bytes.Buffer, field *Field, pen bool) error {
 	}
 	if pen && field.Type&0x8000 != 0 {
 		field.PenProvided = true
+		field.Type = field.Type ^ 0x8000
 		return utils.BinaryDecoder(payload,
 			&field.Pen,
 		)
 	}
 	return nil
+}
+
+func isIPFIXOptionsTemplateWithdrawal(raw []byte) ([]uint16, bool) {
+	if len(raw) == 0 || len(raw)%4 != 0 {
+		return nil, false
+	}
+	templateIds := make([]uint16, 0, len(raw)/4)
+	for offset := 0; offset < len(raw); offset += 4 {
+		templateId := binary.BigEndian.Uint16(raw[offset : offset+2])
+		fieldCount := binary.BigEndian.Uint16(raw[offset+2 : offset+4])
+		if fieldCount != 0 {
+			return nil, false
+		}
+		templateIds = append(templateIds, templateId)
+	}
+	return templateIds, true
+}
+
+func templateIdFromKey(key uint64) uint16 {
+	return uint16(key)
+}
+
+func obsDomainFromKey(key uint64) uint32 {
+	return uint32((key >> 16) & 0xffffffff)
+}
+
+func versionFromKey(key uint64) uint16 {
+	return uint16(key >> 48)
 }
 
 // DecodeIPFIXOptionsTemplateSet decodes an IPFIX options template flow set.
@@ -117,6 +146,12 @@ func DecodeIPFIXOptionsTemplateSet(payload *bytes.Buffer) ([]IPFIXOptionsTemplat
 			&optsTemplateRecord.ScopeFieldCount)
 		if err != nil {
 			return records, fmt.Errorf("IPFIXOptionsTemplateSet: header [%w]", err)
+		}
+		if optsTemplateRecord.TemplateId < 256 {
+			return records, fmt.Errorf("IPFIXOptionsTemplateSet: template ID below 256")
+		}
+		if optsTemplateRecord.ScopeFieldCount == 0 {
+			return records, fmt.Errorf("IPFIXOptionsTemplateSet: scope field count is zero")
 		}
 
 		fields := make([]Field, int(optsTemplateRecord.ScopeFieldCount)) // max 65532 which would be 589KB
@@ -165,6 +200,9 @@ func DecodeTemplateSet(version uint16, payload *bytes.Buffer) ([]TemplateRecord,
 
 		if int(templateRecord.FieldCount) < 0 {
 			return records, fmt.Errorf("TemplateSet: zero count")
+		}
+		if version == 10 && templateRecord.FieldCount > 0 && templateRecord.TemplateId < 256 {
+			return records, fmt.Errorf("TemplateSet: template ID below 256")
 		}
 
 		fields := make([]Field, int(templateRecord.FieldCount)) // max 65532 which would be 589KB
@@ -377,6 +415,20 @@ func DecodeMessageCommonFlowSet(payload *bytes.Buffer, templates NetFlowTemplate
 
 		if templates != nil {
 			for _, record := range records {
+				if record.FieldCount == 0 {
+					if record.TemplateId == 2 {
+						for key, tmpl := range templates.GetTemplates() {
+							if _, ok := tmpl.(TemplateRecord); ok && obsDomainFromKey(key) == obsDomainId && versionFromKey(key) == version {
+								_, _ = templates.RemoveTemplate(version, obsDomainId, templateIdFromKey(key))
+							}
+						}
+						continue
+					}
+					if _, err := templates.RemoveTemplate(version, obsDomainId, record.TemplateId); err != nil {
+						return flowSet, &FlowError{version, "IPFIX TemplateSet Withdrawal", obsDomainId, fsheader.Id, err}
+					}
+					continue
+				}
 				if err := templates.AddTemplate(version, obsDomainId, record.TemplateId, record); err != nil {
 					return flowSet, &FlowError{version, "IPFIX TemplateSet", obsDomainId, fsheader.Id, err}
 				}
@@ -384,21 +436,44 @@ func DecodeMessageCommonFlowSet(payload *bytes.Buffer, templates NetFlowTemplate
 		}
 
 	} else if fsheader.Id == 3 && version == 10 {
-		templateReader := bytes.NewBuffer(payload.Next(nextrelpos))
-		records, err := DecodeIPFIXOptionsTemplateSet(templateReader)
-		if err != nil {
-			return flowSet, &FlowError{version, "IPFIX OptionsTemplateSet", obsDomainId, fsheader.Id, err}
-		}
-		optsTemplatefs := IPFIXOptionsTemplateFlowSet{
-			FlowSetHeader: fsheader,
-			Records:       records,
-		}
-		flowSet = optsTemplatefs
+		raw := payload.Next(nextrelpos)
+		if templateIds, ok := isIPFIXOptionsTemplateWithdrawal(raw); ok {
+			if templates != nil {
+				for _, templateId := range templateIds {
+					if templateId == 3 {
+						for key, tmpl := range templates.GetTemplates() {
+							if _, ok := tmpl.(IPFIXOptionsTemplateRecord); ok && obsDomainFromKey(key) == obsDomainId && versionFromKey(key) == version {
+								_, _ = templates.RemoveTemplate(version, obsDomainId, templateIdFromKey(key))
+							}
+						}
+						continue
+					}
+					if _, err := templates.RemoveTemplate(version, obsDomainId, templateId); err != nil {
+						return flowSet, &FlowError{version, "IPFIX OptionsTemplateSet Withdrawal", obsDomainId, fsheader.Id, err}
+					}
+				}
+			}
+			flowSet = RawFlowSet{
+				FlowSetHeader: fsheader,
+				Records:       raw,
+			}
+		} else {
+			templateReader := bytes.NewBuffer(raw)
+			records, err := DecodeIPFIXOptionsTemplateSet(templateReader)
+			if err != nil {
+				return flowSet, &FlowError{version, "IPFIX OptionsTemplateSet", obsDomainId, fsheader.Id, err}
+			}
+			optsTemplatefs := IPFIXOptionsTemplateFlowSet{
+				FlowSetHeader: fsheader,
+				Records:       records,
+			}
+			flowSet = optsTemplatefs
 
-		if templates != nil {
-			for _, record := range records {
-				if err := templates.AddTemplate(version, obsDomainId, record.TemplateId, record); err != nil {
-					return flowSet, &FlowError{version, "IPFIX OptionsTemplateSet", obsDomainId, fsheader.Id, err}
+			if templates != nil {
+				for _, record := range records {
+					if err := templates.AddTemplate(version, obsDomainId, record.TemplateId, record); err != nil {
+						return flowSet, &FlowError{version, "IPFIX OptionsTemplateSet", obsDomainId, fsheader.Id, err}
+					}
 				}
 			}
 		}
@@ -492,6 +567,12 @@ func DecodeMessageIPFIX(payload *bytes.Buffer, templates NetFlowTemplateSystem, 
 		&packetIPFIX.ObservationDomainId,
 	); err != nil {
 		return &DecoderError{"IPFIX header", err}
+	}
+	if packetIPFIX.Length < 16 {
+		return &DecoderError{"IPFIX header", fmt.Errorf("message length too small")}
+	}
+	if payload.Len() < int(packetIPFIX.Length-16) {
+		return &DecoderError{"IPFIX header", fmt.Errorf("truncated message")}
 	}
 	/*size = packetIPFIX.Length
 	packetIPFIX.Version = version
