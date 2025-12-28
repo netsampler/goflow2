@@ -76,6 +76,26 @@ func (r *JSONRegistry) GetAll() map[string]netflow.FlowBaseTemplateSet {
 	return r.wrapped.GetAll()
 }
 
+// RemoveSystem deletes a router entry from the registry.
+func (r *JSONRegistry) RemoveSystem(key string) bool {
+	r.lock.Lock()
+	_, ok := r.systems[key]
+	if ok {
+		delete(r.systems, key)
+	}
+	r.lock.Unlock()
+	removed := ok
+	if prunable, ok := r.wrapped.(PrunableRegistry); ok {
+		if prunable.RemoveSystem(key) {
+			removed = true
+		}
+	}
+	if removed {
+		r.notifyChange()
+	}
+	return removed
+}
+
 // Close stops background work and flushes pending data.
 func (r *JSONRegistry) Close() {
 	r.closeOnce.Do(func() {

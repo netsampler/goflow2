@@ -175,18 +175,46 @@ func (r *ExpiringRegistry) GetAll() map[string]netflow.FlowBaseTemplateSet {
 	return r.wrapped.GetAll()
 }
 
+// RemoveSystem deletes a router entry from the registry.
+func (r *ExpiringRegistry) RemoveSystem(key string) bool {
+	r.lock.Lock()
+	_, ok := r.systems[key]
+	if ok {
+		delete(r.systems, key)
+	}
+	r.lock.Unlock()
+	if prunable, ok := r.wrapped.(PrunableRegistry); ok {
+		if prunable.RemoveSystem(key) {
+			return true
+		}
+	}
+	return ok
+}
+
 // ExpireBefore removes templates older than the cutoff across all routers.
 func (r *ExpiringRegistry) ExpireBefore(cutoff time.Time) int {
 	r.lock.Lock()
-	systems := make([]*ExpiringTemplateSystem, 0, len(r.systems))
-	for _, system := range r.systems {
-		systems = append(systems, system)
+	systems := make([]struct {
+		key    string
+		system *ExpiringTemplateSystem
+	}, 0, len(r.systems))
+	for key, system := range r.systems {
+		systems = append(systems, struct {
+			key    string
+			system *ExpiringTemplateSystem
+		}{
+			key:    key,
+			system: system,
+		})
 	}
 	r.lock.Unlock()
 
 	removed := 0
-	for _, system := range systems {
-		removed += system.ExpireBefore(cutoff)
+	for _, entry := range systems {
+		removed += entry.system.ExpireBefore(cutoff)
+		if len(entry.system.GetTemplates()) == 0 {
+			r.RemoveSystem(entry.key)
+		}
 	}
 	return removed
 }

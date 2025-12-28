@@ -57,3 +57,19 @@ func (r *PromTemplateRegistry) GetSystem(key string) netflow.NetFlowTemplateSyst
 func (r *PromTemplateRegistry) GetAll() map[string]netflow.FlowBaseTemplateSet {
 	return r.wrapped.GetAll()
 }
+
+// RemoveSystem deletes a router entry from the registry.
+func (r *PromTemplateRegistry) RemoveSystem(key string) bool {
+	r.lock.Lock()
+	_, ok := r.systems[key]
+	if ok {
+		delete(r.systems, key)
+	}
+	r.lock.Unlock()
+	if prunable, ok := r.wrapped.(templates.PrunableRegistry); ok {
+		if prunable.RemoveSystem(key) {
+			return true
+		}
+	}
+	return ok
+}
