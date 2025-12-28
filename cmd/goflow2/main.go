@@ -300,10 +300,16 @@ func main() {
 			os.Exit(1)
 		}
 
-		netFlowRegistry := metrics.NewDefaultPromTemplateRegistry()
+		netFlowRegistry := templates.Registry(templates.NewInMemoryRegistry(nil))
 		if *TemplatesJSONPath != "" {
 			netFlowRegistry = templates.NewJSONRegistry(*TemplatesJSONPath, *TemplatesJSONInterval, netFlowRegistry)
 		}
+		if *TemplatesTTL > 0 {
+			netFlowRegistry = templates.NewExpiringRegistry(netFlowRegistry, *TemplatesTTL)
+		} else {
+			netFlowRegistry = templates.NewPruningRegistry(netFlowRegistry)
+		}
+		netFlowRegistry = metrics.NewPromTemplateRegistry(netFlowRegistry)
 		if closer, ok := netFlowRegistry.(templates.RegistryCloser); ok {
 			registryClosers = append(registryClosers, closer)
 		}

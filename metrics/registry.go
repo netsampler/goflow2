@@ -2,6 +2,7 @@ package metrics
 
 import (
 	"sync"
+	"time"
 
 	"github.com/netsampler/goflow2/v2/decoders/netflow"
 	"github.com/netsampler/goflow2/v2/utils/templates"
@@ -72,4 +73,18 @@ func (r *PromTemplateRegistry) RemoveSystem(key string) bool {
 		}
 	}
 	return ok
+}
+
+// StartSweeper forwards sweeper start to the wrapped registry.
+func (r *PromTemplateRegistry) StartSweeper(interval time.Duration) {
+	if sweeper, ok := r.wrapped.(templates.SweepingRegistry); ok {
+		sweeper.StartSweeper(interval)
+	}
+}
+
+// Close forwards Close to the wrapped registry.
+func (r *PromTemplateRegistry) Close() {
+	if closer, ok := r.wrapped.(templates.RegistryCloser); ok {
+		closer.Close()
+	}
 }
