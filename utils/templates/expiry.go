@@ -8,11 +8,6 @@ import (
 	"github.com/netsampler/goflow2/v2/decoders/netflow"
 )
 
-// SweepingRegistry allows starting a periodic expiry sweeper.
-type SweepingRegistry interface {
-	StartSweeper(interval time.Duration)
-}
-
 // TemplateKey identifies a template entry for expiry tracking.
 type TemplateKey struct {
 	Version     uint16

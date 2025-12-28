@@ -75,8 +75,13 @@ func (p *flowpipe) parseConfig(cfg *PipeConfig) {
 		p.netFlowRegistry = templates.NewInMemoryRegistry(nil)
 	}
 	if p.templatesTTL > 0 {
-		if _, ok := p.netFlowRegistry.(templates.SweepingRegistry); !ok {
-			p.netFlowRegistry = templates.NewExpiringRegistry(p.netFlowRegistry, p.templatesTTL)
+		expiring, ok := p.netFlowRegistry.(*templates.ExpiringRegistry)
+		if !ok {
+			expiring = templates.NewExpiringRegistry(p.netFlowRegistry, p.templatesTTL)
+			p.netFlowRegistry = expiring
+		}
+		if p.sweepInterval > 0 {
+			expiring.StartSweeper(p.sweepInterval)
 		}
 	}
 
@@ -152,9 +157,6 @@ func (p *SFlowPipe) DecodeFlow(msg interface{}) error {
 func NewNetFlowPipe(cfg *PipeConfig) *NetFlowPipe {
 	p := &NetFlowPipe{}
 	p.parseConfig(cfg)
-	if sweeper, ok := p.netFlowRegistry.(templates.SweepingRegistry); ok && p.sweepInterval > 0 {
-		sweeper.StartSweeper(p.sweepInterval)
-	}
 	return p
 }
 
