@@ -1,0 +1,160 @@
+package templates
+
+import (
+	"encoding/json"
+	"os"
+	"path/filepath"
+	"strconv"
+	"testing"
+	"time"
+
+	"github.com/netsampler/goflow2/v2/decoders/netflow"
+)
+
+func TestInMemoryRegistryPrunesEmptySystem(t *testing.T) {
+	registry := NewInMemoryRegistry(nil)
+	system := registry.GetSystem("router1")
+
+	if err := system.AddTemplate(9, 1, 256, netflow.TemplateRecord{TemplateId: 256}); err != nil {
+		t.Fatalf("add template: %v", err)
+	}
+	if _, err := system.RemoveTemplate(9, 1, 256); err != nil {
+		t.Fatalf("remove template: %v", err)
+	}
+	if got := registry.GetAll(); len(got) != 0 {
+		t.Fatalf("expected no systems after pruning, got %d", len(got))
+	}
+}
+
+func TestInMemoryRegistryRetainsNonEmptySystem(t *testing.T) {
+	registry := NewInMemoryRegistry(nil)
+	system := registry.GetSystem("router1")
+
+	if err := system.AddTemplate(9, 1, 256, netflow.TemplateRecord{TemplateId: 256}); err != nil {
+		t.Fatalf("add template: %v", err)
+	}
+	if err := system.AddTemplate(9, 1, 257, netflow.TemplateRecord{TemplateId: 257}); err != nil {
+		t.Fatalf("add template: %v", err)
+	}
+	if _, err := system.RemoveTemplate(9, 1, 256); err != nil {
+		t.Fatalf("remove template: %v", err)
+	}
+
+	all := registry.GetAll()
+	if len(all) != 1 {
+		t.Fatalf("expected 1 system, got %d", len(all))
+	}
+	if len(all["router1"]) != 1 {
+		t.Fatalf("expected 1 template in system, got %d", len(all["router1"]))
+	}
+}
+
+func TestExpiringRegistryExpiresAndPrunes(t *testing.T) {
+	base := NewInMemoryRegistry(nil)
+	registry := NewExpiringRegistry(base, time.Minute)
+
+	start := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+	registry.now = func() time.Time { return start }
+
+	system := registry.GetSystem("router1")
+	if err := system.AddTemplate(9, 1, 256, netflow.TemplateRecord{TemplateId: 256}); err != nil {
+		t.Fatalf("add template: %v", err)
+	}
+
+	registry.now = func() time.Time { return start.Add(2 * time.Minute) }
+	if removed := registry.ExpireStale(); removed != 1 {
+		t.Fatalf("expected 1 template expired, got %d", removed)
+	}
+	if got := registry.GetAll(); len(got) != 0 {
+		t.Fatalf("expected no systems after expiry, got %d", len(got))
+	}
+}
+
+func TestJSONRegistryPersistAndPrune(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "templates.json")
+
+	base := NewInMemoryRegistry(nil)
+	registry := NewJSONRegistry(path, 0, base)
+	t.Cleanup(registry.Close)
+
+	system := registry.GetSystem("router1")
+	if err := system.AddTemplate(9, 1, 256, netflow.TemplateRecord{TemplateId: 256}); err != nil {
+		t.Fatalf("add template: %v", err)
+	}
+
+	raw := readRegistryFile(t, path)
+	if len(raw) != 1 {
+		t.Fatalf("expected 1 router persisted, got %d", len(raw))
+	}
+
+	if _, err := system.RemoveTemplate(9, 1, 256); err != nil {
+		t.Fatalf("remove template: %v", err)
+	}
+
+	raw = readRegistryFile(t, path)
+	if len(raw) != 0 {
+		t.Fatalf("expected persisted data to be empty after prune, got %d", len(raw))
+	}
+}
+
+func TestPreloadJSONTemplates(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "templates.json")
+
+	key := buildTemplateKey(9, 1, 256)
+	payload := map[string]map[string]netflow.TemplateRecord{
+		"router1": {
+			strconv.FormatUint(key, 10): {TemplateId: 256},
+		},
+	}
+	data, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("marshal payload: %v", err)
+	}
+	if err := os.WriteFile(path, data, 0o644); err != nil {
+		t.Fatalf("write payload: %v", err)
+	}
+
+	registry := NewInMemoryRegistry(nil)
+	if err := PreloadJSONTemplates(path, registry); err != nil {
+		t.Fatalf("preload templates: %v", err)
+	}
+
+	all := registry.GetAll()
+	templates, ok := all["router1"]
+	if !ok {
+		t.Fatal("expected router1 templates to be loaded")
+	}
+	entry, ok := templates[key]
+	if !ok {
+		t.Fatalf("expected template %d to be loaded", key)
+	}
+	record, ok := entry.(netflow.TemplateRecord)
+	if !ok {
+		t.Fatalf("expected TemplateRecord, got %T", entry)
+	}
+	if record.TemplateId != 256 {
+		t.Fatalf("expected template id 256, got %d", record.TemplateId)
+	}
+}
+
+func readRegistryFile(t *testing.T, path string) map[string]map[string]json.RawMessage {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read file: %v", err)
+	}
+	if len(data) == 0 {
+		return map[string]map[string]json.RawMessage{}
+	}
+	var raw map[string]map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		t.Fatalf("unmarshal file: %v", err)
+	}
+	return raw
+}
+
+func buildTemplateKey(version uint16, obsDomainId uint32, templateId uint16) uint64 {
+	return (uint64(version) << 48) | (uint64(obsDomainId) << 16) | uint64(templateId)
+}
