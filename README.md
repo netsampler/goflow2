@@ -54,6 +54,9 @@ You can build your own collector using this base and replace parts:
 * Decode different samples (e.g: not only IP networks, add MPLS)
 * Different metrics system (e.g: [OpenTelemetry](https://opentelemetry.io/))
 
+The application wiring is organized under `pkg/goflow2` (config, logging, builder, collector,
+httpserver, app) to simplify reuse across binaries (e.g., `cmd/goflow2`, `cmd/enricher`).
+
 ### Protocol difference
 
 The sampling protocols have distinct features:
