@@ -295,10 +295,10 @@ func main() {
 		}
 
 		cfgPipe := &utils.PipeConfig{
-			Format:           formatter,
-			Transport:        transporter,
-			Producer:         flowProducer,
-			NetFlowTemplater: metrics.NewDefaultPromTemplateSystem, // wrap template system to get Prometheus info
+			Format:          formatter,
+			Transport:       transporter,
+			Producer:        flowProducer,
+			NetFlowRegistry: metrics.NewDefaultPromTemplateRegistry(), // wrap template system to get Prometheus info
 		}
 
 		var decodeFunc utils.DecoderFunc
