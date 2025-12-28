@@ -39,7 +39,8 @@ type ExpiringTemplateSystem struct {
 	updated map[TemplateKey]time.Time
 	ttl     time.Duration
 	now     func() time.Time
-	onEmpty func()
+	key     string
+	reg     *ExpiringRegistry
 }
 
 // NewExpiringTemplateSystem wraps a template system with expiry tracking.
@@ -64,6 +65,9 @@ func (s *ExpiringTemplateSystem) AddTemplate(version uint16, obsDomainId uint32,
 	s.lock.Lock()
 	s.updated[TemplateKey{Version: version, ObsDomainID: obsDomainId, TemplateID: templateId}] = s.now()
 	s.lock.Unlock()
+	if s.reg != nil {
+		s.reg.increment(s.key)
+	}
 	return nil
 }
 
@@ -79,8 +83,10 @@ func (s *ExpiringTemplateSystem) RemoveTemplate(version uint16, obsDomainId uint
 		s.lock.Lock()
 		delete(s.updated, TemplateKey{Version: version, ObsDomainID: obsDomainId, TemplateID: templateId})
 		s.lock.Unlock()
-		if s.onEmpty != nil && len(s.wrapped.GetTemplates()) == 0 {
-			s.onEmpty()
+		if s.reg != nil {
+			if s.reg.decrement(s.key) == 0 {
+				s.reg.RemoveSystem(s.key)
+			}
 		}
 	}
 	return template, err
@@ -105,12 +111,9 @@ func (s *ExpiringTemplateSystem) ExpireBefore(cutoff time.Time) int {
 
 	removed := 0
 	for _, key := range expired {
-		if _, err := s.wrapped.RemoveTemplate(key.Version, key.ObsDomainID, key.TemplateID); err == nil {
+		if _, err := s.RemoveTemplate(key.Version, key.ObsDomainID, key.TemplateID); err == nil {
 			removed++
 		}
-		s.lock.Lock()
-		delete(s.updated, key)
-		s.lock.Unlock()
 	}
 	return removed
 }
@@ -128,6 +131,7 @@ type ExpiringRegistry struct {
 	lock        *sync.Mutex
 	wrapped     Registry
 	systems     map[string]*ExpiringTemplateSystem
+	counts      map[string]int
 	ttl         time.Duration
 	now         func() time.Time
 	sweeperLock *sync.Mutex
@@ -145,6 +149,7 @@ func NewExpiringRegistry(wrapped Registry, ttl time.Duration) *ExpiringRegistry 
 		lock:        &sync.Mutex{},
 		wrapped:     wrapped,
 		systems:     make(map[string]*ExpiringTemplateSystem),
+		counts:      make(map[string]int),
 		ttl:         ttl,
 		now:         time.Now,
 		sweeperLock: &sync.Mutex{},
@@ -163,9 +168,8 @@ func (r *ExpiringRegistry) GetSystem(key string) netflow.NetFlowTemplateSystem {
 	wrapped := r.wrapped.GetSystem(key)
 	system = NewExpiringTemplateSystem(wrapped, r.ttl)
 	system.now = r.now
-	system.onEmpty = func() {
-		r.RemoveSystem(key)
-	}
+	system.key = key
+	system.reg = r
 
 	r.lock.Lock()
 	if existing, ok := r.systems[key]; ok {
@@ -173,6 +177,7 @@ func (r *ExpiringRegistry) GetSystem(key string) netflow.NetFlowTemplateSystem {
 		return existing
 	}
 	r.systems[key] = system
+	r.counts[key] = 0
 	r.lock.Unlock()
 	return system
 }
@@ -188,6 +193,7 @@ func (r *ExpiringRegistry) RemoveSystem(key string) bool {
 	_, ok := r.systems[key]
 	if ok {
 		delete(r.systems, key)
+		delete(r.counts, key)
 	}
 	r.lock.Unlock()
 	if prunable, ok := r.wrapped.(PrunableRegistry); ok {
@@ -196,6 +202,25 @@ func (r *ExpiringRegistry) RemoveSystem(key string) bool {
 		}
 	}
 	return ok
+}
+
+func (r *ExpiringRegistry) increment(key string) {
+	r.lock.Lock()
+	r.counts[key]++
+	r.lock.Unlock()
+}
+
+func (r *ExpiringRegistry) decrement(key string) int {
+	r.lock.Lock()
+	count := r.counts[key] - 1
+	if count <= 0 {
+		delete(r.counts, key)
+		count = 0
+	} else {
+		r.counts[key] = count
+	}
+	r.lock.Unlock()
+	return count
 }
 
 // ExpireBefore removes templates older than the cutoff across all routers.
@@ -219,9 +244,6 @@ func (r *ExpiringRegistry) ExpireBefore(cutoff time.Time) int {
 	removed := 0
 	for _, entry := range systems {
 		removed += entry.system.ExpireBefore(cutoff)
-		if len(entry.system.GetTemplates()) == 0 {
-			r.RemoveSystem(entry.key)
-		}
 	}
 	return removed
 }
