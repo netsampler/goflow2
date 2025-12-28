@@ -114,27 +114,18 @@ func (r *JSONRegistry) GetSystem(key string) netflow.NetFlowTemplateSystem {
 
 // GetAll returns all templates for every router.
 func (r *JSONRegistry) GetAll() map[string]netflow.FlowBaseTemplateSet {
-	return r.wrapped.GetAll()
-}
-
-// RemoveSystem deletes a router entry from the registry.
-func (r *JSONRegistry) RemoveSystem(key string) bool {
 	r.lock.Lock()
-	_, ok := r.systems[key]
-	if ok {
-		delete(r.systems, key)
+	systems := make(map[string]netflow.NetFlowTemplateSystem, len(r.systems))
+	for key, system := range r.systems {
+		systems[key] = system
 	}
 	r.lock.Unlock()
-	removed := ok
-	if prunable, ok := r.wrapped.(PrunableRegistry); ok {
-		if prunable.RemoveSystem(key) {
-			removed = true
-		}
+
+	ret := make(map[string]netflow.FlowBaseTemplateSet, len(systems))
+	for key, system := range systems {
+		ret[key] = system.GetTemplates()
 	}
-	if removed {
-		r.notifyChange()
-	}
-	return removed
+	return ret
 }
 
 // Close stops background work and flushes pending data.
@@ -235,6 +226,11 @@ func (s *persistingTemplateSystem) GetTemplate(version uint16, obsDomainId uint3
 func (s *persistingTemplateSystem) RemoveTemplate(version uint16, obsDomainId uint32, templateId uint16) (interface{}, error) {
 	template, err := s.wrapped.RemoveTemplate(version, obsDomainId, templateId)
 	if err == nil {
+		if len(s.wrapped.GetTemplates()) == 0 {
+			s.parent.lock.Lock()
+			delete(s.parent.systems, s.key)
+			s.parent.lock.Unlock()
+		}
 		s.parent.notifyChange()
 	}
 	return template, err

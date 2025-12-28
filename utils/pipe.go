@@ -79,9 +79,7 @@ func (p *flowpipe) parseConfig(cfg *PipeConfig) {
 			p.netFlowRegistry = templates.NewExpiringRegistry(p.netFlowRegistry, p.templatesTTL)
 		}
 	} else {
-		if _, ok := p.netFlowRegistry.(templates.PrunableRegistry); !ok {
-			p.netFlowRegistry = templates.NewPruningRegistry(p.netFlowRegistry)
-		}
+		p.netFlowRegistry = templates.NewPruningRegistry(p.netFlowRegistry)
 	}
 
 }

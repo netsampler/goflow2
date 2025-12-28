@@ -56,23 +56,18 @@ func (r *PromTemplateRegistry) GetSystem(key string) netflow.NetFlowTemplateSyst
 
 // GetAll returns all templates for every router.
 func (r *PromTemplateRegistry) GetAll() map[string]netflow.FlowBaseTemplateSet {
-	return r.wrapped.GetAll()
-}
-
-// RemoveSystem deletes a router entry from the registry.
-func (r *PromTemplateRegistry) RemoveSystem(key string) bool {
 	r.lock.Lock()
-	_, ok := r.systems[key]
-	if ok {
-		delete(r.systems, key)
+	systems := make(map[string]netflow.NetFlowTemplateSystem, len(r.systems))
+	for key, system := range r.systems {
+		systems[key] = system
 	}
 	r.lock.Unlock()
-	if prunable, ok := r.wrapped.(templates.PrunableRegistry); ok {
-		if prunable.RemoveSystem(key) {
-			return true
-		}
+
+	ret := make(map[string]netflow.FlowBaseTemplateSet, len(systems))
+	for key, system := range systems {
+		ret[key] = system.GetTemplates()
 	}
-	return ok
+	return ret
 }
 
 // StartSweeper forwards sweeper start to the wrapped registry.

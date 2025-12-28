@@ -54,23 +54,18 @@ func (r *PruningRegistry) GetSystem(key string) netflow.NetFlowTemplateSystem {
 
 // GetAll returns all templates for every router.
 func (r *PruningRegistry) GetAll() map[string]netflow.FlowBaseTemplateSet {
-	return r.wrapped.GetAll()
-}
-
-// RemoveSystem deletes a router entry from the registry.
-func (r *PruningRegistry) RemoveSystem(key string) bool {
 	r.lock.Lock()
-	_, ok := r.systems[key]
-	if ok {
-		delete(r.systems, key)
+	systems := make(map[string]netflow.NetFlowTemplateSystem, len(r.systems))
+	for key, system := range r.systems {
+		systems[key] = system
 	}
 	r.lock.Unlock()
-	if prunable, ok := r.wrapped.(PrunableRegistry); ok {
-		if prunable.RemoveSystem(key) {
-			return true
-		}
+
+	ret := make(map[string]netflow.FlowBaseTemplateSet, len(systems))
+	for key, system := range systems {
+		ret[key] = system.GetTemplates()
 	}
-	return ok
+	return ret
 }
 
 type pruningTemplateSystem struct {
@@ -90,7 +85,9 @@ func (s *pruningTemplateSystem) GetTemplate(version uint16, obsDomainId uint32, 
 func (s *pruningTemplateSystem) RemoveTemplate(version uint16, obsDomainId uint32, templateId uint16) (interface{}, error) {
 	template, err := s.wrapped.RemoveTemplate(version, obsDomainId, templateId)
 	if err == nil && len(s.wrapped.GetTemplates()) == 0 {
-		s.parent.RemoveSystem(s.key)
+		s.parent.lock.Lock()
+		delete(s.parent.systems, s.key)
+		s.parent.lock.Unlock()
 	}
 	return template, err
 }

@@ -13,11 +13,6 @@ type Registry interface {
 	GetAll() map[string]netflow.FlowBaseTemplateSet
 }
 
-// PrunableRegistry allows removing template systems by router key.
-type PrunableRegistry interface {
-	RemoveSystem(key string) bool
-}
-
 // InMemoryRegistry stores template systems in-memory keyed by router.
 type InMemoryRegistry struct {
 	lock      *sync.RWMutex
@@ -67,15 +62,4 @@ func (r *InMemoryRegistry) GetAll() map[string]netflow.FlowBaseTemplateSet {
 		ret[key] = system.GetTemplates()
 	}
 	return ret
-}
-
-// RemoveSystem deletes a router entry from the registry.
-func (r *InMemoryRegistry) RemoveSystem(key string) bool {
-	r.lock.Lock()
-	defer r.lock.Unlock()
-	if _, ok := r.systems[key]; ok {
-		delete(r.systems, key)
-		return true
-	}
-	return false
 }

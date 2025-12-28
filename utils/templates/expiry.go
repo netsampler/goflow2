@@ -84,9 +84,7 @@ func (s *ExpiringTemplateSystem) RemoveTemplate(version uint16, obsDomainId uint
 		delete(s.updated, TemplateKey{Version: version, ObsDomainID: obsDomainId, TemplateID: templateId})
 		s.lock.Unlock()
 		if s.reg != nil {
-			if s.reg.decrement(s.key) == 0 {
-				s.reg.RemoveSystem(s.key)
-			}
+			s.reg.decrement(s.key)
 		}
 	}
 	return template, err
@@ -184,24 +182,18 @@ func (r *ExpiringRegistry) GetSystem(key string) netflow.NetFlowTemplateSystem {
 
 // GetAll returns all templates for every router.
 func (r *ExpiringRegistry) GetAll() map[string]netflow.FlowBaseTemplateSet {
-	return r.wrapped.GetAll()
-}
-
-// RemoveSystem deletes a router entry from the registry.
-func (r *ExpiringRegistry) RemoveSystem(key string) bool {
 	r.lock.Lock()
-	_, ok := r.systems[key]
-	if ok {
-		delete(r.systems, key)
-		delete(r.counts, key)
+	systems := make(map[string]netflow.NetFlowTemplateSystem, len(r.systems))
+	for key, system := range r.systems {
+		systems[key] = system
 	}
 	r.lock.Unlock()
-	if prunable, ok := r.wrapped.(PrunableRegistry); ok {
-		if prunable.RemoveSystem(key) {
-			return true
-		}
+
+	ret := make(map[string]netflow.FlowBaseTemplateSet, len(systems))
+	for key, system := range systems {
+		ret[key] = system.GetTemplates()
 	}
-	return ok
+	return ret
 }
 
 func (r *ExpiringRegistry) increment(key string) {
@@ -216,6 +208,7 @@ func (r *ExpiringRegistry) decrement(key string) int {
 	if count <= 0 {
 		delete(r.counts, key)
 		count = 0
+		delete(r.systems, key)
 	} else {
 		r.counts[key] = count
 	}
