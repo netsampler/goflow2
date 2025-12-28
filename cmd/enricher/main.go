@@ -12,20 +12,19 @@ import (
 	"log/slog"
 	"net"
 	"os"
-	"strings"
 
 	flowmessage "github.com/netsampler/goflow2/v2/cmd/enricher/pb"
 
-	// import various formatters
-	"github.com/netsampler/goflow2/v2/format"
 	_ "github.com/netsampler/goflow2/v2/format/binary"
 	_ "github.com/netsampler/goflow2/v2/format/json"
 	_ "github.com/netsampler/goflow2/v2/format/text"
 
-	// import various transports
-	"github.com/netsampler/goflow2/v2/transport"
 	_ "github.com/netsampler/goflow2/v2/transport/file"
 	_ "github.com/netsampler/goflow2/v2/transport/kafka"
+
+	"github.com/netsampler/goflow2/v2/pkg/goflow2/builder"
+	"github.com/netsampler/goflow2/v2/pkg/goflow2/config"
+	"github.com/netsampler/goflow2/v2/pkg/goflow2/logging"
 
 	"github.com/oschwald/geoip2-golang"
 	"google.golang.org/protobuf/encoding/protodelim"
@@ -40,13 +39,13 @@ var (
 	DbAsn     = flag.String("db.asn", "", "IP->ASN database")
 	DbCountry = flag.String("db.country", "", "IP->Country database")
 
-	LogLevel = flag.String("loglevel", "info", "Log level")
-	LogFmt   = flag.String("logfmt", "normal", "Log formatter")
+	LogLevel string
+	LogFmt   string
 
 	SamplingRate = flag.Int("samplingrate", 0, "Set sampling rate (values > 0)")
 
-	Format    = flag.String("format", "json", fmt.Sprintf("Choose the format (available: %s)", strings.Join(format.GetFormats(), ", ")))
-	Transport = flag.String("transport", "file", fmt.Sprintf("Choose the transport (available: %s)", strings.Join(transport.GetTransports(), ", ")))
+	Format    string
+	Transport string
 
 	Version = flag.Bool("v", false, "Print version")
 )
@@ -94,6 +93,7 @@ func (m *ProtoProducerMessage) MarshalBinary() ([]byte, error) {
 }
 
 func main() {
+	config.BindCommonFlags(flag.CommandLine, &LogLevel, &LogFmt, &Format, &Transport)
 	flag.Parse()
 
 	if *Version {
@@ -101,25 +101,13 @@ func main() {
 		os.Exit(0)
 	}
 
-	var loglevel slog.Level
-	if err := loglevel.UnmarshalText([]byte(*LogLevel)); err != nil {
+	logger, err := logging.NewLogger(LogLevel, LogFmt)
+	if err != nil {
 		log.Fatal("error parsing log level")
 	}
-
-	lo := slog.HandlerOptions{
-		Level: loglevel,
-	}
-	logger := slog.New(slog.NewTextHandler(os.Stderr, &lo))
-
-	switch *LogFmt {
-	case "json":
-		logger = slog.New(slog.NewJSONHandler(os.Stderr, &lo))
-	}
-
 	slog.SetDefault(logger)
 
 	var dbAsn, dbCountry *geoip2.Reader
-	var err error
 	if *DbAsn != "" {
 		dbAsn, err = geoip2.Open(*DbAsn)
 		if err != nil {
@@ -146,12 +134,12 @@ func main() {
 		}()
 	}
 
-	formatter, err := format.FindFormat(*Format)
+	formatter, err := builder.BuildFormatter(Format)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	transporter, err := transport.FindTransport(*Transport)
+	transporter, err := builder.BuildTransport(Transport)
 	if err != nil {
 		slog.Error("error transporter", slog.String("error", err.Error()))
 		os.Exit(1)
