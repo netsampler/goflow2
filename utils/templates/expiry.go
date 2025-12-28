@@ -39,6 +39,7 @@ type ExpiringTemplateSystem struct {
 	updated map[TemplateKey]time.Time
 	ttl     time.Duration
 	now     func() time.Time
+	onEmpty func()
 }
 
 // NewExpiringTemplateSystem wraps a template system with expiry tracking.
@@ -78,6 +79,9 @@ func (s *ExpiringTemplateSystem) RemoveTemplate(version uint16, obsDomainId uint
 		s.lock.Lock()
 		delete(s.updated, TemplateKey{Version: version, ObsDomainID: obsDomainId, TemplateID: templateId})
 		s.lock.Unlock()
+		if s.onEmpty != nil && len(s.wrapped.GetTemplates()) == 0 {
+			s.onEmpty()
+		}
 	}
 	return template, err
 }
@@ -159,6 +163,9 @@ func (r *ExpiringRegistry) GetSystem(key string) netflow.NetFlowTemplateSystem {
 	wrapped := r.wrapped.GetSystem(key)
 	system = NewExpiringTemplateSystem(wrapped, r.ttl)
 	system.now = r.now
+	system.onEmpty = func() {
+		r.RemoveSystem(key)
+	}
 
 	r.lock.Lock()
 	if existing, ok := r.systems[key]; ok {
