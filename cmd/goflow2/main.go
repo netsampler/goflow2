@@ -213,6 +213,7 @@ func main() {
 
 	var receivers []*utils.UDPReceiver
 	var pipes []utils.FlowPipe
+	var registryClosers []templates.RegistryCloser
 
 	q := make(chan bool)
 	for _, listenAddress := range strings.Split(*ListenAddresses, ",") {
@@ -302,6 +303,9 @@ func main() {
 		netFlowRegistry := metrics.NewDefaultPromTemplateRegistry()
 		if *TemplatesJSONPath != "" {
 			netFlowRegistry = templates.NewJSONRegistry(*TemplatesJSONPath, *TemplatesJSONInterval, netFlowRegistry)
+		}
+		if closer, ok := netFlowRegistry.(templates.RegistryCloser); ok {
+			registryClosers = append(registryClosers, closer)
 		}
 		cfgPipe := &utils.PipeConfig{
 			Format:          formatter,
@@ -455,6 +459,10 @@ func main() {
 		if err := recv.Stop(); err != nil {
 			logger.Error("error stopping receiver", slog.String("error", err.Error()))
 		}
+	}
+	// flush template registries before shutting down pipes/transports
+	for _, closer := range registryClosers {
+		closer.Close()
 	}
 	// then stop pipe
 	for _, pipe := range pipes {

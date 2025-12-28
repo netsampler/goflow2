@@ -22,6 +22,7 @@ type JSONRegistry struct {
 	stopCh    chan struct{}
 	doneCh    chan struct{}
 	flushLock *sync.Mutex
+	closeOnce sync.Once
 }
 
 // NewJSONRegistry wraps a registry and persists templates to a JSON file.
@@ -77,12 +78,14 @@ func (r *JSONRegistry) GetAll() map[string]netflow.FlowBaseTemplateSet {
 
 // Close stops background work and flushes pending data.
 func (r *JSONRegistry) Close() {
-	close(r.stopCh)
-	<-r.doneCh
-	r.flush()
-	if closer, ok := r.wrapped.(RegistryCloser); ok {
-		closer.Close()
-	}
+	r.closeOnce.Do(func() {
+		close(r.stopCh)
+		<-r.doneCh
+		r.flush()
+		if closer, ok := r.wrapped.(RegistryCloser); ok {
+			closer.Close()
+		}
+	})
 }
 
 func (r *JSONRegistry) start() {

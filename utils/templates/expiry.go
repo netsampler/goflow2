@@ -129,6 +129,7 @@ type ExpiringRegistry struct {
 	sweeperLock *sync.Mutex
 	sweeperStop chan struct{}
 	sweeperDone chan struct{}
+	closeOnce   sync.Once
 }
 
 // NewExpiringRegistry wraps a registry with expiry tracking.
@@ -232,23 +233,25 @@ func (r *ExpiringRegistry) StartSweeper(interval time.Duration) {
 
 // Close stops the sweeper goroutine if it is running.
 func (r *ExpiringRegistry) Close() {
-	r.sweeperLock.Lock()
-	if r.sweeperStop == nil {
+	r.closeOnce.Do(func() {
+		r.sweeperLock.Lock()
+		if r.sweeperStop == nil {
+			r.sweeperLock.Unlock()
+			if closer, ok := r.wrapped.(RegistryCloser); ok {
+				closer.Close()
+			}
+			return
+		}
+		stop := r.sweeperStop
+		done := r.sweeperDone
+		r.sweeperStop = nil
+		r.sweeperDone = nil
 		r.sweeperLock.Unlock()
+
+		close(stop)
+		<-done
 		if closer, ok := r.wrapped.(RegistryCloser); ok {
 			closer.Close()
 		}
-		return
-	}
-	stop := r.sweeperStop
-	done := r.sweeperDone
-	r.sweeperStop = nil
-	r.sweeperDone = nil
-	r.sweeperLock.Unlock()
-
-	close(stop)
-	<-done
-	if closer, ok := r.wrapped.(RegistryCloser); ok {
-		closer.Close()
-	}
+	})
 }
