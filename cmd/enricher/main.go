@@ -4,6 +4,7 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"errors"
 	"flag"
 	"fmt"
@@ -12,6 +13,8 @@ import (
 	"log/slog"
 	"net"
 	"os"
+	"os/signal"
+	"syscall"
 
 	flowmessage "github.com/netsampler/goflow2/v2/cmd/enricher/pb"
 
@@ -107,6 +110,14 @@ func main() {
 	}
 	slog.SetDefault(logger)
 
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	go func() {
+		<-ctx.Done()
+		_ = os.Stdin.Close()
+	}()
+
 	var dbAsn, dbCountry *geoip2.Reader
 	if *DbAsn != "" {
 		dbAsn, err = geoip2.Open(*DbAsn)
@@ -159,6 +170,9 @@ func main() {
 		if err := protodelim.UnmarshalFrom(rdr, &msg); err != nil && errors.Is(err, io.EOF) {
 			return
 		} else if err != nil {
+			if ctx.Err() != nil {
+				return
+			}
 			slog.Error("error unmarshalling message", slog.String("error", err.Error()))
 			continue
 		}

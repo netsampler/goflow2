@@ -10,7 +10,6 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
-	"time"
 
 	"github.com/netsampler/goflow2/v2/pkg/goflow2/app"
 	"github.com/netsampler/goflow2/v2/pkg/goflow2/config"
@@ -45,23 +44,11 @@ func main() {
 		log.Fatal(err)
 	}
 
-	if err := application.Start(); err != nil {
-		slog.Error("failed to start application", slog.String("error", err.Error()))
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	if err := application.Run(ctx); err != nil {
+		slog.Error("application error", slog.String("error", err.Error()))
 		os.Exit(1)
 	}
-
-	c := make(chan os.Signal, 1)
-	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
-
-	select {
-	case <-c:
-	case err := <-application.Wait():
-		if err != nil {
-			slog.Error("HTTP server error", slog.String("error", err.Error()))
-		}
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
-	application.Shutdown(ctx)
-	cancel()
 }

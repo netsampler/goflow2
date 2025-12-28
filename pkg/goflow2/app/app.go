@@ -121,6 +121,34 @@ func (a *App) Start() error {
 	return nil
 }
 
+// Run starts the app and blocks until context cancellation or server error.
+func (a *App) Run(ctx context.Context) error {
+	if err := a.Start(); err != nil {
+		return err
+	}
+
+	if a.server == nil {
+		<-ctx.Done()
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), time.Second*5)
+		a.Shutdown(shutdownCtx)
+		cancel()
+		return nil
+	}
+
+	select {
+	case <-ctx.Done():
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), time.Second*5)
+		a.Shutdown(shutdownCtx)
+		cancel()
+		return nil
+	case err := <-a.Wait():
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), time.Second*5)
+		a.Shutdown(shutdownCtx)
+		cancel()
+		return err
+	}
+}
+
 // Wait returns a channel that receives HTTP server errors.
 func (a *App) Wait() <-chan error {
 	return a.serverErr
