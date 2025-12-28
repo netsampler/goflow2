@@ -44,6 +44,7 @@ import (
 	"github.com/netsampler/goflow2/v3/metrics"
 	"github.com/netsampler/goflow2/v3/utils"
 	"github.com/netsampler/goflow2/v3/utils/debug"
+	"github.com/netsampler/goflow2/v3/utils/templates"
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"gopkg.in/yaml.v3"
@@ -72,6 +73,8 @@ var (
 	TemplatePath           = flag.String("templates.path", "/templates", "NetFlow/IPFIX templates list")
 	TemplatesTTL           = flag.Duration("templates.ttl", 0, "NetFlow/IPFIX templates TTL (0 disables expiry)")
 	TemplatesSweepInterval = flag.Duration("templates.sweep-interval", time.Minute, "NetFlow/IPFIX template sweep interval")
+	TemplatesJSONPath      = flag.String("templates.json.path", "", "NetFlow/IPFIX templates JSON output path (empty disables persistence)")
+	TemplatesJSONInterval  = flag.Duration("templates.json.interval", time.Second*5, "NetFlow/IPFIX templates JSON write interval")
 
 	MappingFile = flag.String("mapping", "", "Configuration file for custom mappings")
 
@@ -296,11 +299,15 @@ func main() {
 			os.Exit(1)
 		}
 
+		netFlowRegistry := metrics.NewDefaultPromTemplateRegistry()
+		if *TemplatesJSONPath != "" {
+			netFlowRegistry = templates.NewJSONRegistry(*TemplatesJSONPath, *TemplatesJSONInterval, netFlowRegistry)
+		}
 		cfgPipe := &utils.PipeConfig{
 			Format:          formatter,
 			Transport:       transporter,
 			Producer:        flowProducer,
-			NetFlowRegistry: metrics.NewDefaultPromTemplateRegistry(), // wrap template system to get Prometheus info
+			NetFlowRegistry: netFlowRegistry, // wrap template system to get Prometheus info
 			TemplatesTTL:    *TemplatesTTL,
 			SweepInterval:   *TemplatesSweepInterval,
 		}

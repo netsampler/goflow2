@@ -235,6 +235,9 @@ func (r *ExpiringRegistry) Close() {
 	r.sweeperLock.Lock()
 	if r.sweeperStop == nil {
 		r.sweeperLock.Unlock()
+		if closer, ok := r.wrapped.(RegistryCloser); ok {
+			closer.Close()
+		}
 		return
 	}
 	stop := r.sweeperStop
@@ -245,4 +248,7 @@ func (r *ExpiringRegistry) Close() {
 
 	close(stop)
 	<-done
+	if closer, ok := r.wrapped.(RegistryCloser); ok {
+		closer.Close()
+	}
 }
