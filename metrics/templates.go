@@ -44,14 +44,15 @@ func (s *PromTemplateSystem) getLabels(version uint16, obsDomainId uint32, templ
 	}
 }
 
-func (s *PromTemplateSystem) AddTemplate(version uint16, obsDomainId uint32, templateId uint16, template interface{}) error {
-	err := s.wrapped.AddTemplate(version, obsDomainId, templateId, template)
-
-	labels := s.getLabels(version, obsDomainId, templateId, template)
-	NetFlowTemplatesStats.With(
-		labels).
-		Inc()
-	return err
+func (s *PromTemplateSystem) AddTemplate(version uint16, obsDomainId uint32, templateId uint16, template interface{}) (netflow.TemplateStatus, error) {
+	update, err := s.wrapped.AddTemplate(version, obsDomainId, templateId, template)
+	if err == nil {
+		labels := s.getLabels(version, obsDomainId, templateId, template)
+		NetFlowTemplatesStats.With(
+			labels).
+			Inc()
+	}
+	return update, err
 }
 
 // GetTemplate retrieves a template from the wrapped system.
@@ -60,17 +61,15 @@ func (s *PromTemplateSystem) GetTemplate(version uint16, obsDomainId uint32, tem
 }
 
 // RemoveTemplate removes a template and updates metrics.
-func (s *PromTemplateSystem) RemoveTemplate(version uint16, obsDomainId uint32, templateId uint16) (interface{}, error) {
-
-	template, err := s.wrapped.RemoveTemplate(version, obsDomainId, templateId)
-
-	if err == nil {
+func (s *PromTemplateSystem) RemoveTemplate(version uint16, obsDomainId uint32, templateId uint16) (interface{}, bool, error) {
+	template, removed, err := s.wrapped.RemoveTemplate(version, obsDomainId, templateId)
+	if removed {
 		labels := s.getLabels(version, obsDomainId, templateId, template)
 
 		NetFlowTemplatesStats.Delete(labels)
 	}
 
-	return template, err
+	return template, removed, err
 }
 
 // GetTemplates returns all templates from the wrapped system.

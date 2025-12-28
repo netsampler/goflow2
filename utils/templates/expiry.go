@@ -47,17 +47,20 @@ func NewExpiringTemplateSystem(wrapped netflow.NetFlowTemplateSystem, ttl time.D
 }
 
 // AddTemplate records template update time and forwards to the wrapped system.
-func (s *ExpiringTemplateSystem) AddTemplate(version uint16, obsDomainId uint32, templateId uint16, template interface{}) error {
-	if err := s.wrapped.AddTemplate(version, obsDomainId, templateId, template); err != nil {
-		return err
+func (s *ExpiringTemplateSystem) AddTemplate(version uint16, obsDomainId uint32, templateId uint16, template interface{}) (netflow.TemplateStatus, error) {
+	update, err := s.wrapped.AddTemplate(version, obsDomainId, templateId, template)
+	if err != nil {
+		return update, err
 	}
 	s.lock.Lock()
 	s.updated[TemplateKey{Version: version, ObsDomainID: obsDomainId, TemplateID: templateId}] = s.now()
 	s.lock.Unlock()
 	if s.reg != nil {
-		s.reg.increment(s.key)
+		if update == netflow.TemplateAdded {
+			s.reg.increment(s.key)
+		}
 	}
-	return nil
+	return update, nil
 }
 
 // GetTemplate forwards template lookup to the wrapped system.
@@ -66,9 +69,9 @@ func (s *ExpiringTemplateSystem) GetTemplate(version uint16, obsDomainId uint32,
 }
 
 // RemoveTemplate removes a template and its tracking entry.
-func (s *ExpiringTemplateSystem) RemoveTemplate(version uint16, obsDomainId uint32, templateId uint16) (interface{}, error) {
-	template, err := s.wrapped.RemoveTemplate(version, obsDomainId, templateId)
-	if err == nil {
+func (s *ExpiringTemplateSystem) RemoveTemplate(version uint16, obsDomainId uint32, templateId uint16) (interface{}, bool, error) {
+	template, removed, err := s.wrapped.RemoveTemplate(version, obsDomainId, templateId)
+	if removed {
 		s.lock.Lock()
 		delete(s.updated, TemplateKey{Version: version, ObsDomainID: obsDomainId, TemplateID: templateId})
 		s.lock.Unlock()
@@ -76,7 +79,7 @@ func (s *ExpiringTemplateSystem) RemoveTemplate(version uint16, obsDomainId uint
 			s.reg.decrement(s.key)
 		}
 	}
-	return template, err
+	return template, removed, err
 }
 
 // GetTemplates returns all templates from the wrapped system.
@@ -98,7 +101,7 @@ func (s *ExpiringTemplateSystem) ExpireBefore(cutoff time.Time) int {
 
 	removed := 0
 	for _, key := range expired {
-		if _, err := s.RemoveTemplate(key.Version, key.ObsDomainID, key.TemplateID); err == nil {
+		if _, removed, err := s.RemoveTemplate(key.Version, key.ObsDomainID, key.TemplateID); err == nil && removed {
 			removed++
 		}
 	}

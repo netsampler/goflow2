@@ -98,7 +98,7 @@ func PreloadJSONTemplates(path string, registry Registry) error {
 
 	for _, op := range ops {
 		system := registry.GetSystem(op.routerKey)
-		if err := system.AddTemplate(op.version, op.obsDomainId, op.templateId, op.template); err != nil {
+		if _, err := system.AddTemplate(op.version, op.obsDomainId, op.templateId, op.template); err != nil {
 			return err
 		}
 	}
@@ -229,21 +229,24 @@ type persistingTemplateSystem struct {
 	wrapped netflow.NetFlowTemplateSystem
 }
 
-func (s *persistingTemplateSystem) AddTemplate(version uint16, obsDomainId uint32, templateId uint16, template interface{}) error {
-	if err := s.wrapped.AddTemplate(version, obsDomainId, templateId, template); err != nil {
-		return err
+func (s *persistingTemplateSystem) AddTemplate(version uint16, obsDomainId uint32, templateId uint16, template interface{}) (netflow.TemplateStatus, error) {
+	update, err := s.wrapped.AddTemplate(version, obsDomainId, templateId, template)
+	if err != nil {
+		return update, err
 	}
-	s.parent.notifyChange()
-	return nil
+	if update != netflow.TemplateUnchanged {
+		s.parent.notifyChange()
+	}
+	return update, nil
 }
 
 func (s *persistingTemplateSystem) GetTemplate(version uint16, obsDomainId uint32, templateId uint16) (interface{}, error) {
 	return s.wrapped.GetTemplate(version, obsDomainId, templateId)
 }
 
-func (s *persistingTemplateSystem) RemoveTemplate(version uint16, obsDomainId uint32, templateId uint16) (interface{}, error) {
-	template, err := s.wrapped.RemoveTemplate(version, obsDomainId, templateId)
-	if err == nil {
+func (s *persistingTemplateSystem) RemoveTemplate(version uint16, obsDomainId uint32, templateId uint16) (interface{}, bool, error) {
+	template, removed, err := s.wrapped.RemoveTemplate(version, obsDomainId, templateId)
+	if removed {
 		if len(s.wrapped.GetTemplates()) == 0 {
 			s.parent.lock.Lock()
 			delete(s.parent.systems, s.key)
@@ -251,7 +254,7 @@ func (s *persistingTemplateSystem) RemoveTemplate(version uint16, obsDomainId ui
 		}
 		s.parent.notifyChange()
 	}
-	return template, err
+	return template, removed, err
 }
 
 func (s *persistingTemplateSystem) GetTemplates() netflow.FlowBaseTemplateSet {

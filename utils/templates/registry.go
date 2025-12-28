@@ -25,24 +25,46 @@ type pruningTemplateSystem struct {
 	key     string
 	parent  *InMemoryRegistry
 	wrapped netflow.NetFlowTemplateSystem
+	lock    sync.Mutex
+	count   int
 }
 
-func (s *pruningTemplateSystem) AddTemplate(version uint16, obsDomainId uint32, templateId uint16, template interface{}) error {
-	return s.wrapped.AddTemplate(version, obsDomainId, templateId, template)
+func (s *pruningTemplateSystem) AddTemplate(version uint16, obsDomainId uint32, templateId uint16, template interface{}) (netflow.TemplateStatus, error) {
+	update, err := s.wrapped.AddTemplate(version, obsDomainId, templateId, template)
+	if err != nil {
+		return update, err
+	}
+	s.lock.Lock()
+	if update == netflow.TemplateAdded {
+		s.count++
+	}
+	s.lock.Unlock()
+	return update, nil
 }
 
 func (s *pruningTemplateSystem) GetTemplate(version uint16, obsDomainId uint32, templateId uint16) (interface{}, error) {
 	return s.wrapped.GetTemplate(version, obsDomainId, templateId)
 }
 
-func (s *pruningTemplateSystem) RemoveTemplate(version uint16, obsDomainId uint32, templateId uint16) (interface{}, error) {
-	template, err := s.wrapped.RemoveTemplate(version, obsDomainId, templateId)
-	if err == nil && len(s.wrapped.GetTemplates()) == 0 {
-		s.parent.lock.Lock()
-		delete(s.parent.systems, s.key)
-		s.parent.lock.Unlock()
+func (s *pruningTemplateSystem) RemoveTemplate(version uint16, obsDomainId uint32, templateId uint16) (interface{}, bool, error) {
+	template, removed, err := s.wrapped.RemoveTemplate(version, obsDomainId, templateId)
+	if removed {
+		var shouldPrune bool
+		s.lock.Lock()
+		if s.count > 0 {
+			s.count--
+		}
+		if s.count == 0 {
+			shouldPrune = true
+		}
+		s.lock.Unlock()
+		if shouldPrune {
+			s.parent.lock.Lock()
+			delete(s.parent.systems, s.key)
+			s.parent.lock.Unlock()
+		}
 	}
-	return template, err
+	return template, removed, err
 }
 
 func (s *pruningTemplateSystem) GetTemplates() netflow.FlowBaseTemplateSet {
@@ -73,6 +95,11 @@ func (r *InMemoryRegistry) GetSystem(key string) netflow.NetFlowTemplateSystem {
 		key:     key,
 		parent:  r,
 		wrapped: r.generator(key),
+	}
+	if snapshot := system.wrapped.GetTemplates(); len(snapshot) > 0 {
+		system.lock.Lock()
+		system.count = len(snapshot)
+		system.lock.Unlock()
 	}
 	r.lock.Lock()
 	if existing, ok := r.systems[key]; ok {
