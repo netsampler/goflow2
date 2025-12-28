@@ -105,15 +105,23 @@ func BenchmarkChainedRegistryPreloadJSON(b *testing.B) {
 		b.Fatalf("write payload: %v", err)
 	}
 
+	base := NewInMemoryRegistry(nil)
+	jsonRegistry := NewJSONRegistry(path, time.Hour, base)
+	expiring := NewExpiringRegistry(jsonRegistry, time.Minute)
+	if err := PreloadJSONTemplates(path, expiring); err != nil {
+		b.Fatalf("preload templates: %v", err)
+	}
+	b.Cleanup(expiring.Close)
+
 	b.ReportAllocs()
 	b.ResetTimer()
 	for n := 0; n < b.N; n++ {
-		base := NewInMemoryRegistry(nil)
-		jsonRegistry := NewJSONRegistry(path, time.Hour, base)
-		expiring := NewExpiringRegistry(jsonRegistry, time.Minute)
-		if err := PreloadJSONTemplates(path, expiring); err != nil {
-			b.Fatalf("preload templates: %v", err)
+		templateID := uint16(n % templates)
+		if _, err := expiring.GetSystem("router1").GetTemplate(9, 1, templateID); err != nil {
+			b.Fatalf("get template: %v", err)
 		}
-		expiring.Close()
+		if _, err := expiring.GetSystem("router1").AddTemplate(9, 1, templateID, netflow.TemplateRecord{TemplateId: templateID}); err != nil {
+			b.Fatalf("add template: %v", err)
+		}
 	}
 }
