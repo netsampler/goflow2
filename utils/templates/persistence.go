@@ -272,11 +272,15 @@ func writeAtomic(path string, data []byte, perm os.FileMode) error {
 		return err
 	}
 	if _, err := tmpFile.Write(data); err != nil {
-		tmpFile.Close()
+		if closeErr := tmpFile.Close(); closeErr != nil {
+			return closeErr
+		}
 		return err
 	}
 	if err := tmpFile.Sync(); err != nil {
-		tmpFile.Close()
+		if closeErr := tmpFile.Close(); closeErr != nil {
+			return closeErr
+		}
 		return err
 	}
 	if err := tmpFile.Close(); err != nil {
