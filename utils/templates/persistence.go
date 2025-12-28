@@ -215,7 +215,7 @@ func (r *JSONRegistry) flush() {
 	}
 
 	snapshot := r.wrapped.GetAll()
-	data, err := json.MarshalIndent(snapshot, "", "  ")
+	data, err := json.Marshal(snapshot)
 	if err != nil {
 		return
 	}
