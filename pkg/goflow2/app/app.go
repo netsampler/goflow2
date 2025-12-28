@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/http"
 	"sync/atomic"
+	"time"
 
 	"github.com/netsampler/goflow2/v2/metrics"
 	"github.com/netsampler/goflow2/v2/pkg/goflow2/builder"
@@ -81,10 +82,15 @@ func New(cfg *config.Config) (*App, error) {
 	}
 
 	if cfg.Addr != "" {
-		app.server = httpserver.New(httpserver.Config{
+		mux := httpserver.New(httpserver.Config{
 			Addr:         cfg.Addr,
 			TemplatePath: cfg.TemplatePath,
 		}, coll.NetFlowTemplates, app.collecting.Load)
+		app.server = &http.Server{
+			Addr:              cfg.Addr,
+			Handler:           mux,
+			ReadHeaderTimeout: time.Second * 5,
+		}
 	}
 
 	return app, nil
