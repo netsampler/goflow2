@@ -241,6 +241,10 @@ There are assumptions on how many records and list items a sample can have (eg: 
 
 Are you using GoFlow2 in production at scale? Add yourself here!
 
+[![](./graphics/user/shopee_70x70.png)](./docs/user_story/shopee.md)
+
+
+
 ### Contributions
 
 This project welcomes pull-requests, whether it's documentation,
