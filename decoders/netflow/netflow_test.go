@@ -2,10 +2,130 @@ package netflow
 
 import (
 	"bytes"
+	"encoding/binary"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 )
+
+func buildIPFIXMessage(obsDomainId uint32, sets []byte) []byte {
+	var buf bytes.Buffer
+	_ = binary.Write(&buf, binary.BigEndian, uint16(10))
+	_ = binary.Write(&buf, binary.BigEndian, uint16(16+len(sets)))
+	_ = binary.Write(&buf, binary.BigEndian, uint32(0))
+	_ = binary.Write(&buf, binary.BigEndian, uint32(0))
+	_ = binary.Write(&buf, binary.BigEndian, obsDomainId)
+	_, _ = buf.Write(sets)
+	return buf.Bytes()
+}
+
+func buildSet(setId uint16, records []byte) []byte {
+	var buf bytes.Buffer
+	_ = binary.Write(&buf, binary.BigEndian, setId)
+	_ = binary.Write(&buf, binary.BigEndian, uint16(4+len(records)))
+	_, _ = buf.Write(records)
+	return buf.Bytes()
+}
+
+func buildOptionsTemplateRecord(templateId, fieldCount, scopeFieldCount uint16, fields []byte) []byte {
+	var buf bytes.Buffer
+	_ = binary.Write(&buf, binary.BigEndian, templateId)
+	_ = binary.Write(&buf, binary.BigEndian, fieldCount)
+	_ = binary.Write(&buf, binary.BigEndian, scopeFieldCount)
+	_, _ = buf.Write(fields)
+	return buf.Bytes()
+}
+
+func buildEnterpriseFieldSpecifier(ie uint16, length uint16, pen uint32) []byte {
+	var buf bytes.Buffer
+	_ = binary.Write(&buf, binary.BigEndian, ie|0x8000)
+	_ = binary.Write(&buf, binary.BigEndian, length)
+	_ = binary.Write(&buf, binary.BigEndian, pen)
+	return buf.Bytes()
+}
+
+func buildTemplateWithdrawalRecord(templateId uint16) []byte {
+	var buf bytes.Buffer
+	_ = binary.Write(&buf, binary.BigEndian, templateId)
+	_ = binary.Write(&buf, binary.BigEndian, uint16(0))
+	return buf.Bytes()
+}
+
+func TestDecodeIPFIXOptionsTemplateEnterpriseBitCleared(t *testing.T) {
+	scopeField := buildEnterpriseFieldSpecifier(1, 4, 9)
+	optionField := buildEnterpriseFieldSpecifier(2, 4, 9)
+	record := buildOptionsTemplateRecord(256, 2, 1, append(scopeField, optionField...))
+	sets := buildSet(3, record)
+	message := buildIPFIXMessage(123, sets)
+
+	templates := CreateTemplateSystem()
+	var packet IPFIXPacket
+	err := DecodeMessageVersion(bytes.NewBuffer(message), templates, nil, &packet)
+	assert.NoError(t, err)
+	assert.Len(t, packet.FlowSets, 1)
+
+	optionsSet, ok := packet.FlowSets[0].(IPFIXOptionsTemplateFlowSet)
+	assert.True(t, ok)
+	if !ok || len(optionsSet.Records) == 0 {
+		t.Fatalf("expected options template records")
+	}
+
+	recordDecoded := optionsSet.Records[0]
+	if assert.Len(t, recordDecoded.Scopes, 1) {
+		assert.True(t, recordDecoded.Scopes[0].PenProvided)
+		assert.Equal(t, uint16(1), recordDecoded.Scopes[0].Type)
+		assert.Equal(t, uint32(9), recordDecoded.Scopes[0].Pen)
+	}
+	if assert.Len(t, recordDecoded.Options, 1) {
+		assert.True(t, recordDecoded.Options[0].PenProvided)
+		assert.Equal(t, uint16(2), recordDecoded.Options[0].Type)
+		assert.Equal(t, uint32(9), recordDecoded.Options[0].Pen)
+	}
+}
+
+func TestDecodeIPFIXOptionsTemplateWithdrawalAll(t *testing.T) {
+	templates := CreateTemplateSystem()
+	optionsTemplate := IPFIXOptionsTemplateRecord{
+		TemplateId:      256,
+		FieldCount:      2,
+		ScopeFieldCount: 1,
+		Scopes:          []Field{{Type: 1, Length: 4}},
+		Options:         []Field{{Type: 2, Length: 4}},
+	}
+	assert.NoError(t, templates.AddTemplate(10, 42, 256, optionsTemplate))
+	optionsTemplate.TemplateId = 257
+	assert.NoError(t, templates.AddTemplate(10, 42, 257, optionsTemplate))
+	assert.NoError(t, templates.AddTemplate(10, 42, 300, TemplateRecord{TemplateId: 300, FieldCount: 1}))
+
+	withdrawalRecord := buildTemplateWithdrawalRecord(3)
+	message := buildIPFIXMessage(42, buildSet(3, withdrawalRecord))
+	var packet IPFIXPacket
+	err := DecodeMessageVersion(bytes.NewBuffer(message), templates, nil, &packet)
+	assert.NoError(t, err)
+
+	_, err = templates.GetTemplate(10, 42, 256)
+	assert.ErrorIs(t, err, ErrorTemplateNotFound)
+	_, err = templates.GetTemplate(10, 42, 257)
+	assert.ErrorIs(t, err, ErrorTemplateNotFound)
+	_, err = templates.GetTemplate(10, 42, 300)
+	assert.NoError(t, err)
+}
+
+func TestDecodeIPFIXTemplateWithdrawalSingle(t *testing.T) {
+	templates := CreateTemplateSystem()
+	assert.NoError(t, templates.AddTemplate(10, 7, 256, TemplateRecord{TemplateId: 256, FieldCount: 1}))
+
+	var record bytes.Buffer
+	_ = binary.Write(&record, binary.BigEndian, uint16(256))
+	_ = binary.Write(&record, binary.BigEndian, uint16(0))
+	message := buildIPFIXMessage(7, buildSet(2, record.Bytes()))
+
+	var packet IPFIXPacket
+	err := DecodeMessageVersion(bytes.NewBuffer(message), templates, nil, &packet)
+	assert.NoError(t, err)
+	_, err = templates.GetTemplate(10, 7, 256)
+	assert.ErrorIs(t, err, ErrorTemplateNotFound)
+}
 
 func TestDecodeNetFlowV9(t *testing.T) {
 	templates := CreateTemplateSystem()
