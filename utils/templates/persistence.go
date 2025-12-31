@@ -18,18 +18,18 @@ const defaultJSONFlushInterval = 10 * time.Second
 
 // JSONRegistry persists templates to a JSON file with batched updates.
 type JSONRegistry struct {
-	lock        sync.RWMutex                             // protects registry state and flusher lifecycle fields
-	wrapped     Registry                                 // underlying registry to store templates
-	systems     map[string]netflow.NetFlowTemplateSystem // per-router template systems
-	path        string                                   // JSON output path
-	interval    time.Duration                            // flush interval used on Start
-	changeCh    chan struct{}                            // signals pending changes for batching
-	flusherStop chan struct{}                            // signals flusher goroutine to stop
-	flusherDone chan struct{}                            // closed when flusher goroutine exits
-	flushLock   sync.Mutex                               // serializes flushes (timer, immediate, Close)
-	flushHook   func()                                   // test hook invoked before writing JSON
-	closeOnce   sync.Once                                // guards Close
-	startOnce   sync.Once                                // guards Start
+	lock          sync.RWMutex                             // protects registry state and flusher lifecycle fields
+	wrapped       Registry                                 // underlying registry to store templates
+	systems       map[string]netflow.NetFlowTemplateSystem // per-router template systems
+	path          string                                   // JSON output path
+	flushInterval time.Duration                            // flush interval used on Start
+	changeCh      chan struct{}                            // signals pending changes for batching
+	flusherStop   chan struct{}                            // signals flusher goroutine to stop
+	flusherDone   chan struct{}                            // closed when flusher goroutine exits
+	flushLock     sync.Mutex                               // serializes flushes (timer, immediate, Close)
+	flushHook     func()                                   // test hook invoked before writing JSON
+	closeOnce     sync.Once                                // guards Close
+	startOnce     sync.Once                                // guards Start
 }
 
 // NewJSONRegistry wraps a registry and persists templates to a JSON file.
@@ -39,11 +39,11 @@ func NewJSONRegistry(path string, wrapped Registry) *JSONRegistry {
 		wrapped = NewInMemoryRegistry(nil)
 	}
 	r := &JSONRegistry{
-		wrapped:  wrapped,
-		systems:  make(map[string]netflow.NetFlowTemplateSystem),
-		path:     path,
-		interval: defaultJSONFlushInterval,
-		changeCh: make(chan struct{}, 1),
+		wrapped:       wrapped,
+		systems:       make(map[string]netflow.NetFlowTemplateSystem),
+		path:          path,
+		flushInterval: defaultJSONFlushInterval,
+		changeCh:      make(chan struct{}, 1),
 	}
 	return r
 }
@@ -179,18 +179,18 @@ func (r *JSONRegistry) Close() {
 func (r *JSONRegistry) Start() {
 	r.startOnce.Do(func() {
 		r.wrapped.Start()
-		r.StartFlush(r.interval)
+		r.StartFlush(r.flushInterval)
 	})
 }
 
-// StartFlush begins periodic flushing using the provided interval.
-func (r *JSONRegistry) StartFlush(interval time.Duration) {
-	if interval <= 0 {
+// StartFlush begins periodic flushing using the provided flush interval.
+func (r *JSONRegistry) StartFlush(flushInterval time.Duration) {
+	if flushInterval <= 0 {
 		return
 	}
 
 	r.lock.Lock()
-	r.interval = interval
+	r.flushInterval = flushInterval
 	if r.flusherStop != nil {
 		r.lock.Unlock()
 		return
@@ -208,12 +208,12 @@ func (r *JSONRegistry) StartFlush(interval time.Duration) {
 			select {
 			case <-r.changeCh:
 				if timer == nil {
-					timer = time.NewTimer(interval)
+					timer = time.NewTimer(flushInterval)
 				} else {
 					if !timer.Stop() {
 						<-timer.C
 					}
-					timer.Reset(interval)
+					timer.Reset(flushInterval)
 				}
 			case <-stopCh:
 				if timer != nil {
@@ -235,14 +235,14 @@ func (r *JSONRegistry) StartFlush(interval time.Duration) {
 
 // SetFlushInterval configures the flush interval for the next Start call only.
 // It does not restart flushing if Start has already run.
-func (r *JSONRegistry) SetFlushInterval(interval time.Duration) {
+func (r *JSONRegistry) SetFlushInterval(flushInterval time.Duration) {
 	r.lock.Lock()
-	r.interval = interval
+	r.flushInterval = flushInterval
 	r.lock.Unlock()
 }
 
 func (r *JSONRegistry) notifyChange() {
-	if r.interval <= 0 {
+	if r.flushInterval <= 0 {
 		r.flush()
 		return
 	}
