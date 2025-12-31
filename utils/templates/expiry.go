@@ -15,132 +15,21 @@ type TemplateKey struct {
 	TemplateID  uint16
 }
 
-// ExpiringTemplateSystem tracks template update times and supports expiry.
-type ExpiringTemplateSystem struct {
-	wrapped        netflow.NetFlowTemplateSystem
-	lock           sync.Mutex
-	updated        map[TemplateKey]time.Time
-	ttl            time.Duration
-	now            func() time.Time
-	key            string
-	reg            *ExpiringRegistry
-	extendOnAccess bool
-}
-
-// NewExpiringTemplateSystem wraps a template system with expiry tracking.
-func NewExpiringTemplateSystem(wrapped netflow.NetFlowTemplateSystem, ttl time.Duration) *ExpiringTemplateSystem {
-	if wrapped == nil {
-		wrapped = netflow.CreateTemplateSystem()
-	}
-	return &ExpiringTemplateSystem{
-		wrapped: wrapped,
-		updated: make(map[TemplateKey]time.Time),
-		ttl:     ttl,
-		now:     time.Now,
-	}
-}
-
-// AddTemplate records template update time and forwards to the wrapped system.
-func (s *ExpiringTemplateSystem) AddTemplate(version uint16, obsDomainId uint32, templateId uint16, template interface{}) (netflow.TemplateStatus, error) {
-	update, err := s.wrapped.AddTemplate(version, obsDomainId, templateId, template)
-	if err != nil {
-		return update, err
-	}
-	s.lock.Lock()
-	s.updated[TemplateKey{Version: version, ObsDomainID: obsDomainId, TemplateID: templateId}] = s.now()
-	s.lock.Unlock()
-	if s.reg != nil {
-		if update == netflow.TemplateAdded {
-			s.reg.increment(s.key)
-		}
-	}
-	return update, nil
-}
-
-// SetExtendOnAccess toggles whether accesses refresh the template's expiry time.
-func (s *ExpiringTemplateSystem) SetExtendOnAccess(enable bool) {
-	s.lock.Lock()
-	s.extendOnAccess = enable
-	s.lock.Unlock()
-}
-
-// GetTemplate forwards template lookup to the wrapped system.
-func (s *ExpiringTemplateSystem) GetTemplate(version uint16, obsDomainId uint32, templateId uint16) (interface{}, error) {
-	template, err := s.wrapped.GetTemplate(version, obsDomainId, templateId)
-	if err != nil {
-		return template, err
-	}
-	s.lock.Lock()
-	if s.extendOnAccess {
-		s.updated[TemplateKey{Version: version, ObsDomainID: obsDomainId, TemplateID: templateId}] = s.now()
-	}
-	s.lock.Unlock()
-	return template, nil
-}
-
-// RemoveTemplate removes a template and its tracking entry.
-func (s *ExpiringTemplateSystem) RemoveTemplate(version uint16, obsDomainId uint32, templateId uint16) (interface{}, bool, error) {
-	template, removed, err := s.wrapped.RemoveTemplate(version, obsDomainId, templateId)
-	if removed {
-		s.lock.Lock()
-		delete(s.updated, TemplateKey{Version: version, ObsDomainID: obsDomainId, TemplateID: templateId})
-		s.lock.Unlock()
-		if s.reg != nil {
-			s.reg.decrement(s.key)
-		}
-	}
-	return template, removed, err
-}
-
-// GetTemplates returns all templates from the wrapped system.
-func (s *ExpiringTemplateSystem) GetTemplates() netflow.FlowBaseTemplateSet {
-	return s.wrapped.GetTemplates()
-}
-
-// ExpireBefore removes templates last updated before the cutoff.
-func (s *ExpiringTemplateSystem) ExpireBefore(cutoff time.Time) int {
-	var expired []TemplateKey
-
-	s.lock.Lock()
-	for key, updated := range s.updated {
-		if updated.Before(cutoff) {
-			expired = append(expired, key)
-		}
-	}
-	s.lock.Unlock()
-
-	removed := 0
-	for _, key := range expired {
-		if _, removedTemplate, err := s.RemoveTemplate(key.Version, key.ObsDomainID, key.TemplateID); err == nil && removedTemplate {
-			removed++
-		}
-	}
-	return removed
-}
-
-// ExpireStale removes templates older than the configured TTL.
-func (s *ExpiringTemplateSystem) ExpireStale() int {
-	if s.ttl <= 0 {
-		return 0
-	}
-	return s.ExpireBefore(s.now().Add(-s.ttl))
-}
-
 // ExpiringRegistry provides expiry controls for all router template systems.
 type ExpiringRegistry struct {
-	lock           sync.RWMutex                      // protects registry state and sweeper lifecycle fields
-	wrapped        Registry                          // underlying registry to store templates
+	lock           sync.RWMutex                       // protects registry state and sweeper lifecycle fields
+	wrapped        Registry                           // underlying registry to store templates
 	systems        map[string]*ExpiringTemplateSystem // per-router template systems
-	counts         map[string]int                    // template counts per router
-	emptySince     map[string]time.Time              // timestamp when a router became empty
-	ttl            time.Duration                     // template TTL for expiry
-	now            func() time.Time                  // time source (overridable for tests)
-	extendOnAccess bool                              // refresh expiry on GetTemplate when true
-	sweepInterval  time.Duration                     // sweep interval used on Start
-	sweeperStop    chan struct{}                     // signals sweeper goroutine to stop
-	sweeperDone    chan struct{}                     // closed when sweeper goroutine exits
-	closeOnce      sync.Once                         // guards Close
-	startOnce      sync.Once                         // guards Start
+	counts         map[string]int                     // template counts per router
+	emptySince     map[string]time.Time               // timestamp when a router became empty
+	ttl            time.Duration                      // template TTL for expiry
+	now            func() time.Time                   // time source (overridable for tests)
+	extendOnAccess bool                               // refresh expiry on GetTemplate when true
+	sweepInterval  time.Duration                      // sweep interval used on Start
+	sweeperStop    chan struct{}                      // signals sweeper goroutine to stop
+	sweeperDone    chan struct{}                      // closed when sweeper goroutine exits
+	closeOnce      sync.Once                          // guards Close
+	startOnce      sync.Once                          // guards Start
 }
 
 // NewExpiringRegistry wraps a registry with expiry tracking.
@@ -392,4 +281,115 @@ func (r *ExpiringRegistry) RemoveSystem(key string) {
 	delete(r.emptySince, key)
 	r.lock.Unlock()
 	r.wrapped.RemoveSystem(key)
+}
+
+// ExpiringTemplateSystem tracks template update times and supports expiry.
+type ExpiringTemplateSystem struct {
+	wrapped        netflow.NetFlowTemplateSystem
+	lock           sync.Mutex
+	updated        map[TemplateKey]time.Time
+	ttl            time.Duration
+	now            func() time.Time
+	key            string
+	reg            *ExpiringRegistry
+	extendOnAccess bool
+}
+
+// NewExpiringTemplateSystem wraps a template system with expiry tracking.
+func NewExpiringTemplateSystem(wrapped netflow.NetFlowTemplateSystem, ttl time.Duration) *ExpiringTemplateSystem {
+	if wrapped == nil {
+		wrapped = netflow.CreateTemplateSystem()
+	}
+	return &ExpiringTemplateSystem{
+		wrapped: wrapped,
+		updated: make(map[TemplateKey]time.Time),
+		ttl:     ttl,
+		now:     time.Now,
+	}
+}
+
+// AddTemplate records template update time and forwards to the wrapped system.
+func (s *ExpiringTemplateSystem) AddTemplate(version uint16, obsDomainId uint32, templateId uint16, template interface{}) (netflow.TemplateStatus, error) {
+	update, err := s.wrapped.AddTemplate(version, obsDomainId, templateId, template)
+	if err != nil {
+		return update, err
+	}
+	s.lock.Lock()
+	s.updated[TemplateKey{Version: version, ObsDomainID: obsDomainId, TemplateID: templateId}] = s.now()
+	s.lock.Unlock()
+	if s.reg != nil {
+		if update == netflow.TemplateAdded {
+			s.reg.increment(s.key)
+		}
+	}
+	return update, nil
+}
+
+// SetExtendOnAccess toggles whether accesses refresh the template's expiry time.
+func (s *ExpiringTemplateSystem) SetExtendOnAccess(enable bool) {
+	s.lock.Lock()
+	s.extendOnAccess = enable
+	s.lock.Unlock()
+}
+
+// GetTemplate forwards template lookup to the wrapped system.
+func (s *ExpiringTemplateSystem) GetTemplate(version uint16, obsDomainId uint32, templateId uint16) (interface{}, error) {
+	template, err := s.wrapped.GetTemplate(version, obsDomainId, templateId)
+	if err != nil {
+		return template, err
+	}
+	s.lock.Lock()
+	if s.extendOnAccess {
+		s.updated[TemplateKey{Version: version, ObsDomainID: obsDomainId, TemplateID: templateId}] = s.now()
+	}
+	s.lock.Unlock()
+	return template, nil
+}
+
+// RemoveTemplate removes a template and its tracking entry.
+func (s *ExpiringTemplateSystem) RemoveTemplate(version uint16, obsDomainId uint32, templateId uint16) (interface{}, bool, error) {
+	template, removed, err := s.wrapped.RemoveTemplate(version, obsDomainId, templateId)
+	if removed {
+		s.lock.Lock()
+		delete(s.updated, TemplateKey{Version: version, ObsDomainID: obsDomainId, TemplateID: templateId})
+		s.lock.Unlock()
+		if s.reg != nil {
+			s.reg.decrement(s.key)
+		}
+	}
+	return template, removed, err
+}
+
+// GetTemplates returns all templates from the wrapped system.
+func (s *ExpiringTemplateSystem) GetTemplates() netflow.FlowBaseTemplateSet {
+	return s.wrapped.GetTemplates()
+}
+
+// ExpireBefore removes templates last updated before the cutoff.
+func (s *ExpiringTemplateSystem) ExpireBefore(cutoff time.Time) int {
+	var expired []TemplateKey
+
+	s.lock.Lock()
+	for key, updated := range s.updated {
+		if updated.Before(cutoff) {
+			expired = append(expired, key)
+		}
+	}
+	s.lock.Unlock()
+
+	removed := 0
+	for _, key := range expired {
+		if _, removedTemplate, err := s.RemoveTemplate(key.Version, key.ObsDomainID, key.TemplateID); err == nil && removedTemplate {
+			removed++
+		}
+	}
+	return removed
+}
+
+// ExpireStale removes templates older than the configured TTL.
+func (s *ExpiringTemplateSystem) ExpireStale() int {
+	if s.ttl <= 0 {
+		return 0
+	}
+	return s.ExpireBefore(s.now().Add(-s.ttl))
 }

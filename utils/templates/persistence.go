@@ -18,18 +18,18 @@ const defaultJSONFlushInterval = 10 * time.Second
 
 // JSONRegistry persists templates to a JSON file with batched updates.
 type JSONRegistry struct {
-	lock         sync.RWMutex                         // protects registry state and flusher lifecycle fields
-	wrapped      Registry                             // underlying registry to store templates
-	systems      map[string]netflow.NetFlowTemplateSystem // per-router template systems
-	path         string                               // JSON output path
-	interval     time.Duration                        // flush interval used on Start
-	changeCh     chan struct{}                        // signals pending changes for batching
-	flusherStop  chan struct{}                        // signals flusher goroutine to stop
-	flusherDone  chan struct{}                        // closed when flusher goroutine exits
-	flushLock    sync.Mutex                           // serializes flushes (timer, immediate, Close)
-	flushHook    func()                               // test hook invoked before writing JSON
-	closeOnce    sync.Once                            // guards Close
-	startOnce    sync.Once                            // guards Start
+	lock        sync.RWMutex                             // protects registry state and flusher lifecycle fields
+	wrapped     Registry                                 // underlying registry to store templates
+	systems     map[string]netflow.NetFlowTemplateSystem // per-router template systems
+	path        string                                   // JSON output path
+	interval    time.Duration                            // flush interval used on Start
+	changeCh    chan struct{}                            // signals pending changes for batching
+	flusherStop chan struct{}                            // signals flusher goroutine to stop
+	flusherDone chan struct{}                            // closed when flusher goroutine exits
+	flushLock   sync.Mutex                               // serializes flushes (timer, immediate, Close)
+	flushHook   func()                                   // test hook invoked before writing JSON
+	closeOnce   sync.Once                                // guards Close
+	startOnce   sync.Once                                // guards Start
 }
 
 // NewJSONRegistry wraps a registry and persists templates to a JSON file.
