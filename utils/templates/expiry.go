@@ -308,10 +308,13 @@ func (r *ExpiringRegistry) ExpireBefore(cutoff time.Time) int {
 
 // ExpireStale removes templates older than the configured TTL across all routers.
 func (r *ExpiringRegistry) ExpireStale() int {
-	if r.ttl <= 0 {
-		return 0
+	if r.ttl > 0 {
+		return r.ExpireBefore(r.now().Add(-r.ttl))
 	}
-	return r.ExpireBefore(r.now().Add(-r.ttl))
+	if r.emptyTTL >= 0 {
+		r.pruneEmptyBefore(r.now().Add(-r.emptyTTL))
+	}
+	return 0
 }
 
 // StartSweeper begins periodic expiry using the configured TTL.

@@ -38,6 +38,7 @@ Expiration and loading should be handled at the top-level wrapper.
 * Expiry wrapper (`utils/templates.ExpiringTemplateSystem` / `ExpiringRegistry`)
   * Tracks template update timestamps and expires stale templates on a TTL.
   * Maintains per-router counts in the registry and prunes empty routers (including empty systems that never received templates).
+  * Used as the top-level registry by default; a TTL of 0 disables template expiry but still allows empty-system cleanup.
 * Persistence wrapper (`utils/templates.JSONRegistry` / `jsonPersistingTemplateSystem`)
   * Persists all templates to a JSON file, batching writes.
   * Uses a pruning wrapper around the base system to maintain counts and delete empty routers.

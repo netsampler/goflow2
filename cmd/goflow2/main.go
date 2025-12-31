@@ -305,11 +305,9 @@ func main() {
 			netFlowRegistry = templates.NewJSONRegistry(*TemplatesJSONPath, *TemplatesJSONInterval, netFlowRegistry)
 		}
 		netFlowRegistry = metrics.NewPromTemplateRegistry(netFlowRegistry)
-		if *TemplatesTTL > 0 {
-			expiring := templates.NewExpiringRegistry(netFlowRegistry, *TemplatesTTL)
-			expiring.SetExtendOnAccess(*TemplatesExtendOnAccess)
-			netFlowRegistry = expiring
-		}
+		expiring := templates.NewExpiringRegistry(netFlowRegistry, *TemplatesTTL)
+		expiring.SetExtendOnAccess(*TemplatesExtendOnAccess)
+		netFlowRegistry = expiring
 		if *TemplatesJSONPath != "" {
 			if err := templates.PreloadJSONTemplates(*TemplatesJSONPath, netFlowRegistry); err != nil {
 				logger.Warn("error preloading templates JSON", slog.String("error", err.Error()))
