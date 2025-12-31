@@ -346,12 +346,7 @@ func parseTemplateKey(key string) (uint16, uint32, uint16, error) {
 		}
 		return uint16(version), uint32(obsDomainId), uint16(templateId), nil
 	}
-	keyValue, err := strconv.ParseUint(key, 10, 64)
-	if err != nil {
-		return 0, 0, 0, err
-	}
-	version, obsDomainId, templateId := decodeTemplateKey(keyValue)
-	return version, obsDomainId, templateId, nil
+	return 0, 0, 0, fmt.Errorf("expected version/obs-domain/template-id")
 }
 
 func decodeTemplatePayload(version uint16, payload json.RawMessage) (interface{}, error) {
