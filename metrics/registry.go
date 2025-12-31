@@ -74,6 +74,11 @@ func (r *PromTemplateRegistry) Close() {
 	r.wrapped.Close()
 }
 
+// Start forwards start to the wrapped registry.
+func (r *PromTemplateRegistry) Start() {
+	r.wrapped.Start()
+}
+
 // RemoveSystem deletes a router entry if present.
 func (r *PromTemplateRegistry) RemoveSystem(key string) {
 	r.lock.Lock()

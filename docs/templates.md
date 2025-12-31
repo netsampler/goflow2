@@ -10,7 +10,7 @@ and guidance for adding a new persistence layer (e.g., Redis, S3).
   * Operations: add/get/remove templates, fetch all templates.
 * Registry: maps a router/source key to a template system.
   * Interface: `utils/templates.Registry`
-  * Responsibilities: create per-router systems, enumerate templates across routers, close resources.
+  * Responsibilities: create per-router systems, enumerate templates across routers, start background work, close resources.
 
 The decoder is not aware of the "router" and uses the template system.
 The pipe system (handles packet processing) uses the registry to provide the decoder with the correct template system.
@@ -41,7 +41,7 @@ Expiration and loading should be handled at the top-level wrapper.
   * Used as the top-level registry by default; a TTL of 0 disables template expiry but still allows empty-system cleanup.
 * Persistence wrapper (`utils/templates.JSONRegistry` / `jsonPersistingTemplateSystem`)
   * Persists all templates to a JSON file, batching writes.
-  * Uses a pruning wrapper around the base system to maintain counts and delete empty routers.
+  * Starts a background flush loop via `Start()`.
 * Metrics wrapper (`metrics.PromTemplateSystem` / `PromTemplateRegistry`)
   * Records Prometheus metrics on add/remove, delegates storage to wrapped system.
 
@@ -66,4 +66,4 @@ Expiration and loading should be handled at the top-level wrapper.
   * Use `GetAll()` or `GetTemplates()` to snapshot templates for persistence.
   * Ensure your persistence layer handles concurrent updates (lock or batch as needed).
 * Load order:
-  * If you preload templates, do it before starting write-behind workers, so chains can initialize in order.
+  * If you preload templates, do it before calling `Start()`, so chains can initialize in order.

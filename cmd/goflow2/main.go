@@ -313,6 +313,7 @@ func main() {
 				logger.Warn("error preloading templates JSON", slog.String("error", err.Error()))
 			}
 		}
+		netFlowRegistry.Start()
 		cfgPipe := &utils.PipeConfig{
 			Format:          formatter,
 			Transport:       transporter,

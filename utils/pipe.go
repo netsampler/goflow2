@@ -77,6 +77,7 @@ func (p *flowpipe) parseConfig(cfg *PipeConfig) {
 	} else {
 		p.netFlowRegistry = templates.NewInMemoryRegistry(nil)
 	}
+	p.netFlowRegistry.Start()
 	expiring, ok := p.netFlowRegistry.(*templates.ExpiringRegistry)
 	if !ok {
 		expiring = templates.NewExpiringRegistry(p.netFlowRegistry, p.templatesTTL)

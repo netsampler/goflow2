@@ -12,6 +12,7 @@ type Registry interface {
 	GetSystem(key string) netflow.NetFlowTemplateSystem
 	GetAll() map[string]netflow.FlowBaseTemplateSet
 	RemoveSystem(key string)
+	Start()
 	Close()
 }
 
@@ -74,4 +75,8 @@ func (r *InMemoryRegistry) RemoveSystem(key string) {
 	r.lock.Lock()
 	delete(r.systems, key)
 	r.lock.Unlock()
+}
+
+// Start is a no-op for the in-memory registry.
+func (r *InMemoryRegistry) Start() {
 }

@@ -136,6 +136,7 @@ type ExpiringRegistry struct {
 	ttl            time.Duration
 	now            func() time.Time
 	extendOnAccess bool
+	sweepInterval  time.Duration
 	sweeperLock    sync.Mutex
 	sweeperStop    chan struct{}
 	sweeperDone    chan struct{}
@@ -315,6 +316,7 @@ func (r *ExpiringRegistry) StartSweeper(interval time.Duration) {
 	}
 
 	r.sweeperLock.Lock()
+	r.sweepInterval = interval
 	if r.sweeperStop != nil {
 		r.sweeperLock.Unlock()
 		return
@@ -359,6 +361,14 @@ func (r *ExpiringRegistry) Close() {
 		<-done
 		r.wrapped.Close()
 	})
+}
+
+// Start forwards start to the wrapped registry.
+func (r *ExpiringRegistry) Start() {
+	r.wrapped.Start()
+	if r.sweepInterval > 0 {
+		r.StartSweeper(r.sweepInterval)
+	}
 }
 
 // RemoveSystem deletes a router entry if present.

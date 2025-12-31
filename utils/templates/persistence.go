@@ -27,6 +27,7 @@ type JSONRegistry struct {
 	flushLock sync.Mutex
 	flushHook func()
 	closeOnce sync.Once
+	startOnce sync.Once
 }
 
 // NewJSONRegistry wraps a registry and persists templates to a JSON file.
@@ -44,7 +45,7 @@ func NewJSONRegistry(path string, interval time.Duration, wrapped Registry) *JSO
 		stopCh:   make(chan struct{}),
 		doneCh:   make(chan struct{}),
 	}
-	r.start()
+	r.Start()
 	return r
 }
 
@@ -162,41 +163,45 @@ func (r *JSONRegistry) Close() {
 	})
 }
 
-func (r *JSONRegistry) start() {
-	go func() {
-		var timer *time.Timer
-		defer close(r.doneCh)
-		for {
-			select {
-			case <-r.changeCh:
-				if r.interval <= 0 {
-					r.flush()
-					continue
-				}
-				if timer == nil {
-					timer = time.NewTimer(r.interval)
-				} else {
-					if !timer.Stop() {
-						<-timer.C
+// Start begins background flush processing.
+func (r *JSONRegistry) Start() {
+	r.startOnce.Do(func() {
+		r.wrapped.Start()
+		go func() {
+			var timer *time.Timer
+			defer close(r.doneCh)
+			for {
+				select {
+				case <-r.changeCh:
+					if r.interval <= 0 {
+						r.flush()
+						continue
 					}
-					timer.Reset(r.interval)
+					if timer == nil {
+						timer = time.NewTimer(r.interval)
+					} else {
+						if !timer.Stop() {
+							<-timer.C
+						}
+						timer.Reset(r.interval)
+					}
+				case <-r.stopCh:
+					if timer != nil {
+						timer.Stop()
+					}
+					return
+				case <-func() <-chan time.Time {
+					if timer != nil {
+						return timer.C
+					}
+					return nil
+				}():
+					timer = nil
+					r.flush()
 				}
-			case <-r.stopCh:
-				if timer != nil {
-					timer.Stop()
-				}
-				return
-			case <-func() <-chan time.Time {
-				if timer != nil {
-					return timer.C
-				}
-				return nil
-			}():
-				timer = nil
-				r.flush()
 			}
-		}
-	}()
+		}()
+	})
 }
 
 func (r *JSONRegistry) notifyChange() {
