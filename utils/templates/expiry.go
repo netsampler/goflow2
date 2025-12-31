@@ -149,9 +149,9 @@ func NewExpiringRegistry(wrapped Registry, ttl time.Duration) *ExpiringRegistry 
 		wrapped = NewInMemoryRegistry(nil)
 	}
 	return &ExpiringRegistry{
-		wrapped: wrapped,
-		systems: make(map[string]*ExpiringTemplateSystem),
-		counts:  make(map[string]int),
+		wrapped:    wrapped,
+		systems:    make(map[string]*ExpiringTemplateSystem),
+		counts:     make(map[string]int),
 		emptySince: make(map[string]time.Time),
 		ttl:        ttl,
 		now:        time.Now,
