@@ -229,6 +229,8 @@ func (r *JSONRegistry) flush() {
 	_ = writeAtomic(r.path, data, 0o644)
 }
 
+// persistingTemplateSystem wraps a template system to trigger JSONRegistry flushes
+// when templates change, while delegating storage and lookups to the wrapped system.
 type persistingTemplateSystem struct {
 	key     string
 	parent  *JSONRegistry
@@ -267,6 +269,7 @@ func (s *persistingTemplateSystem) GetTemplates() netflow.FlowBaseTemplateSet {
 	return s.wrapped.GetTemplates()
 }
 
+// writeAtomic writes data to a temp file, fsyncs it, then renames to avoid partial writes.
 func writeAtomic(path string, data []byte, perm os.FileMode) error {
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
