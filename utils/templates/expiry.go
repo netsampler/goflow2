@@ -174,6 +174,7 @@ func (r *ExpiringRegistry) GetSystem(key string) netflow.NetFlowTemplateSystem {
 	if ok {
 		r.lock.Lock()
 		if r.counts[key] == 0 {
+			// Empty-system tracking does not follow extendOnAccess behavior.
 			r.emptySince[key] = r.now()
 		}
 		r.lock.Unlock()
