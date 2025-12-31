@@ -47,7 +47,7 @@ Expiration and loading should be handled at the top-level wrapper.
 * Metrics wrapper (`metrics.PromTemplateSystem` / `PromTemplateRegistry`)
   * Records Prometheus metrics on add/remove, delegates storage to wrapped system.
 
-## Adding a new persistence layer (e.g., Redis)
+## Adding a new persistence layer
 
 ### Wrap the registry (recommended)
 
@@ -69,4 +69,3 @@ Expiration and loading should be handled at the top-level wrapper.
   * Ensure your persistence layer handles concurrent updates (lock or batch as needed).
 * Load order:
   * If you preload templates, do it before starting write-behind workers, so chains can initialize in order.
-  * Loading should happen at the top-level wrapper (like JSON loading going through the expiring registry), not in inner wrappers.
