@@ -342,7 +342,8 @@ func (r *ExpiringRegistry) StartSweeper(interval time.Duration) {
 	}()
 }
 
-// SetSweepInterval configures the sweeper interval for the next Start call.
+// SetSweepInterval configures the sweeper interval for the next Start call only.
+// It does not restart the sweeper if Start has already run.
 func (r *ExpiringRegistry) SetSweepInterval(interval time.Duration) {
 	r.lock.Lock()
 	r.sweepInterval = interval
