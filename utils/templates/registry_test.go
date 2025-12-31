@@ -143,10 +143,11 @@ func TestPreloadJSONTemplates(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "templates.json")
 
-	key := buildTemplateKey(9, 1, 256)
+	keyString := buildTemplateKeyString(9, 1, 256)
+	keyUint := buildTemplateKeyUint(9, 1, 256)
 	payload := map[string]map[string]netflow.TemplateRecord{
 		"router1": {
-			strconv.FormatUint(key, 10): {TemplateId: 256},
+			keyString: {TemplateId: 256},
 		},
 	}
 	data, err := json.Marshal(payload)
@@ -167,9 +168,9 @@ func TestPreloadJSONTemplates(t *testing.T) {
 	if !ok {
 		t.Fatal("expected router1 templates to be loaded")
 	}
-	entry, ok := templates[key]
+	entry, ok := templates[keyUint]
 	if !ok {
-		t.Fatalf("expected template %d to be loaded", key)
+		t.Fatalf("expected template %d to be loaded", keyUint)
 	}
 	record, ok := entry.(netflow.TemplateRecord)
 	if !ok {
@@ -196,6 +197,12 @@ func readRegistryFile(t *testing.T, path string) map[string]map[string]json.RawM
 	return raw
 }
 
-func buildTemplateKey(version uint16, obsDomainId uint32, templateId uint16) uint64 {
+func buildTemplateKeyString(version uint16, obsDomainId uint32, templateId uint16) string {
+	return strconv.FormatUint(uint64(version), 10) + "/" +
+		strconv.FormatUint(uint64(obsDomainId), 10) + "/" +
+		strconv.FormatUint(uint64(templateId), 10)
+}
+
+func buildTemplateKeyUint(version uint16, obsDomainId uint32, templateId uint16) uint64 {
 	return (uint64(version) << 48) | (uint64(obsDomainId) << 16) | uint64(templateId)
 }

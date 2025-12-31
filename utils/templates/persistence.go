@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -80,11 +81,10 @@ func PreloadJSONTemplates(path string, registry Registry) error {
 
 	for routerKey, templates := range raw {
 		for keyStr, payload := range templates {
-			key, err := strconv.ParseUint(keyStr, 10, 64)
+			version, obsDomainId, templateId, err := parseTemplateKey(keyStr)
 			if err != nil {
 				return fmt.Errorf("invalid template key %q: %w", keyStr, err)
 			}
-			version, obsDomainId, templateId := decodeTemplateKey(key)
 			template, err := decodeTemplatePayload(version, payload)
 			if err != nil {
 				return fmt.Errorf("invalid template payload for %q/%s: %w", routerKey, keyStr, err)
@@ -222,12 +222,17 @@ func (r *JSONRegistry) flush() {
 	}
 
 	snapshot := r.wrapped.GetAll()
-	filtered := make(map[string]netflow.FlowBaseTemplateSet, len(snapshot))
+	filtered := make(map[string]map[string]interface{}, len(snapshot))
 	for key, templates := range snapshot {
 		if len(templates) == 0 {
 			continue
 		}
-		filtered[key] = templates
+		encoded := make(map[string]interface{}, len(templates))
+		for templateKey, template := range templates {
+			version, obsDomainId, templateId := decodeTemplateKey(templateKey)
+			encoded[formatTemplateKey(version, obsDomainId, templateId)] = template
+		}
+		filtered[key] = encoded
 	}
 	data, err := json.Marshal(filtered)
 	if err != nil {
@@ -315,6 +320,38 @@ func decodeTemplateKey(key uint64) (uint16, uint32, uint16) {
 	obsDomainId := uint32((key >> 16) & 0xFFFFFFFF)
 	templateId := uint16(key & 0xFFFF)
 	return version, obsDomainId, templateId
+}
+
+func formatTemplateKey(version uint16, obsDomainId uint32, templateId uint16) string {
+	return fmt.Sprintf("%d/%d/%d", version, obsDomainId, templateId)
+}
+
+func parseTemplateKey(key string) (uint16, uint32, uint16, error) {
+	if strings.Contains(key, "/") {
+		parts := strings.Split(key, "/")
+		if len(parts) != 3 {
+			return 0, 0, 0, fmt.Errorf("expected version/obs-domain/template-id")
+		}
+		version, err := strconv.ParseUint(parts[0], 10, 16)
+		if err != nil {
+			return 0, 0, 0, err
+		}
+		obsDomainId, err := strconv.ParseUint(parts[1], 10, 32)
+		if err != nil {
+			return 0, 0, 0, err
+		}
+		templateId, err := strconv.ParseUint(parts[2], 10, 16)
+		if err != nil {
+			return 0, 0, 0, err
+		}
+		return uint16(version), uint32(obsDomainId), uint16(templateId), nil
+	}
+	keyValue, err := strconv.ParseUint(key, 10, 64)
+	if err != nil {
+		return 0, 0, 0, err
+	}
+	version, obsDomainId, templateId := decodeTemplateKey(keyValue)
+	return version, obsDomainId, templateId, nil
 }
 
 func decodeTemplatePayload(version uint16, payload json.RawMessage) (interface{}, error) {

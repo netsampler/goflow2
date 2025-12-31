@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
-	"strconv"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -125,8 +124,8 @@ func BenchmarkChainedRegistryPreloadJSON(b *testing.B) {
 		"router1": {},
 	}
 	for n := 0; n < templates; n++ {
-		key := buildTemplateKey(9, 1, uint16(n))
-		payload["router1"][strconv.FormatUint(key, 10)] = netflow.TemplateRecord{TemplateId: uint16(n)}
+		key := buildTemplateKeyString(9, 1, uint16(n))
+		payload["router1"][key] = netflow.TemplateRecord{TemplateId: uint16(n)}
 	}
 	data, err := json.Marshal(payload)
 	if err != nil {
