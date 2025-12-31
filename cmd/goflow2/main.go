@@ -301,16 +301,23 @@ func main() {
 		}
 
 		netFlowRegistry := templates.Registry(templates.NewInMemoryRegistry(nil))
-		var jsonRegistry *templates.JSONRegistry
+
+		// wrap the memory registry with the JSON
 		if *TemplatesJSONPath != "" {
-			jsonRegistry = templates.NewJSONRegistry(*TemplatesJSONPath, netFlowRegistry)
+			jsonRegistry := templates.NewJSONRegistry(*TemplatesJSONPath, netFlowRegistry)
 			jsonRegistry.SetFlushInterval(*TemplatesJSONInterval)
 			netFlowRegistry = jsonRegistry
 		}
+
+		// wrap the previous registries with metrics
 		netFlowRegistry = metrics.NewPromTemplateRegistry(netFlowRegistry)
+
+		// wrap the previous registries with expiration/pruning control
 		expiring := templates.NewExpiringRegistry(netFlowRegistry, *TemplatesTTL)
 		expiring.SetExtendOnAccess(*TemplatesExtendOnAccess)
 		netFlowRegistry = expiring
+
+		// preload using a JSON file
 		if *TemplatesJSONPath != "" {
 			if err := templates.PreloadJSONTemplates(*TemplatesJSONPath, netFlowRegistry); err != nil {
 				logger.Warn("error preloading templates JSON", slog.String("error", err.Error()))
@@ -320,7 +327,7 @@ func main() {
 			Format:          formatter,
 			Transport:       transporter,
 			Producer:        flowProducer,
-			NetFlowRegistry: netFlowRegistry, // wrap template system to get Prometheus info
+			NetFlowRegistry: netFlowRegistry, // add the wrapped registries
 			TemplatesTTL:    *TemplatesTTL,
 			SweepInterval:   *TemplatesSweepInterval,
 			ExtendOnAccess:  *TemplatesExtendOnAccess,
