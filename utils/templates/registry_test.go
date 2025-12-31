@@ -67,16 +67,16 @@ func TestExpiringRegistryExpiresAndPrunes(t *testing.T) {
 	}
 
 	now = start.Add(2 * time.Minute)
-	if removed := registry.ExpireStale(); removed != 1 {
-		t.Fatalf("expected 1 template expired, got %d", removed)
+	if removed, pruned := registry.ExpireStale(); removed != 1 || pruned != 0 {
+		t.Fatalf("expected 1 template expired and 0 systems pruned, got %d/%d", removed, pruned)
 	}
 	if got := registry.GetAll(); len(got) != 1 {
 		t.Fatalf("expected system retained after template expiry, got %d", len(got))
 	}
 
 	now = start.Add(3*time.Minute + time.Second)
-	if removed := registry.ExpireStale(); removed != 0 {
-		t.Fatalf("expected no templates expired, got %d", removed)
+	if removed, pruned := registry.ExpireStale(); removed != 0 || pruned != 1 {
+		t.Fatalf("expected no templates expired and 1 system pruned, got %d/%d", removed, pruned)
 	}
 	if got := registry.GetAll(); len(got) != 0 {
 		t.Fatalf("expected empty system pruned after TTL, got %d", len(got))
@@ -103,8 +103,8 @@ func TestExpiringRegistryExtendsOnAccess(t *testing.T) {
 	}
 
 	now = start.Add(90 * time.Second)
-	if removed := registry.ExpireStale(); removed != 0 {
-		t.Fatalf("expected no templates expired, got %d", removed)
+	if removed, pruned := registry.ExpireStale(); removed != 0 || pruned != 0 {
+		t.Fatalf("expected no templates expired and 0 systems pruned, got %d/%d", removed, pruned)
 	}
 	if got := registry.GetAll(); len(got) != 1 {
 		t.Fatalf("expected templates retained after access, got %d", len(got))

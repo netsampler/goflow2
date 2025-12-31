@@ -134,7 +134,6 @@ type ExpiringRegistry struct {
 	counts         map[string]int
 	emptySince     map[string]time.Time
 	ttl            time.Duration
-	emptyTTL       time.Duration
 	now            func() time.Time
 	extendOnAccess bool
 	sweeperLock    sync.Mutex
@@ -153,9 +152,8 @@ func NewExpiringRegistry(wrapped Registry, ttl time.Duration) *ExpiringRegistry 
 		systems: make(map[string]*ExpiringTemplateSystem),
 		counts:  make(map[string]int),
 		emptySince: make(map[string]time.Time),
-		ttl:     ttl,
-		emptyTTL: ttl,
-		now:     time.Now,
+		ttl:        ttl,
+		now:        time.Now,
 	}
 }
 
@@ -167,7 +165,8 @@ func (r *ExpiringRegistry) GetSystem(key string) netflow.NetFlowTemplateSystem {
 	if ok {
 		r.lock.Lock()
 		if r.counts[key] == 0 {
-			// Empty-system tracking does not follow extendOnAccess behavior.
+			// Empty-system tracking does not follow extendOnAccess and refreshes on lookup,
+			// which helps avoid churn from repeated lookups of unknown packets.
 			r.emptySince[key] = r.now()
 		}
 		r.lock.Unlock()
@@ -252,7 +251,7 @@ func (r *ExpiringRegistry) decrement(key string) int {
 	return count
 }
 
-func (r *ExpiringRegistry) pruneEmptyBefore(cutoff time.Time) {
+func (r *ExpiringRegistry) pruneEmptyBefore(cutoff time.Time) int {
 	var keys []string
 	r.lock.Lock()
 	for key, since := range r.emptySince {
@@ -265,11 +264,12 @@ func (r *ExpiringRegistry) pruneEmptyBefore(cutoff time.Time) {
 	}
 	r.lock.Unlock()
 	if len(keys) == 0 {
-		return
+		return 0
 	}
 	for _, key := range keys {
 		r.wrapped.RemoveSystem(key)
 	}
+	return len(keys)
 }
 
 // ExpireBefore removes templates older than the cutoff across all routers.
@@ -294,22 +294,18 @@ func (r *ExpiringRegistry) ExpireBefore(cutoff time.Time) int {
 	for _, entry := range systems {
 		removed += entry.system.ExpireBefore(cutoff)
 	}
-	if r.emptyTTL > 0 {
-		r.pruneEmptyBefore(cutoff)
-	}
 	return removed
 }
 
-// ExpireStale removes templates older than the configured TTL across all routers.
-func (r *ExpiringRegistry) ExpireStale() int {
+// ExpireStale removes stale templates and prunes empty systems using the TTL.
+func (r *ExpiringRegistry) ExpireStale() (int, int) {
+	removed := 0
 	if r.ttl > 0 {
-		return r.ExpireBefore(r.now().Add(-r.ttl))
+		removed = r.ExpireBefore(r.now().Add(-r.ttl))
 	}
-	if r.emptyTTL >= 0 {
-		// When template expiry is disabled, still prune empty systems on sweeps.
-		r.pruneEmptyBefore(r.now().Add(-r.emptyTTL))
-	}
-	return 0
+	// When template expiry is disabled, still prune empty systems on sweeps.
+	pruned := r.pruneEmptyBefore(r.now().Add(-r.ttl))
+	return removed, pruned
 }
 
 // StartSweeper begins periodic expiry using the configured TTL.
