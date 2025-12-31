@@ -24,8 +24,8 @@ type JSONRegistry struct {
 	path      string
 	interval  time.Duration
 	changeCh  chan struct{}
-	stopCh    chan struct{}
-	doneCh    chan struct{}
+	flusherStop chan struct{}
+	flusherDone chan struct{}
 	flushLock sync.Mutex
 	flushHook func()
 	closeOnce sync.Once
@@ -156,16 +156,16 @@ func (r *JSONRegistry) GetAll() map[string]netflow.FlowBaseTemplateSet {
 func (r *JSONRegistry) Close() {
 	r.closeOnce.Do(func() {
 		r.lock.Lock()
-		if r.stopCh == nil {
+		if r.flusherStop == nil {
 			r.lock.Unlock()
 			r.flush()
 			r.wrapped.Close()
 			return
 		}
-		stop := r.stopCh
-		done := r.doneCh
-		r.stopCh = nil
-		r.doneCh = nil
+		stop := r.flusherStop
+		done := r.flusherDone
+		r.flusherStop = nil
+		r.flusherDone = nil
 		r.lock.Unlock()
 
 		close(stop)
@@ -191,14 +191,14 @@ func (r *JSONRegistry) StartFlush(interval time.Duration) {
 
 	r.lock.Lock()
 	r.interval = interval
-	if r.stopCh != nil {
+	if r.flusherStop != nil {
 		r.lock.Unlock()
 		return
 	}
-	r.stopCh = make(chan struct{})
-	r.doneCh = make(chan struct{})
-	stopCh := r.stopCh
-	doneCh := r.doneCh
+	r.flusherStop = make(chan struct{})
+	r.flusherDone = make(chan struct{})
+	stopCh := r.flusherStop
+	doneCh := r.flusherDone
 	r.lock.Unlock()
 
 	go func() {
