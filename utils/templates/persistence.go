@@ -232,7 +232,14 @@ func (r *JSONRegistry) flush() {
 	}
 
 	snapshot := r.wrapped.GetAll()
-	data, err := json.Marshal(snapshot)
+	filtered := make(map[string]netflow.FlowBaseTemplateSet, len(snapshot))
+	for key, templates := range snapshot {
+		if len(templates) == 0 {
+			continue
+		}
+		filtered[key] = templates
+	}
+	data, err := json.Marshal(filtered)
 	if err != nil {
 		return
 	}
