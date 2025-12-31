@@ -129,8 +129,8 @@ func (r *JSONRegistry) GetSystem(key string) netflow.NetFlowTemplateSystem {
 		},
 	}
 	pruningSystem.initCountFromTemplates()
-	// Wrap the base system with pruning (count + onEmpty), then persistence hooks.
-	system = &persistingTemplateSystem{
+	// Wrap the base system with pruning (count + onEmpty), then JSON persistence hooks.
+	system = &jsonPersistingTemplateSystem{
 		key:     key,
 		parent:  r,
 		wrapped: pruningSystem,
@@ -240,15 +240,15 @@ func (r *JSONRegistry) flush() {
 	_ = writeAtomic(r.path, data, 0o644)
 }
 
-// persistingTemplateSystem wraps a template system to trigger JSONRegistry flushes
+// jsonPersistingTemplateSystem wraps a template system to trigger JSONRegistry flushes
 // when templates change, while delegating storage and lookups to the wrapped system.
-type persistingTemplateSystem struct {
+type jsonPersistingTemplateSystem struct {
 	key     string
 	parent  *JSONRegistry
 	wrapped netflow.NetFlowTemplateSystem
 }
 
-func (s *persistingTemplateSystem) AddTemplate(version uint16, obsDomainId uint32, templateId uint16, template interface{}) (netflow.TemplateStatus, error) {
+func (s *jsonPersistingTemplateSystem) AddTemplate(version uint16, obsDomainId uint32, templateId uint16, template interface{}) (netflow.TemplateStatus, error) {
 	update, err := s.wrapped.AddTemplate(version, obsDomainId, templateId, template)
 	if err != nil {
 		return update, err
@@ -259,11 +259,11 @@ func (s *persistingTemplateSystem) AddTemplate(version uint16, obsDomainId uint3
 	return update, nil
 }
 
-func (s *persistingTemplateSystem) GetTemplate(version uint16, obsDomainId uint32, templateId uint16) (interface{}, error) {
+func (s *jsonPersistingTemplateSystem) GetTemplate(version uint16, obsDomainId uint32, templateId uint16) (interface{}, error) {
 	return s.wrapped.GetTemplate(version, obsDomainId, templateId)
 }
 
-func (s *persistingTemplateSystem) RemoveTemplate(version uint16, obsDomainId uint32, templateId uint16) (interface{}, bool, error) {
+func (s *jsonPersistingTemplateSystem) RemoveTemplate(version uint16, obsDomainId uint32, templateId uint16) (interface{}, bool, error) {
 	template, removed, err := s.wrapped.RemoveTemplate(version, obsDomainId, templateId)
 	if removed {
 		s.parent.notifyChange()
@@ -271,7 +271,7 @@ func (s *persistingTemplateSystem) RemoveTemplate(version uint16, obsDomainId ui
 	return template, removed, err
 }
 
-func (s *persistingTemplateSystem) GetTemplates() netflow.FlowBaseTemplateSet {
+func (s *jsonPersistingTemplateSystem) GetTemplates() netflow.FlowBaseTemplateSet {
 	return s.wrapped.GetTemplates()
 }
 
