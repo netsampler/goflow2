@@ -72,7 +72,7 @@ var (
 
 	TemplatePath            = flag.String("templates.path", "/templates", "NetFlow/IPFIX templates list")
 	TemplatesTTL            = flag.Duration("templates.ttl", 0, "NetFlow/IPFIX templates TTL (0 disables expiry)")
-	TemplatesSweepInterval  = flag.Duration("templates.sweep-interval", time.Minute, "NetFlow/IPFIX template sweep interval")
+	TemplatesSweepInterval  = flag.Duration("templates.sweep-interval", time.Minute, "NetFlow/IPFIX template sweep interval (expiry + empty cleanup)")
 	TemplatesExtendOnAccess = flag.Bool("templates.ttl.extend-on-access", false, "Extend template TTL on access")
 	TemplatesJSONPath       = flag.String("templates.json.path", "", "NetFlow/IPFIX templates JSON output path (empty disables persistence)")
 	TemplatesJSONInterval   = flag.Duration("templates.json.interval", time.Second*5, "NetFlow/IPFIX templates JSON write interval")

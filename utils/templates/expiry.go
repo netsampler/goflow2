@@ -15,13 +15,6 @@ type TemplateKey struct {
 	TemplateID  uint16
 }
 
-// ExpirableSystem adds expiry controls to a template system.
-type ExpirableSystem interface {
-	netflow.NetFlowTemplateSystem
-	ExpireBefore(cutoff time.Time) int
-	ExpireStale() int
-}
-
 // ExpiringTemplateSystem tracks template update times and supports expiry.
 type ExpiringTemplateSystem struct {
 	wrapped        netflow.NetFlowTemplateSystem
@@ -313,6 +306,7 @@ func (r *ExpiringRegistry) ExpireStale() int {
 		return r.ExpireBefore(r.now().Add(-r.ttl))
 	}
 	if r.emptyTTL >= 0 {
+		// When template expiry is disabled, still prune empty systems on sweeps.
 		r.pruneEmptyBefore(r.now().Add(-r.emptyTTL))
 	}
 	return 0
