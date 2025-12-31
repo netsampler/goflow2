@@ -342,6 +342,13 @@ func (r *ExpiringRegistry) StartSweeper(interval time.Duration) {
 	}()
 }
 
+// SetSweepInterval configures the sweeper interval for the next Start call.
+func (r *ExpiringRegistry) SetSweepInterval(interval time.Duration) {
+	r.lock.Lock()
+	r.sweepInterval = interval
+	r.lock.Unlock()
+}
+
 // Close stops the sweeper goroutine if it is running.
 func (r *ExpiringRegistry) Close() {
 	r.closeOnce.Do(func() {
@@ -366,9 +373,12 @@ func (r *ExpiringRegistry) Close() {
 // Start forwards start to the wrapped registry.
 func (r *ExpiringRegistry) Start() {
 	r.startOnce.Do(func() {
+		r.lock.Lock()
+		interval := r.sweepInterval
+		r.lock.Unlock()
 		r.wrapped.Start()
-		if r.sweepInterval > 0 {
-			r.StartSweeper(r.sweepInterval)
+		if interval > 0 {
+			r.StartSweeper(interval)
 		}
 	})
 }

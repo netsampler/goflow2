@@ -77,16 +77,14 @@ func (p *flowpipe) parseConfig(cfg *PipeConfig) {
 	} else {
 		p.netFlowRegistry = templates.NewInMemoryRegistry(nil)
 	}
-	p.netFlowRegistry.Start()
 	expiring, ok := p.netFlowRegistry.(*templates.ExpiringRegistry)
 	if !ok {
 		expiring = templates.NewExpiringRegistry(p.netFlowRegistry, p.templatesTTL)
 		p.netFlowRegistry = expiring
 	}
 	expiring.SetExtendOnAccess(p.extendOnAccess)
-	if p.sweepInterval > 0 {
-		expiring.StartSweeper(p.sweepInterval)
-	}
+	expiring.SetSweepInterval(p.sweepInterval)
+	expiring.Start()
 
 }
 
