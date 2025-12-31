@@ -23,7 +23,7 @@ type InMemoryRegistry struct {
 
 type pruningTemplateSystem struct {
 	key     string
-	parent  *InMemoryRegistry
+	onEmpty func(key string)
 	wrapped netflow.NetFlowTemplateSystem
 	lock    sync.Mutex
 	count   int
@@ -58,10 +58,8 @@ func (s *pruningTemplateSystem) RemoveTemplate(version uint16, obsDomainId uint3
 			shouldPrune = true
 		}
 		s.lock.Unlock()
-		if shouldPrune {
-			s.parent.lock.Lock()
-			delete(s.parent.systems, s.key)
-			s.parent.lock.Unlock()
+		if shouldPrune && s.onEmpty != nil {
+			s.onEmpty(s.key)
 		}
 	}
 	return template, removed, err
@@ -69,6 +67,14 @@ func (s *pruningTemplateSystem) RemoveTemplate(version uint16, obsDomainId uint3
 
 func (s *pruningTemplateSystem) GetTemplates() netflow.FlowBaseTemplateSet {
 	return s.wrapped.GetTemplates()
+}
+
+func (s *pruningTemplateSystem) initCountFromTemplates() {
+	if snapshot := s.wrapped.GetTemplates(); len(snapshot) > 0 {
+		s.lock.Lock()
+		s.count = len(snapshot)
+		s.lock.Unlock()
+	}
 }
 
 // NewInMemoryRegistry creates a registry with an optional system generator.
@@ -93,14 +99,14 @@ func (r *InMemoryRegistry) GetSystem(key string) netflow.NetFlowTemplateSystem {
 
 	pruningSystem := &pruningTemplateSystem{
 		key:     key,
-		parent:  r,
 		wrapped: r.generator(key),
+		onEmpty: func(key string) {
+			r.lock.Lock()
+			delete(r.systems, key)
+			r.lock.Unlock()
+		},
 	}
-	if snapshot := pruningSystem.wrapped.GetTemplates(); len(snapshot) > 0 {
-		pruningSystem.lock.Lock()
-		pruningSystem.count = len(snapshot)
-		pruningSystem.lock.Unlock()
-	}
+	pruningSystem.initCountFromTemplates()
 	system = pruningSystem
 	r.lock.Lock()
 	if existing, ok := r.systems[key]; ok {

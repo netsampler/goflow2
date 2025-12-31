@@ -119,10 +119,21 @@ func (r *JSONRegistry) GetSystem(key string) netflow.NetFlowTemplateSystem {
 	}
 
 	wrapped := r.wrapped.GetSystem(key)
+	pruningSystem := &pruningTemplateSystem{
+		key:     key,
+		wrapped: wrapped,
+		onEmpty: func(key string) {
+			r.lock.Lock()
+			delete(r.systems, key)
+			r.lock.Unlock()
+		},
+	}
+	pruningSystem.initCountFromTemplates()
+	// Wrap the base system with pruning (count + onEmpty), then persistence hooks.
 	system = &persistingTemplateSystem{
 		key:     key,
 		parent:  r,
-		wrapped: wrapped,
+		wrapped: pruningSystem,
 	}
 
 	r.lock.Lock()
@@ -255,11 +266,6 @@ func (s *persistingTemplateSystem) GetTemplate(version uint16, obsDomainId uint3
 func (s *persistingTemplateSystem) RemoveTemplate(version uint16, obsDomainId uint32, templateId uint16) (interface{}, bool, error) {
 	template, removed, err := s.wrapped.RemoveTemplate(version, obsDomainId, templateId)
 	if removed {
-		if len(s.wrapped.GetTemplates()) == 0 {
-			s.parent.lock.Lock()
-			delete(s.parent.systems, s.key)
-			s.parent.lock.Unlock()
-		}
 		s.parent.notifyChange()
 	}
 	return template, removed, err
