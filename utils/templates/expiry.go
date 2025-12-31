@@ -128,19 +128,19 @@ func (s *ExpiringTemplateSystem) ExpireStale() int {
 
 // ExpiringRegistry provides expiry controls for all router template systems.
 type ExpiringRegistry struct {
-	lock           sync.RWMutex
-	wrapped        Registry
-	systems        map[string]*ExpiringTemplateSystem
-	counts         map[string]int
-	emptySince     map[string]time.Time
-	ttl            time.Duration
-	now            func() time.Time
-	extendOnAccess bool
-	sweepInterval  time.Duration
-	sweeperStop    chan struct{}
-	sweeperDone    chan struct{}
-	closeOnce      sync.Once
-	startOnce      sync.Once
+	lock           sync.RWMutex                      // protects registry state and sweeper lifecycle fields
+	wrapped        Registry                          // underlying registry to store templates
+	systems        map[string]*ExpiringTemplateSystem // per-router template systems
+	counts         map[string]int                    // template counts per router
+	emptySince     map[string]time.Time              // timestamp when a router became empty
+	ttl            time.Duration                     // template TTL for expiry
+	now            func() time.Time                  // time source (overridable for tests)
+	extendOnAccess bool                              // refresh expiry on GetTemplate when true
+	sweepInterval  time.Duration                     // sweep interval used on Start
+	sweeperStop    chan struct{}                     // signals sweeper goroutine to stop
+	sweeperDone    chan struct{}                     // closed when sweeper goroutine exits
+	closeOnce      sync.Once                         // guards Close
+	startOnce      sync.Once                         // guards Start
 }
 
 // NewExpiringRegistry wraps a registry with expiry tracking.
