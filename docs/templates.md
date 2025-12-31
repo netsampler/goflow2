@@ -35,12 +35,9 @@ Expiration and loading should be handled at the top-level wrapper.
 
 ## Common wrappers
 
-* Pruning wrapper (`utils/templates.pruningTemplateSystem`)
-  * Keeps a template count per router and triggers `onEmpty(key)` when the last template is removed.
-  * Used by `InMemoryRegistry` and `JSONRegistry` to drop empty router entries.
 * Expiry wrapper (`utils/templates.ExpiringTemplateSystem` / `ExpiringRegistry`)
   * Tracks template update timestamps and expires stale templates on a TTL.
-  * Maintains per-router counts in the registry and prunes empty routers.
+  * Maintains per-router counts in the registry and prunes empty routers (including empty systems that never received templates).
 * Persistence wrapper (`utils/templates.JSONRegistry` / `jsonPersistingTemplateSystem`)
   * Persists all templates to a JSON file, batching writes.
   * Uses a pruning wrapper around the base system to maintain counts and delete empty routers.
@@ -62,8 +59,8 @@ Expiration and loading should be handled at the top-level wrapper.
 ### Operational considerations
 
 * Pruning:
-  * If the registry needs to drop empty routers, wrap the base system with `pruningTemplateSystem` and provide `onEmpty(key)` to delete registry entries.
-  * Call `initCountFromTemplates()` to seed counts when the wrapped system already has templates.
+  * Empty router pruning is handled by the expiring registry using the same TTL rules.
+  * Inner registries/systems should not prune on their own; rely on `ExpiringRegistry` and its sweeper.
 * Snapshot consistency:
   * Use `GetAll()` or `GetTemplates()` to snapshot templates for persistence.
   * Ensure your persistence layer handles concurrent updates (lock or batch as needed).

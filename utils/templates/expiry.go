@@ -139,7 +139,9 @@ type ExpiringRegistry struct {
 	wrapped        Registry
 	systems        map[string]*ExpiringTemplateSystem
 	counts         map[string]int
+	emptySince     map[string]time.Time
 	ttl            time.Duration
+	emptyTTL       time.Duration
 	now            func() time.Time
 	extendOnAccess bool
 	sweeperLock    sync.Mutex
@@ -157,7 +159,9 @@ func NewExpiringRegistry(wrapped Registry, ttl time.Duration) *ExpiringRegistry 
 		wrapped: wrapped,
 		systems: make(map[string]*ExpiringTemplateSystem),
 		counts:  make(map[string]int),
+		emptySince: make(map[string]time.Time),
 		ttl:     ttl,
+		emptyTTL: ttl,
 		now:     time.Now,
 	}
 }
@@ -168,6 +172,11 @@ func (r *ExpiringRegistry) GetSystem(key string) netflow.NetFlowTemplateSystem {
 	system, ok := r.systems[key]
 	r.lock.RUnlock()
 	if ok {
+		r.lock.Lock()
+		if r.counts[key] == 0 {
+			r.emptySince[key] = r.now()
+		}
+		r.lock.Unlock()
 		return system
 	}
 
@@ -184,7 +193,13 @@ func (r *ExpiringRegistry) GetSystem(key string) netflow.NetFlowTemplateSystem {
 		return existing
 	}
 	r.systems[key] = system
-	r.counts[key] = 0
+	count := len(wrapped.GetTemplates())
+	r.counts[key] = count
+	if count == 0 {
+		r.emptySince[key] = r.now()
+	} else {
+		delete(r.emptySince, key)
+	}
 	r.lock.Unlock()
 	return system
 }
@@ -221,22 +236,48 @@ func (r *ExpiringRegistry) GetAll() map[string]netflow.FlowBaseTemplateSet {
 
 func (r *ExpiringRegistry) increment(key string) {
 	r.lock.Lock()
-	r.counts[key]++
+	count := r.counts[key] + 1
+	r.counts[key] = count
+	if count == 1 {
+		delete(r.emptySince, key)
+	}
 	r.lock.Unlock()
 }
 
 func (r *ExpiringRegistry) decrement(key string) int {
 	r.lock.Lock()
 	count := r.counts[key] - 1
-	if count <= 0 {
-		delete(r.counts, key)
+	if count < 0 {
 		count = 0
-		delete(r.systems, key)
-	} else {
-		r.counts[key] = count
+	}
+	r.counts[key] = count
+	if count == 0 {
+		r.emptySince[key] = r.now()
 	}
 	r.lock.Unlock()
 	return count
+}
+
+func (r *ExpiringRegistry) pruneEmptyBefore(cutoff time.Time) {
+	var keys []string
+	r.lock.Lock()
+	for key, since := range r.emptySince {
+		if since.Before(cutoff) {
+			keys = append(keys, key)
+			delete(r.emptySince, key)
+			delete(r.counts, key)
+			delete(r.systems, key)
+		}
+	}
+	r.lock.Unlock()
+	if len(keys) == 0 {
+		return
+	}
+	if remover, ok := r.wrapped.(interface{ RemoveSystem(string) }); ok {
+		for _, key := range keys {
+			remover.RemoveSystem(key)
+		}
+	}
 }
 
 // ExpireBefore removes templates older than the cutoff across all routers.
@@ -260,6 +301,9 @@ func (r *ExpiringRegistry) ExpireBefore(cutoff time.Time) int {
 	removed := 0
 	for _, entry := range systems {
 		removed += entry.system.ExpireBefore(cutoff)
+	}
+	if r.emptyTTL > 0 {
+		r.pruneEmptyBefore(cutoff)
 	}
 	return removed
 }

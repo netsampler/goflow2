@@ -11,7 +11,7 @@ import (
 	"github.com/netsampler/goflow2/v2/decoders/netflow"
 )
 
-func TestInMemoryRegistryPrunesEmptySystem(t *testing.T) {
+func TestInMemoryRegistryKeepsEmptySystem(t *testing.T) {
 	registry := NewInMemoryRegistry(nil)
 	system := registry.GetSystem("router1")
 
@@ -21,8 +21,12 @@ func TestInMemoryRegistryPrunesEmptySystem(t *testing.T) {
 	if _, _, err := system.RemoveTemplate(9, 1, 256); err != nil {
 		t.Fatalf("remove template: %v", err)
 	}
-	if got := registry.GetAll(); len(got) != 0 {
-		t.Fatalf("expected no systems after pruning, got %d", len(got))
+	all := registry.GetAll()
+	if len(all) != 1 {
+		t.Fatalf("expected 1 system after removal, got %d", len(all))
+	}
+	if len(all["router1"]) != 0 {
+		t.Fatalf("expected empty system after removal, got %d", len(all["router1"]))
 	}
 }
 
@@ -66,8 +70,16 @@ func TestExpiringRegistryExpiresAndPrunes(t *testing.T) {
 	if removed := registry.ExpireStale(); removed != 1 {
 		t.Fatalf("expected 1 template expired, got %d", removed)
 	}
+	if got := registry.GetAll(); len(got) != 1 {
+		t.Fatalf("expected system retained after template expiry, got %d", len(got))
+	}
+
+	now = start.Add(3*time.Minute + time.Second)
+	if removed := registry.ExpireStale(); removed != 0 {
+		t.Fatalf("expected no templates expired, got %d", removed)
+	}
 	if got := registry.GetAll(); len(got) != 0 {
-		t.Fatalf("expected no systems after expiry, got %d", len(got))
+		t.Fatalf("expected empty system pruned after TTL, got %d", len(got))
 	}
 }
 

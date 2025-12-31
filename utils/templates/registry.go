@@ -21,62 +21,6 @@ type InMemoryRegistry struct {
 	generator TemplateSystemGenerator
 }
 
-type pruningTemplateSystem struct {
-	key     string
-	onEmpty func(key string)
-	wrapped netflow.NetFlowTemplateSystem
-	lock    sync.Mutex
-	count   int
-}
-
-func (s *pruningTemplateSystem) AddTemplate(version uint16, obsDomainId uint32, templateId uint16, template interface{}) (netflow.TemplateStatus, error) {
-	update, err := s.wrapped.AddTemplate(version, obsDomainId, templateId, template)
-	if err != nil {
-		return update, err
-	}
-	s.lock.Lock()
-	if update == netflow.TemplateAdded {
-		s.count++
-	}
-	s.lock.Unlock()
-	return update, nil
-}
-
-func (s *pruningTemplateSystem) GetTemplate(version uint16, obsDomainId uint32, templateId uint16) (interface{}, error) {
-	return s.wrapped.GetTemplate(version, obsDomainId, templateId)
-}
-
-func (s *pruningTemplateSystem) RemoveTemplate(version uint16, obsDomainId uint32, templateId uint16) (interface{}, bool, error) {
-	template, removed, err := s.wrapped.RemoveTemplate(version, obsDomainId, templateId)
-	if removed {
-		var shouldPrune bool
-		s.lock.Lock()
-		if s.count > 0 {
-			s.count--
-		}
-		if s.count == 0 {
-			shouldPrune = true
-		}
-		s.lock.Unlock()
-		if shouldPrune && s.onEmpty != nil {
-			s.onEmpty(s.key)
-		}
-	}
-	return template, removed, err
-}
-
-func (s *pruningTemplateSystem) GetTemplates() netflow.FlowBaseTemplateSet {
-	return s.wrapped.GetTemplates()
-}
-
-func (s *pruningTemplateSystem) initCountFromTemplates() {
-	if snapshot := s.wrapped.GetTemplates(); len(snapshot) > 0 {
-		s.lock.Lock()
-		s.count = len(snapshot)
-		s.lock.Unlock()
-	}
-}
-
 // NewInMemoryRegistry creates a registry with an optional system generator.
 func NewInMemoryRegistry(generator TemplateSystemGenerator) *InMemoryRegistry {
 	if generator == nil {
@@ -97,17 +41,7 @@ func (r *InMemoryRegistry) GetSystem(key string) netflow.NetFlowTemplateSystem {
 		return system
 	}
 
-	pruningSystem := &pruningTemplateSystem{
-		key:     key,
-		wrapped: r.generator(key),
-		onEmpty: func(key string) {
-			r.lock.Lock()
-			delete(r.systems, key)
-			r.lock.Unlock()
-		},
-	}
-	pruningSystem.initCountFromTemplates()
-	system = pruningSystem
+	system = r.generator(key)
 	r.lock.Lock()
 	if existing, ok := r.systems[key]; ok {
 		r.lock.Unlock()
@@ -132,4 +66,11 @@ func (r *InMemoryRegistry) GetAll() map[string]netflow.FlowBaseTemplateSet {
 
 // Close is a no-op for the in-memory registry.
 func (r *InMemoryRegistry) Close() {
+}
+
+// RemoveSystem deletes a router entry if present.
+func (r *InMemoryRegistry) RemoveSystem(key string) {
+	r.lock.Lock()
+	delete(r.systems, key)
+	r.lock.Unlock()
 }

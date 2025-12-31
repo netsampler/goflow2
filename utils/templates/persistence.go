@@ -119,21 +119,11 @@ func (r *JSONRegistry) GetSystem(key string) netflow.NetFlowTemplateSystem {
 	}
 
 	wrapped := r.wrapped.GetSystem(key)
-	pruningSystem := &pruningTemplateSystem{
-		key:     key,
-		wrapped: wrapped,
-		onEmpty: func(key string) {
-			r.lock.Lock()
-			delete(r.systems, key)
-			r.lock.Unlock()
-		},
-	}
-	pruningSystem.initCountFromTemplates()
-	// Wrap the base system with pruning (count + onEmpty), then JSON persistence hooks.
+	// Wrap the base system with JSON persistence hooks.
 	system = &jsonPersistingTemplateSystem{
 		key:     key,
 		parent:  r,
-		wrapped: pruningSystem,
+		wrapped: wrapped,
 	}
 
 	r.lock.Lock()
@@ -280,6 +270,17 @@ func (s *jsonPersistingTemplateSystem) RemoveTemplate(version uint16, obsDomainI
 
 func (s *jsonPersistingTemplateSystem) GetTemplates() netflow.FlowBaseTemplateSet {
 	return s.wrapped.GetTemplates()
+}
+
+// RemoveSystem deletes a router entry if present.
+func (r *JSONRegistry) RemoveSystem(key string) {
+	r.lock.Lock()
+	delete(r.systems, key)
+	r.lock.Unlock()
+	if remover, ok := r.wrapped.(interface{ RemoveSystem(string) }); ok {
+		remover.RemoveSystem(key)
+	}
+	r.notifyChange()
 }
 
 // writeAtomic writes data to a temp file, fsyncs it, then renames to avoid partial writes.
