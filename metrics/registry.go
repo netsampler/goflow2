@@ -73,3 +73,11 @@ func (r *PromTemplateRegistry) GetAll() map[string]netflow.FlowBaseTemplateSet {
 func (r *PromTemplateRegistry) Close() {
 	r.wrapped.Close()
 }
+
+// RemoveSystem deletes a router entry if present.
+func (r *PromTemplateRegistry) RemoveSystem(key string) {
+	r.lock.Lock()
+	delete(r.systems, key)
+	r.lock.Unlock()
+	r.wrapped.RemoveSystem(key)
+}

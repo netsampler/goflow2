@@ -273,10 +273,8 @@ func (r *ExpiringRegistry) pruneEmptyBefore(cutoff time.Time) {
 	if len(keys) == 0 {
 		return
 	}
-	if remover, ok := r.wrapped.(interface{ RemoveSystem(string) }); ok {
-		for _, key := range keys {
-			remover.RemoveSystem(key)
-		}
+	for _, key := range keys {
+		r.wrapped.RemoveSystem(key)
 	}
 }
 
@@ -367,4 +365,14 @@ func (r *ExpiringRegistry) Close() {
 		<-done
 		r.wrapped.Close()
 	})
+}
+
+// RemoveSystem deletes a router entry if present.
+func (r *ExpiringRegistry) RemoveSystem(key string) {
+	r.lock.Lock()
+	delete(r.systems, key)
+	delete(r.counts, key)
+	delete(r.emptySince, key)
+	r.lock.Unlock()
+	r.wrapped.RemoveSystem(key)
 }

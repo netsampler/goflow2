@@ -277,9 +277,7 @@ func (r *JSONRegistry) RemoveSystem(key string) {
 	r.lock.Lock()
 	delete(r.systems, key)
 	r.lock.Unlock()
-	if remover, ok := r.wrapped.(interface{ RemoveSystem(string) }); ok {
-		remover.RemoveSystem(key)
-	}
+	r.wrapped.RemoveSystem(key)
 	r.notifyChange()
 }
 

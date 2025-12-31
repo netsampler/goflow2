@@ -11,6 +11,7 @@ import (
 type Registry interface {
 	GetSystem(key string) netflow.NetFlowTemplateSystem
 	GetAll() map[string]netflow.FlowBaseTemplateSet
+	RemoveSystem(key string)
 	Close()
 }
 
