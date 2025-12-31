@@ -137,10 +137,10 @@ type ExpiringRegistry struct {
 	now            func() time.Time
 	extendOnAccess bool
 	sweepInterval  time.Duration
-	sweeperLock    sync.Mutex
 	sweeperStop    chan struct{}
 	sweeperDone    chan struct{}
 	closeOnce      sync.Once
+	startOnce      sync.Once
 }
 
 // NewExpiringRegistry wraps a registry with expiry tracking.
@@ -315,17 +315,17 @@ func (r *ExpiringRegistry) StartSweeper(interval time.Duration) {
 		return
 	}
 
-	r.sweeperLock.Lock()
+	r.lock.Lock()
 	r.sweepInterval = interval
 	if r.sweeperStop != nil {
-		r.sweeperLock.Unlock()
+		r.lock.Unlock()
 		return
 	}
 	r.sweeperStop = make(chan struct{})
 	r.sweeperDone = make(chan struct{})
 	stop := r.sweeperStop
 	done := r.sweeperDone
-	r.sweeperLock.Unlock()
+	r.lock.Unlock()
 
 	go func() {
 		ticker := time.NewTicker(interval)
@@ -345,9 +345,9 @@ func (r *ExpiringRegistry) StartSweeper(interval time.Duration) {
 // Close stops the sweeper goroutine if it is running.
 func (r *ExpiringRegistry) Close() {
 	r.closeOnce.Do(func() {
-		r.sweeperLock.Lock()
+		r.lock.Lock()
 		if r.sweeperStop == nil {
-			r.sweeperLock.Unlock()
+			r.lock.Unlock()
 			r.wrapped.Close()
 			return
 		}
@@ -355,7 +355,7 @@ func (r *ExpiringRegistry) Close() {
 		done := r.sweeperDone
 		r.sweeperStop = nil
 		r.sweeperDone = nil
-		r.sweeperLock.Unlock()
+		r.lock.Unlock()
 
 		close(stop)
 		<-done
@@ -365,10 +365,12 @@ func (r *ExpiringRegistry) Close() {
 
 // Start forwards start to the wrapped registry.
 func (r *ExpiringRegistry) Start() {
-	r.wrapped.Start()
-	if r.sweepInterval > 0 {
-		r.StartSweeper(r.sweepInterval)
-	}
+	r.startOnce.Do(func() {
+		r.wrapped.Start()
+		if r.sweepInterval > 0 {
+			r.StartSweeper(r.sweepInterval)
+		}
+	})
 }
 
 // RemoveSystem deletes a router entry if present.
