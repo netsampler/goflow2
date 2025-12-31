@@ -29,6 +29,7 @@ type JSONRegistry struct {
 }
 
 // NewJSONRegistry wraps a registry and persists templates to a JSON file.
+// This handles writes only; loading stays separate so registry chains can preload first.
 func NewJSONRegistry(path string, interval time.Duration, wrapped Registry) *JSONRegistry {
 	if wrapped == nil {
 		wrapped = NewInMemoryRegistry(nil)
@@ -47,6 +48,7 @@ func NewJSONRegistry(path string, interval time.Duration, wrapped Registry) *JSO
 }
 
 // PreloadJSONTemplates loads templates from a JSON file into the registry.
+// This handles reads only; keep it separate from NewJSONRegistry to preserve chain load order.
 func PreloadJSONTemplates(path string, registry Registry) error {
 	if path == "" || registry == nil {
 		return nil
