@@ -14,6 +14,8 @@ import (
 	"github.com/netsampler/goflow2/v2/decoders/netflow"
 )
 
+const defaultJSONFlushInterval = 10 * time.Second
+
 // JSONRegistry persists templates to a JSON file with batched updates.
 type JSONRegistry struct {
 	lock      sync.RWMutex
@@ -32,19 +34,16 @@ type JSONRegistry struct {
 
 // NewJSONRegistry wraps a registry and persists templates to a JSON file.
 // This handles writes only; loading stays separate so registry chains can preload first.
-func NewJSONRegistry(path string, interval time.Duration, wrapped Registry) *JSONRegistry {
+func NewJSONRegistry(path string, wrapped Registry) *JSONRegistry {
 	if wrapped == nil {
 		wrapped = NewInMemoryRegistry(nil)
 	}
-	doneCh := make(chan struct{})
-	close(doneCh)
 	r := &JSONRegistry{
 		wrapped:  wrapped,
 		systems:  make(map[string]netflow.NetFlowTemplateSystem),
 		path:     path,
-		interval: interval,
+		interval: defaultJSONFlushInterval,
 		changeCh: make(chan struct{}, 1),
-		doneCh:   doneCh,
 	}
 	return r
 }
@@ -157,17 +156,20 @@ func (r *JSONRegistry) GetAll() map[string]netflow.FlowBaseTemplateSet {
 func (r *JSONRegistry) Close() {
 	r.closeOnce.Do(func() {
 		r.lock.Lock()
+		if r.stopCh == nil {
+			r.lock.Unlock()
+			r.flush()
+			r.wrapped.Close()
+			return
+		}
 		stop := r.stopCh
 		done := r.doneCh
 		r.stopCh = nil
+		r.doneCh = nil
 		r.lock.Unlock()
 
-		if stop != nil {
-			close(stop)
-		}
-		if done != nil {
-			<-done
-		}
+		close(stop)
+		<-done
 		r.flush()
 		r.wrapped.Close()
 	})
@@ -176,49 +178,67 @@ func (r *JSONRegistry) Close() {
 // Start begins background flush processing.
 func (r *JSONRegistry) Start() {
 	r.startOnce.Do(func() {
-		r.lock.Lock()
-		r.stopCh = make(chan struct{})
-		r.doneCh = make(chan struct{})
-		stopCh := r.stopCh
-		doneCh := r.doneCh
-		r.lock.Unlock()
-
 		r.wrapped.Start()
-		go func() {
-			var timer *time.Timer
-			defer close(doneCh)
-			for {
-				select {
-				case <-r.changeCh:
-					if r.interval <= 0 {
-						r.flush()
-						continue
-					}
-					if timer == nil {
-						timer = time.NewTimer(r.interval)
-					} else {
-						if !timer.Stop() {
-							<-timer.C
-						}
-						timer.Reset(r.interval)
-					}
-				case <-stopCh:
-					if timer != nil {
-						timer.Stop()
-					}
-					return
-				case <-func() <-chan time.Time {
-					if timer != nil {
-						return timer.C
-					}
-					return nil
-				}():
-					timer = nil
-					r.flush()
-				}
-			}
-		}()
+		r.StartFlush(r.interval)
 	})
+}
+
+// StartFlush begins periodic flushing using the provided interval.
+func (r *JSONRegistry) StartFlush(interval time.Duration) {
+	if interval <= 0 {
+		return
+	}
+
+	r.lock.Lock()
+	r.interval = interval
+	if r.stopCh != nil {
+		r.lock.Unlock()
+		return
+	}
+	r.stopCh = make(chan struct{})
+	r.doneCh = make(chan struct{})
+	stopCh := r.stopCh
+	doneCh := r.doneCh
+	r.lock.Unlock()
+
+	go func() {
+		var timer *time.Timer
+		defer close(doneCh)
+		for {
+			select {
+			case <-r.changeCh:
+				if timer == nil {
+					timer = time.NewTimer(interval)
+				} else {
+					if !timer.Stop() {
+						<-timer.C
+					}
+					timer.Reset(interval)
+				}
+			case <-stopCh:
+				if timer != nil {
+					timer.Stop()
+				}
+				return
+			case <-func() <-chan time.Time {
+				if timer != nil {
+					return timer.C
+				}
+				return nil
+			}():
+				timer = nil
+				r.flush()
+			}
+		}
+	}()
+}
+
+// SetFlushInterval configures the flush interval for the next Start call only.
+// It does not restart flushing if Start has already run.
+func (r *JSONRegistry) SetFlushInterval(interval time.Duration) {
+	r.lock.Lock()
+	r.interval = interval
+	r.lock.Unlock()
 }
 
 func (r *JSONRegistry) notifyChange() {

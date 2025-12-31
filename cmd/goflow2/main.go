@@ -75,7 +75,7 @@ var (
 	TemplatesSweepInterval  = flag.Duration("templates.sweep-interval", time.Minute, "NetFlow/IPFIX template sweep interval (expiry + empty cleanup)")
 	TemplatesExtendOnAccess = flag.Bool("templates.ttl.extend-on-access", false, "Extend template TTL on access")
 	TemplatesJSONPath       = flag.String("templates.json.path", "", "NetFlow/IPFIX templates JSON output path (empty disables persistence)")
-	TemplatesJSONInterval   = flag.Duration("templates.json.interval", time.Second*5, "NetFlow/IPFIX templates JSON write interval")
+	TemplatesJSONInterval   = flag.Duration("templates.json.interval", time.Second*10, "NetFlow/IPFIX templates JSON write interval")
 
 	MappingFile = flag.String("mapping", "", "Configuration file for custom mappings")
 
@@ -301,8 +301,11 @@ func main() {
 		}
 
 		netFlowRegistry := templates.Registry(templates.NewInMemoryRegistry(nil))
+		var jsonRegistry *templates.JSONRegistry
 		if *TemplatesJSONPath != "" {
-			netFlowRegistry = templates.NewJSONRegistry(*TemplatesJSONPath, *TemplatesJSONInterval, netFlowRegistry)
+			jsonRegistry = templates.NewJSONRegistry(*TemplatesJSONPath, netFlowRegistry)
+			jsonRegistry.SetFlushInterval(*TemplatesJSONInterval)
+			netFlowRegistry = jsonRegistry
 		}
 		netFlowRegistry = metrics.NewPromTemplateRegistry(netFlowRegistry)
 		expiring := templates.NewExpiringRegistry(netFlowRegistry, *TemplatesTTL)

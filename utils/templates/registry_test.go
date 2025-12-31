@@ -116,7 +116,8 @@ func TestJSONRegistryPersistAndPrune(t *testing.T) {
 	path := filepath.Join(dir, "templates.json")
 
 	base := NewInMemoryRegistry(nil)
-	registry := NewJSONRegistry(path, 0, base)
+	registry := NewJSONRegistry(path, base)
+	registry.SetFlushInterval(0)
 	t.Cleanup(registry.Close)
 
 	system := registry.GetSystem("router1")
