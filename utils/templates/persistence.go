@@ -36,16 +36,16 @@ func NewJSONRegistry(path string, interval time.Duration, wrapped Registry) *JSO
 	if wrapped == nil {
 		wrapped = NewInMemoryRegistry(nil)
 	}
+	doneCh := make(chan struct{})
+	close(doneCh)
 	r := &JSONRegistry{
 		wrapped:  wrapped,
 		systems:  make(map[string]netflow.NetFlowTemplateSystem),
 		path:     path,
 		interval: interval,
 		changeCh: make(chan struct{}, 1),
-		stopCh:   make(chan struct{}),
-		doneCh:   make(chan struct{}),
+		doneCh:   doneCh,
 	}
-	r.Start()
 	return r
 }
 
@@ -156,8 +156,18 @@ func (r *JSONRegistry) GetAll() map[string]netflow.FlowBaseTemplateSet {
 // Close stops background work and flushes pending data.
 func (r *JSONRegistry) Close() {
 	r.closeOnce.Do(func() {
-		close(r.stopCh)
-		<-r.doneCh
+		r.lock.Lock()
+		stop := r.stopCh
+		done := r.doneCh
+		r.stopCh = nil
+		r.lock.Unlock()
+
+		if stop != nil {
+			close(stop)
+		}
+		if done != nil {
+			<-done
+		}
 		r.flush()
 		r.wrapped.Close()
 	})
@@ -166,10 +176,17 @@ func (r *JSONRegistry) Close() {
 // Start begins background flush processing.
 func (r *JSONRegistry) Start() {
 	r.startOnce.Do(func() {
+		r.lock.Lock()
+		r.stopCh = make(chan struct{})
+		r.doneCh = make(chan struct{})
+		stopCh := r.stopCh
+		doneCh := r.doneCh
+		r.lock.Unlock()
+
 		r.wrapped.Start()
 		go func() {
 			var timer *time.Timer
-			defer close(r.doneCh)
+			defer close(doneCh)
 			for {
 				select {
 				case <-r.changeCh:
@@ -185,7 +202,7 @@ func (r *JSONRegistry) Start() {
 						}
 						timer.Reset(r.interval)
 					}
-				case <-r.stopCh:
+				case <-stopCh:
 					if timer != nil {
 						timer.Stop()
 					}
