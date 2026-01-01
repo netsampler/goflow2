@@ -2,11 +2,11 @@ name: Main
 
 on:
   push:
-    branches: [ main ]
+    branches: [ v1 ]
     tags:
       - 'v*'
   pull_request:
-    branches: [ main ]
+    branches: [ v1 ]
 
 env:
   # Reuse consistent image names across packaging and manifests.
