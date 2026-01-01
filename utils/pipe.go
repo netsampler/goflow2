@@ -84,7 +84,7 @@ func (p *flowpipe) parseConfig(cfg *PipeConfig) {
 	}
 	expiring.SetExtendOnAccess(p.extendOnAccess)
 	expiring.SetSweepInterval(p.sweepInterval)
-	expiring.Start()
+	p.netFlowRegistry.Start()
 
 }
 
