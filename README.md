@@ -1,7 +1,7 @@
 # GoFlow2
 
 [![Build Status](https://github.com/netsampler/goflow2/workflows/Build/badge.svg)](https://github.com/netsampler/goflow2/actions?query=workflow%3ABuild)
-[![Go Reference](https://pkg.go.dev/badge/github.com/netsampler/goflow2.svg)](https://pkg.go.dev/github.com/netsampler/goflow2)
+[![Go Reference](https://pkg.go.dev/badge/github.com/netsampler/goflow2/v3.svg)](https://pkg.go.dev/github.com/netsampler/goflow2/v3)
 
 This application is a NetFlow/IPFIX/sFlow collector in Go.
 

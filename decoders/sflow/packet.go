@@ -1,6 +1,6 @@
 package sflow
 
-import "github.com/netsampler/goflow2/v2/decoders/utils"
+import "github.com/netsampler/goflow2/v3/decoders/utils"
 
 // Packet represents a decoded sFlow datagram.
 type Packet struct {

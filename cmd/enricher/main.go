@@ -14,18 +14,18 @@ import (
 	"os"
 	"strings"
 
-	flowmessage "github.com/netsampler/goflow2/v2/cmd/enricher/pb"
+	flowmessage "github.com/netsampler/goflow2/v3/cmd/enricher/pb"
 
 	// import various formatters
-	"github.com/netsampler/goflow2/v2/format"
-	_ "github.com/netsampler/goflow2/v2/format/binary"
-	_ "github.com/netsampler/goflow2/v2/format/json"
-	_ "github.com/netsampler/goflow2/v2/format/text"
+	"github.com/netsampler/goflow2/v3/format"
+	_ "github.com/netsampler/goflow2/v3/format/binary"
+	_ "github.com/netsampler/goflow2/v3/format/json"
+	_ "github.com/netsampler/goflow2/v3/format/text"
 
 	// import various transports
-	"github.com/netsampler/goflow2/v2/transport"
-	_ "github.com/netsampler/goflow2/v2/transport/file"
-	_ "github.com/netsampler/goflow2/v2/transport/kafka"
+	"github.com/netsampler/goflow2/v3/transport"
+	_ "github.com/netsampler/goflow2/v3/transport/file"
+	_ "github.com/netsampler/goflow2/v3/transport/kafka"
 
 	"github.com/oschwald/geoip2-golang"
 	"google.golang.org/protobuf/encoding/protodelim"

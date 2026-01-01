@@ -1,9 +1,9 @@
 package protoproducer
 
 import (
-	"github.com/netsampler/goflow2/v2/decoders/sflow"
-	flowmessage "github.com/netsampler/goflow2/v2/pb"
-	"github.com/netsampler/goflow2/v2/producer"
+	"github.com/netsampler/goflow2/v3/decoders/sflow"
+	flowmessage "github.com/netsampler/goflow2/v3/pb"
+	"github.com/netsampler/goflow2/v3/producer"
 )
 
 // GetSFlowFlowSamples returns only flow samples from an sFlow packet.

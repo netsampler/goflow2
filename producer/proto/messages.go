@@ -13,7 +13,7 @@ import (
 	"google.golang.org/protobuf/encoding/protowire"
 	"google.golang.org/protobuf/proto"
 
-	flowmessage "github.com/netsampler/goflow2/v2/pb"
+	flowmessage "github.com/netsampler/goflow2/v3/pb"
 )
 
 // ProtoProducerMessageIf provides access to flow message helpers.

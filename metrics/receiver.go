@@ -3,7 +3,7 @@ package metrics
 import (
 	"strconv"
 
-	"github.com/netsampler/goflow2/v2/utils"
+	"github.com/netsampler/goflow2/v3/utils"
 
 	"github.com/prometheus/client_golang/prometheus"
 )

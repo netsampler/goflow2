@@ -3,7 +3,7 @@ package debug
 import (
 	"runtime/debug"
 
-	"github.com/netsampler/goflow2/v2/producer"
+	"github.com/netsampler/goflow2/v3/producer"
 )
 
 // PanicProducerWrapper wraps a producer to recover panics during Produce.

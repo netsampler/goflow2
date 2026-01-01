@@ -4,7 +4,7 @@ package text
 import (
 	"encoding"
 
-	"github.com/netsampler/goflow2/v2/format"
+	"github.com/netsampler/goflow2/v3/format"
 )
 
 // TextDriver formats flow messages via text or string serializers.

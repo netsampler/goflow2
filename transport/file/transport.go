@@ -9,7 +9,7 @@ import (
 	"sync"
 	"syscall"
 
-	"github.com/netsampler/goflow2/v2/transport"
+	"github.com/netsampler/goflow2/v3/transport"
 )
 
 // FileDriver writes formatted messages to stdout or a file.

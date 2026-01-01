@@ -4,7 +4,7 @@ package binary
 import (
 	"encoding"
 
-	"github.com/netsampler/goflow2/v2/format"
+	"github.com/netsampler/goflow2/v3/format"
 )
 
 // BinaryDriver formats flow messages via MarshalBinary.

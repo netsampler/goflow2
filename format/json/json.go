@@ -4,7 +4,7 @@ package json
 import (
 	"encoding/json"
 
-	"github.com/netsampler/goflow2/v2/format"
+	"github.com/netsampler/goflow2/v3/format"
 )
 
 // JsonDriver formats flow messages using JSON encoding.
