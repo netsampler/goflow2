@@ -11,7 +11,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/netsampler/goflow2/v2/decoders/netflow"
+	"github.com/netsampler/goflow2/v3/decoders/netflow"
 )
 
 const defaultJSONFlushInterval = 10 * time.Second

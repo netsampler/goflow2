@@ -4,7 +4,7 @@ package templates
 import (
 	"sync"
 
-	"github.com/netsampler/goflow2/v2/decoders/netflow"
+	"github.com/netsampler/goflow2/v3/decoders/netflow"
 )
 
 // Registry provides access to per-router template systems.

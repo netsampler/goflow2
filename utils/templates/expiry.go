@@ -5,7 +5,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/netsampler/goflow2/v2/decoders/netflow"
+	"github.com/netsampler/goflow2/v3/decoders/netflow"
 )
 
 // TemplateKey identifies a template entry for expiry tracking.

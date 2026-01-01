@@ -3,8 +3,8 @@ package metrics
 import (
 	"sync"
 
-	"github.com/netsampler/goflow2/v2/decoders/netflow"
-	"github.com/netsampler/goflow2/v2/utils/templates"
+	"github.com/netsampler/goflow2/v3/decoders/netflow"
+	"github.com/netsampler/goflow2/v3/utils/templates"
 )
 
 // PromTemplateRegistry wraps a registry to record template metrics per router.
