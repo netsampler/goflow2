@@ -15,7 +15,7 @@ type Config struct {
 }
 
 // TemplateSource returns templates for HTTP rendering.
-type TemplateSource func() map[string]map[uint64]interface{}
+type TemplateSource func() map[string]map[string]interface{}
 
 // HealthHandler returns a handler for the health endpoint.
 func HealthHandler(isCollecting func() bool) http.HandlerFunc {

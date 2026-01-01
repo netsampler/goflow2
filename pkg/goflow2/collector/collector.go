@@ -298,7 +298,7 @@ func (c *Collector) Stop() {
 }
 
 // NetFlowTemplates returns templates from the last NetFlow pipe.
-func (c *Collector) NetFlowTemplates() map[string]map[uint64]interface{} {
+func (c *Collector) NetFlowTemplates() map[string]map[string]interface{} {
 	if c.netflowTemplate == nil {
 		return nil
 	}
