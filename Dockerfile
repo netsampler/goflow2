@@ -1,4 +1,5 @@
-FROM golang:alpine as builder
+ARG BIN_SOURCE="builder"
+FROM golang:alpine AS builder
 ARG LDFLAGS=""
 
 RUN apk --update --no-cache add git build-base gcc
@@ -7,6 +8,12 @@ COPY . /build
 WORKDIR /build
 
 RUN go build -ldflags "${LDFLAGS}" -o goflow2 cmd/goflow2/main.go
+
+FROM scratch AS prebuilt
+ARG PREBUILT_BINARY="goflow2"
+COPY ${PREBUILT_BINARY} /build/goflow2
+
+FROM ${BIN_SOURCE} AS binstage
 
 FROM alpine:latest
 ARG src_dir
@@ -31,6 +38,6 @@ LABEL org.opencontainers.image.revision="${REV}"
 RUN apk update --no-cache && \
     adduser -S -D -H -h / flow
 USER flow
-COPY --from=builder /build/goflow2 /
+COPY --from=binstage /build/goflow2 /
 
 ENTRYPOINT ["./goflow2"]

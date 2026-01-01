@@ -1,0 +1,320 @@
+name: Main
+
+on:
+  push:
+    branches: [ main ]
+    tags:
+      - 'v*'
+  pull_request:
+    branches: [ main ]
+
+env:
+  # Reuse consistent image names across packaging and manifests.
+  GHCR_IMAGE: ghcr.io/${{ github.repository_owner }}/goflow2
+  DOCKERHUB_IMAGE: docker.io/${{ github.repository_owner }}/goflow2
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+    - name: Check out code into the Go module directory
+      uses: actions/checkout@v4
+      # Full history ensures tag-aware versioning for release builds.
+      with:
+        fetch-depth: 0
+
+    - name: Set up Go 1.x
+      uses: actions/setup-go@v5
+      with:
+        go-version: ^1.24
+        cache: true
+        cache-dependency-path: |
+          go.sum
+          go.mod
+
+    - name: Tidy Go Modules
+      run: go mod tidy
+
+    - name: Install linters
+      run: |
+        go install honnef.co/go/tools/cmd/staticcheck@latest
+        echo "$(go env GOPATH)/bin" >> $GITHUB_PATH
+
+    - name: Test
+      run: make test
+
+    - name: Vet
+      run: make vet
+
+    - name: Test (race)
+      continue-on-error: true
+      run: make test-race
+
+    - name: Test (coverage)
+      continue-on-error: true
+      run: make test-cover
+
+    - name: Lint (golangci-lint)
+      continue-on-error: true
+      uses: golangci/golangci-lint-action@v9
+      with:
+        version: latest
+
+    - name: Staticcheck
+      continue-on-error: true
+      run: make staticcheck
+
+  matrix:
+    name: Select Matrix
+    runs-on: ubuntu-latest
+    outputs:
+      include: ${{ steps.set-matrix.outputs.include }}
+    steps:
+    - name: Set matrix for event
+      id: set-matrix
+      shell: bash
+      run: |
+        if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+          echo 'include=[{"goos":"linux","goarch":"amd64","package":true}]' >> "$GITHUB_OUTPUT"
+        else
+          echo 'include=[{"goos":"linux","goarch":"amd64","package":true},{"goos":"linux","goarch":"arm64","package":true},{"goos":"linux","goarch":"arm","goarm":"7","package":true},{"goos":"darwin","goarch":"amd64","package":false},{"goos":"darwin","goarch":"arm64","package":false},{"goos":"windows","goarch":"amd64","extension":".exe","package":false},{"goos":"windows","goarch":"arm64","extension":".exe","package":false}]' >> "$GITHUB_OUTPUT"
+        fi
+
+  build:
+    name: Build (${{ matrix.goos }}-${{ matrix.goarch }})
+    needs:
+    - test
+    - matrix
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.matrix.outputs.include) }}
+    steps:
+    - name: Check out code into the Go module directory
+      uses: actions/checkout@v4
+      # Fetch tags so release builds can resolve VERSION.
+      with:
+        fetch-depth: 0
+
+    - name: Set up Go 1.x
+      uses: actions/setup-go@v5
+      with:
+        go-version: ^1.24
+        cache: true
+        cache-dependency-path: |
+          go.sum
+          go.mod
+
+    - name: Set VERSION for tag builds
+      if: startsWith(github.ref, 'refs/tags/')
+      run: echo "VERSION=$(git describe --tags --abbrev=0 HEAD)" >> $GITHUB_ENV
+
+    - name: Build
+      env:
+        GOOS: ${{ matrix.goos }}
+        GOARCH: ${{ matrix.goarch }}
+        GOARM: ${{ matrix.goarm }}
+        EXTENSION: ${{ matrix.extension }}
+      run: |
+        make build
+        echo "BINARY_PATH=$(make print-output)" >> "$GITHUB_ENV"
+
+    - name: Set docker packaging vars
+      if: matrix.package
+      shell: bash
+      # Package Docker images only for supported linux arch targets.
+      run: |
+        if [[ "${{ matrix.goarch }}" == "amd64" ]]; then
+          echo "DOCKER_PLATFORM=linux/amd64" >> "$GITHUB_ENV"
+          echo "DOCKER_PACKAGE=true" >> "$GITHUB_ENV"
+        elif [[ "${{ matrix.goarch }}" == "arm64" ]]; then
+          echo "DOCKER_PLATFORM=linux/arm64/v8" >> "$GITHUB_ENV"
+          echo "DOCKER_PACKAGE=true" >> "$GITHUB_ENV"
+        else
+          echo "Unsupported GOARCH for docker packaging: ${{ matrix.goarch }}" >&2
+          echo "DOCKER_PACKAGE=false" >> "$GITHUB_ENV"
+          exit 0
+        fi
+        echo "PREBUILT_BINARY=${BINARY_PATH}" >> "$GITHUB_ENV"
+
+    - name: Set up QEMU
+      if: matrix.package && env.DOCKER_PACKAGE == 'true'
+      uses: docker/setup-qemu-action@v3
+
+    - name: Set up Docker Buildx
+      if: matrix.package && env.DOCKER_PACKAGE == 'true'
+      uses: docker/setup-buildx-action@v3
+
+    - name: Login to DockerHub
+      if: matrix.package && env.DOCKER_PACKAGE == 'true' && github.event_name != 'pull_request'
+      uses: docker/login-action@v3
+      with:
+        username: ${{ secrets.DOCKERHUB_USERNAME }}
+        password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+    - name: Log in to GHCR
+      if: matrix.package && env.DOCKER_PACKAGE == 'true' && github.event_name != 'pull_request'
+      run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u $ --password-stdin
+
+    - name: Docker package
+      if: matrix.package && env.DOCKER_PACKAGE == 'true'
+      # PRs load the image locally; main pushes to registries.
+      run: |
+        if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+          DOCKER_PUSH_FLAG="--load"
+        else
+          DOCKER_PUSH_FLAG="--push"
+        fi
+        DOCKER_SUFFIX=-${{ matrix.goarch }} \
+        DOCKER_IMAGE_PREFIXES="${{ env.DOCKERHUB_IMAGE }} ${{ env.GHCR_IMAGE }}" \
+        DOCKER_CMD="buildx build $DOCKER_PUSH_FLAG --platform $DOCKER_PLATFORM --build-arg BIN_SOURCE=prebuilt --build-arg PREBUILT_BINARY=$PREBUILT_BINARY" \
+        make docker
+          
+    - name: Cache user gems
+      if: matrix.package
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.gem
+          ~/.local/share/gem
+        key: ${{ runner.os }}-gems-${{ hashFiles('**/Gemfile.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-gems-
+
+    - name: Cache apt lists and archives
+      if: matrix.package
+      id: cache-apt
+      uses: actions/cache@v4
+      with:
+        path: |
+          /var/cache/apt/archives
+          /var/lib/apt/lists
+        key: ${{ runner.os }}-apt-${{ hashFiles('.github/workflows/main.yml') }}
+        restore-keys: |
+          ${{ runner.os }}-apt-
+
+    - name: Install fpm
+      if: matrix.package
+      # fpm builds both rpm and deb artifacts from the Go binaries.
+      run: |
+        if [[ "${{ steps.cache-apt.outputs.cache-hit }}" != "true" ]]; then
+          sudo apt-get update
+        fi
+        sudo apt-get install -y rpm ruby ruby-dev
+        gem install --user-install fpm
+        echo "$(ruby -e 'print Gem.user_dir')/bin" >> $GITHUB_PATH
+        
+    - name: Package
+      if: matrix.package
+      env:
+        GOOS: ${{ matrix.goos }}
+        GOARCH: ${{ matrix.goarch }}
+        GOARM: ${{ matrix.goarm }}
+      run: make package-deb package-rpm
+
+    - name: Upload Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: dist-${{ matrix.goos }}-${{ matrix.goarch }}
+        path: dist/*
+        retention-days: 14
+
+  manifest:
+    name: Docker Manifests
+    runs-on: ubuntu-latest
+    needs: build
+    if: github.event_name != 'pull_request'
+    steps:
+    - name: Check out code into the Go module directory
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Login to DockerHub
+      uses: docker/login-action@v3
+      with:
+        username: ${{ secrets.DOCKERHUB_USERNAME }}
+        password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+    - name: Log in to GHCR
+      run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u $ --password-stdin
+
+    - name: Set VERSION for tag builds
+      if: startsWith(github.ref, 'refs/tags/')
+      run: echo "VERSION=$(git describe --tags --abbrev=0 HEAD)" >> $GITHUB_ENV
+
+    - name: Publish manifests (branch)
+      if: "!startsWith(github.ref, 'refs/tags/')"
+      shell: bash
+      # Publish branch-specific and latest tags to both registries.
+      run: |
+        images=("${{ env.DOCKERHUB_IMAGE }}" "${{ env.GHCR_IMAGE }}")
+        for image in "${images[@]}"; do
+          DOCKER_IMAGE="$image" make docker-manifest
+          DOCKER_IMAGE="$image" DOCKER_MANIFEST_TAG=latest make docker-manifest
+        done
+
+    - name: Publish manifests (tag)
+      if: startsWith(github.ref, 'refs/tags/')
+      shell: bash
+      # Tag releases get a versioned manifest plus latest.
+      run: |
+        images=("${{ env.DOCKERHUB_IMAGE }}" "${{ env.GHCR_IMAGE }}")
+        for image in "${images[@]}"; do
+          DOCKER_IMAGE="$image" DOCKER_MANIFEST_TAG="${VERSION}" make docker-manifest
+          DOCKER_IMAGE="$image" DOCKER_MANIFEST_TAG=latest make docker-manifest
+        done
+
+  release:
+    name: Release
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+    - name: Download Artifacts
+      uses: actions/download-artifact@v4
+      with:
+        path: dist
+        pattern: dist-*
+        merge-multiple: true
+
+    - name: Create Release
+      id: create_release
+      uses: actions/github-script@v7
+      with:
+        github-token: ${{ secrets.GITHUB_TOKEN }}
+        script: |
+          const tag = process.env.GITHUB_REF_NAME;
+          const { data } = await github.rest.repos.createRelease({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            tag_name: tag,
+            name: `Release ${tag}`,
+            draft: false,
+            prerelease: false,
+          });
+          core.setOutput('upload_url', data.upload_url);
+
+    - name: Upload Release Asset
+      uses: actions/github-script@v7
+      with:
+        github-token: ${{ secrets.GITHUB_TOKEN }}
+        script: |
+          const fs = require('fs').promises;
+          const path = require('path');
+          const uploadUrl = '${{ steps.create_release.outputs.upload_url }}';
+          for (const file of await fs.readdir('./dist')) {
+            console.log('uploading', file);
+            await github.rest.repos.uploadReleaseAsset({
+              url: uploadUrl,
+              name: file,
+              data: await fs.readFile(path.join('dist', file)),
+            });
+          }
