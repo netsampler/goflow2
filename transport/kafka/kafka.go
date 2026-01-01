@@ -15,7 +15,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/netsampler/goflow2/v2/transport"
+	"github.com/netsampler/goflow2/v3/transport"
 
 	sarama "github.com/Shopify/sarama"
 )

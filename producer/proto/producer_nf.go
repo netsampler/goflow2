@@ -7,10 +7,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/netsampler/goflow2/v2/decoders/netflow"
-	"github.com/netsampler/goflow2/v2/decoders/utils"
-	flowmessage "github.com/netsampler/goflow2/v2/pb"
-	"github.com/netsampler/goflow2/v2/producer"
+	"github.com/netsampler/goflow2/v3/decoders/netflow"
+	"github.com/netsampler/goflow2/v3/decoders/utils"
+	flowmessage "github.com/netsampler/goflow2/v3/pb"
+	"github.com/netsampler/goflow2/v3/producer"
 )
 
 type SamplingRateSystem interface {

@@ -2,7 +2,7 @@
 package templates
 
 import (
-	"github.com/netsampler/goflow2/v2/decoders/netflow"
+	"github.com/netsampler/goflow2/v3/decoders/netflow"
 )
 
 // TemplateSystemGenerator creates a template system for a source key.

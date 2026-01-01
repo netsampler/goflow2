@@ -5,7 +5,7 @@ import (
 	"bytes"
 	"fmt"
 
-	"github.com/netsampler/goflow2/v2/decoders/utils"
+	"github.com/netsampler/goflow2/v3/decoders/utils"
 )
 
 // DecoderError wraps a NetFlow legacy decode error.

@@ -6,14 +6,14 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/netsampler/goflow2/v2/decoders/netflow"
-	"github.com/netsampler/goflow2/v2/decoders/netflowlegacy"
-	"github.com/netsampler/goflow2/v2/decoders/sflow"
-	"github.com/netsampler/goflow2/v2/decoders/utils"
-	"github.com/netsampler/goflow2/v2/format"
-	"github.com/netsampler/goflow2/v2/producer"
-	"github.com/netsampler/goflow2/v2/transport"
-	"github.com/netsampler/goflow2/v2/utils/templates"
+	"github.com/netsampler/goflow2/v3/decoders/netflow"
+	"github.com/netsampler/goflow2/v3/decoders/netflowlegacy"
+	"github.com/netsampler/goflow2/v3/decoders/sflow"
+	"github.com/netsampler/goflow2/v3/decoders/utils"
+	"github.com/netsampler/goflow2/v3/format"
+	"github.com/netsampler/goflow2/v3/producer"
+	"github.com/netsampler/goflow2/v3/transport"
+	"github.com/netsampler/goflow2/v3/utils/templates"
 )
 
 // FlowPipe describes a flow decoder/formatter pipeline.

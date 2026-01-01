@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/netsampler/goflow2/v2/decoders/netflow"
-	"github.com/netsampler/goflow2/v2/decoders/netflowlegacy"
-	"github.com/netsampler/goflow2/v2/decoders/sflow"
-	"github.com/netsampler/goflow2/v2/producer"
+	"github.com/netsampler/goflow2/v3/decoders/netflow"
+	"github.com/netsampler/goflow2/v3/decoders/netflowlegacy"
+	"github.com/netsampler/goflow2/v3/decoders/sflow"
+	"github.com/netsampler/goflow2/v3/producer"
 )
 
 // ProtoProducer converts decoded packets into protobuf flow messages.

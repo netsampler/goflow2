@@ -1,4 +1,4 @@
-module github.com/netsampler/goflow2/v2
+module github.com/netsampler/goflow2/v3
 
 go 1.23.0
 
