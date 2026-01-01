@@ -251,12 +251,12 @@ jobs:
     - name: Publish manifests (branch)
       if: "!startsWith(github.ref, 'refs/tags/')"
       shell: bash
-      # Publish branch-specific and latest tags to both registries.
+      # Publish branch-specific tag to both registries.
       run: |
         images=("${{ env.DOCKERHUB_IMAGE }}" "${{ env.GHCR_IMAGE }}")
         for image in "${images[@]}"; do
           DOCKER_IMAGE="$image" make docker-manifest
-          DOCKER_IMAGE="$image" DOCKER_MANIFEST_TAG=latest make docker-manifest
+          DOCKER_IMAGE="$image" DOCKER_MANIFEST_TAG=v1 make docker-manifest
         done
 
     - name: Publish manifests (tag)
