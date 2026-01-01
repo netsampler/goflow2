@@ -2,6 +2,7 @@ package metrics
 
 import (
 	"strconv"
+	"time"
 
 	"github.com/netsampler/goflow2/v3/decoders/netflow"
 
@@ -51,13 +52,26 @@ func (s *PromTemplateSystem) AddTemplate(version uint16, obsDomainId uint32, tem
 		NetFlowTemplatesStats.With(
 			labels).
 			Inc()
+		timestamp := float64(time.Now().Unix())
+		switch update {
+		case netflow.TemplateAdded:
+			NetFlowTemplateAddedTimestamp.With(labels).Set(timestamp)
+		case netflow.TemplateUpdated:
+			NetFlowTemplateUpdatedTimestamp.With(labels).Set(timestamp)
+		}
 	}
 	return update, err
 }
 
 // GetTemplate retrieves a template from the wrapped system.
 func (s *PromTemplateSystem) GetTemplate(version uint16, obsDomainId uint32, templateId uint16) (interface{}, error) {
-	return s.wrapped.GetTemplate(version, obsDomainId, templateId)
+	template, err := s.wrapped.GetTemplate(version, obsDomainId, templateId)
+	if err != nil {
+		return template, err
+	}
+	labels := s.getLabels(version, obsDomainId, templateId, template)
+	NetFlowTemplateAccessedTimestamp.With(labels).Set(float64(time.Now().Unix()))
+	return template, nil
 }
 
 // RemoveTemplate removes a template and updates metrics.
