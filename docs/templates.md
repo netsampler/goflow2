@@ -13,7 +13,7 @@ and guidance for adding a new persistence layer (e.g., Redis, S3).
   * Responsibilities: create per-router systems, enumerate templates across routers, start background work, close resources.
 
 The decoder is not aware of the "router" and uses the template system.
-The pipe system (handles packet processing) uses the registry to provide the decoder with the correct template system.
+The pipe system (handles packet processing) uses the registry to provide the decoder with the correct template system and calls `Start()` on the pipe to initialize registry background work.
 
     +------------------------+     +------------------------+
     |      Registry A        | --> |      Registry B        |

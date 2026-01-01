@@ -19,6 +19,7 @@ import (
 // FlowPipe describes a flow decoder/formatter pipeline.
 type FlowPipe interface {
 	DecodeFlow(msg interface{}) error
+	Start()
 	Close()
 }
 
@@ -84,8 +85,11 @@ func (p *flowpipe) parseConfig(cfg *PipeConfig) {
 	}
 	expiring.SetExtendOnAccess(p.extendOnAccess)
 	expiring.SetSweepInterval(p.sweepInterval)
-	p.netFlowRegistry.Start()
 
+}
+
+func (p *flowpipe) Start() {
+	p.netFlowRegistry.Start()
 }
 
 // SFlowPipe decodes sFlow packets and forwards them to a producer.
@@ -264,6 +268,11 @@ func NewFlowPipe(cfg *PipeConfig) *AutoFlowPipe {
 func (p *AutoFlowPipe) Close() {
 	p.SFlowPipe.Close()
 	p.NetFlowPipe.Close()
+}
+
+func (p *AutoFlowPipe) Start() {
+	p.SFlowPipe.Start()
+	p.NetFlowPipe.Start()
 }
 
 // DecodeFlow detects the protocol and routes to the appropriate decoder.

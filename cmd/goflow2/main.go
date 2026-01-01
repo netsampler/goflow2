@@ -346,6 +346,7 @@ func main() {
 			logger.Error("scheme does not exist", slog.String("error", listenAddrUrl.Scheme))
 			os.Exit(1)
 		}
+		p.Start()
 
 		// Add optional HTTP handler for templates
 		if nfP, ok := p.(*utils.NetFlowPipe); ok && *TemplatePath != "" {
