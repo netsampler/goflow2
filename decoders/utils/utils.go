@@ -60,6 +60,8 @@ func BinaryRead(payload BytesBuffer, order binary.ByteOrder, data any) error {
 				return io.ErrUnexpectedEOF
 			}
 			*data = string(buf)
+			padding := (-strlen) & 3 // XDR is 4-byte aligned
+			_ = payload.Next(padding)
 		case []bool:
 			for i, x := range bs { // Easier to loop over the input for 8-bit values.
 				data[i] = x != 0
