@@ -11,6 +11,7 @@ and guidance for adding a new persistence layer (e.g., Redis, S3).
 * Registry: maps a router/source key to a template system.
   * Interface: `utils/templates.Registry`
   * Responsibilities: create per-router systems, enumerate templates across routers, start background work, close resources.
+  * Close should stop background work and flush/persist any pending state.
 
 The decoder is not aware of the "router" and uses the template system.
 The pipe system (handles packet processing) uses the registry to provide the decoder with the correct template system and calls `Start()` on the pipe to initialize registry background work.
@@ -25,7 +26,7 @@ The pipe system (handles packet processing) uses the registry to provide the dec
     |  +------------------+  |     |  +------------------+  |
     +------------------------+     +------------------------+
 
-Registries and template systems can be chained, with the caveat that template removals aren't propagated to wrapping systems.
+Registries and template systems can be chained, with the caveat that changes only flow inward (wrappers see inner changes) and removals are not propagated outward to wrapping systems.
 Expiration and loading should be handled at the top-level wrapper.
 
 ## Base storage
