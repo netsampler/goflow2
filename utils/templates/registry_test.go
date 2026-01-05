@@ -85,8 +85,7 @@ func TestExpiringRegistryExpiresAndPrunes(t *testing.T) {
 
 func TestExpiringRegistryExtendsOnAccess(t *testing.T) {
 	base := NewInMemoryRegistry(nil)
-	registry := NewExpiringRegistry(base, time.Minute)
-	registry.SetExtendOnAccess(true)
+	registry := NewExpiringRegistry(base, time.Minute, WithExtendOnAccess(true))
 
 	start := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
 	now := start

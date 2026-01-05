@@ -32,12 +32,29 @@ type ExpiringRegistry struct {
 	startOnce      sync.Once                          // guards Start
 }
 
+// ExpiringOption configures an ExpiringRegistry.
+type ExpiringOption func(*ExpiringRegistry)
+
+// WithExtendOnAccess toggles whether template accesses refresh their expiry time.
+func WithExtendOnAccess(enable bool) ExpiringOption {
+	return func(r *ExpiringRegistry) {
+		r.extendOnAccess = enable
+	}
+}
+
+// WithSweepInterval configures the sweeper interval used on Start.
+func WithSweepInterval(interval time.Duration) ExpiringOption {
+	return func(r *ExpiringRegistry) {
+		r.sweepInterval = interval
+	}
+}
+
 // NewExpiringRegistry wraps a registry with expiry tracking.
-func NewExpiringRegistry(wrapped Registry, ttl time.Duration) *ExpiringRegistry {
+func NewExpiringRegistry(wrapped Registry, ttl time.Duration, opts ...ExpiringOption) *ExpiringRegistry {
 	if wrapped == nil {
 		wrapped = NewInMemoryRegistry(nil)
 	}
-	return &ExpiringRegistry{
+	registry := &ExpiringRegistry{
 		wrapped:    wrapped,
 		systems:    make(map[string]*ExpiringTemplateSystem),
 		counts:     make(map[string]int),
@@ -45,6 +62,12 @@ func NewExpiringRegistry(wrapped Registry, ttl time.Duration) *ExpiringRegistry 
 		ttl:        ttl,
 		now:        time.Now,
 	}
+	for _, opt := range opts {
+		if opt != nil {
+			opt(registry)
+		}
+	}
+	return registry
 }
 
 // GetSystem returns a wrapped template system for a router.
@@ -85,20 +108,6 @@ func (r *ExpiringRegistry) GetSystem(key string) netflow.NetFlowTemplateSystem {
 	}
 	r.lock.Unlock()
 	return system
-}
-
-// SetExtendOnAccess toggles whether template accesses refresh their expiry time.
-func (r *ExpiringRegistry) SetExtendOnAccess(enable bool) {
-	r.lock.Lock()
-	r.extendOnAccess = enable
-	systems := make([]*ExpiringTemplateSystem, 0, len(r.systems))
-	for _, system := range r.systems {
-		systems = append(systems, system)
-	}
-	r.lock.Unlock()
-	for _, system := range systems {
-		system.SetExtendOnAccess(enable)
-	}
 }
 
 // GetAll returns all templates for every router.
@@ -233,14 +242,6 @@ func (r *ExpiringRegistry) StartSweeper(interval time.Duration) {
 	}()
 }
 
-// SetSweepInterval configures the sweeper interval for the next Start call only.
-// It does not restart the sweeper if Start has already run.
-func (r *ExpiringRegistry) SetSweepInterval(interval time.Duration) {
-	r.lock.Lock()
-	r.sweepInterval = interval
-	r.lock.Unlock()
-}
-
 // Close stops the sweeper goroutine if it is running.
 func (r *ExpiringRegistry) Close() {
 	r.closeOnce.Do(func() {
@@ -328,24 +329,17 @@ func (s *ExpiringTemplateSystem) AddTemplate(version uint16, obsDomainId uint32,
 	return update, nil
 }
 
-// SetExtendOnAccess toggles whether accesses refresh the template's expiry time.
-func (s *ExpiringTemplateSystem) SetExtendOnAccess(enable bool) {
-	s.lock.Lock()
-	s.extendOnAccess = enable
-	s.lock.Unlock()
-}
-
 // GetTemplate forwards template lookup to the wrapped system.
 func (s *ExpiringTemplateSystem) GetTemplate(version uint16, obsDomainId uint32, templateId uint16) (interface{}, error) {
 	template, err := s.wrapped.GetTemplate(version, obsDomainId, templateId)
 	if err != nil {
 		return template, err
 	}
-	s.lock.Lock()
 	if s.extendOnAccess {
+		s.lock.Lock()
 		s.updated[TemplateKey{Version: version, ObsDomainID: obsDomainId, TemplateID: templateId}] = s.now()
+		s.lock.Unlock()
 	}
-	s.lock.Unlock()
 	return template, nil
 }
 

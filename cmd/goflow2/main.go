@@ -313,8 +313,12 @@ func main() {
 		netFlowRegistry = metrics.NewPromTemplateRegistry(netFlowRegistry)
 
 		// wrap the previous registries with expiration/pruning control
-		expiring := templates.NewExpiringRegistry(netFlowRegistry, *TemplatesTTL)
-		expiring.SetExtendOnAccess(*TemplatesExtendOnAccess)
+		expiring := templates.NewExpiringRegistry(
+			netFlowRegistry,
+			*TemplatesTTL,
+			templates.WithExtendOnAccess(*TemplatesExtendOnAccess),
+			templates.WithSweepInterval(*TemplatesSweepInterval),
+		)
 		netFlowRegistry = expiring
 
 		// preload using a JSON file
