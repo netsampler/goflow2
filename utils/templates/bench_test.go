@@ -17,8 +17,7 @@ func newChainedRegistry(b *testing.B) *ExpiringRegistry {
 	path := filepath.Join(dir, "templates.json")
 
 	base := NewInMemoryRegistry(nil)
-	jsonRegistry := NewJSONRegistry(path, base)
-	jsonRegistry.SetFlushInterval(time.Hour)
+	jsonRegistry := NewJSONRegistry(path, base, WithJSONFlushInterval(time.Hour))
 	jsonRegistry.Start()
 	b.Cleanup(jsonRegistry.Close)
 
@@ -34,8 +33,7 @@ func newChainedRegistryWithJSONInterval(b *testing.B, interval time.Duration) (*
 	path := filepath.Join(dir, "templates.json")
 
 	base := NewInMemoryRegistry(nil)
-	jsonRegistry := NewJSONRegistry(path, base)
-	jsonRegistry.SetFlushInterval(interval)
+	jsonRegistry := NewJSONRegistry(path, base, WithJSONFlushInterval(interval))
 	jsonRegistry.Start()
 
 	expiring := NewExpiringRegistry(jsonRegistry, time.Minute)
@@ -142,8 +140,7 @@ func BenchmarkChainedRegistryPreloadJSON(b *testing.B) {
 	}
 
 	base := NewInMemoryRegistry(nil)
-	jsonRegistry := NewJSONRegistry(path, base)
-	jsonRegistry.SetFlushInterval(time.Hour)
+	jsonRegistry := NewJSONRegistry(path, base, WithJSONFlushInterval(time.Hour))
 	expiring := NewExpiringRegistry(jsonRegistry, time.Minute)
 	expiring.Start()
 	if err := PreloadJSONTemplates(path, expiring); err != nil {

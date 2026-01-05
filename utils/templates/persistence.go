@@ -32,9 +32,19 @@ type JSONRegistry struct {
 	startOnce     sync.Once                                // guards Start
 }
 
+// JSONOption configures a JSONRegistry.
+type JSONOption func(*JSONRegistry)
+
+// WithJSONFlushInterval configures the flush interval used on Start.
+func WithJSONFlushInterval(interval time.Duration) JSONOption {
+	return func(r *JSONRegistry) {
+		r.flushInterval = interval
+	}
+}
+
 // NewJSONRegistry wraps a registry and persists templates to a JSON file.
 // This handles writes only; loading stays separate so registry chains can preload first.
-func NewJSONRegistry(path string, wrapped Registry) *JSONRegistry {
+func NewJSONRegistry(path string, wrapped Registry, opts ...JSONOption) *JSONRegistry {
 	if wrapped == nil {
 		wrapped = NewInMemoryRegistry(nil)
 	}
@@ -44,6 +54,11 @@ func NewJSONRegistry(path string, wrapped Registry) *JSONRegistry {
 		path:          path,
 		flushInterval: defaultJSONFlushInterval,
 		changeCh:      make(chan struct{}, 1),
+	}
+	for _, opt := range opts {
+		if opt != nil {
+			opt(r)
+		}
 	}
 	return r
 }
@@ -231,14 +246,6 @@ func (r *JSONRegistry) StartFlush(flushInterval time.Duration) {
 			}
 		}
 	}()
-}
-
-// SetFlushInterval configures the flush interval for the next Start call only.
-// It does not restart flushing if Start has already run.
-func (r *JSONRegistry) SetFlushInterval(flushInterval time.Duration) {
-	r.lock.Lock()
-	r.flushInterval = flushInterval
-	r.lock.Unlock()
 }
 
 func (r *JSONRegistry) notifyChange() {

@@ -151,24 +151,19 @@ func (r *ExpiringRegistry) decrement(key string) int {
 }
 
 func (r *ExpiringRegistry) pruneEmptyBefore(cutoff time.Time) int {
-	var keys []string
+	pruned := 0
 	r.lock.Lock()
 	for key, since := range r.emptySince {
 		if since.Before(cutoff) {
-			keys = append(keys, key)
 			delete(r.emptySince, key)
 			delete(r.counts, key)
 			delete(r.systems, key)
+			r.wrapped.RemoveSystem(key)
+			pruned++
 		}
 	}
 	r.lock.Unlock()
-	if len(keys) == 0 {
-		return 0
-	}
-	for _, key := range keys {
-		r.wrapped.RemoveSystem(key)
-	}
-	return len(keys)
+	return pruned
 }
 
 // ExpireBefore removes templates older than the cutoff across all routers.
@@ -283,8 +278,8 @@ func (r *ExpiringRegistry) RemoveSystem(key string) {
 	delete(r.systems, key)
 	delete(r.counts, key)
 	delete(r.emptySince, key)
-	r.lock.Unlock()
 	r.wrapped.RemoveSystem(key)
+	r.lock.Unlock()
 }
 
 // ExpiringTemplateSystem tracks template update times and supports expiry.
@@ -314,46 +309,48 @@ func NewExpiringTemplateSystem(wrapped netflow.NetFlowTemplateSystem, ttl time.D
 
 // AddTemplate records template update time and forwards to the wrapped system.
 func (s *ExpiringTemplateSystem) AddTemplate(version uint16, obsDomainId uint32, templateId uint16, template interface{}) (netflow.TemplateStatus, error) {
+	s.lock.Lock()
 	update, err := s.wrapped.AddTemplate(version, obsDomainId, templateId, template)
 	if err != nil {
+		s.lock.Unlock()
 		return update, err
 	}
-	s.lock.Lock()
 	s.updated[TemplateKey{Version: version, ObsDomainID: obsDomainId, TemplateID: templateId}] = s.now()
-	s.lock.Unlock()
 	if s.reg != nil {
 		if update == netflow.TemplateAdded {
 			s.reg.increment(s.key)
 		}
 	}
+	s.lock.Unlock()
 	return update, nil
 }
 
 // GetTemplate forwards template lookup to the wrapped system.
 func (s *ExpiringTemplateSystem) GetTemplate(version uint16, obsDomainId uint32, templateId uint16) (interface{}, error) {
+	s.lock.Lock()
 	template, err := s.wrapped.GetTemplate(version, obsDomainId, templateId)
 	if err != nil {
+		s.lock.Unlock()
 		return template, err
 	}
 	if s.extendOnAccess {
-		s.lock.Lock()
 		s.updated[TemplateKey{Version: version, ObsDomainID: obsDomainId, TemplateID: templateId}] = s.now()
-		s.lock.Unlock()
 	}
+	s.lock.Unlock()
 	return template, nil
 }
 
 // RemoveTemplate removes a template and its tracking entry.
 func (s *ExpiringTemplateSystem) RemoveTemplate(version uint16, obsDomainId uint32, templateId uint16) (interface{}, bool, error) {
+	s.lock.Lock()
 	template, removed, err := s.wrapped.RemoveTemplate(version, obsDomainId, templateId)
 	if removed {
-		s.lock.Lock()
 		delete(s.updated, TemplateKey{Version: version, ObsDomainID: obsDomainId, TemplateID: templateId})
-		s.lock.Unlock()
 		if s.reg != nil {
 			s.reg.decrement(s.key)
 		}
 	}
+	s.lock.Unlock()
 	return template, removed, err
 }
 
@@ -364,22 +361,21 @@ func (s *ExpiringTemplateSystem) GetTemplates() netflow.FlowBaseTemplateSet {
 
 // ExpireBefore removes templates last updated before the cutoff.
 func (s *ExpiringTemplateSystem) ExpireBefore(cutoff time.Time) int {
-	var expired []TemplateKey
-
+	removed := 0
 	s.lock.Lock()
 	for key, updated := range s.updated {
-		if updated.Before(cutoff) {
-			expired = append(expired, key)
+		if !updated.Before(cutoff) {
+			continue
 		}
-	}
-	s.lock.Unlock()
-
-	removed := 0
-	for _, key := range expired {
-		if _, removedTemplate, err := s.RemoveTemplate(key.Version, key.ObsDomainID, key.TemplateID); err == nil && removedTemplate {
+		if _, removedTemplate, err := s.wrapped.RemoveTemplate(key.Version, key.ObsDomainID, key.TemplateID); err == nil && removedTemplate {
+			delete(s.updated, key)
+			if s.reg != nil {
+				s.reg.decrement(s.key)
+			}
 			removed++
 		}
 	}
+	s.lock.Unlock()
 	return removed
 }
 

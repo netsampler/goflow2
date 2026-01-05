@@ -220,9 +220,11 @@ func main() {
 
 	// wrap the memory registry with the JSON
 	if *TemplatesJSONPath != "" {
-		jsonRegistry := templates.NewJSONRegistry(*TemplatesJSONPath, netFlowRegistry)
-		jsonRegistry.SetFlushInterval(*TemplatesJSONInterval)
-		netFlowRegistry = jsonRegistry
+		netFlowRegistry = templates.NewJSONRegistry(
+			*TemplatesJSONPath,
+			netFlowRegistry,
+			templates.WithJSONFlushInterval(*TemplatesJSONInterval),
+		)
 	}
 
 	// wrap the previous registries with metrics
