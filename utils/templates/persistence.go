@@ -175,7 +175,7 @@ func (r *JSONRegistry) Close() {
 	})
 }
 
-// Start begins background flush processing.
+// Start begins background flush processing once; repeated calls are no-ops.
 func (r *JSONRegistry) Start() {
 	r.startOnce.Do(func() {
 		r.wrapped.Start()

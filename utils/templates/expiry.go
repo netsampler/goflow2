@@ -199,6 +199,7 @@ func (r *ExpiringRegistry) ExpireStale() (int, int) {
 }
 
 // StartSweeper begins periodic expiry using the configured TTL.
+// StartSweeper starts the periodic expiry/empty cleanup loop once; repeated calls are no-ops.
 func (r *ExpiringRegistry) StartSweeper(interval time.Duration) {
 	if interval <= 0 {
 		return
@@ -206,6 +207,7 @@ func (r *ExpiringRegistry) StartSweeper(interval time.Duration) {
 
 	r.lock.Lock()
 	r.sweepInterval = interval
+	// Only one sweeper should be active; return if already started.
 	if r.sweeperStop != nil {
 		r.lock.Unlock()
 		return
@@ -261,6 +263,7 @@ func (r *ExpiringRegistry) Close() {
 }
 
 // Start forwards start to the wrapped registry.
+// Start initializes the wrapped registry and sweeper once; repeated calls are no-ops.
 func (r *ExpiringRegistry) Start() {
 	r.startOnce.Do(func() {
 		r.lock.Lock()
