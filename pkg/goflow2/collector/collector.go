@@ -143,9 +143,6 @@ func (c *Collector) Start() error {
 					if !ok {
 						return
 					}
-					if err == nil {
-						continue
-					}
 					c.logger.Error("template persistence error", slog.String("error", err.Error()))
 				}
 			}
@@ -222,9 +219,9 @@ func (c *Collector) Start() error {
 				select {
 				case <-c.stopCh:
 					return
-				case err := <-source.ch:
-					if err == nil {
-						continue
+				case err, ok := <-source.ch:
+					if !ok {
+						return
 					}
 					select {
 					case recvErrCh <- recvErr{
