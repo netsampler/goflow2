@@ -209,18 +209,15 @@ func (r *JSONRegistry) StartFlush(flushInterval time.Duration) {
 			case <-r.changeCh:
 				if timer == nil {
 					timer = time.NewTimer(flushInterval)
-				} else {
+				}
+			case <-stopCh:
+				if timer != nil {
 					if !timer.Stop() {
 						select {
 						case <-timer.C:
 						default:
 						}
 					}
-					timer.Reset(flushInterval)
-				}
-			case <-stopCh:
-				if timer != nil {
-					timer.Stop()
 				}
 				return
 			case <-func() <-chan time.Time {
