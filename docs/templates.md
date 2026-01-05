@@ -14,7 +14,7 @@ and guidance for adding a new persistence layer (e.g., Redis, S3).
   * Close should stop background work and flush/persist any pending state.
 
 The decoder is not aware of the "router" and uses the template system.
-The pipe system (handles packet processing) uses the registry to provide the decoder with the correct template system and calls `Start()` on the pipe to initialize registry background work.
+The pipe system (handles packet processing) uses the registry to provide the decoder with the correct template system; the top-level application is responsible for calling `Registry.Start()` to initialize background work (for example in `cmd/goflow2/main.go`).
 
     +------------------------+     +------------------------+
     |      Registry A        | --> |      Registry B        |
@@ -39,7 +39,8 @@ Expiration and loading should be handled at the top-level wrapper.
 * Expiry wrapper (`utils/templates.ExpiringTemplateSystem` / `ExpiringRegistry`)
   * Tracks template update timestamps and expires stale templates on a TTL.
   * Maintains per-router counts in the registry and prunes empty routers (including empty systems that never received templates).
-  * Used as the top-level registry by default; a TTL of 0 disables template expiry but still allows empty-system cleanup.
+  * Used as the top-level registry by default; a TTL of 0 disables template expiry but still allows empty-system pruning.
+  * Note: NetFlow v5 does not send templates, so empty-system pruning can cause churn if v5 sources are present; set the sweep interval to 0 to disable sweeping entirely when needed.
 * Persistence wrapper (`utils/templates.JSONRegistry` / `jsonPersistingTemplateSystem`)
   * Persists all templates to a JSON file, batching writes.
   * Starts a background flush loop via `Start()`.
