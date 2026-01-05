@@ -48,8 +48,6 @@ Expiration and loading should be handled at the top-level wrapper.
 
 ## Adding a new persistence layer
 
-### Wrap the registry (recommended)
-
 * Implement a `Registry` that:
   * Wraps an existing registry (usually `NewInMemoryRegistry(nil)`).
   * On `GetSystem(key)`, returns a wrapped `NetFlowTemplateSystem` that:
