@@ -20,7 +20,8 @@ type FileDriver struct {
 	w               io.Writer
 	file            *os.File
 	lock            *sync.RWMutex
-	q               chan bool
+	stopCh          chan struct{}
+	stopOnce        sync.Once
 }
 
 // Prepare registers flags for file transport configuration.
@@ -43,7 +44,8 @@ func (d *FileDriver) openFile() error {
 
 // Init initializes the output destination and reload handling.
 func (d *FileDriver) Init() error {
-	d.q = make(chan bool, 1)
+	d.stopCh = make(chan struct{})
+	d.stopOnce = sync.Once{}
 
 	if d.fileDestination == "" {
 		d.w = os.Stdout
@@ -74,7 +76,7 @@ func (d *FileDriver) Init() error {
 						return
 					}
 					// if there is an error, keeps using the old file
-				case <-d.q:
+				case <-d.stopCh:
 					return
 				}
 			}
@@ -114,7 +116,11 @@ func (d *FileDriver) Close() error {
 		d.lock.Unlock()
 		signal.Ignore(syscall.SIGHUP)
 	}
-	close(d.q)
+	if d.stopCh != nil {
+		d.stopOnce.Do(func() {
+			close(d.stopCh)
+		})
+	}
 	return closeErr
 }
 

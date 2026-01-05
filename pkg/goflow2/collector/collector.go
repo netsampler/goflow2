@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"reflect"
 	"sync"
 	"time"
 
@@ -114,6 +115,13 @@ func (c *Collector) Start() error {
 	c.netFlowRegistry = netFlowRegistry
 	c.jsonRegistry = jsonRegistry
 
+	type recvErrSource struct {
+		ch     <-chan error
+		logger *slog.Logger
+		bm     *utils.BatchMute
+	}
+	var recvErrSources []recvErrSource
+
 	if jsonRegistry != nil {
 		c.wg.Add(1)
 		go func() {
@@ -195,50 +203,80 @@ func (c *Collector) Start() error {
 		if err := recv.Start(listenCfg.Hostname, listenCfg.Port, decodeFunc); err != nil {
 			return fmt.Errorf("collector: start receiver %s:%d: %w", listenCfg.Hostname, listenCfg.Port, err)
 		}
+		recvErrSources = append(recvErrSources, recvErrSource{
+			ch:     recv.Errors(),
+			logger: logger,
+			bm:     bm,
+		})
+
+		c.receivers = append(c.receivers, recv)
+	}
+
+	if len(recvErrSources) > 0 {
 		c.wg.Add(1)
-		go func(recv *utils.UDPReceiver, logger *slog.Logger) {
+		go func(sources []recvErrSource) {
 			defer c.wg.Done()
+
+			cases := make([]reflect.SelectCase, 0, len(sources)+1)
+			cases = append(cases, reflect.SelectCase{
+				Dir:  reflect.SelectRecv,
+				Chan: reflect.ValueOf(c.stopCh),
+			})
+			for _, source := range sources {
+				cases = append(cases, reflect.SelectCase{
+					Dir:  reflect.SelectRecv,
+					Chan: reflect.ValueOf(source.ch),
+				})
+			}
+
 			for {
-				select {
-				case <-c.stopCh:
+				chosen, value, ok := reflect.Select(cases)
+				if chosen == 0 {
 					return
-				case err := <-recv.Errors():
-					if errors.Is(err, net.ErrClosed) {
-						logger.Info("closed receiver")
-						continue
-					} else if !errors.Is(err, netflow.ErrorTemplateNotFound) && !errors.Is(err, debug.ErrPanic) {
-						logger.Error("error", slog.String("error", err.Error()))
-						continue
+				}
+				if !ok {
+					continue
+				}
+				err, _ := value.Interface().(error)
+				if err == nil {
+					continue
+				}
+
+				source := sources[chosen-1]
+				if errors.Is(err, net.ErrClosed) {
+					source.logger.Info("closed receiver")
+					continue
+				}
+				if !errors.Is(err, netflow.ErrorTemplateNotFound) && !errors.Is(err, debug.ErrPanic) {
+					source.logger.Error("error", slog.String("error", err.Error()))
+					continue
+				}
+
+				muted, skipped := source.bm.Increment()
+				if muted && skipped == 0 {
+					source.logger.Warn("too many receiver messages, muting")
+				} else if !muted && skipped > 0 {
+					source.logger.Warn("skipped receiver messages", slog.Int("count", skipped))
+				} else if !muted {
+					attrs := []any{
+						slog.String("error", err.Error()),
 					}
 
-					muted, skipped := bm.Increment()
-					if muted && skipped == 0 {
-						logger.Warn("too many receiver messages, muting")
-					} else if !muted && skipped > 0 {
-						logger.Warn("skipped receiver messages", slog.Int("count", skipped))
-					} else if !muted {
-						attrs := []any{
-							slog.String("error", err.Error()),
+					if errors.Is(err, netflow.ErrorTemplateNotFound) {
+						source.logger.Warn("template error")
+					} else if errors.Is(err, debug.ErrPanic) {
+						var pErrMsg *debug.PanicErrorMessage
+						if errors.As(err, &pErrMsg) {
+							attrs = append(attrs,
+								slog.Any("message", pErrMsg.Msg),
+								slog.String("stacktrace", string(pErrMsg.Stacktrace)),
+							)
 						}
-
-						if errors.Is(err, netflow.ErrorTemplateNotFound) {
-							logger.Warn("template error")
-						} else if errors.Is(err, debug.ErrPanic) {
-							var pErrMsg *debug.PanicErrorMessage
-							if errors.As(err, &pErrMsg) {
-								attrs = append(attrs,
-									slog.Any("message", pErrMsg.Msg),
-									slog.String("stacktrace", string(pErrMsg.Stacktrace)),
-								)
-							}
-							logger.Error("intercepted panic", attrs...)
-						}
+						source.logger.Error("intercepted panic", attrs...)
 					}
 				}
 			}
-		}(recv, logger)
-
-		c.receivers = append(c.receivers, recv)
+		}(recvErrSources)
 	}
 
 	c.wg.Add(1)
@@ -258,9 +296,12 @@ func (c *Collector) Start() error {
 			select {
 			case <-c.stopCh:
 				return
-			case err := <-transportErr:
-				if err == nil {
+			case err, ok := <-transportErr:
+				if !ok {
 					return
+				}
+				if err == nil {
+					continue
 				}
 				muted, skipped := bm.Increment()
 				if muted && skipped == 0 {

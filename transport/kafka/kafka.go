@@ -42,8 +42,6 @@ type KafkaDriver struct {
 
 	producer sarama.AsyncProducer
 
-	q chan bool
-
 	errors chan error
 }
 
@@ -128,7 +126,7 @@ func (d *KafkaDriver) Errors() <-chan error {
 func (d *KafkaDriver) Init() error {
 	kafkaConfigVersion, err := sarama.ParseKafkaVersion(d.kafkaVersion)
 	if err != nil {
-		return fmt.Errorf("parse kafka version %q: %w", d.kafkaVersion, err)
+		return err
 	}
 
 	kafkaConfig := sarama.NewConfig()
@@ -162,7 +160,7 @@ func (d *KafkaDriver) Init() error {
 	if d.kafkaTLS {
 		rootCAs, err := x509.SystemCertPool()
 		if err != nil {
-			return fmt.Errorf("kafka TLS: init system cert pool: %w", err)
+			return fmt.Errorf("error initializing TLS: %v", err)
 		}
 		kafkaConfig.Net.TLS.Enable = true
 		kafkaConfig.Net.TLS.Config = &tls.Config{
@@ -175,25 +173,25 @@ func (d *KafkaDriver) Init() error {
 		if d.kafkaServerCA != "" {
 			serverCaFile, err := os.Open(d.kafkaServerCA)
 			if err != nil {
-				return fmt.Errorf("server CA: open %s: %w", d.kafkaServerCA, err)
+				return fmt.Errorf("error initializing server CA: %v", err)
 			}
 
 			serverCaBytes, err := io.ReadAll(serverCaFile)
 			if err != nil {
 				if closeErr := serverCaFile.Close(); closeErr != nil {
-					return fmt.Errorf("server CA: close after read failure: %w", closeErr)
+					return fmt.Errorf("error closing server CA: %v", closeErr)
 				}
-				return fmt.Errorf("server CA: read %s: %w", d.kafkaServerCA, err)
+				return fmt.Errorf("error reading server CA: %v", err)
 			}
 			if err := serverCaFile.Close(); err != nil {
-				return fmt.Errorf("server CA: close %s: %w", d.kafkaServerCA, err)
+				return fmt.Errorf("error closing server CA: %v", err)
 			}
 
 			block, _ := pem.Decode(serverCaBytes)
 
 			serverCa, err := x509.ParseCertificate(block.Bytes)
 			if err != nil {
-				return fmt.Errorf("server CA: parse certificate: %w", err)
+				return fmt.Errorf("error parsing server CA: %v", err)
 			}
 
 			certPool := x509.NewCertPool()
@@ -205,13 +203,13 @@ func (d *KafkaDriver) Init() error {
 		if d.kafkaClientCert != "" && d.kafkaClientKey != "" {
 			_, err := tls.LoadX509KeyPair(d.kafkaClientCert, d.kafkaClientKey)
 			if err != nil {
-				return fmt.Errorf("mTLS: load client key pair: %w", err)
+				return fmt.Errorf("error initializing mTLS: %v", err)
 			}
 
 			kafkaConfig.Net.TLS.Config.GetClientCertificate = func(*tls.CertificateRequestInfo) (*tls.Certificate, error) {
 				cert, err := tls.LoadX509KeyPair(d.kafkaClientCert, d.kafkaClientKey)
 				if err != nil {
-					return nil, fmt.Errorf("mTLS: load client key pair: %w", err)
+					return nil, err
 				}
 				return &cert, nil
 			}
@@ -264,35 +262,21 @@ func (d *KafkaDriver) Init() error {
 
 	kafkaProducer, err := sarama.NewAsyncProducer(addrs, kafkaConfig)
 	if err != nil {
-		return fmt.Errorf("kafka producer: init: %w", err)
+		return err
 	}
 	d.producer = kafkaProducer
 
-	d.q = make(chan bool)
-
 	go func() {
-		for {
+		for msg := range kafkaProducer.Errors() {
 			select {
-			case msg := <-kafkaProducer.Errors():
-				var err error
-				if msg != nil {
-					err = &KafkaTransportError{msg}
-				}
-				select {
-				case d.errors <- err:
-				default:
-				}
-
-				if msg == nil {
-					return
-				}
-			case <-d.q:
-				return
+			case d.errors <- &KafkaTransportError{msg}:
+			default:
 			}
 		}
+		close(d.errors)
 	}()
 
-	return nil
+	return err
 }
 
 // Send publishes a message to Kafka.
@@ -307,19 +291,14 @@ func (d *KafkaDriver) Send(key, data []byte) error {
 
 // Close stops the producer and releases resources.
 func (d *KafkaDriver) Close() error {
-	if err := d.producer.Close(); err != nil {
-		close(d.q)
-		return fmt.Errorf("kafka producer: close: %w", err)
-	}
-	close(d.q)
-	return nil
+	return d.producer.Close()
 }
 
 // GetServiceAddresses resolves SRV records into broker addresses.
 func GetServiceAddresses(srv string) (addrs []string, err error) {
 	_, srvs, err := net.LookupSRV("", "", srv)
 	if err != nil {
-		return nil, fmt.Errorf("service discovery: %w", err)
+		return nil, fmt.Errorf("service discovery: %v", err)
 	}
 	for _, srv := range srvs {
 		addrs = append(addrs, net.JoinHostPort(srv.Target, strconv.Itoa(int(srv.Port))))
