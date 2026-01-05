@@ -28,6 +28,9 @@ type JSONRegistry struct {
 	flusherDone   chan struct{}                            // closed when flusher goroutine exits
 	flushLock     sync.Mutex                               // serializes flushes (timer, immediate, Close)
 	flushHook     func()                                   // test hook invoked before writing JSON
+	errCh         chan error                               // persistence errors, never closed
+	errMu         sync.Mutex                               // protects errCh close/send
+	errClosed     bool                                     // set when errCh is closed
 	closeOnce     sync.Once                                // guards Close
 	startOnce     sync.Once                                // guards Start
 }
@@ -54,6 +57,7 @@ func NewJSONRegistry(path string, wrapped Registry, opts ...JSONOption) *JSONReg
 		path:          path,
 		flushInterval: defaultJSONFlushInterval,
 		changeCh:      make(chan struct{}, 1),
+		errCh:         make(chan error, 16),
 	}
 	for _, opt := range opts {
 		if opt != nil {
@@ -175,6 +179,7 @@ func (r *JSONRegistry) Close() {
 			r.lock.Unlock()
 			r.flush()
 			r.wrapped.Close()
+			r.closeErrors()
 			return
 		}
 		stop := r.flusherStop
@@ -187,6 +192,7 @@ func (r *JSONRegistry) Close() {
 		<-done
 		r.flush()
 		r.wrapped.Close()
+		r.closeErrors()
 	})
 }
 
@@ -259,6 +265,26 @@ func (r *JSONRegistry) notifyChange() {
 	}
 }
 
+// Errors returns a channel of JSON persistence errors.
+func (r *JSONRegistry) Errors() <-chan error {
+	return r.errCh
+}
+
+func (r *JSONRegistry) emitError(err error) {
+	if err == nil {
+		return
+	}
+	r.errMu.Lock()
+	defer r.errMu.Unlock()
+	if r.errClosed {
+		return
+	}
+	select {
+	case r.errCh <- err:
+	default:
+	}
+}
+
 func (r *JSONRegistry) flush() {
 	r.flushLock.Lock()
 	defer r.flushLock.Unlock()
@@ -285,10 +311,23 @@ func (r *JSONRegistry) flush() {
 	}
 	data, err := json.Marshal(filtered)
 	if err != nil {
+		r.emitError(err)
 		return
 	}
 
-	_ = writeAtomic(r.path, data, 0o644)
+	if err := writeAtomic(r.path, data, 0o644); err != nil {
+		r.emitError(err)
+	}
+}
+
+func (r *JSONRegistry) closeErrors() {
+	r.errMu.Lock()
+	defer r.errMu.Unlock()
+	if r.errClosed {
+		return
+	}
+	close(r.errCh)
+	r.errClosed = true
 }
 
 // jsonPersistingTemplateSystem wraps a template system to trigger JSONRegistry flushes

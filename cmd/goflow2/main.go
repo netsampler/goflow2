@@ -217,14 +217,16 @@ func main() {
 
 	q := make(chan bool)
 	netFlowRegistry := templates.Registry(templates.NewInMemoryRegistry(nil))
+	var jsonRegistry *templates.JSONRegistry
 
 	// wrap the memory registry with the JSON
 	if *TemplatesJSONPath != "" {
-		netFlowRegistry = templates.NewJSONRegistry(
+		jsonRegistry = templates.NewJSONRegistry(
 			*TemplatesJSONPath,
 			netFlowRegistry,
 			templates.WithJSONFlushInterval(*TemplatesJSONInterval),
 		)
+		netFlowRegistry = jsonRegistry
 	}
 
 	// wrap the previous registries with metrics
@@ -246,6 +248,29 @@ func main() {
 		}
 	}
 	netFlowRegistry.Start()
+	if jsonRegistry != nil {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+
+			jsonErr := jsonRegistry.Errors()
+
+			for {
+				select {
+				case <-q:
+					return
+				case err, ok := <-jsonErr:
+					if !ok {
+						return
+					}
+					if err == nil {
+						continue
+					}
+					logger.Error("template persistence error", slog.String("error", err.Error()))
+				}
+			}
+		}()
+	}
 	for _, listenAddress := range strings.Split(*ListenAddresses, ",") {
 		listenAddrUrl, err := url.Parse(listenAddress)
 		if err != nil {

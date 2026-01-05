@@ -180,6 +180,21 @@ func TestPreloadJSONTemplates(t *testing.T) {
 	}
 }
 
+func TestJSONRegistryErrorsCloseOnClose(t *testing.T) {
+	registry := NewJSONRegistry("", NewInMemoryRegistry(nil), WithJSONFlushInterval(0))
+	errCh := registry.Errors()
+	registry.Close()
+
+	select {
+	case _, ok := <-errCh:
+		if ok {
+			t.Fatal("expected errors channel to be closed")
+		}
+	default:
+		t.Fatal("expected errors channel to be closed")
+	}
+}
+
 func readRegistryFile(t *testing.T, path string) map[string]map[string]json.RawMessage {
 	t.Helper()
 	data, err := os.ReadFile(path)
