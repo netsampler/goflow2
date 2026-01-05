@@ -252,9 +252,6 @@ func (c *Collector) Start() error {
 				case <-c.stopCh:
 					return
 				case recvErr := <-recvErrCh:
-					if recvErr.err == nil {
-						continue
-					}
 					if errors.Is(recvErr.err, net.ErrClosed) {
 						recvErr.logger.Info("closed receiver")
 						continue
@@ -312,9 +309,6 @@ func (c *Collector) Start() error {
 			case err, ok := <-transportErr:
 				if !ok {
 					return
-				}
-				if err == nil {
-					continue
 				}
 				muted, skipped := bm.Increment()
 				if muted && skipped == 0 {
