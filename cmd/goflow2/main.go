@@ -332,9 +332,6 @@ func main() {
 			Transport:       transporter,
 			Producer:        flowProducer,
 			NetFlowRegistry: netFlowRegistry, // add the wrapped registries
-			TemplatesTTL:    *TemplatesTTL,
-			SweepInterval:   *TemplatesSweepInterval,
-			ExtendOnAccess:  *TemplatesExtendOnAccess,
 		}
 
 		var decodeFunc utils.DecoderFunc

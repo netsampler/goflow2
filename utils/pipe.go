@@ -4,7 +4,6 @@ package utils
 import (
 	"bytes"
 	"fmt"
-	"time"
 
 	"github.com/netsampler/goflow2/v3/decoders/netflow"
 	"github.com/netsampler/goflow2/v3/decoders/netflowlegacy"
@@ -29,9 +28,6 @@ type flowpipe struct {
 	producer  producer.ProducerInterface
 
 	netFlowRegistry templates.Registry
-	templatesTTL    time.Duration
-	sweepInterval   time.Duration
-	extendOnAccess  bool
 }
 
 // PipeConfig wires formatter, transport, and producer dependencies.
@@ -41,9 +37,6 @@ type PipeConfig struct {
 	Producer  producer.ProducerInterface
 
 	NetFlowRegistry templates.Registry
-	TemplatesTTL    time.Duration
-	SweepInterval   time.Duration
-	ExtendOnAccess  bool
 }
 
 func (p *flowpipe) formatSend(flowMessageSet []producer.ProducerMessage) error {
@@ -70,23 +63,10 @@ func (p *flowpipe) parseConfig(cfg *PipeConfig) {
 	p.format = cfg.Format
 	p.transport = cfg.Transport
 	p.producer = cfg.Producer
-	p.templatesTTL = cfg.TemplatesTTL
-	p.sweepInterval = cfg.SweepInterval
-	p.extendOnAccess = cfg.ExtendOnAccess
 	if cfg.NetFlowRegistry != nil {
 		p.netFlowRegistry = cfg.NetFlowRegistry
 	} else {
 		p.netFlowRegistry = templates.NewInMemoryRegistry(nil)
-	}
-	expiring, ok := p.netFlowRegistry.(*templates.ExpiringRegistry)
-	if !ok {
-		expiring = templates.NewExpiringRegistry(
-			p.netFlowRegistry,
-			p.templatesTTL,
-			templates.WithExtendOnAccess(p.extendOnAccess),
-			templates.WithSweepInterval(p.sweepInterval),
-		)
-		p.netFlowRegistry = expiring
 	}
 
 }
