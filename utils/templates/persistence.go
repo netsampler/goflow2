@@ -211,7 +211,10 @@ func (r *JSONRegistry) StartFlush(flushInterval time.Duration) {
 					timer = time.NewTimer(flushInterval)
 				} else {
 					if !timer.Stop() {
-						<-timer.C
+						select {
+						case <-timer.C:
+						default:
+						}
 					}
 					timer.Reset(flushInterval)
 				}

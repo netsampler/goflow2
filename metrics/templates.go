@@ -81,6 +81,9 @@ func (s *PromTemplateSystem) RemoveTemplate(version uint16, obsDomainId uint32, 
 		labels := s.getLabels(version, obsDomainId, templateId, template)
 
 		NetFlowTemplatesStats.Delete(labels)
+		NetFlowTemplateAddedTimestamp.Delete(labels)
+		NetFlowTemplateUpdatedTimestamp.Delete(labels)
+		NetFlowTemplateAccessedTimestamp.Delete(labels)
 	}
 
 	return template, removed, err

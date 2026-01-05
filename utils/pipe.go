@@ -224,13 +224,24 @@ func (p *NetFlowPipe) Close() {
 }
 
 // GetTemplatesForAllSources returns a copy of templates for all known NetFlow sources.
-func (p *NetFlowPipe) GetTemplatesForAllSources() map[string]map[uint64]interface{} {
+func (p *NetFlowPipe) GetTemplatesForAllSources() map[string]map[string]interface{} {
 	templates := p.netFlowRegistry.GetAll()
-	ret := make(map[string]map[uint64]interface{}, len(templates))
+	ret := make(map[string]map[string]interface{}, len(templates))
 	for key, systemTemplates := range templates {
-		ret[key] = systemTemplates
+		formatted := make(map[string]interface{}, len(systemTemplates))
+		for templateKey, template := range systemTemplates {
+			formatted[formatTemplateKey(templateKey)] = template
+		}
+		ret[key] = formatted
 	}
 	return ret
+}
+
+func formatTemplateKey(key uint64) string {
+	version := uint16(key >> 48)
+	obsDomainId := uint32((key >> 16) & 0xFFFFFFFF)
+	templateId := uint16(key & 0xFFFF)
+	return fmt.Sprintf("%d/%d/%d", version, obsDomainId, templateId)
 }
 
 // AutoFlowPipe dispatches to sFlow or NetFlow pipes based on payload.
