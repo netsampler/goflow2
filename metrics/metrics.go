@@ -121,6 +121,30 @@ var (
 			Namespace: NAMESPACE},
 		[]string{"router", "version", "obs_domain_id", "template_id", "type"}, // options/template
 	)
+	// NetFlowTemplateAddedTimestamp records when a template was added.
+	NetFlowTemplateAddedTimestamp = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name:      "flow_process_nf_template_added_timestamp_seconds",
+			Help:      "Unix timestamp when a template was added.",
+			Namespace: NAMESPACE},
+		[]string{"router", "version", "obs_domain_id", "template_id", "type"},
+	)
+	// NetFlowTemplateUpdatedTimestamp records when a template was updated.
+	NetFlowTemplateUpdatedTimestamp = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name:      "flow_process_nf_template_updated_timestamp_seconds",
+			Help:      "Unix timestamp when a template was updated.",
+			Namespace: NAMESPACE},
+		[]string{"router", "version", "obs_domain_id", "template_id", "type"},
+	)
+	// NetFlowTemplateAccessedTimestamp records when a template was last accessed.
+	NetFlowTemplateAccessedTimestamp = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name:      "flow_process_nf_template_accessed_timestamp_seconds",
+			Help:      "Unix timestamp when a template was last accessed.",
+			Namespace: NAMESPACE},
+		[]string{"router", "version", "obs_domain_id", "template_id", "type"},
+	)
 	// SFlowStats counts processed sFlow packets.
 	SFlowStats = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
@@ -164,6 +188,9 @@ func init() {
 	prometheus.MustRegister(NetFlowSetStatsSum)
 	prometheus.MustRegister(NetFlowTimeStatsSum)
 	prometheus.MustRegister(NetFlowTemplatesStats)
+	prometheus.MustRegister(NetFlowTemplateAddedTimestamp)
+	prometheus.MustRegister(NetFlowTemplateUpdatedTimestamp)
+	prometheus.MustRegister(NetFlowTemplateAccessedTimestamp)
 
 	prometheus.MustRegister(SFlowStats)
 	prometheus.MustRegister(SFlowSampleStatsSum)

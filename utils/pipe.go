@@ -4,7 +4,6 @@ package utils
 import (
 	"bytes"
 	"fmt"
-	"sync"
 
 	"github.com/netsampler/goflow2/v3/decoders/netflow"
 	"github.com/netsampler/goflow2/v3/decoders/netflowlegacy"
@@ -19,6 +18,7 @@ import (
 // FlowPipe describes a flow decoder/formatter pipeline.
 type FlowPipe interface {
 	DecodeFlow(msg interface{}) error
+	Start()
 	Close()
 }
 
@@ -27,7 +27,7 @@ type flowpipe struct {
 	transport transport.TransportInterface
 	producer  producer.ProducerInterface
 
-	netFlowTemplater templates.TemplateSystemGenerator
+	netFlowRegistry templates.Registry
 }
 
 // PipeConfig wires formatter, transport, and producer dependencies.
@@ -36,7 +36,7 @@ type PipeConfig struct {
 	Transport transport.TransportInterface
 	Producer  producer.ProducerInterface
 
-	NetFlowTemplater templates.TemplateSystemGenerator
+	NetFlowRegistry templates.Registry
 }
 
 func (p *flowpipe) formatSend(flowMessageSet []producer.ProducerMessage) error {
@@ -63,12 +63,15 @@ func (p *flowpipe) parseConfig(cfg *PipeConfig) {
 	p.format = cfg.Format
 	p.transport = cfg.Transport
 	p.producer = cfg.Producer
-	if cfg.NetFlowTemplater != nil {
-		p.netFlowTemplater = cfg.NetFlowTemplater
+	if cfg.NetFlowRegistry != nil {
+		p.netFlowRegistry = cfg.NetFlowRegistry
 	} else {
-		p.netFlowTemplater = templates.DefaultTemplateGenerator
+		p.netFlowRegistry = templates.NewInMemoryRegistry(nil)
 	}
 
+}
+
+func (p *flowpipe) Start() {
 }
 
 // SFlowPipe decodes sFlow packets and forwards them to a producer.
@@ -79,9 +82,6 @@ type SFlowPipe struct {
 // NetFlowPipe decodes NetFlow/IPFIX packets and forwards them to a producer.
 type NetFlowPipe struct {
 	flowpipe
-
-	templateslock *sync.RWMutex
-	templates     map[string]netflow.NetFlowTemplateSystem
 }
 
 // PipeMessageError wraps a decode/produce error with source message metadata.
@@ -142,10 +142,7 @@ func (p *SFlowPipe) DecodeFlow(msg interface{}) error {
 
 // NewNetFlowPipe creates a flow pipe configured for NetFlow/IPFIX packets.
 func NewNetFlowPipe(cfg *PipeConfig) *NetFlowPipe {
-	p := &NetFlowPipe{
-		templateslock: &sync.RWMutex{},
-		templates:     make(map[string]netflow.NetFlowTemplateSystem),
-	}
+	p := &NetFlowPipe{}
 	p.parseConfig(cfg)
 	return p
 }
@@ -159,16 +156,7 @@ func (p *NetFlowPipe) DecodeFlow(msg interface{}) error {
 	buf := bytes.NewBuffer(pkt.Payload)
 
 	key := pkt.Src.String()
-
-	p.templateslock.RLock()
-	templates, ok := p.templates[key]
-	p.templateslock.RUnlock()
-	if !ok {
-		templates = p.netFlowTemplater(key)
-		p.templateslock.Lock()
-		p.templates[key] = templates
-		p.templateslock.Unlock()
-	}
+	templates := p.netFlowRegistry.GetSystem(key)
 
 	var packetV5 netflowlegacy.PacketNetFlowV5
 	var packetNFv9 netflow.NFv9Packet
@@ -234,16 +222,24 @@ func (p *NetFlowPipe) Close() {
 }
 
 // GetTemplatesForAllSources returns a copy of templates for all known NetFlow sources.
-func (p *NetFlowPipe) GetTemplatesForAllSources() map[string]map[uint64]interface{} {
-	p.templateslock.RLock()
-	defer p.templateslock.RUnlock()
-
-	ret := make(map[string]map[uint64]interface{})
-	for k, v := range p.templates {
-		ret[k] = v.GetTemplates()
+func (p *NetFlowPipe) GetTemplatesForAllSources() map[string]map[string]interface{} {
+	templates := p.netFlowRegistry.GetAll()
+	ret := make(map[string]map[string]interface{}, len(templates))
+	for key, systemTemplates := range templates {
+		formatted := make(map[string]interface{}, len(systemTemplates))
+		for templateKey, template := range systemTemplates {
+			formatted[formatTemplateKey(templateKey)] = template
+		}
+		ret[key] = formatted
 	}
-
 	return ret
+}
+
+func formatTemplateKey(key uint64) string {
+	version := uint16(key >> 48)
+	obsDomainId := uint32((key >> 16) & 0xFFFFFFFF)
+	templateId := uint16(key & 0xFFFF)
+	return fmt.Sprintf("%d/%d/%d", version, obsDomainId, templateId)
 }
 
 // AutoFlowPipe dispatches to sFlow or NetFlow pipes based on payload.
@@ -264,6 +260,11 @@ func NewFlowPipe(cfg *PipeConfig) *AutoFlowPipe {
 func (p *AutoFlowPipe) Close() {
 	p.SFlowPipe.Close()
 	p.NetFlowPipe.Close()
+}
+
+func (p *AutoFlowPipe) Start() {
+	p.SFlowPipe.Start()
+	p.NetFlowPipe.Start()
 }
 
 // DecodeFlow detects the protocol and routes to the appropriate decoder.

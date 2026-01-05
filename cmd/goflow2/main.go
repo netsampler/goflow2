@@ -44,6 +44,7 @@ import (
 	"github.com/netsampler/goflow2/v3/metrics"
 	"github.com/netsampler/goflow2/v3/utils"
 	"github.com/netsampler/goflow2/v3/utils/debug"
+	"github.com/netsampler/goflow2/v3/utils/templates"
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"gopkg.in/yaml.v3"
@@ -69,7 +70,12 @@ var (
 
 	Addr = flag.String("addr", ":8080", "HTTP server address")
 
-	TemplatePath = flag.String("templates.path", "/templates", "NetFlow/IPFIX templates list")
+	TemplatePath            = flag.String("templates.path", "/templates", "NetFlow/IPFIX templates list")
+	TemplatesTTL            = flag.Duration("templates.ttl", 0, "NetFlow/IPFIX templates TTL (0 disables expiry)")
+	TemplatesSweepInterval  = flag.Duration("templates.sweep-interval", time.Minute, "NetFlow/IPFIX template sweep interval (expiry + empty cleanup)")
+	TemplatesExtendOnAccess = flag.Bool("templates.ttl.extend-on-access", false, "Extend template TTL on access")
+	TemplatesJSONPath       = flag.String("templates.json.path", "", "NetFlow/IPFIX templates JSON output path (empty disables persistence)")
+	TemplatesJSONInterval   = flag.Duration("templates.json.interval", time.Second*10, "NetFlow/IPFIX templates JSON write interval")
 
 	MappingFile = flag.String("mapping", "", "Configuration file for custom mappings")
 
@@ -210,6 +216,61 @@ func main() {
 	var pipes []utils.FlowPipe
 
 	q := make(chan bool)
+	netFlowRegistry := templates.Registry(templates.NewInMemoryRegistry(nil))
+	var jsonRegistry *templates.JSONRegistry
+
+	// wrap the memory registry with the JSON
+	if *TemplatesJSONPath != "" {
+		jsonRegistry = templates.NewJSONRegistry(
+			*TemplatesJSONPath,
+			netFlowRegistry,
+			templates.WithJSONFlushInterval(*TemplatesJSONInterval),
+		)
+		netFlowRegistry = jsonRegistry
+	}
+
+	// wrap the previous registries with metrics
+	netFlowRegistry = metrics.NewPromTemplateRegistry(netFlowRegistry)
+
+	// wrap the previous registries with expiration/pruning control
+	expiring := templates.NewExpiringRegistry(
+		netFlowRegistry,
+		*TemplatesTTL,
+		templates.WithExtendOnAccess(*TemplatesExtendOnAccess),
+		templates.WithSweepInterval(*TemplatesSweepInterval),
+	)
+	netFlowRegistry = expiring
+
+	// preload using a JSON file
+	if *TemplatesJSONPath != "" {
+		if err := templates.PreloadJSONTemplates(*TemplatesJSONPath, netFlowRegistry); err != nil {
+			logger.Warn("error preloading templates JSON", slog.String("error", err.Error()))
+		}
+	}
+	netFlowRegistry.Start()
+	if jsonRegistry != nil {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+
+			jsonErr := jsonRegistry.Errors()
+
+			for {
+				select {
+				case <-q:
+					return
+				case err, ok := <-jsonErr:
+					if !ok {
+						return
+					}
+					if err == nil {
+						continue
+					}
+					logger.Error("template persistence error", slog.String("error", err.Error()))
+				}
+			}
+		}()
+	}
 	for _, listenAddress := range strings.Split(*ListenAddresses, ",") {
 		listenAddrUrl, err := url.Parse(listenAddress)
 		if err != nil {
@@ -295,10 +356,10 @@ func main() {
 		}
 
 		cfgPipe := &utils.PipeConfig{
-			Format:           formatter,
-			Transport:        transporter,
-			Producer:         flowProducer,
-			NetFlowTemplater: metrics.NewDefaultPromTemplateSystem, // wrap template system to get Prometheus info
+			Format:          formatter,
+			Transport:       transporter,
+			Producer:        flowProducer,
+			NetFlowRegistry: netFlowRegistry, // add the wrapped registries
 		}
 
 		var decodeFunc utils.DecoderFunc
@@ -314,6 +375,7 @@ func main() {
 			logger.Error("scheme does not exist", slog.String("error", listenAddrUrl.Scheme))
 			os.Exit(1)
 		}
+		p.Start()
 
 		// Add optional HTTP handler for templates
 		if nfP, ok := p.(*utils.NetFlowPipe); ok && *TemplatePath != "" {
@@ -462,6 +524,7 @@ func main() {
 		logger.Error("error shutting-down HTTP server", slog.String("error", err.Error()))
 	}
 	cancel()
+	netFlowRegistry.Close()
 	close(q) // close errors
 	wg.Wait()
 

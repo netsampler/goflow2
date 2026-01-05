@@ -2,6 +2,7 @@ package metrics
 
 import (
 	"strconv"
+	"time"
 
 	"github.com/netsampler/goflow2/v3/decoders/netflow"
 
@@ -44,33 +45,48 @@ func (s *PromTemplateSystem) getLabels(version uint16, obsDomainId uint32, templ
 	}
 }
 
-func (s *PromTemplateSystem) AddTemplate(version uint16, obsDomainId uint32, templateId uint16, template interface{}) error {
-	err := s.wrapped.AddTemplate(version, obsDomainId, templateId, template)
-
-	labels := s.getLabels(version, obsDomainId, templateId, template)
-	NetFlowTemplatesStats.With(
-		labels).
-		Inc()
-	return err
+func (s *PromTemplateSystem) AddTemplate(version uint16, obsDomainId uint32, templateId uint16, template interface{}) (netflow.TemplateStatus, error) {
+	update, err := s.wrapped.AddTemplate(version, obsDomainId, templateId, template)
+	if err == nil {
+		labels := s.getLabels(version, obsDomainId, templateId, template)
+		NetFlowTemplatesStats.With(
+			labels).
+			Inc()
+		timestamp := float64(time.Now().Unix())
+		switch update {
+		case netflow.TemplateAdded:
+			NetFlowTemplateAddedTimestamp.With(labels).Set(timestamp)
+		case netflow.TemplateUpdated:
+			NetFlowTemplateUpdatedTimestamp.With(labels).Set(timestamp)
+		}
+	}
+	return update, err
 }
 
 // GetTemplate retrieves a template from the wrapped system.
 func (s *PromTemplateSystem) GetTemplate(version uint16, obsDomainId uint32, templateId uint16) (interface{}, error) {
-	return s.wrapped.GetTemplate(version, obsDomainId, templateId)
+	template, err := s.wrapped.GetTemplate(version, obsDomainId, templateId)
+	if err != nil {
+		return template, err
+	}
+	labels := s.getLabels(version, obsDomainId, templateId, template)
+	NetFlowTemplateAccessedTimestamp.With(labels).Set(float64(time.Now().Unix()))
+	return template, nil
 }
 
 // RemoveTemplate removes a template and updates metrics.
-func (s *PromTemplateSystem) RemoveTemplate(version uint16, obsDomainId uint32, templateId uint16) (interface{}, error) {
-
-	template, err := s.wrapped.RemoveTemplate(version, obsDomainId, templateId)
-
-	if err == nil {
+func (s *PromTemplateSystem) RemoveTemplate(version uint16, obsDomainId uint32, templateId uint16) (interface{}, bool, error) {
+	template, removed, err := s.wrapped.RemoveTemplate(version, obsDomainId, templateId)
+	if removed {
 		labels := s.getLabels(version, obsDomainId, templateId, template)
 
 		NetFlowTemplatesStats.Delete(labels)
+		NetFlowTemplateAddedTimestamp.Delete(labels)
+		NetFlowTemplateUpdatedTimestamp.Delete(labels)
+		NetFlowTemplateAccessedTimestamp.Delete(labels)
 	}
 
-	return template, err
+	return template, removed, err
 }
 
 // GetTemplates returns all templates from the wrapped system.
