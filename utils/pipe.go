@@ -72,7 +72,6 @@ func (p *flowpipe) parseConfig(cfg *PipeConfig) {
 }
 
 func (p *flowpipe) Start() {
-	p.netFlowRegistry.Start()
 }
 
 // SFlowPipe decodes sFlow packets and forwards them to a producer.
@@ -220,7 +219,6 @@ func (p *NetFlowPipe) DecodeFlow(msg interface{}) error {
 }
 
 func (p *NetFlowPipe) Close() {
-	p.netFlowRegistry.Close()
 }
 
 // GetTemplatesForAllSources returns a copy of templates for all known NetFlow sources.

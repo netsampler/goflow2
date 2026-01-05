@@ -216,6 +216,34 @@ func main() {
 	var pipes []utils.FlowPipe
 
 	q := make(chan bool)
+	netFlowRegistry := templates.Registry(templates.NewInMemoryRegistry(nil))
+
+	// wrap the memory registry with the JSON
+	if *TemplatesJSONPath != "" {
+		jsonRegistry := templates.NewJSONRegistry(*TemplatesJSONPath, netFlowRegistry)
+		jsonRegistry.SetFlushInterval(*TemplatesJSONInterval)
+		netFlowRegistry = jsonRegistry
+	}
+
+	// wrap the previous registries with metrics
+	netFlowRegistry = metrics.NewPromTemplateRegistry(netFlowRegistry)
+
+	// wrap the previous registries with expiration/pruning control
+	expiring := templates.NewExpiringRegistry(
+		netFlowRegistry,
+		*TemplatesTTL,
+		templates.WithExtendOnAccess(*TemplatesExtendOnAccess),
+		templates.WithSweepInterval(*TemplatesSweepInterval),
+	)
+	netFlowRegistry = expiring
+
+	// preload using a JSON file
+	if *TemplatesJSONPath != "" {
+		if err := templates.PreloadJSONTemplates(*TemplatesJSONPath, netFlowRegistry); err != nil {
+			logger.Warn("error preloading templates JSON", slog.String("error", err.Error()))
+		}
+	}
+	netFlowRegistry.Start()
 	for _, listenAddress := range strings.Split(*ListenAddresses, ",") {
 		listenAddrUrl, err := url.Parse(listenAddress)
 		if err != nil {
@@ -300,33 +328,6 @@ func main() {
 			os.Exit(1)
 		}
 
-		netFlowRegistry := templates.Registry(templates.NewInMemoryRegistry(nil))
-
-		// wrap the memory registry with the JSON
-		if *TemplatesJSONPath != "" {
-			jsonRegistry := templates.NewJSONRegistry(*TemplatesJSONPath, netFlowRegistry)
-			jsonRegistry.SetFlushInterval(*TemplatesJSONInterval)
-			netFlowRegistry = jsonRegistry
-		}
-
-		// wrap the previous registries with metrics
-		netFlowRegistry = metrics.NewPromTemplateRegistry(netFlowRegistry)
-
-		// wrap the previous registries with expiration/pruning control
-		expiring := templates.NewExpiringRegistry(
-			netFlowRegistry,
-			*TemplatesTTL,
-			templates.WithExtendOnAccess(*TemplatesExtendOnAccess),
-			templates.WithSweepInterval(*TemplatesSweepInterval),
-		)
-		netFlowRegistry = expiring
-
-		// preload using a JSON file
-		if *TemplatesJSONPath != "" {
-			if err := templates.PreloadJSONTemplates(*TemplatesJSONPath, netFlowRegistry); err != nil {
-				logger.Warn("error preloading templates JSON", slog.String("error", err.Error()))
-			}
-		}
 		cfgPipe := &utils.PipeConfig{
 			Format:          formatter,
 			Transport:       transporter,
@@ -496,6 +497,7 @@ func main() {
 		logger.Error("error shutting-down HTTP server", slog.String("error", err.Error()))
 	}
 	cancel()
+	netFlowRegistry.Close()
 	close(q) // close errors
 	wg.Wait()
 
