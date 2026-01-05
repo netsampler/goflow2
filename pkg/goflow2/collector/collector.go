@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
-	"reflect"
 	"sync"
 	"time"
 
@@ -120,7 +119,15 @@ func (c *Collector) Start() error {
 		logger *slog.Logger
 		bm     *utils.BatchMute
 	}
-	var recvErrSources []recvErrSource
+	type recvErr struct {
+		err    error
+		logger *slog.Logger
+		bm     *utils.BatchMute
+	}
+	var recvErrCh chan recvErr
+	if len(c.listeners) > 0 {
+		recvErrCh = make(chan recvErr, len(c.listeners))
+	}
 
 	if jsonRegistry != nil {
 		c.wg.Add(1)
@@ -203,80 +210,86 @@ func (c *Collector) Start() error {
 		if err := recv.Start(listenCfg.Hostname, listenCfg.Port, decodeFunc); err != nil {
 			return fmt.Errorf("collector: start receiver %s:%d: %w", listenCfg.Hostname, listenCfg.Port, err)
 		}
-		recvErrSources = append(recvErrSources, recvErrSource{
+		source := recvErrSource{
 			ch:     recv.Errors(),
 			logger: logger,
 			bm:     bm,
-		})
+		}
+		c.wg.Add(1)
+		go func(source recvErrSource) {
+			defer c.wg.Done()
+			for {
+				select {
+				case <-c.stopCh:
+					return
+				case err := <-source.ch:
+					if err == nil {
+						continue
+					}
+					select {
+					case recvErrCh <- recvErr{
+						err:    err,
+						logger: source.logger,
+						bm:     source.bm,
+					}:
+					case <-c.stopCh:
+						return
+					}
+				}
+			}
+		}(source)
 
 		c.receivers = append(c.receivers, recv)
 	}
 
-	if len(recvErrSources) > 0 {
+	if recvErrCh != nil {
 		c.wg.Add(1)
-		go func(sources []recvErrSource) {
+		go func() {
 			defer c.wg.Done()
 
-			cases := make([]reflect.SelectCase, 0, len(sources)+1)
-			cases = append(cases, reflect.SelectCase{
-				Dir:  reflect.SelectRecv,
-				Chan: reflect.ValueOf(c.stopCh),
-			})
-			for _, source := range sources {
-				cases = append(cases, reflect.SelectCase{
-					Dir:  reflect.SelectRecv,
-					Chan: reflect.ValueOf(source.ch),
-				})
-			}
-
 			for {
-				chosen, value, ok := reflect.Select(cases)
-				if chosen == 0 {
+				select {
+				case <-c.stopCh:
 					return
-				}
-				if !ok {
-					continue
-				}
-				err, _ := value.Interface().(error)
-				if err == nil {
-					continue
-				}
-
-				source := sources[chosen-1]
-				if errors.Is(err, net.ErrClosed) {
-					source.logger.Info("closed receiver")
-					continue
-				}
-				if !errors.Is(err, netflow.ErrorTemplateNotFound) && !errors.Is(err, debug.ErrPanic) {
-					source.logger.Error("error", slog.String("error", err.Error()))
-					continue
-				}
-
-				muted, skipped := source.bm.Increment()
-				if muted && skipped == 0 {
-					source.logger.Warn("too many receiver messages, muting")
-				} else if !muted && skipped > 0 {
-					source.logger.Warn("skipped receiver messages", slog.Int("count", skipped))
-				} else if !muted {
-					attrs := []any{
-						slog.String("error", err.Error()),
+				case recvErr := <-recvErrCh:
+					if recvErr.err == nil {
+						continue
+					}
+					if errors.Is(recvErr.err, net.ErrClosed) {
+						recvErr.logger.Info("closed receiver")
+						continue
+					}
+					if !errors.Is(recvErr.err, netflow.ErrorTemplateNotFound) && !errors.Is(recvErr.err, debug.ErrPanic) {
+						recvErr.logger.Error("error", slog.String("error", recvErr.err.Error()))
+						continue
 					}
 
-					if errors.Is(err, netflow.ErrorTemplateNotFound) {
-						source.logger.Warn("template error")
-					} else if errors.Is(err, debug.ErrPanic) {
-						var pErrMsg *debug.PanicErrorMessage
-						if errors.As(err, &pErrMsg) {
-							attrs = append(attrs,
-								slog.Any("message", pErrMsg.Msg),
-								slog.String("stacktrace", string(pErrMsg.Stacktrace)),
-							)
+					muted, skipped := recvErr.bm.Increment()
+					if muted && skipped == 0 {
+						recvErr.logger.Warn("too many receiver messages, muting")
+					} else if !muted && skipped > 0 {
+						recvErr.logger.Warn("skipped receiver messages", slog.Int("count", skipped))
+					} else if !muted {
+						attrs := []any{
+							slog.String("error", recvErr.err.Error()),
 						}
-						source.logger.Error("intercepted panic", attrs...)
+
+						if errors.Is(recvErr.err, netflow.ErrorTemplateNotFound) {
+							recvErr.logger.Warn("template error")
+						} else if errors.Is(recvErr.err, debug.ErrPanic) {
+							var pErrMsg *debug.PanicErrorMessage
+							if errors.As(recvErr.err, &pErrMsg) {
+								attrs = append(attrs,
+									slog.Any("message", pErrMsg.Msg),
+									slog.String("stacktrace", string(pErrMsg.Stacktrace)),
+								)
+							}
+							recvErr.logger.Error("intercepted panic", attrs...)
+						}
 					}
 				}
 			}
-		}(recvErrSources)
+		}()
 	}
 
 	c.wg.Add(1)
