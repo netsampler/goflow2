@@ -20,8 +20,7 @@ type FileDriver struct {
 	w               io.Writer
 	file            *os.File
 	lock            *sync.RWMutex
-	stopCh          chan struct{}
-	stopOnce        sync.Once
+	reloadCh        chan os.Signal
 }
 
 // Prepare registers flags for file transport configuration.
@@ -44,9 +43,6 @@ func (d *FileDriver) openFile() error {
 
 // Init initializes the output destination and reload handling.
 func (d *FileDriver) Init() error {
-	d.stopCh = make(chan struct{})
-	d.stopOnce = sync.Once{}
-
 	if d.fileDestination == "" {
 		d.w = os.Stdout
 	} else {
@@ -59,26 +55,25 @@ func (d *FileDriver) Init() error {
 			return fmt.Errorf("file transport init: %w", err)
 		}
 
-		c := make(chan os.Signal, 1)
-		signal.Notify(c, syscall.SIGHUP)
+		d.reloadCh = make(chan os.Signal, 1)
+		signal.Notify(d.reloadCh, syscall.SIGHUP)
+		reloadCh := d.reloadCh
 		go func() {
 			for {
-				select {
-				case <-c:
-					d.lock.Lock()
-					if err := d.file.Close(); err != nil {
-						d.lock.Unlock()
-						return
-					}
-					err := d.openFile()
-					d.lock.Unlock()
-					if err != nil {
-						return
-					}
-					// if there is an error, keeps using the old file
-				case <-d.stopCh:
+				if _, ok := <-reloadCh; !ok {
 					return
 				}
+				d.lock.Lock()
+				if err := d.file.Close(); err != nil {
+					d.lock.Unlock()
+					return
+				}
+				err := d.openFile()
+				d.lock.Unlock()
+				if err != nil {
+					return
+				}
+				// if there is an error, keeps using the old file
 			}
 		}()
 	}
@@ -114,12 +109,11 @@ func (d *FileDriver) Close() error {
 			closeErr = fmt.Errorf("close output file: %w", err)
 		}
 		d.lock.Unlock()
-		signal.Ignore(syscall.SIGHUP)
-	}
-	if d.stopCh != nil {
-		d.stopOnce.Do(func() {
-			close(d.stopCh)
-		})
+		if d.reloadCh != nil {
+			signal.Stop(d.reloadCh)
+			close(d.reloadCh)
+			d.reloadCh = nil
+		}
 	}
 	return closeErr
 }
