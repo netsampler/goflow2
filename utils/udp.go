@@ -35,6 +35,14 @@ type Message struct {
 	Received time.Time
 }
 
+func normalizeAddrPort(addrPort netip.AddrPort) netip.AddrPort {
+	addr := addrPort.Addr()
+	if addr.Is4In6() {
+		return netip.AddrPortFrom(addr.Unmap(), addrPort.Port())
+	}
+	return addrPort
+}
+
 var packetPool = sync.Pool{
 	New: func() any {
 		return &udpPacket{
@@ -200,8 +208,8 @@ func (r *UDPReceiver) receiveRoutine(udpconn *net.UDPConn) (err error) {
 			default:
 				if r.cb != nil {
 					r.cb.Dropped(Message{
-						Src:      pkt.src.AddrPort(),
-						Dst:      pkt.dst.AddrPort(),
+						Src:      normalizeAddrPort(pkt.src.AddrPort()),
+						Dst:      normalizeAddrPort(pkt.dst.AddrPort()),
 						Payload:  pkt.payload[0:pkt.size],
 						Received: pkt.received,
 					})
@@ -237,8 +245,8 @@ func (r *UDPReceiver) decoders(workers int, decodeFunc DecoderFunc) error {
 			for pkt := range r.dispatch {
 				if decodeFunc != nil {
 					msg := Message{
-						Src:      pkt.src.AddrPort(),
-						Dst:      pkt.dst.AddrPort(),
+						Src:      normalizeAddrPort(pkt.src.AddrPort()),
+						Dst:      normalizeAddrPort(pkt.dst.AddrPort()),
 						Payload:  pkt.payload[0:pkt.size],
 						Received: pkt.received,
 					}
