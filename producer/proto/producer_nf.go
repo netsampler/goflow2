@@ -688,18 +688,13 @@ func SearchNetFlowDataSets(version uint16, baseTime uint32, uptime uint32, dataF
 func SearchNetFlowOptionDataSets(dataFlowSet []netflow.OptionsDataFlowSet) (samplingRate uint32, found bool, err error) {
 	for _, dataFlowSetItem := range dataFlowSet {
 		for _, record := range dataFlowSetItem.Records {
-			if found, err := NetFlowPopulate(record.OptionsValues, 305, &samplingRate); err != nil || found {
-				return samplingRate, found, err
-			}
-			if found, err := NetFlowPopulate(record.OptionsValues, 50, &samplingRate); err != nil || found {
-				return samplingRate, found, err
-			}
-			if found, err := NetFlowPopulate(record.OptionsValues, 34, &samplingRate); err != nil || found {
-				return samplingRate, found, err
+			samplingOptions, err := SamplingFromOptions(record)
+			if err == nil {
+				return samplingOptions.SamplingRate(), true, nil
 			}
 		}
 	}
-	return samplingRate, found, err
+	return 0, false, nil
 }
 
 // SplitNetFlowSets partitions v9 flow sets by type.
