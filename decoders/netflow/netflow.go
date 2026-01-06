@@ -53,7 +53,7 @@ func DecodeNFv9OptionsTemplateSet(payload *bytes.Buffer) ([]NFv9OptionsTemplateR
 			&optsTemplateRecord.OptionLength,
 		)
 		if err != nil {
-			return records, err
+			return records, fmt.Errorf("NFv9OptionsTemplateSet: header [%w]", err)
 		}
 
 		sizeScope := int(optsTemplateRecord.ScopeLength) / 4
@@ -94,13 +94,16 @@ func DecodeField(payload *bytes.Buffer, field *Field, pen bool) error {
 		&field.Type,
 		&field.Length,
 	); err != nil {
-		return err
+		return fmt.Errorf("DecodeField: header [%w]", err)
 	}
 	if pen && field.Type&0x8000 != 0 {
 		field.PenProvided = true
-		return utils.BinaryDecoder(payload,
+		if err := utils.BinaryDecoder(payload,
 			&field.Pen,
-		)
+		); err != nil {
+			return fmt.Errorf("DecodeField: pen [%w]", err)
+		}
+		return nil
 	}
 	return nil
 }
@@ -219,13 +222,13 @@ func DecodeDataSetUsingFields(version uint16, payload *bytes.Buffer, listFields 
 				if err := utils.BinaryDecoder(payload,
 					&variableLen8,
 				); err != nil {
-					return nil, err
+					return nil, fmt.Errorf("DataSet: variable length header [%w]", err)
 				}
 				if variableLen8 == 0xff {
 					if err := utils.BinaryDecoder(payload,
 						&variableLen16,
 					); err != nil {
-						return nil, err
+						return nil, fmt.Errorf("DataSet: extended variable length [%w]", err)
 					}
 					finalLength = int(variableLen16)
 				} else {

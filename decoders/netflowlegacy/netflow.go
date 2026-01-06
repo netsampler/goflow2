@@ -25,7 +25,7 @@ func (e *DecoderError) Unwrap() error {
 func DecodeMessageVersion(payload *bytes.Buffer, packet *PacketNetFlowV5) error {
 	var version uint16
 	if err := utils.BinaryDecoder(payload, &version); err != nil {
-		return err
+		return &DecoderError{fmt.Errorf("version [%w]", err)}
 	}
 	packet.Version = version
 	if packet.Version != 5 {
@@ -46,7 +46,7 @@ func DecodeMessage(payload *bytes.Buffer, packet *PacketNetFlowV5) error {
 		&packet.EngineId,
 		&packet.SamplingInterval,
 	); err != nil {
-		return &DecoderError{err}
+		return &DecoderError{fmt.Errorf("header [%w]", err)}
 	}
 
 	packet.Records = make([]RecordsNetFlowV5, int(packet.Count)) // maximum is 65535 which would be 3MB
@@ -76,7 +76,7 @@ func DecodeMessage(payload *bytes.Buffer, packet *PacketNetFlowV5) error {
 			&record.DstMask,
 			&record.Pad2,
 		); err != nil {
-			return &DecoderError{err}
+			return &DecoderError{fmt.Errorf("record:%d [%w]", i, err)}
 		}
 		record.SrcAddr = IPAddress(srcAddr)
 		record.DstAddr = IPAddress(dstAddr)
