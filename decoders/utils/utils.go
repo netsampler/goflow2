@@ -9,12 +9,6 @@ import (
 	"reflect"
 )
 
-// BytesBuffer is a minimal buffer interface for decoding helpers.
-type BytesBuffer interface {
-	io.Reader
-	Next(int) []byte
-}
-
 // BinaryDecoder decodes multiple values from the buffer using big-endian encoding.
 func BinaryDecoder(payload *bytes.Buffer, dests ...interface{}) error {
 	for _, dest := range dests {
@@ -27,7 +21,7 @@ func BinaryDecoder(payload *bytes.Buffer, dests ...interface{}) error {
 }
 
 // BinaryRead decodes a single value from the buffer using the supplied byte order.
-func BinaryRead(payload BytesBuffer, order binary.ByteOrder, data any) error {
+func BinaryRead(payload *bytes.Buffer, order binary.ByteOrder, data any) error {
 	// Fast path for basic types and slices.
 	if n := intDataSize(data); n != 0 {
 		bs := payload.Next(n)
