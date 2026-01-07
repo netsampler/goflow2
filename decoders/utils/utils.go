@@ -7,6 +7,7 @@ import (
 	"errors"
 	"io"
 	"reflect"
+	"time"
 )
 
 // BinaryDecoder decodes multiple values from the buffer using big-endian encoding.
@@ -47,6 +48,9 @@ func BinaryRead(payload *bytes.Buffer, order binary.ByteOrder, data any) error {
 			*data = int64(order.Uint64(bs))
 		case *uint64:
 			*data = order.Uint64(bs)
+		case *time.Time:
+			t := order.Uint64(bs)
+			*data = time.Unix(int64(t/1000), 0)
 		case *string:
 			strlen := int(order.Uint32(bs))
 			buf := payload.Next(strlen)
@@ -134,6 +138,8 @@ func intDataSize(data any) int {
 	case []uint32:
 		return 4 * len(data)
 	case int64, uint64, *int64, *uint64:
+		return 8
+	case *time.Time:
 		return 8
 	case []int64:
 		return 8 * len(data)
