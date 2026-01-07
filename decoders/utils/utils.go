@@ -27,7 +27,13 @@ func BinaryRead(payload *bytes.Buffer, order binary.ByteOrder, data any) error {
 	if n := intDataSize(data); n != 0 {
 		bs := payload.Next(n)
 		if len(bs) < n {
-			return io.ErrUnexpectedEOF
+			padded := make([]byte, n)
+			if order == binary.BigEndian {
+				copy(padded[n-len(bs):], bs)
+			} else {
+				copy(padded, bs)
+			}
+			bs = padded
 		}
 		switch data := data.(type) {
 		case *bool:

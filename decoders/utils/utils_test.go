@@ -44,6 +44,14 @@ func TestBinaryReadUints(t *testing.T) {
 	assert.Equal(t, uint32(0x1020304), dest[0])
 }
 
+func TestBinaryReadShortPayload(t *testing.T) {
+	buf := newTestBuf([]byte{0x12, 0x34})
+	var dest uint32
+	err := testBinaryRead(buf, &dest)
+	require.NoError(t, err)
+	assert.Equal(t, uint32(0x1234), dest)
+}
+
 func newTestBuf(data []byte) *bytes.Buffer {
 	buf := bytes.NewBuffer(make([]byte, 0, len(data)))
 	buf.Write(data)
