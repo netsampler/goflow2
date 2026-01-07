@@ -52,6 +52,14 @@ func TestBinaryReadShortPayload(t *testing.T) {
 	assert.Equal(t, uint32(0x1234), dest)
 }
 
+func TestBinaryReadShortPayloadLittleEndian(t *testing.T) {
+	buf := newTestBuf([]byte{0x12, 0x34})
+	var dest uint32
+	err := BinaryRead(buf, binary.LittleEndian, &dest)
+	require.NoError(t, err)
+	assert.Equal(t, uint32(0x3412), dest)
+}
+
 func newTestBuf(data []byte) *bytes.Buffer {
 	buf := bytes.NewBuffer(make([]byte, 0, len(data)))
 	buf.Write(data)
