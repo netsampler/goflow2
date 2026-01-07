@@ -117,7 +117,7 @@ func MapCustomNetFlow(flowMessage *ProtoProducerMessage, df netflow.DataField, m
 	if ok {
 		v := df.Value.([]byte)
 		if err := MapCustom(flowMessage, v, mapped); err != nil {
-			return err
+			return fmt.Errorf("map custom netflow field %d: %w", df.Type, err)
 		}
 	}
 	return nil
@@ -125,6 +125,11 @@ func MapCustomNetFlow(flowMessage *ProtoProducerMessage, df netflow.DataField, m
 
 // MapCustom maps raw bytes into a flow message field using a mapper.
 func MapCustom(flowMessage *ProtoProducerMessage, v []byte, cfg MappableField) error {
+	destLabel := cfg.GetDestination()
+	if destLabel == "" {
+		destLabel = fmt.Sprintf("proto index %d", cfg.GetProtoIndex())
+	}
+
 	vfm := reflect.ValueOf(flowMessage)
 	vfm = reflect.Indirect(vfm)
 
@@ -144,21 +149,21 @@ func MapCustom(flowMessage *ProtoProducerMessage, v []byte, cfg MappableField) e
 				if IsUInt(typeDest.Elem().Kind()) {
 					if cfg.GetEndianness() == LittleEndian {
 						if err := DecodeUNumberLE(v, item.Interface()); err != nil {
-							return err
+							return fmt.Errorf("map custom %s: decode uint (LE): %w", destLabel, err)
 						}
 					} else {
 						if err := DecodeUNumber(v, item.Interface()); err != nil {
-							return err
+							return fmt.Errorf("map custom %s: decode uint: %w", destLabel, err)
 						}
 					}
 				} else if IsInt(typeDest.Elem().Kind()) {
 					if cfg.GetEndianness() == LittleEndian {
 						if err := DecodeNumberLE(v, item.Interface()); err != nil {
-							return err
+							return fmt.Errorf("map custom %s: decode int (LE): %w", destLabel, err)
 						}
 					} else {
 						if err := DecodeNumber(v, item.Interface()); err != nil {
-							return err
+							return fmt.Errorf("map custom %s: decode int: %w", destLabel, err)
 						}
 					}
 				}
@@ -172,21 +177,21 @@ func MapCustom(flowMessage *ProtoProducerMessage, v []byte, cfg MappableField) e
 			if IsUInt(typeDest.Kind()) {
 				if cfg.GetEndianness() == LittleEndian {
 					if err := DecodeUNumberLE(v, fieldValueAddr.Interface()); err != nil {
-						return err
+						return fmt.Errorf("map custom %s: decode uint (LE): %w", destLabel, err)
 					}
 				} else {
 					if err := DecodeUNumber(v, fieldValueAddr.Interface()); err != nil {
-						return err
+						return fmt.Errorf("map custom %s: decode uint: %w", destLabel, err)
 					}
 				}
 			} else if IsInt(typeDest.Kind()) {
 				if cfg.GetEndianness() == LittleEndian {
 					if err := DecodeNumberLE(v, fieldValueAddr.Interface()); err != nil {
-						return err
+						return fmt.Errorf("map custom %s: decode int (LE): %w", destLabel, err)
 					}
 				} else {
 					if err := DecodeNumber(v, fieldValueAddr.Interface()); err != nil {
-						return err
+						return fmt.Errorf("map custom %s: decode int: %w", destLabel, err)
 					}
 				}
 			}
@@ -213,11 +218,11 @@ func MapCustom(flowMessage *ProtoProducerMessage, v []byte, cfg MappableField) e
 		if cfg.GetProtoType() == ProtoVarint {
 			if cfg.GetEndianness() == LittleEndian {
 				if err := DecodeUNumberLE(v, &dstVar); err != nil {
-					return err
+					return fmt.Errorf("map custom %s: decode varint (LE): %w", destLabel, err)
 				}
 			} else {
 				if err := DecodeUNumber(v, &dstVar); err != nil {
-					return err
+					return fmt.Errorf("map custom %s: decode varint: %w", destLabel, err)
 				}
 			}
 			// support signed int?
@@ -227,7 +232,7 @@ func MapCustom(flowMessage *ProtoProducerMessage, v []byte, cfg MappableField) e
 			unk = protowire.AppendTag(unk, protowire.Number(cfg.GetProtoIndex()), protowire.BytesType)
 			unk = protowire.AppendString(unk, string(v))
 		} else {
-			return fmt.Errorf("could not insert into protobuf unknown")
+			return fmt.Errorf("map custom %s: could not insert into protobuf unknown", destLabel)
 		}
 		fmr.SetUnknown(unk)
 	}

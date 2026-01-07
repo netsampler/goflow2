@@ -92,7 +92,10 @@ type ProtoProducerMessage struct {
 func (m *ProtoProducerMessage) MarshalBinary() ([]byte, error) {
 	buf := bytes.NewBuffer([]byte{})
 	_, err := protodelim.MarshalTo(buf, m)
-	return buf.Bytes(), err
+	if err != nil {
+		return nil, fmt.Errorf("marshal proto message: %w", err)
+	}
+	return buf.Bytes(), nil
 }
 
 func main() {

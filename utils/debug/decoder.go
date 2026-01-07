@@ -1,6 +1,7 @@
 package debug
 
 import (
+	"fmt"
 	"runtime/debug"
 
 	"github.com/netsampler/goflow2/v3/utils"
@@ -16,6 +17,9 @@ func PanicDecoderWrapper(wrapped utils.DecoderFunc) utils.DecoderFunc {
 			}
 		}()
 		err = wrapped(msg)
-		return err
+		if err != nil {
+			return fmt.Errorf("decoder panic wrapper: %w", err)
+		}
+		return nil
 	}
 }

@@ -1,6 +1,8 @@
 package protoproducer
 
 import (
+	"fmt"
+
 	"github.com/netsampler/goflow2/v3/decoders/sflow"
 	flowmessage "github.com/netsampler/goflow2/v3/pb"
 	"github.com/netsampler/goflow2/v3/producer"
@@ -35,7 +37,7 @@ func ParseSampledHeaderConfig(flowMessage *ProtoProducerMessage, sampledHeader *
 		}
 
 		if err := config.ParsePacket(flowMessage, data); err != nil {
-			return err
+			return fmt.Errorf("sflow sampled header: %w", err)
 		}
 	}
 	return nil
@@ -66,7 +68,7 @@ func SearchSFlowSampleConfig(flowMessage *ProtoProducerMessage, flowSample inter
 		case sflow.SampledHeader:
 			flowMessage.Bytes = uint64(recordData.FrameLength)
 			if err := ParseSampledHeaderConfig(flowMessage, &recordData, config); err != nil { // todo: make function configurable
-				return err
+				return fmt.Errorf("sflow sampled header: %w", err)
 			}
 		case sflow.SampledIPv4:
 			ipSrc = recordData.SrcIP
@@ -126,7 +128,7 @@ func SearchSFlowSamplesConfig(samples []interface{}, config PacketMapper) (flowM
 		fmsg := protoMessagePool.Get().(*ProtoProducerMessage)
 		fmsg.Reset()
 		if err := SearchSFlowSampleConfig(fmsg, flowSample, config); err != nil {
-			return nil, err
+			return nil, fmt.Errorf("sflow sample: %w", err)
 		}
 		flowMessageSet = append(flowMessageSet, fmsg)
 	}
@@ -146,7 +148,7 @@ func ProcessMessageSFlowConfig(packet *sflow.Packet, config ProtoProducerConfig)
 	flowSamples := GetSFlowFlowSamples(packet)
 	flowMessageSet, err = SearchSFlowSamplesConfig(flowSamples, cfgSFlow)
 	if err != nil {
-		return flowMessageSet, err
+		return flowMessageSet, fmt.Errorf("sflow flow samples: %w", err)
 	}
 	for _, msg := range flowMessageSet {
 		fmsg, ok := msg.(*ProtoProducerMessage)

@@ -1,6 +1,7 @@
 package metrics
 
 import (
+	"fmt"
 	"strconv"
 	"time"
 
@@ -60,14 +61,17 @@ func (s *PromTemplateSystem) AddTemplate(version uint16, obsDomainId uint32, tem
 			NetFlowTemplateUpdatedTimestamp.With(labels).Set(timestamp)
 		}
 	}
-	return update, err
+	if err != nil {
+		return update, fmt.Errorf("metrics templates add %d/%d/%d: %w", version, obsDomainId, templateId, err)
+	}
+	return update, nil
 }
 
 // GetTemplate retrieves a template from the wrapped system.
 func (s *PromTemplateSystem) GetTemplate(version uint16, obsDomainId uint32, templateId uint16) (interface{}, error) {
 	template, err := s.wrapped.GetTemplate(version, obsDomainId, templateId)
 	if err != nil {
-		return template, err
+		return template, fmt.Errorf("metrics templates get %d/%d/%d: %w", version, obsDomainId, templateId, err)
 	}
 	labels := s.getLabels(version, obsDomainId, templateId, template)
 	NetFlowTemplateAccessedTimestamp.With(labels).Set(float64(time.Now().Unix()))
@@ -86,7 +90,10 @@ func (s *PromTemplateSystem) RemoveTemplate(version uint16, obsDomainId uint32, 
 		NetFlowTemplateAccessedTimestamp.Delete(labels)
 	}
 
-	return template, removed, err
+	if err != nil {
+		return template, removed, fmt.Errorf("metrics templates remove %d/%d/%d: %w", version, obsDomainId, templateId, err)
+	}
+	return template, removed, nil
 }
 
 // GetTemplates returns all templates from the wrapped system.

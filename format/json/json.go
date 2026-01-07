@@ -3,6 +3,7 @@ package json
 
 import (
 	"encoding/json"
+	"fmt"
 
 	"github.com/netsampler/goflow2/v3/format"
 )
@@ -27,7 +28,10 @@ func (d *JsonDriver) Format(data interface{}) ([]byte, []byte, error) {
 		key = dataIf.Key()
 	}
 	output, err := json.Marshal(data)
-	return key, output, err
+	if err != nil {
+		return key, nil, fmt.Errorf("json format: %w", err)
+	}
+	return key, output, nil
 }
 
 func init() {

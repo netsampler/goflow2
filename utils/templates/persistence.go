@@ -78,7 +78,7 @@ func PreloadJSONTemplates(path string, registry Registry) error {
 		if os.IsNotExist(err) {
 			return nil
 		}
-		return err
+		return fmt.Errorf("preload templates %s: read: %w", path, err)
 	}
 	if len(data) == 0 {
 		return nil
@@ -86,7 +86,7 @@ func PreloadJSONTemplates(path string, registry Registry) error {
 
 	var raw map[string]map[string]json.RawMessage
 	if err := json.Unmarshal(data, &raw); err != nil {
-		return err
+		return fmt.Errorf("preload templates %s: decode: %w", path, err)
 	}
 
 	type templateOp struct {
@@ -121,7 +121,7 @@ func PreloadJSONTemplates(path string, registry Registry) error {
 	for _, op := range ops {
 		system := registry.GetSystem(op.routerKey)
 		if _, err := system.AddTemplate(op.version, op.obsDomainId, op.templateId, op.template); err != nil {
-			return err
+			return fmt.Errorf("preload templates %s: add %s: %w", path, op.routerKey, err)
 		}
 	}
 
@@ -341,7 +341,7 @@ type jsonPersistingTemplateSystem struct {
 func (s *jsonPersistingTemplateSystem) AddTemplate(version uint16, obsDomainId uint32, templateId uint16, template interface{}) (netflow.TemplateStatus, error) {
 	update, err := s.wrapped.AddTemplate(version, obsDomainId, templateId, template)
 	if err != nil {
-		return update, err
+		return update, fmt.Errorf("json templates add %s %d/%d/%d: %w", s.key, version, obsDomainId, templateId, err)
 	}
 	if update != netflow.TemplateUnchanged {
 		s.parent.notifyChange()
@@ -350,7 +350,11 @@ func (s *jsonPersistingTemplateSystem) AddTemplate(version uint16, obsDomainId u
 }
 
 func (s *jsonPersistingTemplateSystem) GetTemplate(version uint16, obsDomainId uint32, templateId uint16) (interface{}, error) {
-	return s.wrapped.GetTemplate(version, obsDomainId, templateId)
+	template, err := s.wrapped.GetTemplate(version, obsDomainId, templateId)
+	if err != nil {
+		return nil, fmt.Errorf("json templates get %s %d/%d/%d: %w", s.key, version, obsDomainId, templateId, err)
+	}
+	return template, nil
 }
 
 func (s *jsonPersistingTemplateSystem) RemoveTemplate(version uint16, obsDomainId uint32, templateId uint16) (interface{}, bool, error) {
@@ -358,7 +362,10 @@ func (s *jsonPersistingTemplateSystem) RemoveTemplate(version uint16, obsDomainI
 	if removed {
 		s.parent.notifyChange()
 	}
-	return template, removed, err
+	if err != nil {
+		return template, removed, fmt.Errorf("json templates remove %s %d/%d/%d: %w", s.key, version, obsDomainId, templateId, err)
+	}
+	return template, removed, nil
 }
 
 func (s *jsonPersistingTemplateSystem) GetTemplates() netflow.FlowBaseTemplateSet {
@@ -378,29 +385,32 @@ func (r *JSONRegistry) RemoveSystem(key string) {
 func writeAtomic(path string, data []byte, perm os.FileMode) error {
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return err
+		return fmt.Errorf("write templates %s: mkdir: %w", path, err)
 	}
 	tmpPath := path + "_tmp"
 	tmpFile, err := os.OpenFile(tmpPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, perm)
 	if err != nil {
-		return err
+		return fmt.Errorf("write templates %s: open temp: %w", path, err)
 	}
 	if _, err := tmpFile.Write(data); err != nil {
 		if closeErr := tmpFile.Close(); closeErr != nil {
-			return closeErr
+			return fmt.Errorf("write templates %s: close temp after write failure: %w", path, closeErr)
 		}
-		return err
+		return fmt.Errorf("write templates %s: write temp: %w", path, err)
 	}
 	if err := tmpFile.Sync(); err != nil {
 		if closeErr := tmpFile.Close(); closeErr != nil {
-			return closeErr
+			return fmt.Errorf("write templates %s: close temp after sync failure: %w", path, closeErr)
 		}
-		return err
+		return fmt.Errorf("write templates %s: sync temp: %w", path, err)
 	}
 	if err := tmpFile.Close(); err != nil {
-		return err
+		return fmt.Errorf("write templates %s: close temp: %w", path, err)
 	}
-	return os.Rename(tmpPath, path)
+	if err := os.Rename(tmpPath, path); err != nil {
+		return fmt.Errorf("write templates %s: rename temp: %w", path, err)
+	}
+	return nil
 }
 
 func decodeTemplateKey(key uint64) (uint16, uint32, uint16) {
@@ -422,15 +432,15 @@ func parseTemplateKey(key string) (uint16, uint32, uint16, error) {
 		}
 		version, err := strconv.ParseUint(parts[0], 10, 16)
 		if err != nil {
-			return 0, 0, 0, err
+			return 0, 0, 0, fmt.Errorf("parse template version: %w", err)
 		}
 		obsDomainId, err := strconv.ParseUint(parts[1], 10, 32)
 		if err != nil {
-			return 0, 0, 0, err
+			return 0, 0, 0, fmt.Errorf("parse template obs-domain: %w", err)
 		}
 		templateId, err := strconv.ParseUint(parts[2], 10, 16)
 		if err != nil {
-			return 0, 0, 0, err
+			return 0, 0, 0, fmt.Errorf("parse template id: %w", err)
 		}
 		return uint16(version), uint32(obsDomainId), uint16(templateId), nil
 	}
@@ -440,25 +450,25 @@ func parseTemplateKey(key string) (uint16, uint32, uint16, error) {
 func decodeTemplatePayload(version uint16, payload json.RawMessage) (interface{}, error) {
 	var fields map[string]json.RawMessage
 	if err := json.Unmarshal(payload, &fields); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("decode template payload: %w", err)
 	}
 	if _, ok := fields["scope-length"]; ok && version == 9 {
 		var record netflow.NFv9OptionsTemplateRecord
 		if err := json.Unmarshal(payload, &record); err != nil {
-			return nil, err
+			return nil, fmt.Errorf("decode NFv9 options template: %w", err)
 		}
 		return record, nil
 	}
 	if _, ok := fields["scope-field-count"]; ok && version == 10 {
 		var record netflow.IPFIXOptionsTemplateRecord
 		if err := json.Unmarshal(payload, &record); err != nil {
-			return nil, err
+			return nil, fmt.Errorf("decode IPFIX options template: %w", err)
 		}
 		return record, nil
 	}
 	var record netflow.TemplateRecord
 	if err := json.Unmarshal(payload, &record); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("decode template record: %w", err)
 	}
 	return record, nil
 }

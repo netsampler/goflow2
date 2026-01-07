@@ -82,7 +82,10 @@ func PromDecoderWrapper(wrapped utils.DecoderFunc, name string) utils.DecoderFun
 					Inc()
 			}
 		}
-		return err
+		if err != nil {
+			return fmt.Errorf("decode %s: %w", name, err)
+		}
+		return nil
 	}
 }
 

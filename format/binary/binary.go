@@ -3,6 +3,7 @@ package binary
 
 import (
 	"encoding"
+	"fmt"
 
 	"github.com/netsampler/goflow2/v3/format"
 )
@@ -28,7 +29,10 @@ func (d *BinaryDriver) Format(data interface{}) ([]byte, []byte, error) {
 	}
 	if dataIf, ok := data.(encoding.BinaryMarshaler); ok {
 		text, err := dataIf.MarshalBinary()
-		return key, text, err
+		if err != nil {
+			return key, nil, fmt.Errorf("binary format: %w", err)
+		}
+		return key, text, nil
 	}
 	return key, nil, format.ErrNoSerializer
 }

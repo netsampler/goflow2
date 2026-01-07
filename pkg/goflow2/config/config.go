@@ -2,6 +2,7 @@ package config
 
 import (
 	"flag"
+	"fmt"
 	"io"
 	"time"
 
@@ -62,5 +63,8 @@ func LoadMapping(r io.Reader) (*protoproducer.ProducerConfig, error) {
 	config := &protoproducer.ProducerConfig{}
 	dec := yaml.NewDecoder(r)
 	err := dec.Decode(config)
-	return config, err
+	if err != nil {
+		return nil, fmt.Errorf("decode mapping: %w", err)
+	}
+	return config, nil
 }

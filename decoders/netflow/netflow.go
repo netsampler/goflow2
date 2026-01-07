@@ -85,7 +85,7 @@ func DecodeNFv9OptionsTemplateSet(payload *bytes.Buffer) ([]NFv9OptionsTemplateR
 		records = append(records, optsTemplateRecord)
 	}
 
-	return records, err
+	return records, nil
 }
 
 // DecodeField decodes a field and optional enterprise number.
@@ -299,7 +299,7 @@ func DecodeMessageCommon(payload *bytes.Buffer, templates NetFlowTemplateSystem,
 	startSize := payload.Len()
 	for i := 0; ((i < int(size) && version == 9) || (uint16(read) < size && version == 10)) && payload.Len() > 0; i++ {
 		if flowSet, lerr := DecodeMessageCommonFlowSet(payload, templates, obsDomainId, version); lerr != nil && !errors.Is(lerr, ErrorTemplateNotFound) {
-			return flowSets, lerr
+			return flowSets, fmt.Errorf("DecodeMessageCommon: %w", lerr)
 		} else {
 			flowSets = append(flowSets, flowSet)
 			if lerr != nil {
@@ -308,7 +308,10 @@ func DecodeMessageCommon(payload *bytes.Buffer, templates NetFlowTemplateSystem,
 		}
 		read = startSize - payload.Len()
 	}
-	return flowSets, err
+	if err != nil {
+		return flowSets, fmt.Errorf("DecodeMessageCommon: %w", err)
+	}
+	return flowSets, nil
 }
 
 func DecodeMessageCommonFlowSet(payload *bytes.Buffer, templates NetFlowTemplateSystem, obsDomainId uint32, version uint16) (flowSet interface{}, err error) {
@@ -461,7 +464,10 @@ func DecodeMessageCommonFlowSet(payload *bytes.Buffer, templates NetFlowTemplate
 	} else {
 		return flowSet, &FlowError{version, "Decode", obsDomainId, fsheader.Id, fmt.Errorf("ID error")}
 	}
-	return flowSet, err
+	if err != nil {
+		return flowSet, fmt.Errorf("FlowSet decode: %w", err)
+	}
+	return flowSet, nil
 }
 
 func DecodeMessageNetFlow(payload *bytes.Buffer, templates NetFlowTemplateSystem, packetNFv9 *NFv9Packet) error {

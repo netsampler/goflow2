@@ -159,7 +159,7 @@ func (c *Collector) Start() error {
 		}
 		recv, err := utils.NewUDPReceiver(recvCfg)
 		if err != nil {
-			return err
+			return fmt.Errorf("collector: init receiver: %w", err)
 		}
 
 		pipeCfg := &utils.PipeConfig{
@@ -193,7 +193,7 @@ func (c *Collector) Start() error {
 		bm := utils.NewBatchMute(c.errInt, c.errCnt)
 
 		if err := recv.Start(listenCfg.Hostname, listenCfg.Port, decodeFunc); err != nil {
-			return err
+			return fmt.Errorf("collector: start receiver %s:%d: %w", listenCfg.Hostname, listenCfg.Port, err)
 		}
 		c.wg.Add(1)
 		go func(recv *utils.UDPReceiver, logger *slog.Logger) {

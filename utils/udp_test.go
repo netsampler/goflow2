@@ -1,6 +1,7 @@
 package utils
 
 import (
+	"fmt"
 	"net"
 	"strconv"
 	"sync/atomic"
@@ -24,17 +25,17 @@ func TestUDPReceiver(t *testing.T) {
 	sendMessage := func(msg string) error {
 		conn, err := net.Dial("udp", net.JoinHostPort(addr, strconv.Itoa(port)))
 		if err != nil {
-			return err
+			return fmt.Errorf("dial udp: %w", err)
 		}
 		_, err = conn.Write([]byte(msg))
 		if err != nil {
 			if closeErr := conn.Close(); closeErr != nil {
-				return closeErr
+				return fmt.Errorf("close udp after write failure: %w", closeErr)
 			}
-			return err
+			return fmt.Errorf("write udp: %w", err)
 		}
 		if err := conn.Close(); err != nil {
-			return err
+			return fmt.Errorf("close udp: %w", err)
 		}
 		return nil
 	}
@@ -95,15 +96,15 @@ func TestUDPReceiverDrainOnStop(t *testing.T) {
 func getFreeUDPPort() (int, error) {
 	a, err := net.ResolveUDPAddr("udp", "127.0.0.1:0")
 	if err != nil {
-		return 0, err
+		return 0, fmt.Errorf("resolve udp addr: %w", err)
 	}
 	l, err := net.ListenUDP("udp", a)
 	if err != nil {
-		return 0, err
+		return 0, fmt.Errorf("listen udp: %w", err)
 	}
 	port := l.LocalAddr().(*net.UDPAddr).Port
 	if err := l.Close(); err != nil {
-		return 0, err
+		return 0, fmt.Errorf("close udp listener: %w", err)
 	}
 	return port, nil
 }
