@@ -90,6 +90,14 @@ func NetFlowPopulate(dataFields []netflow.DataField, typeId uint16, addr interfa
 			switch addrt := addr.(type) {
 			//case *(net.IP):
 			//	*addrt = valueBytes
+			case *byte, *uint16, *uint32, *uint64:
+				if err := DecodeUNumber(valueBytes, addr); err != nil {
+					return false, err
+				}
+			case *int8, *int16, *int32, *int64:
+				if err := DecodeNumber(valueBytes, addr); err != nil {
+					return false, err
+				}
 			case *(time.Time):
 				t := uint64(0)
 				if err := utils.BinaryRead(valueReader, binary.BigEndian, &t); err != nil {
