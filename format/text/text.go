@@ -3,6 +3,7 @@ package text
 
 import (
 	"encoding"
+	"fmt"
 
 	"github.com/netsampler/goflow2/v3/format"
 )
@@ -28,7 +29,10 @@ func (d *TextDriver) Format(data interface{}) ([]byte, []byte, error) {
 	}
 	if dataIf, ok := data.(encoding.TextMarshaler); ok {
 		text, err := dataIf.MarshalText()
-		return key, text, err
+		if err != nil {
+			return key, nil, fmt.Errorf("text format: %w", err)
+		}
+		return key, text, nil
 	}
 	if dataIf, ok := data.(interface{ String() string }); ok {
 		return key, []byte(dataIf.String()), nil

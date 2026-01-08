@@ -45,11 +45,11 @@ func (p *flowpipe) formatSend(flowMessageSet []producer.ProducerMessage) error {
 		if p.format != nil {
 			key, data, err := p.format.Format(msg)
 			if err != nil {
-				return err
+				return fmt.Errorf("format message: %w", err)
 			}
 			if p.transport != nil {
 				if err = p.transport.Send(key, data); err != nil {
-					return err
+					return fmt.Errorf("send message: %w", err)
 				}
 			}
 			// send to pool for reuse
@@ -119,7 +119,7 @@ func (p *SFlowPipe) DecodeFlow(msg interface{}) error {
 
 	var packet sflow.Packet
 	if err := sflow.DecodeMessageVersion(buf, &packet); err != nil {
-		return &PipeMessageError{pkt, err}
+		return &PipeMessageError{pkt, fmt.Errorf("sflow decode: %w", err)}
 	}
 
 	args := producer.ProduceArgs{
@@ -135,9 +135,12 @@ func (p *SFlowPipe) DecodeFlow(msg interface{}) error {
 	flowMessageSet, err := p.producer.Produce(&packet, &args)
 	defer p.producer.Commit(flowMessageSet)
 	if err != nil {
-		return &PipeMessageError{pkt, err}
+		return &PipeMessageError{pkt, fmt.Errorf("sflow produce: %w", err)}
 	}
-	return p.formatSend(flowMessageSet)
+	if err := p.formatSend(flowMessageSet); err != nil {
+		return &PipeMessageError{pkt, fmt.Errorf("sflow format/send: %w", err)}
+	}
+	return nil
 }
 
 // NewNetFlowPipe creates a flow pipe configured for NetFlow/IPFIX packets.
@@ -165,23 +168,23 @@ func (p *NetFlowPipe) DecodeFlow(msg interface{}) error {
 	// decode the version
 	var version uint16
 	if err := utils.BinaryDecoder(buf, &version); err != nil {
-		return &PipeMessageError{pkt, err}
+		return &PipeMessageError{pkt, fmt.Errorf("netflow version: %w", err)}
 	}
 	switch version {
 	case 5:
 		packetV5.Version = 5
 		if err := netflowlegacy.DecodeMessage(buf, &packetV5); err != nil {
-			return &PipeMessageError{pkt, err}
+			return &PipeMessageError{pkt, fmt.Errorf("netflow v5 decode: %w", err)}
 		}
 	case 9:
 		packetNFv9.Version = 9
 		if err := netflow.DecodeMessageNetFlow(buf, templates, &packetNFv9); err != nil {
-			return &PipeMessageError{pkt, err}
+			return &PipeMessageError{pkt, fmt.Errorf("netflow v9 decode: %w", err)}
 		}
 	case 10:
 		packetIPFIX.Version = 10
 		if err := netflow.DecodeMessageIPFIX(buf, templates, &packetIPFIX); err != nil {
-			return &PipeMessageError{pkt, err}
+			return &PipeMessageError{pkt, fmt.Errorf("ipfix decode: %w", err)}
 		}
 	default:
 		return &PipeMessageError{pkt, fmt.Errorf("not a NetFlow packet")}
@@ -212,10 +215,12 @@ func (p *NetFlowPipe) DecodeFlow(msg interface{}) error {
 	}
 	defer p.producer.Commit(flowMessageSet)
 	if err != nil {
-		return &PipeMessageError{pkt, err}
+		return &PipeMessageError{pkt, fmt.Errorf("netflow produce: %w", err)}
 	}
-
-	return p.formatSend(flowMessageSet)
+	if err := p.formatSend(flowMessageSet); err != nil {
+		return &PipeMessageError{pkt, fmt.Errorf("netflow format/send: %w", err)}
+	}
+	return nil
 }
 
 func (p *NetFlowPipe) Close() {
@@ -277,7 +282,7 @@ func (p *AutoFlowPipe) DecodeFlow(msg interface{}) error {
 
 	var proto uint32
 	if err := utils.BinaryDecoder(buf, &proto); err != nil {
-		return &PipeMessageError{pkt, err}
+		return &PipeMessageError{pkt, fmt.Errorf("protocol detect: %w", err)}
 	}
 
 	protoNetFlow := (proto & 0xFFFF0000) >> 16

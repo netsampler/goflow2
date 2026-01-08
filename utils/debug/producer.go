@@ -1,6 +1,7 @@
 package debug
 
 import (
+	"fmt"
 	"runtime/debug"
 
 	"github.com/netsampler/goflow2/v3/producer"
@@ -22,7 +23,10 @@ func (p *PanicProducerWrapper) Produce(msg interface{}, args *producer.ProduceAr
 	}()
 
 	flowMessageSet, err = p.wrapped.Produce(msg, args)
-	return flowMessageSet, err
+	if err != nil {
+		return flowMessageSet, fmt.Errorf("producer panic wrapper: %w", err)
+	}
+	return flowMessageSet, nil
 }
 
 // Close forwards Close to the wrapped producer.

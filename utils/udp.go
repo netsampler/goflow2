@@ -110,7 +110,10 @@ func NewUDPReceiver(cfg *UDPReceiverConfig) (*UDPReceiver, error) {
 
 	err := r.init()
 
-	return r, err
+	if err != nil {
+		return nil, fmt.Errorf("udp receiver init: %w", err)
+	}
+	return r, nil
 }
 
 // Initialize channels that are related to a session
@@ -150,7 +153,7 @@ func (r *UDPReceiver) receive(addr string, port int, started chan bool) error {
 
 	pconn, err := reuseport.ListenPacket("udp", fmt.Sprintf("%s:%d", addr, port))
 	if err != nil {
-		return err
+		return fmt.Errorf("udp listen %s:%d: %w", addr, port, err)
 	}
 	close(started) // indicates receiver is setup
 
@@ -183,7 +186,7 @@ func (r *UDPReceiver) receiveRoutine(udpconn *net.UDPConn) (err error) {
 		pkt.size, pkt.src, err = udpconn.ReadFromUDP(pkt.payload)
 		if err != nil {
 			packetPool.Put(pkt)
-			return err
+			return fmt.Errorf("udp read: %w", err)
 		}
 		pkt.dst = localAddr
 		pkt.received = time.Now().UTC()
@@ -306,15 +309,15 @@ func (r *UDPReceiver) Start(addr string, port int, decodeFunc DecoderFunc) error
 
 	if err := r.decoders(r.workers, decodeFunc); err != nil {
 		if stopErr := r.Stop(); stopErr != nil {
-			return stopErr
+			return fmt.Errorf("receiver stop after decoder error: %w", stopErr)
 		}
-		return err
+		return fmt.Errorf("receiver start decoders: %w", err)
 	}
 	if err := r.receivers(r.sockets, addr, port); err != nil {
 		if stopErr := r.Stop(); stopErr != nil {
-			return stopErr
+			return fmt.Errorf("receiver stop after socket error: %w", stopErr)
 		}
-		return err
+		return fmt.Errorf("receiver start sockets: %w", err)
 	}
 	return nil
 }
@@ -337,5 +340,8 @@ func (r *UDPReceiver) Stop() error {
 	close(r.dispatch)
 	r.decodeWg.Wait()
 
-	return r.init() // recreates the closed channels
+	if err := r.init(); err != nil {
+		return fmt.Errorf("receiver reinit: %w", err)
+	}
+	return nil
 }

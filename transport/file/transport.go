@@ -3,6 +3,7 @@ package file
 
 import (
 	"flag"
+	"fmt"
 	"io"
 	"os"
 	"os/signal"
@@ -33,11 +34,11 @@ func (d *FileDriver) Prepare() error {
 func (d *FileDriver) openFile() error {
 	file, err := os.OpenFile(d.fileDestination, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
-		return err
+		return fmt.Errorf("open file %s: %w", d.fileDestination, err)
 	}
 	d.file = file
 	d.w = d.file
-	return err
+	return nil
 }
 
 // Init initializes the output destination and reload handling.
@@ -53,7 +54,7 @@ func (d *FileDriver) Init() error {
 		err = d.openFile()
 		d.lock.Unlock()
 		if err != nil {
-			return err
+			return fmt.Errorf("file transport init: %w", err)
 		}
 
 		c := make(chan os.Signal, 1)
@@ -89,14 +90,17 @@ func (d *FileDriver) Send(key, data []byte) error {
 	d.lock.RUnlock()
 	if len(data) > 0 {
 		if _, err := w.Write(data); err != nil {
-			return err
+			return fmt.Errorf("write message: %w", err)
 		}
 	}
 	if d.lineSeparator == "" {
 		return nil
 	}
 	_, err := w.Write([]byte(d.lineSeparator))
-	return err
+	if err != nil {
+		return fmt.Errorf("write separator: %w", err)
+	}
+	return nil
 }
 
 // Close closes the output file and stops reload handling.
@@ -105,7 +109,7 @@ func (d *FileDriver) Close() error {
 	if d.fileDestination != "" {
 		d.lock.Lock()
 		if err := d.file.Close(); err != nil {
-			closeErr = err
+			closeErr = fmt.Errorf("close output file: %w", err)
 		}
 		d.lock.Unlock()
 		signal.Ignore(syscall.SIGHUP)

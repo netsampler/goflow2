@@ -128,7 +128,7 @@ func (d *KafkaDriver) Errors() <-chan error {
 func (d *KafkaDriver) Init() error {
 	kafkaConfigVersion, err := sarama.ParseKafkaVersion(d.kafkaVersion)
 	if err != nil {
-		return err
+		return fmt.Errorf("parse kafka version %q: %w", d.kafkaVersion, err)
 	}
 
 	kafkaConfig := sarama.NewConfig()
@@ -162,7 +162,7 @@ func (d *KafkaDriver) Init() error {
 	if d.kafkaTLS {
 		rootCAs, err := x509.SystemCertPool()
 		if err != nil {
-			return fmt.Errorf("error initializing TLS: %v", err)
+			return fmt.Errorf("kafka TLS: init system cert pool: %w", err)
 		}
 		kafkaConfig.Net.TLS.Enable = true
 		kafkaConfig.Net.TLS.Config = &tls.Config{
@@ -175,25 +175,25 @@ func (d *KafkaDriver) Init() error {
 		if d.kafkaServerCA != "" {
 			serverCaFile, err := os.Open(d.kafkaServerCA)
 			if err != nil {
-				return fmt.Errorf("error initializing server CA: %v", err)
+				return fmt.Errorf("server CA: open %s: %w", d.kafkaServerCA, err)
 			}
 
 			serverCaBytes, err := io.ReadAll(serverCaFile)
 			if err != nil {
 				if closeErr := serverCaFile.Close(); closeErr != nil {
-					return fmt.Errorf("error closing server CA: %v", closeErr)
+					return fmt.Errorf("server CA: close after read failure: %w", closeErr)
 				}
-				return fmt.Errorf("error reading server CA: %v", err)
+				return fmt.Errorf("server CA: read %s: %w", d.kafkaServerCA, err)
 			}
 			if err := serverCaFile.Close(); err != nil {
-				return fmt.Errorf("error closing server CA: %v", err)
+				return fmt.Errorf("server CA: close %s: %w", d.kafkaServerCA, err)
 			}
 
 			block, _ := pem.Decode(serverCaBytes)
 
 			serverCa, err := x509.ParseCertificate(block.Bytes)
 			if err != nil {
-				return fmt.Errorf("error parsing server CA: %v", err)
+				return fmt.Errorf("server CA: parse certificate: %w", err)
 			}
 
 			certPool := x509.NewCertPool()
@@ -205,13 +205,13 @@ func (d *KafkaDriver) Init() error {
 		if d.kafkaClientCert != "" && d.kafkaClientKey != "" {
 			_, err := tls.LoadX509KeyPair(d.kafkaClientCert, d.kafkaClientKey)
 			if err != nil {
-				return fmt.Errorf("error initializing mTLS: %v", err)
+				return fmt.Errorf("mTLS: load client key pair: %w", err)
 			}
 
 			kafkaConfig.Net.TLS.Config.GetClientCertificate = func(*tls.CertificateRequestInfo) (*tls.Certificate, error) {
 				cert, err := tls.LoadX509KeyPair(d.kafkaClientCert, d.kafkaClientKey)
 				if err != nil {
-					return nil, err
+					return nil, fmt.Errorf("mTLS: load client key pair: %w", err)
 				}
 				return &cert, nil
 			}
@@ -264,7 +264,7 @@ func (d *KafkaDriver) Init() error {
 
 	kafkaProducer, err := sarama.NewAsyncProducer(addrs, kafkaConfig)
 	if err != nil {
-		return err
+		return fmt.Errorf("kafka producer: init: %w", err)
 	}
 	d.producer = kafkaProducer
 
@@ -292,7 +292,7 @@ func (d *KafkaDriver) Init() error {
 		}
 	}()
 
-	return err
+	return nil
 }
 
 // Send publishes a message to Kafka.
@@ -309,7 +309,7 @@ func (d *KafkaDriver) Send(key, data []byte) error {
 func (d *KafkaDriver) Close() error {
 	if err := d.producer.Close(); err != nil {
 		close(d.q)
-		return err
+		return fmt.Errorf("kafka producer: close: %w", err)
 	}
 	close(d.q)
 	return nil
@@ -319,7 +319,7 @@ func (d *KafkaDriver) Close() error {
 func GetServiceAddresses(srv string) (addrs []string, err error) {
 	_, srvs, err := net.LookupSRV("", "", srv)
 	if err != nil {
-		return nil, fmt.Errorf("service discovery: %v", err)
+		return nil, fmt.Errorf("service discovery: %w", err)
 	}
 	for _, srv := range srvs {
 		addrs = append(addrs, net.JoinHostPort(srv.Target, strconv.Itoa(int(srv.Port))))

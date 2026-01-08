@@ -61,7 +61,10 @@ func (m RawMessage) MarshalText() ([]byte, error) {
 	}); ok {
 		msgContents, err = msg.MarshalText()
 	}
-	return []byte(fmt.Sprintf("%s %s: %s", m.TimeReceived.String(), m.Src.String(), string(msgContents))), err
+	if err != nil {
+		return nil, fmt.Errorf("raw message marshal text: %w", err)
+	}
+	return []byte(fmt.Sprintf("%s %s: %s", m.TimeReceived.String(), m.Src.String(), string(msgContents))), nil
 }
 
 // Produce wraps the decoded packet into a RawMessage.

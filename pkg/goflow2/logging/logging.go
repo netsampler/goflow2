@@ -1,6 +1,7 @@
 package logging
 
 import (
+	"fmt"
 	"log/slog"
 	"os"
 )
@@ -9,7 +10,7 @@ import (
 func NewLogger(level, format string) (*slog.Logger, error) {
 	var loglevel slog.Level
 	if err := loglevel.UnmarshalText([]byte(level)); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("parse log level %q: %w", level, err)
 	}
 
 	opts := slog.HandlerOptions{
