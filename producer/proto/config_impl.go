@@ -92,6 +92,8 @@ type ProducerConfig struct {
 	NetFlowV9 NetFlowV9ProducerConfig `yaml:"netflowv9"`
 	SFlow     SFlowProducerConfig     `yaml:"sflow"` // also used for IPFIX data frames
 
+	SamplingRateObsDomainFallback bool `yaml:"sampling_rate_obs_domain_fallback"`
+
 	// should do a rename map list for when printing
 }
 
@@ -107,6 +109,8 @@ type producerConfigMapped struct {
 	IPFIX     *NetFlowMapper
 	NetFlowV9 *NetFlowMapper
 	SFlow     *SFlowMapper
+
+	SamplingRateObsDomainFallback bool
 }
 
 func (c *producerConfigMapped) GetFormatter() FormatterMapper {
@@ -123,6 +127,10 @@ func (c *producerConfigMapped) GetNetFlowMapper() TemplateMapper {
 
 func (c *producerConfigMapped) GetPacketMapper() PacketMapper {
 	return c.SFlow
+}
+
+func (c *producerConfigMapped) GetSamplingRateObsDomainFallback() bool {
+	return c.SamplingRateObsDomainFallback
 }
 
 type DataMap struct {
@@ -481,6 +489,7 @@ func mapConfig(cfg *ProducerConfig) (*producerConfigMapped, error) {
 		newCfg.IPFIX = mapFieldsNetFlow(cfg.IPFIX.Mapping)
 		newCfg.NetFlowV9 = mapFieldsNetFlow(cfg.NetFlowV9.Mapping)
 		newCfg.SFlow = mapFieldsSFlow(cfg.SFlow.Mapping)
+		newCfg.SamplingRateObsDomainFallback = cfg.SamplingRateObsDomainFallback
 		var err error
 		newCfg.SFlow.parserEnvironment, err = mapPortsSFlow(cfg.SFlow.Ports)
 		if err != nil {
