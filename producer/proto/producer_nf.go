@@ -44,6 +44,10 @@ func (s *basicSamplingRateSystem) AddSamplingRate(version uint16, obsDomainId ui
 		version:     version,
 		obsDomainId: obsDomainId,
 	}] = samplingRate
+	s.sampling[basicSamplingRateKey{
+		version:     version,
+		obsDomainId: 0,
+	}] = samplingRate
 }
 
 func (s *basicSamplingRateSystem) GetSamplingRate(version uint16, obsDomainId uint32) (uint32, error) {
@@ -54,6 +58,15 @@ func (s *basicSamplingRateSystem) GetSamplingRate(version uint16, obsDomainId ui
 		obsDomainId: obsDomainId,
 	}]; ok {
 		return samplingRate, nil
+	}
+
+	if obsDomainId != 0 {
+		if samplingRate, ok := s.sampling[basicSamplingRateKey{
+			version:     version,
+			obsDomainId: 0,
+		}]; ok {
+			return samplingRate, nil
+		}
 	}
 
 	return 0, fmt.Errorf("sampling rate not found")
