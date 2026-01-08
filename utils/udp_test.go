@@ -1,6 +1,8 @@
 package utils
 
 import (
+	"errors"
+	"fmt"
 	"net"
 	"strconv"
 	"sync/atomic"
@@ -24,17 +26,17 @@ func TestUDPReceiver(t *testing.T) {
 	sendMessage := func(msg string) error {
 		conn, err := net.Dial("udp", net.JoinHostPort(addr, strconv.Itoa(port)))
 		if err != nil {
-			return err
+			return fmt.Errorf("dial udp: %w", err)
 		}
 		_, err = conn.Write([]byte(msg))
 		if err != nil {
 			if closeErr := conn.Close(); closeErr != nil {
-				return closeErr
+				return fmt.Errorf("close udp after write failure: %w", closeErr)
 			}
-			return err
+			return fmt.Errorf("write udp: %w", err)
 		}
 		if err := conn.Close(); err != nil {
-			return err
+			return fmt.Errorf("close udp: %w", err)
 		}
 		return nil
 	}
@@ -92,18 +94,59 @@ func TestUDPReceiverDrainOnStop(t *testing.T) {
 	require.EqualValues(t, total, decoded.Load())
 }
 
+func TestUDPReceiverDecodeError(t *testing.T) {
+	addr := "::1"
+	port, err := getFreeUDPPort()
+	require.NoError(t, err)
+
+	r, err := NewUDPReceiver(nil)
+	require.NoError(t, err)
+
+	wantErr := errors.New("decode error")
+	errReady := make(chan struct{})
+	gotErr := make(chan error, 1)
+	go func() {
+		close(errReady)
+		err := <-r.Errors()
+		gotErr <- err
+	}()
+	<-errReady
+
+	decodeFunc := func(msg interface{}) error {
+		return wantErr
+	}
+
+	require.NoError(t, r.Start(addr, port, decodeFunc))
+	defer func() {
+		require.NoError(t, r.Stop())
+	}()
+
+	conn, err := net.Dial("udp", net.JoinHostPort(addr, strconv.Itoa(port)))
+	require.NoError(t, err)
+	_, err = conn.Write([]byte("message"))
+	require.NoError(t, err)
+	require.NoError(t, conn.Close())
+
+	select {
+	case err := <-gotErr:
+		require.ErrorIs(t, err, wantErr)
+	case <-time.After(2 * time.Second):
+		t.Fatal("timeout waiting for decoder error")
+	}
+}
+
 func getFreeUDPPort() (int, error) {
 	a, err := net.ResolveUDPAddr("udp", "127.0.0.1:0")
 	if err != nil {
-		return 0, err
+		return 0, fmt.Errorf("resolve udp addr: %w", err)
 	}
 	l, err := net.ListenUDP("udp", a)
 	if err != nil {
-		return 0, err
+		return 0, fmt.Errorf("listen udp: %w", err)
 	}
 	port := l.LocalAddr().(*net.UDPAddr).Port
 	if err := l.Close(); err != nil {
-		return 0, err
+		return 0, fmt.Errorf("close udp listener: %w", err)
 	}
 	return port, nil
 }

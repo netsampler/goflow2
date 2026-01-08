@@ -2,6 +2,7 @@
 package templates
 
 import (
+	"fmt"
 	"sync"
 	"time"
 
@@ -313,7 +314,7 @@ func (s *ExpiringTemplateSystem) AddTemplate(version uint16, obsDomainId uint32,
 	update, err := s.wrapped.AddTemplate(version, obsDomainId, templateId, template)
 	if err != nil {
 		s.lock.Unlock()
-		return update, err
+		return update, fmt.Errorf("expiring templates add %d/%d/%d: %w", version, obsDomainId, templateId, err)
 	}
 	s.updated[TemplateKey{Version: version, ObsDomainID: obsDomainId, TemplateID: templateId}] = s.now()
 	if s.reg != nil {
@@ -331,7 +332,7 @@ func (s *ExpiringTemplateSystem) GetTemplate(version uint16, obsDomainId uint32,
 	template, err := s.wrapped.GetTemplate(version, obsDomainId, templateId)
 	if err != nil {
 		s.lock.Unlock()
-		return template, err
+		return template, fmt.Errorf("expiring templates get %d/%d/%d: %w", version, obsDomainId, templateId, err)
 	}
 	if s.extendOnAccess {
 		s.updated[TemplateKey{Version: version, ObsDomainID: obsDomainId, TemplateID: templateId}] = s.now()
@@ -351,7 +352,10 @@ func (s *ExpiringTemplateSystem) RemoveTemplate(version uint16, obsDomainId uint
 		}
 	}
 	s.lock.Unlock()
-	return template, removed, err
+	if err != nil {
+		return template, removed, fmt.Errorf("expiring templates remove %d/%d/%d: %w", version, obsDomainId, templateId, err)
+	}
+	return template, removed, nil
 }
 
 // GetTemplates returns all templates from the wrapped system.

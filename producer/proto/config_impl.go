@@ -301,7 +301,7 @@ func mapPortsSFlow(ports []SFlowProtocolParse) (ParserEnvironment, error) {
 			return e, fmt.Errorf("parser %s not found", port.Parser)
 		}
 		if err := e.RegisterPort(port.Proto, port.Dir, port.Port, parser); err != nil {
-			return e, err
+			return e, fmt.Errorf("register port %s/%s/%d: %w", port.Proto, port.Dir, port.Port, err)
 		}
 	}
 	return e, nil
@@ -340,7 +340,7 @@ func (c *producerConfigMapped) finalizeSFlowMapper(m *SFlowMapper) error {
 	for k, vlist := range m.data {
 		for i, v := range vlist {
 			if err := c.finalizemapDest(&(v.MapConfigBase)); err != nil {
-				return err
+				return fmt.Errorf("finalize sflow mapper %s[%d]: %w", k, i, err)
 			}
 			m.data[k][i] = v
 		}
@@ -354,7 +354,7 @@ func (c *producerConfigMapped) finalizeNetFlowMapper(m *NetFlowMapper) error {
 	}
 	for k, v := range m.data {
 		if err := c.finalizemapDest(&(v.MapConfigBase)); err != nil {
-			return err
+			return fmt.Errorf("finalize netflow mapper %s: %w", k, err)
 		}
 		m.data[k] = v
 	}
@@ -366,13 +366,13 @@ func (c *producerConfigMapped) finalize() error {
 		return nil
 	}
 	if err := c.finalizeNetFlowMapper(c.IPFIX); err != nil {
-		return err
+		return fmt.Errorf("finalize ipfix mapper: %w", err)
 	}
 	if err := c.finalizeNetFlowMapper(c.NetFlowV9); err != nil {
-		return err
+		return fmt.Errorf("finalize netflow v9 mapper: %w", err)
 	}
 	if err := c.finalizeSFlowMapper(c.SFlow); err != nil {
-		return err
+		return fmt.Errorf("finalize sflow mapper: %w", err)
 	}
 
 	return nil
@@ -484,12 +484,15 @@ func mapConfig(cfg *ProducerConfig) (*producerConfigMapped, error) {
 		var err error
 		newCfg.SFlow.parserEnvironment, err = mapPortsSFlow(cfg.SFlow.Ports)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("map sflow ports: %w", err)
 		}
 	}
 	var err error
 	if newCfg.Formatter, err = mapFormat(cfg); err != nil {
-		return newCfg, err
+		return newCfg, fmt.Errorf("map formatter: %w", err)
 	}
-	return newCfg, newCfg.finalize()
+	if err := newCfg.finalize(); err != nil {
+		return newCfg, fmt.Errorf("finalize config: %w", err)
+	}
+	return newCfg, nil
 }

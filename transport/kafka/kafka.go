@@ -42,8 +42,6 @@ type KafkaDriver struct {
 
 	producer sarama.AsyncProducer
 
-	q chan bool
-
 	errors chan error
 }
 
@@ -268,28 +266,14 @@ func (d *KafkaDriver) Init() error {
 	}
 	d.producer = kafkaProducer
 
-	d.q = make(chan bool)
-
 	go func() {
-		for {
+		for msg := range kafkaProducer.Errors() {
 			select {
-			case msg := <-kafkaProducer.Errors():
-				var err error
-				if msg != nil {
-					err = &KafkaTransportError{msg}
-				}
-				select {
-				case d.errors <- err:
-				default:
-				}
-
-				if msg == nil {
-					return
-				}
-			case <-d.q:
-				return
+			case d.errors <- &KafkaTransportError{msg}:
+			default:
 			}
 		}
+		close(d.errors)
 	}()
 
 	return err
@@ -307,12 +291,7 @@ func (d *KafkaDriver) Send(key, data []byte) error {
 
 // Close stops the producer and releases resources.
 func (d *KafkaDriver) Close() error {
-	if err := d.producer.Close(); err != nil {
-		close(d.q)
-		return err
-	}
-	close(d.q)
-	return nil
+	return d.producer.Close()
 }
 
 // GetServiceAddresses resolves SRV records into broker addresses.

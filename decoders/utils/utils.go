@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"io"
 	"reflect"
 	"time"
@@ -15,7 +16,7 @@ func BinaryDecoder(payload *bytes.Buffer, dests ...interface{}) error {
 	for _, dest := range dests {
 		err := BinaryRead(payload, binary.BigEndian, dest)
 		if err != nil {
-			return err
+			return fmt.Errorf("BinaryDecoder: %w", err)
 		}
 	}
 	return nil

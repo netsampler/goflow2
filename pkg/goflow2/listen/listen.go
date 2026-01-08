@@ -24,7 +24,7 @@ func ParseListenAddresses(spec string) ([]ListenerConfig, error) {
 	for _, listenAddress := range strings.Split(spec, ",") {
 		listenAddrURL, err := url.Parse(listenAddress)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("parse listen address %q: %w", listenAddress, err)
 		}
 
 		numSockets := 1
@@ -72,7 +72,7 @@ func ParseListenAddresses(spec string) ([]ListenerConfig, error) {
 
 		port, err := strconv.ParseUint(listenAddrURL.Port(), 10, 64)
 		if err != nil {
-			return nil, fmt.Errorf("port could not be converted to integer: %s", listenAddrURL.Port())
+			return nil, fmt.Errorf("port could not be converted to integer: %s: %w", listenAddrURL.Port(), err)
 		}
 
 		cfgs = append(cfgs, ListenerConfig{

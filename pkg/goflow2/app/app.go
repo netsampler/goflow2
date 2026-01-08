@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"sync/atomic"
@@ -34,21 +35,21 @@ type App struct {
 func New(cfg *config.Config) (*App, error) {
 	logger, err := logging.NewLogger(cfg.LogLevel, cfg.LogFmt)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("app: init logger: %w", err)
 	}
 	slog.SetDefault(logger)
 
 	formatter, err := builder.BuildFormatter(cfg.Format)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("app: build formatter: %w", err)
 	}
 	transporter, err := builder.BuildTransport(cfg.Transport)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("app: build transport: %w", err)
 	}
 	flowProducer, err := builder.BuildProducer(cfg)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("app: build producer: %w", err)
 	}
 
 	flowProducer = debug.WrapPanicProducer(flowProducer)
@@ -56,7 +57,7 @@ func New(cfg *config.Config) (*App, error) {
 
 	listeners, err := listen.ParseListenAddresses(cfg.ListenAddresses)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("app: parse listen addresses: %w", err)
 	}
 
 	coll, err := collector.New(collector.Config{
@@ -74,7 +75,7 @@ func New(cfg *config.Config) (*App, error) {
 		TemplatesJSONInterval:   cfg.TemplatesJSONInterval,
 	})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("app: init collector: %w", err)
 	}
 
 	app := &App{
@@ -106,7 +107,7 @@ func (a *App) Start() error {
 	a.logger.Info("starting GoFlow2")
 
 	if err := a.collector.Start(); err != nil {
-		return err
+		return fmt.Errorf("app: start collector: %w", err)
 	}
 	a.collecting.Store(true)
 
@@ -117,7 +118,7 @@ func (a *App) Start() error {
 	go func() {
 		err := a.server.ListenAndServe()
 		if err != nil && !errors.Is(err, http.ErrServerClosed) {
-			a.serverErr <- err
+			a.serverErr <- fmt.Errorf("http server: %w", err)
 			return
 		}
 		a.logger.With(slog.String("http", a.cfg.Addr)).Info("closed HTTP server")
@@ -129,7 +130,7 @@ func (a *App) Start() error {
 // Run starts the app and blocks until context cancellation or server error.
 func (a *App) Run(ctx context.Context) error {
 	if err := a.Start(); err != nil {
-		return err
+		return fmt.Errorf("app run start: %w", err)
 	}
 
 	if a.server == nil {
@@ -150,7 +151,7 @@ func (a *App) Run(ctx context.Context) error {
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), time.Second*5)
 		a.Shutdown(shutdownCtx)
 		cancel()
-		return err
+		return fmt.Errorf("app run wait: %w", err)
 	}
 }
 

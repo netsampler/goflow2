@@ -506,7 +506,7 @@ func DecodeSample(header *SampleHeader, payload *bytes.Buffer) (interface{}, err
 func DecodeMessageVersion(payload *bytes.Buffer, packetV5 *Packet) error {
 	var version uint32
 	if err := utils.BinaryDecoder(payload, &version); err != nil {
-		return &DecoderError{err}
+		return &DecoderError{fmt.Errorf("version [%w]", err)}
 	}
 	packetV5.Version = version
 
@@ -518,7 +518,7 @@ func DecodeMessageVersion(payload *bytes.Buffer, packetV5 *Packet) error {
 
 func DecodeMessage(payload *bytes.Buffer, packetV5 *Packet) error {
 	if err := utils.BinaryDecoder(payload, &packetV5.IPVersion); err != nil {
-		return &DecoderError{err}
+		return &DecoderError{fmt.Errorf("IP version [%w]", err)}
 	}
 	var ip []byte
 	switch packetV5.IPVersion {
@@ -543,7 +543,7 @@ func DecodeMessage(payload *bytes.Buffer, packetV5 *Packet) error {
 		&packetV5.Uptime,
 		&packetV5.SamplesCount,
 	); err != nil {
-		return &DecoderError{err}
+		return &DecoderError{fmt.Errorf("header [%w]", err)}
 	}
 	if packetV5.SamplesCount > 1000 {
 		return &DecoderError{fmt.Errorf("too many samples: %d", packetV5.SamplesCount)}

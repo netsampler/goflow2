@@ -1,6 +1,7 @@
 package metrics
 
 import (
+	"fmt"
 	"net/netip"
 
 	"github.com/netsampler/goflow2/v3/decoders/netflow"
@@ -21,7 +22,7 @@ type PromProducerWrapper struct {
 func (p *PromProducerWrapper) Produce(msg interface{}, args *producer.ProduceArgs) ([]producer.ProducerMessage, error) {
 	flowMessageSet, err := p.wrapped.Produce(msg, args)
 	if err != nil {
-		return flowMessageSet, err
+		return flowMessageSet, fmt.Errorf("metrics producer: %w", err)
 	}
 	key := args.Src.Addr().Unmap().String()
 	var nfvariant bool
@@ -133,7 +134,7 @@ func (p *PromProducerWrapper) Produce(msg interface{}, args *producer.ProduceArg
 		}
 	}
 
-	return flowMessageSet, err
+	return flowMessageSet, nil
 }
 
 // Close forwards Close to the wrapped producer.

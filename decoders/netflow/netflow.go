@@ -53,7 +53,7 @@ func DecodeNFv9OptionsTemplateSet(payload *bytes.Buffer) ([]NFv9OptionsTemplateR
 			&optsTemplateRecord.OptionLength,
 		)
 		if err != nil {
-			return records, err
+			return records, fmt.Errorf("NFv9OptionsTemplateSet: header [%w]", err)
 		}
 
 		sizeScope := int(optsTemplateRecord.ScopeLength) / 4
@@ -85,7 +85,7 @@ func DecodeNFv9OptionsTemplateSet(payload *bytes.Buffer) ([]NFv9OptionsTemplateR
 		records = append(records, optsTemplateRecord)
 	}
 
-	return records, err
+	return records, nil
 }
 
 // DecodeField decodes a field and optional enterprise number.
@@ -94,13 +94,16 @@ func DecodeField(payload *bytes.Buffer, field *Field, pen bool) error {
 		&field.Type,
 		&field.Length,
 	); err != nil {
-		return err
+		return fmt.Errorf("DecodeField: header [%w]", err)
 	}
 	if pen && field.Type&0x8000 != 0 {
 		field.PenProvided = true
-		return utils.BinaryDecoder(payload,
+		if err := utils.BinaryDecoder(payload,
 			&field.Pen,
-		)
+		); err != nil {
+			return fmt.Errorf("DecodeField: pen [%w]", err)
+		}
+		return nil
 	}
 	return nil
 }
@@ -219,13 +222,13 @@ func DecodeDataSetUsingFields(version uint16, payload *bytes.Buffer, listFields 
 				if err := utils.BinaryDecoder(payload,
 					&variableLen8,
 				); err != nil {
-					return nil, err
+					return nil, fmt.Errorf("DataSet: variable length header [%w]", err)
 				}
 				if variableLen8 == 0xff {
 					if err := utils.BinaryDecoder(payload,
 						&variableLen16,
 					); err != nil {
-						return nil, err
+						return nil, fmt.Errorf("DataSet: extended variable length [%w]", err)
 					}
 					finalLength = int(variableLen16)
 				} else {
@@ -296,7 +299,7 @@ func DecodeMessageCommon(payload *bytes.Buffer, templates NetFlowTemplateSystem,
 	startSize := payload.Len()
 	for i := 0; ((i < int(size) && version == 9) || (uint16(read) < size && version == 10)) && payload.Len() > 0; i++ {
 		if flowSet, lerr := DecodeMessageCommonFlowSet(payload, templates, obsDomainId, version); lerr != nil && !errors.Is(lerr, ErrorTemplateNotFound) {
-			return flowSets, lerr
+			return flowSets, fmt.Errorf("DecodeMessageCommon: %w", lerr)
 		} else {
 			flowSets = append(flowSets, flowSet)
 			if lerr != nil {
@@ -305,7 +308,10 @@ func DecodeMessageCommon(payload *bytes.Buffer, templates NetFlowTemplateSystem,
 		}
 		read = startSize - payload.Len()
 	}
-	return flowSets, err
+	if err != nil {
+		return flowSets, fmt.Errorf("DecodeMessageCommon: %w", err)
+	}
+	return flowSets, nil
 }
 
 func DecodeMessageCommonFlowSet(payload *bytes.Buffer, templates NetFlowTemplateSystem, obsDomainId uint32, version uint16) (flowSet interface{}, err error) {
@@ -458,7 +464,10 @@ func DecodeMessageCommonFlowSet(payload *bytes.Buffer, templates NetFlowTemplate
 	} else {
 		return flowSet, &FlowError{version, "Decode", obsDomainId, fsheader.Id, fmt.Errorf("ID error")}
 	}
-	return flowSet, err
+	if err != nil {
+		return flowSet, fmt.Errorf("FlowSet decode: %w", err)
+	}
+	return flowSet, nil
 }
 
 func DecodeMessageNetFlow(payload *bytes.Buffer, templates NetFlowTemplateSystem, packetNFv9 *NFv9Packet) error {

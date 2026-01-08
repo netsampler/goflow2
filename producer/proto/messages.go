@@ -58,10 +58,16 @@ func (m *ProtoProducerMessage) MarshalBinary() ([]byte, error) {
 	buf := bytes.NewBuffer([]byte{})
 	if m.skipDelimiter {
 		b, err := proto.Marshal(m)
-		return b, err
+		if err != nil {
+			return nil, fmt.Errorf("marshal protobuf: %w", err)
+		}
+		return b, nil
 	} else {
 		_, err := protodelim.MarshalTo(buf, m)
-		return buf.Bytes(), err
+		if err != nil {
+			return nil, fmt.Errorf("marshal protobuf delim: %w", err)
+		}
+		return buf.Bytes(), nil
 	}
 }
 

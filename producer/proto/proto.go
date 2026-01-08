@@ -86,7 +86,10 @@ func (p *ProtoProducer) Produce(msg interface{}, args *producer.ProduceArgs) (fl
 	p.enrich(flowMessageSet, func(fmsg *ProtoProducerMessage) {
 		fmsg.formatter = p.cfg.GetFormatter()
 	})
-	return flowMessageSet, err
+	if err != nil {
+		return flowMessageSet, fmt.Errorf("proto producer %T: %w", msg, err)
+	}
+	return flowMessageSet, nil
 }
 
 // Commit returns messages to the pool.
