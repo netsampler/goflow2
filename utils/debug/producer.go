@@ -13,7 +13,7 @@ type PanicProducerWrapper struct {
 }
 
 // Produce calls the wrapped producer and converts panics into errors.
-func (p *PanicProducerWrapper) Produce(msg interface{}, args *producer.ProduceArgs) (flowMessageSet []producer.ProducerMessage, err error) {
+func (p *PanicProducerWrapper) Produce(msg producer.DecodedPacket, args *producer.ProduceArgs) (flowMessageSet []producer.ProducerMessage, err error) {
 
 	defer func() {
 		if pErr := recover(); pErr != nil {

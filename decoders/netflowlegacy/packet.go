@@ -18,6 +18,9 @@ type PacketNetFlowV5 struct {
 	Records          []RecordsNetFlowV5 `json:"records"`
 }
 
+// DecodedPacket marks this packet as a decoded flow payload.
+func (*PacketNetFlowV5) DecodedPacket() {}
+
 // RecordsNetFlowV5 represents a single NetFlow v5 record entry.
 type RecordsNetFlowV5 struct {
 	SrcAddr  IPAddress `json:"src-addr"`

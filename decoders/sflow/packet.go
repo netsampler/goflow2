@@ -14,6 +14,9 @@ type Packet struct {
 	Samples        []interface{}   `json:"samples"`
 }
 
+// DecodedPacket marks this packet as a decoded flow payload.
+func (*Packet) DecodedPacket() {}
+
 // SampleHeader contains common sample header fields.
 type SampleHeader struct {
 	Format uint32 `json:"format"`

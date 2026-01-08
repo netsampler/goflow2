@@ -19,7 +19,7 @@ type PromProducerWrapper struct {
 }
 
 // Produce forwards to the wrapped producer and updates metrics.
-func (p *PromProducerWrapper) Produce(msg interface{}, args *producer.ProduceArgs) ([]producer.ProducerMessage, error) {
+func (p *PromProducerWrapper) Produce(msg producer.DecodedPacket, args *producer.ProduceArgs) ([]producer.ProducerMessage, error) {
 	flowMessageSet, err := p.wrapped.Produce(msg, args)
 	if err != nil {
 		return flowMessageSet, fmt.Errorf("metrics producer: %w", err)

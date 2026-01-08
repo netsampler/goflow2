@@ -44,7 +44,7 @@ func (p *ProtoProducer) getSamplingRateSystem(args *producer.ProduceArgs) Sampli
 	return sampling
 }
 
-func (p *ProtoProducer) Produce(msg interface{}, args *producer.ProduceArgs) (flowMessageSet []producer.ProducerMessage, err error) {
+func (p *ProtoProducer) Produce(msg producer.DecodedPacket, args *producer.ProduceArgs) (flowMessageSet []producer.ProducerMessage, err error) {
 	tr := uint64(args.TimeReceived.UnixNano())
 	sa, _ := args.SamplerAddress.Unmap().MarshalBinary()
 	switch msgConv := msg.(type) {
