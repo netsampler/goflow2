@@ -9,10 +9,15 @@ import (
 // ProducerMessage is the generic type returned by producers.
 type ProducerMessage interface{}
 
+// DecodedPacket represents a decoded flow packet ready for production.
+type DecodedPacket interface {
+	DecodedPacket()
+}
+
 // ProducerInterface converts decoded packets into producer messages.
 type ProducerInterface interface {
 	// Converts a message into a list of flow samples
-	Produce(msg interface{}, args *ProduceArgs) ([]ProducerMessage, error)
+	Produce(msg DecodedPacket, args *ProduceArgs) ([]ProducerMessage, error)
 	// Indicates to the producer the messages returned were processed
 	Commit([]ProducerMessage)
 	Close()

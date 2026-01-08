@@ -113,6 +113,9 @@ type NFv9Packet struct {
 	FlowSets       []interface{} `json:"flow-sets"`
 }
 
+// DecodedPacket marks this packet as a decoded flow payload.
+func (*NFv9Packet) DecodedPacket() {}
+
 // NFv9OptionsTemplateFlowSet holds v9 options template records.
 type NFv9OptionsTemplateFlowSet struct {
 	FlowSetHeader

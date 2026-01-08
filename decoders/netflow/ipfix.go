@@ -456,6 +456,9 @@ type IPFIXPacket struct {
 	FlowSets            []interface{} `json:"flow-sets"`
 }
 
+// DecodedPacket marks this packet as a decoded flow payload.
+func (*IPFIXPacket) DecodedPacket() {}
+
 // IPFIXOptionsTemplateFlowSet holds IPFIX options template records.
 type IPFIXOptionsTemplateFlowSet struct {
 	FlowSetHeader
