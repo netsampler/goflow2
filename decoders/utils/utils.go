@@ -8,13 +8,8 @@ import (
 	"fmt"
 	"io"
 	"reflect"
+	"time"
 )
-
-// BytesBuffer is a minimal buffer interface for decoding helpers.
-type BytesBuffer interface {
-	io.Reader
-	Next(int) []byte
-}
 
 // BinaryDecoder decodes multiple values from the buffer using big-endian encoding.
 func BinaryDecoder(payload *bytes.Buffer, dests ...interface{}) error {
@@ -28,12 +23,18 @@ func BinaryDecoder(payload *bytes.Buffer, dests ...interface{}) error {
 }
 
 // BinaryRead decodes a single value from the buffer using the supplied byte order.
-func BinaryRead(payload BytesBuffer, order binary.ByteOrder, data any) error {
+func BinaryRead(payload *bytes.Buffer, order binary.ByteOrder, data any) error {
 	// Fast path for basic types and slices.
 	if n := intDataSize(data); n != 0 {
 		bs := payload.Next(n)
 		if len(bs) < n {
-			return io.ErrUnexpectedEOF
+			padded := make([]byte, n)
+			if order == binary.BigEndian {
+				copy(padded[n-len(bs):], bs)
+			} else {
+				copy(padded, bs)
+			}
+			bs = padded
 		}
 		switch data := data.(type) {
 		case *bool:
@@ -54,6 +55,9 @@ func BinaryRead(payload BytesBuffer, order binary.ByteOrder, data any) error {
 			*data = int64(order.Uint64(bs))
 		case *uint64:
 			*data = order.Uint64(bs)
+		case *time.Time:
+			t := order.Uint64(bs)
+			*data = time.Unix(int64(t/1000), 0)
 		case *string:
 			strlen := int(order.Uint32(bs))
 			buf := payload.Next(strlen)
@@ -141,6 +145,8 @@ func intDataSize(data any) int {
 	case []uint32:
 		return 4 * len(data)
 	case int64, uint64, *int64, *uint64:
+		return 8
+	case *time.Time:
 		return 8
 	case []int64:
 		return 8 * len(data)

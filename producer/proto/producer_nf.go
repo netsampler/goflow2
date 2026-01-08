@@ -5,7 +5,6 @@ import (
 	"encoding/binary"
 	"fmt"
 	"sync"
-	"time"
 
 	"github.com/netsampler/goflow2/v3/decoders/netflow"
 	"github.com/netsampler/goflow2/v3/decoders/utils"
@@ -87,20 +86,8 @@ func NetFlowPopulate(dataFields []netflow.DataField, typeId uint16, addr interfa
 		valueBytes, ok := value.([]byte)
 		valueReader := bytes.NewBuffer(valueBytes)
 		if ok {
-			switch addrt := addr.(type) {
-			//case *(net.IP):
-			//	*addrt = valueBytes
-			case *(time.Time):
-				t := uint64(0)
-				if err := utils.BinaryRead(valueReader, binary.BigEndian, &t); err != nil {
-					return false, fmt.Errorf("netflow populate type %d: %w", typeId, err)
-				}
-				t64 := int64(t / 1000)
-				*addrt = time.Unix(t64, 0)
-			default:
-				if err := utils.BinaryRead(valueReader, binary.BigEndian, addr); err != nil {
-					return false, fmt.Errorf("netflow populate type %d: %w", typeId, err)
-				}
+			if err := utils.BinaryRead(valueReader, binary.BigEndian, addr); err != nil {
+				return false, fmt.Errorf("netflow populate type %d: %w", typeId, err)
 			}
 		}
 	}
