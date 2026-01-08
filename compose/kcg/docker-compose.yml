@@ -18,7 +18,7 @@ services:
       - KAFKA_ADVERTISED_LISTENERS=BROKER://kafka:9092,IB://:9094
     restart: always
   grafana:
-    image: grafana/grafana:9.4.3
+    image: grafana/grafana:12.1
     environment:
       - GF_INSTALL_PLUGINS=vertamedia-clickhouse-datasource
     #  - GF_INSTALL_PLUGINS=grafana-clickhouse-datasource
@@ -31,7 +31,7 @@ services:
       - ./grafana/dashboards.yml:/etc/grafana/provisioning/dashboards/dashboards.yml
       - ./grafana/dashboards:/var/lib/grafana/dashboards
   prometheus:
-    image: prom/prometheus:v3.0.1
+    image: prom/prometheus:v3.7.3
     ports:
       - 9090:9090
     restart: always
@@ -58,9 +58,13 @@ services:
       - -transport.kafka.topic=flows
       - -format=bin
   db:
-    image: clickhouse/clickhouse-server:24.11.1.2557-alpine
+    image: clickhouse/clickhouse-server:25.11-alpine
+    environment:
+      - CLICKHOUSE_DO_NOT_CHOWN=1
+      - CLICKHOUSE_PASSWORD=flow
     ports:
       - 8123:8123
+    restart: always
     volumes:
       - ./clickhouse:/docker-entrypoint-initdb.d/
       #- ../../pb/flow.proto:/var/lib/clickhouse/format_schemas/flow.proto

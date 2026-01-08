@@ -1,3 +1,4 @@
+// Package sflow decodes sFlow v5 datagrams.
 package sflow
 
 import (
@@ -53,6 +54,7 @@ const (
 	COUNTER_TYPE_CPU       = 1001
 )
 
+// DecoderError wraps an sFlow decode error.
 type DecoderError struct {
 	Err error
 }
@@ -65,6 +67,7 @@ func (e *DecoderError) Unwrap() error {
 	return e.Err
 }
 
+// FlowError annotates an error with the sFlow sample format and sequence.
 type FlowError struct {
 	Format uint32
 	Seq    uint32
@@ -79,6 +82,7 @@ func (e *FlowError) Unwrap() error {
 	return e.Err
 }
 
+// RecordError annotates an error with the record data format.
 type RecordError struct {
 	DataFormat uint32
 	Err        error
@@ -92,17 +96,19 @@ func (e *RecordError) Unwrap() error {
 	return e.Err
 }
 
+// DecodeIP reads an sFlow IP address with version from the payload.
 func DecodeIP(payload *bytes.Buffer) (uint32, []byte, error) {
 	var ipVersion uint32
 	if err := utils.BinaryDecoder(payload, &ipVersion); err != nil {
 		return 0, nil, fmt.Errorf("DecodeIP: [%w]", err)
 	}
 	var ip []byte
-	if ipVersion == 1 {
+	switch ipVersion {
+	case 1:
 		ip = make([]byte, 4)
-	} else if ipVersion == 2 {
+	case 2:
 		ip = make([]byte, 16)
-	} else {
+	default:
 		return ipVersion, ip, fmt.Errorf("DecodeIP: unknown IP version %d", ipVersion)
 	}
 	if payload.Len() >= len(ip) {
@@ -115,6 +121,7 @@ func DecodeIP(payload *bytes.Buffer) (uint32, []byte, error) {
 	return ipVersion, ip, nil
 }
 
+// DecodeCounterRecord decodes a counter record based on its data format.
 func DecodeCounterRecord(header *RecordHeader, payload *bytes.Buffer) (CounterRecord, error) {
 	counterRecord := CounterRecord{
 		Header: *header,
@@ -175,6 +182,7 @@ func DecodeCounterRecord(header *RecordHeader, payload *bytes.Buffer) (CounterRe
 	return counterRecord, nil
 }
 
+// DecodeFlowRecord decodes a flow record based on its data format.
 func DecodeFlowRecord(header *RecordHeader, payload *bytes.Buffer) (FlowRecord, error) {
 	flowRecord := FlowRecord{
 		Header: *header,
@@ -215,13 +223,13 @@ func DecodeFlowRecord(header *RecordHeader, payload *bytes.Buffer) (FlowRecord, 
 			},
 		}
 		if err := utils.BinaryDecoder(payload,
-			&sampledIP.SampledIPBase.Length,
-			&sampledIP.SampledIPBase.Protocol,
-			sampledIP.SampledIPBase.SrcIP,
-			sampledIP.SampledIPBase.DstIP,
-			&sampledIP.SampledIPBase.SrcPort,
-			&sampledIP.SampledIPBase.DstPort,
-			&sampledIP.SampledIPBase.TcpFlags,
+			&sampledIP.Length,
+			&sampledIP.Protocol,
+			sampledIP.SrcIP,
+			sampledIP.DstIP,
+			&sampledIP.SrcPort,
+			&sampledIP.DstPort,
+			&sampledIP.TcpFlags,
 			&sampledIP.Tos,
 		); err != nil {
 			return flowRecord, &RecordError{header.DataFormat, err}
@@ -235,13 +243,13 @@ func DecodeFlowRecord(header *RecordHeader, payload *bytes.Buffer) (FlowRecord, 
 			},
 		}
 		if err := utils.BinaryDecoder(payload,
-			&sampledIP.SampledIPBase.Length,
-			&sampledIP.SampledIPBase.Protocol,
-			sampledIP.SampledIPBase.SrcIP,
-			sampledIP.SampledIPBase.DstIP,
-			&sampledIP.SampledIPBase.SrcPort,
-			&sampledIP.SampledIPBase.DstPort,
-			&sampledIP.SampledIPBase.TcpFlags,
+			&sampledIP.Length,
+			&sampledIP.Protocol,
+			sampledIP.SrcIP,
+			sampledIP.DstIP,
+			&sampledIP.SrcPort,
+			&sampledIP.DstPort,
+			&sampledIP.TcpFlags,
 			&sampledIP.Priority,
 		); err != nil {
 			return flowRecord, &RecordError{header.DataFormat, err}
@@ -527,17 +535,18 @@ func DecodeMessage(payload *bytes.Buffer, packetV5 *Packet) error {
 		return &DecoderError{err}
 	}
 	var ip []byte
-	if packetV5.IPVersion == 1 {
+	switch packetV5.IPVersion {
+	case 1:
 		ip = make([]byte, 4)
 		if err := utils.BinaryDecoder(payload, ip); err != nil {
 			return &DecoderError{fmt.Errorf("IPv4 [%w]", err)}
 		}
-	} else if packetV5.IPVersion == 2 {
+	case 2:
 		ip = make([]byte, 16)
 		if err := utils.BinaryDecoder(payload, ip); err != nil {
 			return &DecoderError{fmt.Errorf("IPv6 [%w]", err)}
 		}
-	} else {
+	default:
 		return &DecoderError{fmt.Errorf("unknown IP version %d", packetV5.IPVersion)}
 	}
 

@@ -1,8 +1,10 @@
+// Command enricher enriches flow messages with GeoIP metadata.
 package main
 
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"errors"
 	"flag"
 	"fmt"
@@ -11,20 +13,21 @@ import (
 	"log/slog"
 	"net"
 	"os"
-	"strings"
+	"os/signal"
+	"syscall"
 
 	flowmessage "github.com/netsampler/goflow2/v2/cmd/enricher/pb"
 
-	// import various formatters
-	"github.com/netsampler/goflow2/v2/format"
 	_ "github.com/netsampler/goflow2/v2/format/binary"
 	_ "github.com/netsampler/goflow2/v2/format/json"
 	_ "github.com/netsampler/goflow2/v2/format/text"
 
-	// import various transports
-	"github.com/netsampler/goflow2/v2/transport"
 	_ "github.com/netsampler/goflow2/v2/transport/file"
 	_ "github.com/netsampler/goflow2/v2/transport/kafka"
+
+	"github.com/netsampler/goflow2/v2/pkg/goflow2/builder"
+	"github.com/netsampler/goflow2/v2/pkg/goflow2/config"
+	"github.com/netsampler/goflow2/v2/pkg/goflow2/logging"
 
 	"github.com/oschwald/geoip2-golang"
 	"google.golang.org/protobuf/encoding/protodelim"
@@ -33,22 +36,24 @@ import (
 var (
 	version    = ""
 	buildinfos = ""
+	// AppVersion is a display string for the current build.
 	AppVersion = "Enricher " + version + " " + buildinfos
 
 	DbAsn     = flag.String("db.asn", "", "IP->ASN database")
 	DbCountry = flag.String("db.country", "", "IP->Country database")
 
-	LogLevel = flag.String("loglevel", "info", "Log level")
-	LogFmt   = flag.String("logfmt", "normal", "Log formatter")
+	LogLevel string
+	LogFmt   string
 
 	SamplingRate = flag.Int("samplingrate", 0, "Set sampling rate (values > 0)")
 
-	Format    = flag.String("format", "json", fmt.Sprintf("Choose the format (available: %s)", strings.Join(format.GetFormats(), ", ")))
-	Transport = flag.String("transport", "file", fmt.Sprintf("Choose the transport (available: %s)", strings.Join(transport.GetTransports(), ", ")))
+	Format    string
+	Transport string
 
 	Version = flag.Bool("v", false, "Print version")
 )
 
+// MapAsn populates ASN data for an IP address.
 func MapAsn(db *geoip2.Reader, addr []byte, dest *uint32) {
 	entry, err := db.ASN(net.IP(addr))
 	if err != nil {
@@ -56,6 +61,8 @@ func MapAsn(db *geoip2.Reader, addr []byte, dest *uint32) {
 	}
 	*dest = uint32(entry.AutonomousSystemNumber)
 }
+
+// MapCountry populates country data for an IP address.
 func MapCountry(db *geoip2.Reader, addr []byte, dest *string) {
 	entry, err := db.Country(net.IP(addr))
 	if err != nil {
@@ -64,21 +71,24 @@ func MapCountry(db *geoip2.Reader, addr []byte, dest *string) {
 	*dest = entry.Country.IsoCode
 }
 
+// MapFlow enriches a flow message using GeoIP databases.
 func MapFlow(dbAsn, dbCountry *geoip2.Reader, msg *ProtoProducerMessage) {
 	if dbAsn != nil {
-		MapAsn(dbAsn, msg.SrcAddr, &(msg.FlowMessageExt.SrcAs))
-		MapAsn(dbAsn, msg.DstAddr, &(msg.FlowMessageExt.DstAs))
+		MapAsn(dbAsn, msg.SrcAddr, &msg.SrcAs)
+		MapAsn(dbAsn, msg.DstAddr, &msg.DstAs)
 	}
 	if dbCountry != nil {
-		MapCountry(dbCountry, msg.SrcAddr, &(msg.FlowMessageExt.SrcCountry))
-		MapCountry(dbCountry, msg.DstAddr, &(msg.FlowMessageExt.DstCountry))
+		MapCountry(dbCountry, msg.SrcAddr, &msg.SrcCountry)
+		MapCountry(dbCountry, msg.DstAddr, &msg.DstCountry)
 	}
 }
 
+// ProtoProducerMessage wraps the generated flow message for serialization.
 type ProtoProducerMessage struct {
 	flowmessage.FlowMessageExt
 }
 
+// MarshalBinary encodes the message with a length delimiter.
 func (m *ProtoProducerMessage) MarshalBinary() ([]byte, error) {
 	buf := bytes.NewBuffer([]byte{})
 	_, err := protodelim.MarshalTo(buf, m)
@@ -86,6 +96,7 @@ func (m *ProtoProducerMessage) MarshalBinary() ([]byte, error) {
 }
 
 func main() {
+	config.BindCommonFlags(flag.CommandLine, &LogLevel, &LogFmt, &Format, &Transport)
 	flag.Parse()
 
 	if *Version {
@@ -93,32 +104,32 @@ func main() {
 		os.Exit(0)
 	}
 
-	var loglevel slog.Level
-	if err := loglevel.UnmarshalText([]byte(*LogLevel)); err != nil {
+	logger, err := logging.NewLogger(LogLevel, LogFmt)
+	if err != nil {
 		log.Fatal("error parsing log level")
 	}
-
-	lo := slog.HandlerOptions{
-		Level: loglevel,
-	}
-	logger := slog.New(slog.NewTextHandler(os.Stderr, &lo))
-
-	switch *LogFmt {
-	case "json":
-		logger = slog.New(slog.NewJSONHandler(os.Stderr, &lo))
-	}
-
 	slog.SetDefault(logger)
 
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	go func() {
+		<-ctx.Done()
+		_ = os.Stdin.Close()
+	}()
+
 	var dbAsn, dbCountry *geoip2.Reader
-	var err error
 	if *DbAsn != "" {
 		dbAsn, err = geoip2.Open(*DbAsn)
 		if err != nil {
 			slog.Error("error opening asn db", slog.String("error", err.Error()))
 			os.Exit(1)
 		}
-		defer dbAsn.Close()
+		defer func() {
+			if err := dbAsn.Close(); err != nil {
+				slog.Warn("error closing asn db", slog.String("error", err.Error()))
+			}
+		}()
 	}
 
 	if *DbCountry != "" {
@@ -127,20 +138,28 @@ func main() {
 			slog.Error("error opening country db", slog.String("error", err.Error()))
 			os.Exit(1)
 		}
-		defer dbCountry.Close()
+		defer func() {
+			if err := dbCountry.Close(); err != nil {
+				slog.Warn("error closing country db", slog.String("error", err.Error()))
+			}
+		}()
 	}
 
-	formatter, err := format.FindFormat(*Format)
+	formatter, err := builder.BuildFormatter(Format)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	transporter, err := transport.FindTransport(*Transport)
+	transporter, err := builder.BuildTransport(Transport)
 	if err != nil {
 		slog.Error("error transporter", slog.String("error", err.Error()))
 		os.Exit(1)
 	}
-	defer transporter.Close()
+	defer func() {
+		if err := transporter.Close(); err != nil {
+			slog.Warn("error closing transport", slog.String("error", err.Error()))
+		}
+	}()
 
 	logger.Info("starting enricher")
 
@@ -151,6 +170,9 @@ func main() {
 		if err := protodelim.UnmarshalFrom(rdr, &msg); err != nil && errors.Is(err, io.EOF) {
 			return
 		} else if err != nil {
+			if ctx.Err() != nil {
+				return
+			}
 			slog.Error("error unmarshalling message", slog.String("error", err.Error()))
 			continue
 		}

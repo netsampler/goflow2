@@ -1,3 +1,4 @@
+// Package protoproducer encodes flow data into protobuf messages.
 package protoproducer
 
 import (
@@ -10,6 +11,7 @@ import (
 	"github.com/netsampler/goflow2/v2/producer"
 )
 
+// ProtoProducer converts decoded packets into protobuf flow messages.
 type ProtoProducer struct {
 	cfg                ProtoProducerConfig
 	samplinglock       *sync.RWMutex
@@ -87,14 +89,17 @@ func (p *ProtoProducer) Produce(msg interface{}, args *producer.ProduceArgs) (fl
 	return flowMessageSet, err
 }
 
+// Commit returns messages to the pool.
 func (p *ProtoProducer) Commit(flowMessageSet []producer.ProducerMessage) {
 	for _, fmsg := range flowMessageSet {
 		protoMessagePool.Put(fmsg)
 	}
 }
 
+// Close is a no-op for ProtoProducer.
 func (p *ProtoProducer) Close() {}
 
+// CreateProtoProducer creates a ProtoProducer with config and sampling system.
 func CreateProtoProducer(cfg ProtoProducerConfig, samplingRateSystem func() SamplingRateSystem) (producer.ProducerInterface, error) {
 	return &ProtoProducer{
 		cfg:                cfg,

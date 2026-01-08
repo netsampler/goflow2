@@ -31,14 +31,17 @@ type NetFlowMapField struct {
 	//DestinationLength uint8  `json:"dlen"` // could be used if populating a slice of uint16 that aren't in protobuf
 }
 
+// IPFIXProducerConfig holds IPFIX field mappings.
 type IPFIXProducerConfig struct {
 	Mapping []NetFlowMapField `yaml:"mapping"`
 }
 
+// NetFlowV9ProducerConfig holds NetFlow v9 field mappings.
 type NetFlowV9ProducerConfig struct {
 	Mapping []NetFlowMapField `yaml:"mapping"`
 }
 
+// SFlowMapField defines a mapping from packet offsets to protobuf fields.
 type SFlowMapField struct {
 	Layer        string `yaml:"layer"`
 	Encapsulated bool   `yaml:"encap"`  // only parse if encapsulated
@@ -50,6 +53,7 @@ type SFlowMapField struct {
 	//DestinationLength uint8  `json:"dlen"`
 }
 
+// SFlowProtocolParse defines a parser override for a protocol/port.
 type SFlowProtocolParse struct {
 	Proto  string     `yaml:"proto"`
 	Dir    RegPortDir `yaml:"dir"`
@@ -57,11 +61,13 @@ type SFlowProtocolParse struct {
 	Parser string     `yaml:"parser"`
 }
 
+// SFlowProducerConfig holds sFlow mapping configuration.
 type SFlowProducerConfig struct {
 	Mapping []SFlowMapField      `yaml:"mapping"`
 	Ports   []SFlowProtocolParse `yaml:"ports"`
 }
 
+// ProtobufFormatterConfig describes a protobuf field for formatting.
 type ProtobufFormatterConfig struct {
 	Name  string `yaml:"name"`
 	Index int32  `yaml:"index"`
@@ -69,6 +75,7 @@ type ProtobufFormatterConfig struct {
 	Array bool   `yaml:"array"`
 }
 
+// FormatterConfig defines which fields and renderers to use.
 type FormatterConfig struct {
 	Fields   []string                  `yaml:"fields"`
 	Key      []string                  `yaml:"key"`
@@ -77,6 +84,7 @@ type FormatterConfig struct {
 	Protobuf []ProtobufFormatterConfig `yaml:"protobuf"`
 }
 
+// ProducerConfig is the top-level config for protobuf producers.
 type ProducerConfig struct {
 	Formatter FormatterConfig `yaml:"formatter"`
 
@@ -87,6 +95,7 @@ type ProducerConfig struct {
 	// should do a rename map list for when printing
 }
 
+// Compile converts ProducerConfig into a mapped configuration.
 func (c *ProducerConfig) Compile() (ProtoProducerConfig, error) {
 	return mapConfig(c)
 }
@@ -120,6 +129,7 @@ type DataMap struct {
 	MapConfigBase
 }
 
+// FormatterConfigMapper implements FormatterMapper from a config.
 type FormatterConfigMapper struct {
 	fields  []string
 	key     []string
@@ -210,6 +220,7 @@ func (m *SFlowMapper) ParsePacket(flowMessage ProtoProducerMessageIf, data []byt
 
 // Structure to help the MapCustom functions
 // populate the protobuf data
+// MapConfigBase stores destination mapping metadata.
 type MapConfigBase struct {
 	// Used if the field inside the protobuf exists
 	// also serves as the field when rendering with text
@@ -245,6 +256,7 @@ func (c *MapConfigBase) IsArray() bool {
 }
 
 // Extended structure for packet mapping
+// DataMapLayer describes a packet layer mapping entry.
 type DataMapLayer struct {
 	MapConfigBase
 	Offset       int

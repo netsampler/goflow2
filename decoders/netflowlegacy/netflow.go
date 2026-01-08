@@ -1,3 +1,4 @@
+// Package netflowlegacy decodes NetFlow v5 packets.
 package netflowlegacy
 
 import (
@@ -7,6 +8,7 @@ import (
 	"github.com/netsampler/goflow2/v2/decoders/utils"
 )
 
+// DecoderError wraps a NetFlow legacy decode error.
 type DecoderError struct {
 	Err error
 }
@@ -19,6 +21,7 @@ func (e *DecoderError) Unwrap() error {
 	return e.Err
 }
 
+// DecodeMessageVersion reads the version and decodes a NetFlow v5 message.
 func DecodeMessageVersion(payload *bytes.Buffer, packet *PacketNetFlowV5) error {
 	var version uint16
 	if err := utils.BinaryDecoder(payload, &version); err != nil {
@@ -31,6 +34,7 @@ func DecodeMessageVersion(payload *bytes.Buffer, packet *PacketNetFlowV5) error 
 	return DecodeMessage(payload, packet)
 }
 
+// DecodeMessage decodes the NetFlow v5 header and records from the payload.
 func DecodeMessage(payload *bytes.Buffer, packet *PacketNetFlowV5) error {
 	if err := utils.BinaryDecoder(payload,
 		&packet.Count,

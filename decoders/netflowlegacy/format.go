@@ -6,14 +6,17 @@ import (
 	"time"
 )
 
+// MarshalJSON encodes the packet without triggering MarshalText.
 func (p *PacketNetFlowV5) MarshalJSON() ([]byte, error) {
 	return json.Marshal(*p) // this is a trick to avoid having the JSON marshaller defaults to MarshalText
 }
 
+// MarshalText formats a concise text summary of the packet.
 func (p *PacketNetFlowV5) MarshalText() ([]byte, error) {
 	return []byte(fmt.Sprintf("NetFlowV%d seq:%d count:%d", p.Version, p.FlowSequence, p.Count)), nil
 }
 
+// String renders a multi-line representation of the packet.
 func (p PacketNetFlowV5) String() string {
 	str := "NetFlow v5 Packet\n"
 	str += "-----------------\n"
@@ -36,6 +39,7 @@ func (p PacketNetFlowV5) String() string {
 	return str
 }
 
+// String renders a multi-line representation of the record.
 func (r RecordsNetFlowV5) String() string {
 	str := fmt.Sprintf("      SrcAddr: %v\n", r.SrcAddr)
 	str += fmt.Sprintf("      DstAddr: %v\n", r.DstAddr)
