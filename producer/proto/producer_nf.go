@@ -768,7 +768,7 @@ func ProcessMessageIPFIXConfig(packet *netflow.IPFIXPacket, samplingRateSys Samp
 	if config != nil {
 		cfgIpfix = config.GetIPFIXMapper()
 		cfgSflow = config.GetPacketMapper()
-		samplingFallback = config.GetSamplingRateObsDomainFallback()
+		samplingFallback = config.GetSamplingRateFallback()
 	}
 	flowMessageSet, err = SearchNetFlowDataSets(10, baseTime, 0, dataFlowSet, cfgIpfix, cfgSflow)
 	if err != nil {
@@ -820,7 +820,7 @@ func ProcessMessageNetFlowV9Config(packet *netflow.NFv9Packet, samplingRateSys S
 	var samplingFallback bool
 	if config != nil {
 		cfgNetFlow = config.GetNetFlowMapper()
-		samplingFallback = config.GetSamplingRateObsDomainFallback()
+		samplingFallback = config.GetSamplingRateFallback()
 	}
 	flowMessageSet, err = SearchNetFlowDataSets(9, baseTime, uptime, dataFlowSet, cfgNetFlow, nil)
 	if err != nil {

@@ -83,5 +83,5 @@ type ProtoProducerConfig interface {
 	GetIPFIXMapper() TemplateMapper
 	GetNetFlowMapper() TemplateMapper
 	GetPacketMapper() PacketMapper
-	GetSamplingRateObsDomainFallback() bool
+	GetSamplingRateFallback() bool
 }
