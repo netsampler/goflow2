@@ -114,6 +114,21 @@ func (c *Collector) Start() error {
 	c.netFlowRegistry = netFlowRegistry
 	c.jsonRegistry = jsonRegistry
 
+	type recvErrSource struct {
+		ch     <-chan error
+		logger *slog.Logger
+		bm     *utils.BatchMute
+	}
+	type recvErr struct {
+		err    error
+		logger *slog.Logger
+		bm     *utils.BatchMute
+	}
+	var recvErrCh chan recvErr
+	if len(c.listeners) > 0 {
+		recvErrCh = make(chan recvErr, len(c.listeners))
+	}
+
 	if jsonRegistry != nil {
 		c.wg.Add(1)
 		go func() {
@@ -127,9 +142,6 @@ func (c *Collector) Start() error {
 				case err, ok := <-jsonErr:
 					if !ok {
 						return
-					}
-					if err == nil {
-						continue
 					}
 					c.logger.Error("template persistence error", slog.String("error", err.Error()))
 				}
@@ -195,50 +207,83 @@ func (c *Collector) Start() error {
 		if err := recv.Start(listenCfg.Hostname, listenCfg.Port, decodeFunc); err != nil {
 			return fmt.Errorf("collector: start receiver %s:%d: %w", listenCfg.Hostname, listenCfg.Port, err)
 		}
+		source := recvErrSource{
+			ch:     recv.Errors(),
+			logger: logger,
+			bm:     bm,
+		}
 		c.wg.Add(1)
-		go func(recv *utils.UDPReceiver, logger *slog.Logger) {
+		go func(source recvErrSource) {
 			defer c.wg.Done()
 			for {
 				select {
 				case <-c.stopCh:
 					return
-				case err := <-recv.Errors():
-					if errors.Is(err, net.ErrClosed) {
-						logger.Info("closed receiver")
+				case err, ok := <-source.ch:
+					if !ok {
+						return
+					}
+					select {
+					case recvErrCh <- recvErr{
+						err:    err,
+						logger: source.logger,
+						bm:     source.bm,
+					}:
+					case <-c.stopCh:
+						return
+					}
+				}
+			}
+		}(source)
+
+		c.receivers = append(c.receivers, recv)
+	}
+
+	if recvErrCh != nil {
+		c.wg.Add(1)
+		go func() {
+			defer c.wg.Done()
+
+			for {
+				select {
+				case <-c.stopCh:
+					return
+				case recvErr := <-recvErrCh:
+					if errors.Is(recvErr.err, net.ErrClosed) {
+						recvErr.logger.Info("closed receiver")
 						continue
-					} else if !errors.Is(err, netflow.ErrorTemplateNotFound) && !errors.Is(err, debug.ErrPanic) {
-						logger.Error("error", slog.String("error", err.Error()))
+					}
+					if !errors.Is(recvErr.err, netflow.ErrorTemplateNotFound) && !errors.Is(recvErr.err, debug.ErrPanic) {
+						recvErr.logger.Error("error", slog.String("error", recvErr.err.Error()))
 						continue
 					}
 
-					muted, skipped := bm.Increment()
+					muted, skipped := recvErr.bm.Increment()
 					if muted && skipped == 0 {
-						logger.Warn("too many receiver messages, muting")
+						recvErr.logger.Warn("too many receiver messages, muting")
 					} else if !muted && skipped > 0 {
-						logger.Warn("skipped receiver messages", slog.Int("count", skipped))
+						recvErr.logger.Warn("skipped receiver messages", slog.Int("count", skipped))
 					} else if !muted {
 						attrs := []any{
-							slog.String("error", err.Error()),
+							slog.String("error", recvErr.err.Error()),
 						}
 
-						if errors.Is(err, netflow.ErrorTemplateNotFound) {
-							logger.Warn("template error")
-						} else if errors.Is(err, debug.ErrPanic) {
+						if errors.Is(recvErr.err, netflow.ErrorTemplateNotFound) {
+							recvErr.logger.Warn("template error")
+						} else if errors.Is(recvErr.err, debug.ErrPanic) {
 							var pErrMsg *debug.PanicErrorMessage
-							if errors.As(err, &pErrMsg) {
+							if errors.As(recvErr.err, &pErrMsg) {
 								attrs = append(attrs,
 									slog.Any("message", pErrMsg.Msg),
 									slog.String("stacktrace", string(pErrMsg.Stacktrace)),
 								)
 							}
-							logger.Error("intercepted panic", attrs...)
+							recvErr.logger.Error("intercepted panic", attrs...)
 						}
 					}
 				}
 			}
-		}(recv, logger)
-
-		c.receivers = append(c.receivers, recv)
+		}()
 	}
 
 	c.wg.Add(1)
@@ -258,8 +303,8 @@ func (c *Collector) Start() error {
 			select {
 			case <-c.stopCh:
 				return
-			case err := <-transportErr:
-				if err == nil {
+			case err, ok := <-transportErr:
+				if !ok {
 					return
 				}
 				muted, skipped := bm.Increment()

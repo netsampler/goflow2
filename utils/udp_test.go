@@ -1,6 +1,7 @@
 package utils
 
 import (
+	"errors"
 	"fmt"
 	"net"
 	"strconv"
@@ -91,6 +92,47 @@ func TestUDPReceiverDrainOnStop(t *testing.T) {
 
 	require.NoError(t, r.Stop())
 	require.EqualValues(t, total, decoded.Load())
+}
+
+func TestUDPReceiverDecodeError(t *testing.T) {
+	addr := "::1"
+	port, err := getFreeUDPPort()
+	require.NoError(t, err)
+
+	r, err := NewUDPReceiver(nil)
+	require.NoError(t, err)
+
+	wantErr := errors.New("decode error")
+	errReady := make(chan struct{})
+	gotErr := make(chan error, 1)
+	go func() {
+		close(errReady)
+		err := <-r.Errors()
+		gotErr <- err
+	}()
+	<-errReady
+
+	decodeFunc := func(msg interface{}) error {
+		return wantErr
+	}
+
+	require.NoError(t, r.Start(addr, port, decodeFunc))
+	defer func() {
+		require.NoError(t, r.Stop())
+	}()
+
+	conn, err := net.Dial("udp", net.JoinHostPort(addr, strconv.Itoa(port)))
+	require.NoError(t, err)
+	_, err = conn.Write([]byte("message"))
+	require.NoError(t, err)
+	require.NoError(t, conn.Close())
+
+	select {
+	case err := <-gotErr:
+		require.ErrorIs(t, err, wantErr)
+	case <-time.After(2 * time.Second):
+		t.Fatal("timeout waiting for decoder error")
+	}
 }
 
 func getFreeUDPPort() (int, error) {

@@ -54,7 +54,8 @@ var packetPool = sync.Pool{
 // UDPReceiver receives UDP packets and dispatches them to decoders.
 type UDPReceiver struct {
 	ready    chan bool
-	q        chan bool
+	stopCh   chan struct{}
+	stopOnce sync.Once
 	recvWg   *sync.WaitGroup
 	decodeWg *sync.WaitGroup
 	dispatch chan *udpPacket
@@ -119,7 +120,8 @@ func NewUDPReceiver(cfg *UDPReceiverConfig) (*UDPReceiver, error) {
 // Initialize channels that are related to a session
 // Once the user calls Stop, they can restart the capture
 func (r *UDPReceiver) init() error {
-	r.q = make(chan bool)
+	r.stopCh = make(chan struct{})
+	r.stopOnce = sync.Once{}
 	if r.dispatchSize == 0 {
 		r.dispatch = make(chan *udpPacket) // synchronous mode
 	} else {
@@ -157,18 +159,27 @@ func (r *UDPReceiver) receive(addr string, port int, started chan bool) error {
 	}
 	close(started) // indicates receiver is setup
 
-	q := make(chan bool)
-	// function to quit
+	var closeOnce sync.Once
+	closeConn := func() {
+		closeOnce.Do(func() {
+			if err := pconn.Close(); err != nil {
+				r.logError(err)
+			}
+		})
+	}
+
+	done := make(chan struct{})
 	go func() {
 		select {
-		case <-q: // if routine has exited before
-		case <-r.q: // upon general close
-		}
-		if err := pconn.Close(); err != nil {
-			r.logError(err)
+		case <-r.stopCh: // upon general close
+			closeConn()
+		case <-done: // receiver exited early
 		}
 	}()
-	defer close(q)
+	defer func() {
+		close(done)
+		closeConn()
+	}()
 
 	udpconn, ok := pconn.(*net.UDPConn)
 	if !ok {
@@ -200,13 +211,13 @@ func (r *UDPReceiver) receiveRoutine(udpconn *net.UDPConn) (err error) {
 			// if combined with synchronous mode
 			select {
 			case r.dispatch <- pkt:
-			case <-r.q:
+			case <-r.stopCh:
 				return nil
 			}
 		} else {
 			select {
 			case r.dispatch <- pkt:
-			case <-r.q:
+			case <-r.stopCh:
 				return nil
 			default:
 				if r.cb != nil {
@@ -330,11 +341,9 @@ func (r *UDPReceiver) Stop() error {
 	default:
 	}
 
-	select {
-	case <-r.q:
-	default:
-		close(r.q)
-	}
+	r.stopOnce.Do(func() {
+		close(r.stopCh)
+	})
 
 	r.recvWg.Wait()
 	close(r.dispatch)
