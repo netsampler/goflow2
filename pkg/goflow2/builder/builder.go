@@ -39,6 +39,11 @@ func BuildProducer(cfg *config.Config) (producer.ProducerInterface, error) {
 			}
 		}
 
+		if cfgProducer == nil {
+			cfgProducer = &protoproducer.ProducerConfig{}
+		}
+		cfgProducer.SamplingRateFallback = cfg.SamplingRateFallback
+
 		cfgm, err := cfgProducer.Compile()
 		if err != nil {
 			return nil, err

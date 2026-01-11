@@ -764,9 +764,11 @@ func ProcessMessageIPFIXConfig(packet *netflow.IPFIXPacket, samplingRateSys Samp
 
 	var cfgIpfix TemplateMapper
 	var cfgSflow PacketMapper
+	var samplingFallback bool
 	if config != nil {
 		cfgIpfix = config.GetIPFIXMapper()
 		cfgSflow = config.GetPacketMapper()
+		samplingFallback = config.GetSamplingRateFallback()
 	}
 	flowMessageSet, err = SearchNetFlowDataSets(10, baseTime, 0, dataFlowSet, cfgIpfix, cfgSflow)
 	if err != nil {
@@ -780,8 +782,15 @@ func ProcessMessageIPFIXConfig(packet *netflow.IPFIXPacket, samplingRateSys Samp
 	if samplingRateSys != nil {
 		if found {
 			samplingRateSys.AddSamplingRate(10, obsDomainId, samplingRate)
+			if samplingFallback && obsDomainId != 0 {
+				samplingRateSys.AddSamplingRate(10, 0, samplingRate)
+			}
 		} else {
-			samplingRate, _ = samplingRateSys.GetSamplingRate(10, obsDomainId)
+			var lookupErr error
+			samplingRate, lookupErr = samplingRateSys.GetSamplingRate(10, obsDomainId)
+			if lookupErr != nil && samplingFallback && obsDomainId != 0 {
+				samplingRate, _ = samplingRateSys.GetSamplingRate(10, 0)
+			}
 		}
 	}
 	for _, msg := range flowMessageSet {
@@ -808,8 +817,10 @@ func ProcessMessageNetFlowV9Config(packet *netflow.NFv9Packet, samplingRateSys S
 	obsDomainId := packet.SourceId
 
 	var cfgNetFlow TemplateMapper
+	var samplingFallback bool
 	if config != nil {
 		cfgNetFlow = config.GetNetFlowMapper()
+		samplingFallback = config.GetSamplingRateFallback()
 	}
 	flowMessageSet, err = SearchNetFlowDataSets(9, baseTime, uptime, dataFlowSet, cfgNetFlow, nil)
 	if err != nil {
@@ -822,8 +833,15 @@ func ProcessMessageNetFlowV9Config(packet *netflow.NFv9Packet, samplingRateSys S
 	if samplingRateSys != nil {
 		if found {
 			samplingRateSys.AddSamplingRate(9, obsDomainId, samplingRate)
+			if samplingFallback && obsDomainId != 0 {
+				samplingRateSys.AddSamplingRate(9, 0, samplingRate)
+			}
 		} else {
-			samplingRate, _ = samplingRateSys.GetSamplingRate(9, obsDomainId)
+			var lookupErr error
+			samplingRate, lookupErr = samplingRateSys.GetSamplingRate(9, obsDomainId)
+			if lookupErr != nil && samplingFallback && obsDomainId != 0 {
+				samplingRate, _ = samplingRateSys.GetSamplingRate(9, 0)
+			}
 		}
 	}
 	for _, msg := range flowMessageSet {

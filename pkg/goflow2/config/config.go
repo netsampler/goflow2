@@ -28,6 +28,8 @@ type Config struct {
 	TemplatePath string
 
 	MappingFile string
+
+	SamplingRateFallback bool
 }
 
 // BindFlags registers configuration flags and returns a Config.
@@ -42,6 +44,7 @@ func BindFlags(fs *flag.FlagSet) *Config {
 	fs.StringVar(&cfg.Addr, "addr", ":8080", "HTTP server address")
 	fs.StringVar(&cfg.TemplatePath, "templates.path", "/templates", "NetFlow/IPFIX templates list")
 	fs.StringVar(&cfg.MappingFile, "mapping", "", "Configuration file for custom mappings")
+	fs.BoolVar(&cfg.SamplingRateFallback, "samplingrate.fallback", false, "Fallback to obs domain 0 for sampling rates")
 
 	return cfg
 }
