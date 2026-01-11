@@ -111,6 +111,43 @@ func TestProcessMessageSFlow(t *testing.T) {
 	assert.Nil(t, err)
 }
 
+func TestSearchNetFlowOptionDataSetsSamplingRateShortField(t *testing.T) {
+	optionData := []netflow.OptionsDataFlowSet{
+		{
+			Records: []netflow.OptionsDataRecord{
+				{
+					OptionsValues: []netflow.DataField{
+						{
+							Type:  50,
+							Value: []byte{0x00, 0x64},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	samplingRate, found, err := SearchNetFlowOptionDataSets(optionData)
+	assert.NoError(t, err)
+	assert.True(t, found)
+	assert.Equal(t, uint32(100), samplingRate)
+}
+
+func TestNetFlowPopulateDecodeNumberShortField(t *testing.T) {
+	values := []netflow.DataField{
+		{
+			Type:  1,
+			Value: []byte{0xff},
+		},
+	}
+
+	var out int8
+	found, err := NetFlowPopulate(values, 1, &out)
+	assert.NoError(t, err)
+	assert.True(t, found)
+	assert.Equal(t, int8(-1), out)
+}
+
 func TestExpandedSFlowDecode(t *testing.T) {
 	flowMessages, err := ProcessMessageSFlowConfig(getSflowPacket(), nil)
 	flowMessageIf := flowMessages[0]
