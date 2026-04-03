@@ -1,0 +1,12 @@
+source:
+  network: udp
+  address: ":18080"
+  frame: datagram
+
+transforms:
+  - type: add_fields
+    fields:
+      pipeline: reflow
+
+output:
+  type: stdout
