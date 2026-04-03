@@ -10,6 +10,7 @@ import (
 	protoproducer "github.com/netsampler/goflow2/v3/producer/proto"
 	rawproducer "github.com/netsampler/goflow2/v3/producer/raw"
 	"github.com/netsampler/goflow2/v3/transport"
+	"github.com/netsampler/goflow2/v3/utils/store/samplingrate"
 )
 
 // BuildFormatter resolves a formatter by name.
@@ -31,7 +32,7 @@ func BuildTransport(name string) (*transport.Transport, error) {
 }
 
 // BuildProducer resolves a producer based on configuration.
-func BuildProducer(cfg *config.Config) (producer.ProducerInterface, error) {
+func BuildProducer(cfg *config.Config, samplingStore samplingrate.Store) (producer.ProducerInterface, error) {
 	switch cfg.Produce {
 	case "sample":
 		var cfgProducer *protoproducer.ProducerConfig
@@ -52,7 +53,7 @@ func BuildProducer(cfg *config.Config) (producer.ProducerInterface, error) {
 			return nil, fmt.Errorf("compile mapping: %w", err)
 		}
 
-		return protoproducer.CreateProtoProducer(cfgm, protoproducer.CreateSamplingSystem)
+		return protoproducer.CreateProtoProducer(cfgm, samplingStore)
 	case "raw":
 		return &rawproducer.RawProducer{}, nil
 	default:

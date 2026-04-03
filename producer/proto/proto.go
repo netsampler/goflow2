@@ -3,20 +3,18 @@ package protoproducer
 
 import (
 	"fmt"
-	"sync"
 
 	"github.com/netsampler/goflow2/v3/decoders/netflow"
 	"github.com/netsampler/goflow2/v3/decoders/netflowlegacy"
 	"github.com/netsampler/goflow2/v3/decoders/sflow"
 	"github.com/netsampler/goflow2/v3/producer"
+	"github.com/netsampler/goflow2/v3/utils/store/samplingrate"
 )
 
 // ProtoProducer converts decoded packets into protobuf flow messages.
 type ProtoProducer struct {
-	cfg                ProtoProducerConfig
-	samplinglock       *sync.RWMutex
-	sampling           map[string]SamplingRateSystem
-	samplingRateSystem func() SamplingRateSystem
+	cfg           ProtoProducerConfig
+	samplingStore samplingrate.Store
 }
 
 func (p *ProtoProducer) enrich(flowMessageSet []producer.ProducerMessage, cb func(msg *ProtoProducerMessage)) {
@@ -29,24 +27,13 @@ func (p *ProtoProducer) enrich(flowMessageSet []producer.ProducerMessage, cb fun
 	}
 }
 
-func (p *ProtoProducer) getSamplingRateSystem(args *producer.ProduceArgs) SamplingRateSystem {
-	key := args.Src.Addr().String()
-	p.samplinglock.RLock()
-	sampling, ok := p.sampling[key]
-	p.samplinglock.RUnlock()
-	if !ok {
-		sampling = p.samplingRateSystem()
-		p.samplinglock.Lock()
-		p.sampling[key] = sampling
-		p.samplinglock.Unlock()
-	}
-
-	return sampling
-}
-
 func (p *ProtoProducer) Produce(msg interface{}, args *producer.ProduceArgs) (flowMessageSet []producer.ProducerMessage, err error) {
 	tr := uint64(args.TimeReceived.UnixNano())
 	sa, _ := args.SamplerAddress.Unmap().MarshalBinary()
+	ctx := netflow.FlowContext{RouterKey: args.Src.String()}
+	if args.FlowContext != nil {
+		ctx = *args.FlowContext
+	}
 	switch msgConv := msg.(type) {
 	case *netflowlegacy.PacketNetFlowV5:
 		flowMessageSet, err = ProcessMessageNetFlowLegacy(msgConv)
@@ -56,16 +43,14 @@ func (p *ProtoProducer) Produce(msg interface{}, args *producer.ProduceArgs) (fl
 			fmsg.SamplerAddress = sa
 		})
 	case *netflow.NFv9Packet:
-		samplingRateSystem := p.getSamplingRateSystem(args)
-		flowMessageSet, err = ProcessMessageNetFlowV9Config(msgConv, samplingRateSystem, p.cfg)
+		flowMessageSet, err = ProcessMessageNetFlowV9Config(msgConv, ctx, p.samplingStore, p.cfg)
 
 		p.enrich(flowMessageSet, func(fmsg *ProtoProducerMessage) {
 			fmsg.TimeReceivedNs = tr
 			fmsg.SamplerAddress = sa
 		})
 	case *netflow.IPFIXPacket:
-		samplingRateSystem := p.getSamplingRateSystem(args)
-		flowMessageSet, err = ProcessMessageIPFIXConfig(msgConv, samplingRateSystem, p.cfg)
+		flowMessageSet, err = ProcessMessageIPFIXConfig(msgConv, ctx, p.samplingStore, p.cfg)
 
 		p.enrich(flowMessageSet, func(fmsg *ProtoProducerMessage) {
 			fmsg.TimeReceivedNs = tr
@@ -100,14 +85,23 @@ func (p *ProtoProducer) Commit(flowMessageSet []producer.ProducerMessage) {
 }
 
 // Close is a no-op for ProtoProducer.
-func (p *ProtoProducer) Close() {}
+func (p *ProtoProducer) Close() {
+	if p.samplingStore != nil {
+		p.samplingStore.Close()
+	}
+}
 
 // CreateProtoProducer creates a ProtoProducer with config and sampling system.
-func CreateProtoProducer(cfg ProtoProducerConfig, samplingRateSystem func() SamplingRateSystem) (producer.ProducerInterface, error) {
-	return &ProtoProducer{
-		cfg:                cfg,
-		samplinglock:       &sync.RWMutex{},
-		sampling:           make(map[string]SamplingRateSystem),
-		samplingRateSystem: samplingRateSystem,
-	}, nil
+func CreateProtoProducer(cfg ProtoProducerConfig, samplingStore samplingrate.Store) (producer.ProducerInterface, error) {
+	if samplingStore == nil {
+		samplingStore = samplingrate.NewSamplingRateFlowStore()
+	}
+	samplingStore.Start()
+
+	p := &ProtoProducer{
+		cfg:           cfg,
+		samplingStore: samplingStore,
+	}
+
+	return p, nil
 }

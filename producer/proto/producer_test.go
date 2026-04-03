@@ -5,6 +5,7 @@ import (
 
 	"github.com/netsampler/goflow2/v3/decoders/netflow"
 	"github.com/netsampler/goflow2/v3/decoders/sflow"
+	"github.com/netsampler/goflow2/v3/utils/store/samplingrate"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -55,11 +56,14 @@ func TestProcessMessageNetFlow(t *testing.T) {
 		UnixSeconds:  1705732882,
 		FlowSets:     dfs,
 	}
-	testsr := &SingleSamplingRateSystem{1}
-	msgs, err := ProcessMessageNetFlowV9Config(&pktnf9, testsr, nil)
+	testsr := samplingrate.NewSamplingRateFlowStore()
+	ctx := netflow.FlowContext{RouterKey: "router1"}
+	_ = testsr.Set(ctx, 9, 0, 1)
+	msgs, err := ProcessMessageNetFlowV9Config(&pktnf9, ctx, testsr, nil)
 	if assert.Nil(t, err) && assert.Len(t, msgs, 1) {
 		msg, ok := msgs[0].(*ProtoProducerMessage)
 		if assert.True(t, ok) {
+			assert.Equal(t, uint64(1), msg.SamplingRate)
 			assert.Equal(t, uint64(1705732882176*1e6), msg.TimeFlowStartNs)
 			assert.Equal(t, uint64(1705732882192*1e6), msg.TimeFlowEndNs)
 			assert.Equal(t, []uint32{24041, 211992, 48675}, msg.MplsLabel)
@@ -69,7 +73,8 @@ func TestProcessMessageNetFlow(t *testing.T) {
 	pktipfix := netflow.IPFIXPacket{
 		FlowSets: dfs,
 	}
-	_, err = ProcessMessageIPFIXConfig(&pktipfix, testsr, nil)
+	_ = testsr.Set(ctx, 10, 0, 1)
+	_, err = ProcessMessageIPFIXConfig(&pktipfix, ctx, testsr, nil)
 	assert.Nil(t, err)
 }
 
@@ -107,8 +112,15 @@ func TestProcessMessageSFlow(t *testing.T) {
 			},
 		},
 	}
-	_, err := ProcessMessageSFlowConfig(&pkt, nil)
-	assert.Nil(t, err)
+	msgs, err := ProcessMessageSFlowConfig(&pkt, nil)
+	if assert.Nil(t, err) && assert.Len(t, msgs, 2) {
+		for _, producerMsg := range msgs {
+			msg, ok := producerMsg.(*ProtoProducerMessage)
+			if assert.True(t, ok) {
+				assert.Equal(t, uint64(1), msg.SamplingRate)
+			}
+		}
+	}
 }
 
 func TestExpandedSFlowDecode(t *testing.T) {

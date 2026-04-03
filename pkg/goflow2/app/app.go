@@ -17,18 +17,22 @@ import (
 	"github.com/netsampler/goflow2/v3/pkg/goflow2/listen"
 	"github.com/netsampler/goflow2/v3/pkg/goflow2/logging"
 	"github.com/netsampler/goflow2/v3/utils/debug"
+	"github.com/netsampler/goflow2/v3/utils/store/persistence"
+	"github.com/netsampler/goflow2/v3/utils/store/samplingrate"
+	"github.com/netsampler/goflow2/v3/utils/store/templates"
 )
 
 // App wires and runs the GoFlow2 application.
 type App struct {
-	cfg        *config.Config
-	logger     *slog.Logger
-	collector  *collector.Collector
-	transport  interface{ Close() error }
-	producer   interface{ Close() }
-	server     *http.Server
-	serverErr  chan error
-	collecting atomic.Bool
+	cfg         *config.Config
+	logger      *slog.Logger
+	collector   *collector.Collector
+	persistence *persistence.Manager
+	transport   interface{ Close() error }
+	producer    interface{ Close() }
+	server      *http.Server
+	serverErr   chan error
+	collecting  atomic.Bool
 }
 
 // New constructs a new App from config.
@@ -47,7 +51,32 @@ func New(cfg *config.Config) (*App, error) {
 	if err != nil {
 		return nil, fmt.Errorf("app: build transport: %w", err)
 	}
-	flowProducer, err := builder.BuildProducer(cfg)
+
+	persist := persistence.New(persistence.Config{
+		Path:     cfg.StoreJSONPath,
+		Interval: cfg.StoreJSONInterval,
+	})
+
+	samplingStore, err := persist.NewSamplingRateStore(
+		samplingrate.WithTTL(cfg.SamplingRatesTTL),
+		samplingrate.WithExtendOnAccess(cfg.SamplingRatesExtendOnAccess),
+		samplingrate.WithSweepInterval(cfg.SamplingRatesSweepInterval),
+		samplingrate.WithHooks(metrics.SamplingRateStoreHooks()),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("app: init sampling persistence: %w", err)
+	}
+	templateStore, err := persist.NewTemplateStore(
+		templates.WithTTL(cfg.TemplatesTTL),
+		templates.WithExtendOnAccess(cfg.TemplatesExtendOnAccess),
+		templates.WithSweepInterval(cfg.TemplatesSweepInterval),
+		templates.WithHooks(metrics.TemplateStoreHooks()),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("app: init template persistence: %w", err)
+	}
+
+	flowProducer, err := builder.BuildProducer(cfg, samplingStore)
 	if err != nil {
 		return nil, fmt.Errorf("app: build producer: %w", err)
 	}
@@ -61,37 +90,34 @@ func New(cfg *config.Config) (*App, error) {
 	}
 
 	coll, err := collector.New(collector.Config{
-		Listeners:               listeners,
-		Formatter:               formatter,
-		Transport:               transporter,
-		Producer:                flowProducer,
-		ErrCnt:                  cfg.ErrCnt,
-		ErrInt:                  cfg.ErrInt,
-		Logger:                  logger,
-		TemplatesTTL:            cfg.TemplatesTTL,
-		TemplatesSweepInterval:  cfg.TemplatesSweepInterval,
-		TemplatesExtendOnAccess: cfg.TemplatesExtendOnAccess,
-		TemplatesJSONPath:       cfg.TemplatesJSONPath,
-		TemplatesJSONInterval:   cfg.TemplatesJSONInterval,
+		Listeners:     listeners,
+		Formatter:     formatter,
+		Transport:     transporter,
+		Producer:      flowProducer,
+		TemplateStore: templateStore,
+		ErrCnt:        cfg.ErrCnt,
+		ErrInt:        cfg.ErrInt,
+		Logger:        logger,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("app: init collector: %w", err)
 	}
 
 	app := &App{
-		cfg:       cfg,
-		logger:    logger,
-		collector: coll,
-		transport: transporter,
-		producer:  flowProducer,
-		serverErr: make(chan error, 1),
+		cfg:         cfg,
+		logger:      logger,
+		collector:   coll,
+		persistence: persist,
+		transport:   transporter,
+		producer:    flowProducer,
+		serverErr:   make(chan error, 1),
 	}
 
 	if cfg.Addr != "" {
 		mux := httpserver.New(httpserver.Config{
-			Addr:         cfg.Addr,
-			TemplatePath: cfg.TemplatePath,
-		}, coll.NetFlowTemplates, app.collecting.Load)
+			Addr:          cfg.Addr,
+			StoreHTTPPath: cfg.StoreHTTPPath,
+		}, persist.Document, app.collecting.Load)
 		app.server = &http.Server{
 			Addr:              cfg.Addr,
 			Handler:           mux,
@@ -106,7 +132,15 @@ func New(cfg *config.Config) (*App, error) {
 func (a *App) Start() error {
 	a.logger.Info("starting GoFlow2")
 
+	a.persistence.Start()
+	go func() {
+		for err := range a.persistence.Errors() {
+			a.logger.Error("flowstore persistence error", slog.String("error", err.Error()))
+		}
+	}()
+
 	if err := a.collector.Start(); err != nil {
+		a.persistence.Close()
 		return fmt.Errorf("app: start collector: %w", err)
 	}
 	a.collecting.Store(true)
@@ -166,6 +200,7 @@ func (a *App) Shutdown(ctx context.Context) {
 
 	a.collector.Stop()
 	a.producer.Close()
+	a.persistence.Close()
 	if err := a.transport.Close(); err != nil {
 		a.logger.Error("error closing transport", slog.String("error", err.Error()))
 	}

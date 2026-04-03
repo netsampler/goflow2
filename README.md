@@ -66,6 +66,7 @@ The sampling protocols have distinct features:
 
 The sampling rate in NetFlow/IPFIX is provided by **Option Data Sets**. This is why it can take a few minutes
 for the packets to be decoded until all the templates are received (**Option Template** and **Data Template**).
+Sampling rates are cached in the FlowStore with optional TTL and JSON persistence controls (see `sampling.*` flags).
 
 Both of these protocols bundle multiple samples (**Data Set** in NetFlow/IPFIX and **Flow Sample** in sFlow)
 in one packet.

@@ -2,13 +2,87 @@ package netflow
 
 import (
 	"bytes"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 )
 
+type testTemplateStore struct {
+	mu        sync.RWMutex
+	templates map[string]FlowBaseTemplateSet
+}
+
+func newTestTemplateStore() *testTemplateStore {
+	return &testTemplateStore{
+		templates: make(map[string]FlowBaseTemplateSet),
+	}
+}
+
+func (s *testTemplateStore) AddTemplate(ctx FlowContext, version uint16, obsDomainId uint32, templateId uint16, template interface{}) (TemplateStatus, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	key := templateKey(version, obsDomainId, templateId)
+	bucket := s.templates[ctx.RouterKey]
+	if bucket == nil {
+		bucket = make(FlowBaseTemplateSet)
+		s.templates[ctx.RouterKey] = bucket
+	}
+	if _, ok := bucket[key]; ok {
+		bucket[key] = template
+		return TemplateUpdated, nil
+	}
+	bucket[key] = template
+	return TemplateAdded, nil
+}
+
+func (s *testTemplateStore) GetTemplate(ctx FlowContext, version uint16, obsDomainId uint32, templateId uint16) (interface{}, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	key := templateKey(version, obsDomainId, templateId)
+	if bucket, ok := s.templates[ctx.RouterKey]; ok {
+		if tpl, ok := bucket[key]; ok {
+			return tpl, nil
+		}
+	}
+	return nil, ErrorTemplateNotFound
+}
+
+func (s *testTemplateStore) RemoveTemplate(ctx FlowContext, version uint16, obsDomainId uint32, templateId uint16) (interface{}, bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	key := templateKey(version, obsDomainId, templateId)
+	bucket, ok := s.templates[ctx.RouterKey]
+	if !ok {
+		return nil, false, ErrorTemplateNotFound
+	}
+	if tpl, ok := bucket[key]; ok {
+		delete(bucket, key)
+		return tpl, true, nil
+	}
+	return nil, false, ErrorTemplateNotFound
+}
+
+func (s *testTemplateStore) GetAll() map[string]FlowBaseTemplateSet {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := make(map[string]FlowBaseTemplateSet, len(s.templates))
+	for k, v := range s.templates {
+		cp := make(FlowBaseTemplateSet, len(v))
+		for kk, vv := range v {
+			cp[kk] = vv
+		}
+		out[k] = cp
+	}
+	return out
+}
+
+func (s *testTemplateStore) Start() {}
+func (s *testTemplateStore) Close() {}
+
 func TestDecodeNetFlowV9(t *testing.T) {
-	templates := CreateTemplateSystem()
+	store := newTestTemplateStore()
+	ctx := FlowContext{RouterKey: "router1"}
 
 	// Decode a template
 	template := []byte{
@@ -23,7 +97,7 @@ func TestDecodeNetFlowV9(t *testing.T) {
 	}
 	buf := bytes.NewBuffer(template)
 	var decNfv9 NFv9Packet
-	err := DecodeMessageVersion(buf, templates, &decNfv9, nil)
+	err := DecodeMessageVersion(buf, store, ctx, &decNfv9, nil)
 	assert.Nil(t, err)
 	assert.Equal(t,
 		NFv9Packet{
@@ -206,7 +280,7 @@ func TestDecodeNetFlowV9(t *testing.T) {
 	}
 	buf = bytes.NewBuffer(data[:89]) // truncate: we don't want to test for everything
 	decNfv9 = NFv9Packet{}           // reset
-	err = DecodeMessageVersion(buf, templates, &decNfv9, nil)
+	err = DecodeMessageVersion(buf, store, ctx, &decNfv9, nil)
 
 	assert.Nil(t, err)
 	assert.Equal(t,

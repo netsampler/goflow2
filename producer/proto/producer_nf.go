@@ -4,71 +4,14 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
-	"sync"
 	"time"
 
 	"github.com/netsampler/goflow2/v3/decoders/netflow"
 	"github.com/netsampler/goflow2/v3/decoders/utils"
 	flowmessage "github.com/netsampler/goflow2/v3/pb"
 	"github.com/netsampler/goflow2/v3/producer"
+	"github.com/netsampler/goflow2/v3/utils/store/samplingrate"
 )
-
-type SamplingRateSystem interface {
-	GetSamplingRate(version uint16, obsDomainId uint32) (uint32, error)
-	AddSamplingRate(version uint16, obsDomainId uint32, samplingRate uint32)
-}
-
-type basicSamplingRateKey struct {
-	version     uint16
-	obsDomainId uint32
-}
-
-type basicSamplingRateSystem struct {
-	sampling     map[basicSamplingRateKey]uint32
-	samplinglock *sync.RWMutex
-}
-
-// CreateSamplingSystem creates a default sampling rate system.
-func CreateSamplingSystem() SamplingRateSystem {
-	ts := &basicSamplingRateSystem{
-		sampling:     make(map[basicSamplingRateKey]uint32),
-		samplinglock: &sync.RWMutex{},
-	}
-	return ts
-}
-
-func (s *basicSamplingRateSystem) AddSamplingRate(version uint16, obsDomainId uint32, samplingRate uint32) {
-	s.samplinglock.Lock()
-	defer s.samplinglock.Unlock()
-	s.sampling[basicSamplingRateKey{
-		version:     version,
-		obsDomainId: obsDomainId,
-	}] = samplingRate
-}
-
-func (s *basicSamplingRateSystem) GetSamplingRate(version uint16, obsDomainId uint32) (uint32, error) {
-	s.samplinglock.RLock()
-	defer s.samplinglock.RUnlock()
-	if samplingRate, ok := s.sampling[basicSamplingRateKey{
-		version:     version,
-		obsDomainId: obsDomainId,
-	}]; ok {
-		return samplingRate, nil
-	}
-
-	return 0, fmt.Errorf("sampling rate not found")
-}
-
-type SingleSamplingRateSystem struct {
-	Sampling uint32
-}
-
-func (s *SingleSamplingRateSystem) AddSamplingRate(version uint16, obsDomainId uint32, samplingRate uint32) {
-}
-
-func (s *SingleSamplingRateSystem) GetSamplingRate(version uint16, obsDomainId uint32) (uint32, error) {
-	return s.Sampling, nil
-}
 
 // NetFlowLookFor searches for a field by type in a data field slice.
 func NetFlowLookFor(dataFields []netflow.DataField, typeId uint16) (bool, interface{}) {
@@ -760,7 +703,7 @@ func SplitIPFIXSets(packetIPFIX netflow.IPFIXPacket) ([]netflow.DataFlowSet, []n
 // Convert a NetFlow datastructure to a FlowMessage protobuf
 // Does not put sampling rate
 // ProcessMessageIPFIXConfig processes an IPFIX packet using the config.
-func ProcessMessageIPFIXConfig(packet *netflow.IPFIXPacket, samplingRateSys SamplingRateSystem, config ProtoProducerConfig) (flowMessageSet []producer.ProducerMessage, err error) {
+func ProcessMessageIPFIXConfig(packet *netflow.IPFIXPacket, ctx netflow.FlowContext, samplingRateStore samplingrate.Store, config ProtoProducerConfig) (flowMessageSet []producer.ProducerMessage, err error) {
 	dataFlowSet, _, _, optionDataFlowSet := SplitIPFIXSets(*packet)
 
 	seqnum := packet.SequenceNumber
@@ -782,11 +725,13 @@ func ProcessMessageIPFIXConfig(packet *netflow.IPFIXPacket, samplingRateSys Samp
 	if err != nil {
 		return flowMessageSet, fmt.Errorf("ipfix option data sets: %w", err)
 	}
-	if samplingRateSys != nil {
+	if samplingRateStore != nil {
 		if found {
-			samplingRateSys.AddSamplingRate(10, obsDomainId, samplingRate)
+			_ = samplingRateStore.Set(ctx, 10, obsDomainId, samplingRate)
 		} else {
-			samplingRate, _ = samplingRateSys.GetSamplingRate(10, obsDomainId)
+			if stored, ok, _ := samplingRateStore.Get(ctx, 10, obsDomainId); ok {
+				samplingRate = stored
+			}
 		}
 	}
 	for _, msg := range flowMessageSet {
@@ -804,7 +749,7 @@ func ProcessMessageIPFIXConfig(packet *netflow.IPFIXPacket, samplingRateSys Samp
 // Convert a NetFlow datastructure to a FlowMessage protobuf
 // Does not put sampling rate
 // ProcessMessageNetFlowV9Config processes a NetFlow v9 packet using the config.
-func ProcessMessageNetFlowV9Config(packet *netflow.NFv9Packet, samplingRateSys SamplingRateSystem, config ProtoProducerConfig) (flowMessageSet []producer.ProducerMessage, err error) {
+func ProcessMessageNetFlowV9Config(packet *netflow.NFv9Packet, ctx netflow.FlowContext, samplingRateStore samplingrate.Store, config ProtoProducerConfig) (flowMessageSet []producer.ProducerMessage, err error) {
 	dataFlowSet, _, _, optionDataFlowSet := SplitNetFlowSets(*packet)
 
 	seqnum := packet.SequenceNumber
@@ -824,11 +769,13 @@ func ProcessMessageNetFlowV9Config(packet *netflow.NFv9Packet, samplingRateSys S
 	if err != nil {
 		return flowMessageSet, fmt.Errorf("netflow v9 option data sets: %w", err)
 	}
-	if samplingRateSys != nil {
+	if samplingRateStore != nil {
 		if found {
-			samplingRateSys.AddSamplingRate(9, obsDomainId, samplingRate)
+			_ = samplingRateStore.Set(ctx, 9, obsDomainId, samplingRate)
 		} else {
-			samplingRate, _ = samplingRateSys.GetSamplingRate(9, obsDomainId)
+			if stored, ok, _ := samplingRateStore.Get(ctx, 9, obsDomainId); ok {
+				samplingRate = stored
+			}
 		}
 	}
 	for _, msg := range flowMessageSet {

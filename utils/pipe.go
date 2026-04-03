@@ -12,7 +12,7 @@ import (
 	"github.com/netsampler/goflow2/v3/format"
 	"github.com/netsampler/goflow2/v3/producer"
 	"github.com/netsampler/goflow2/v3/transport"
-	"github.com/netsampler/goflow2/v3/utils/templates"
+	"github.com/netsampler/goflow2/v3/utils/store/templates"
 )
 
 // FlowPipe describes a flow decoder/formatter pipeline.
@@ -27,7 +27,7 @@ type flowpipe struct {
 	transport transport.TransportInterface
 	producer  producer.ProducerInterface
 
-	netFlowRegistry templates.Registry
+	templateStore netflow.ManagedTemplateStore
 }
 
 // PipeConfig wires formatter, transport, and producer dependencies.
@@ -36,7 +36,7 @@ type PipeConfig struct {
 	Transport transport.TransportInterface
 	Producer  producer.ProducerInterface
 
-	NetFlowRegistry templates.Registry
+	TemplateStore netflow.ManagedTemplateStore
 }
 
 func (p *flowpipe) formatSend(flowMessageSet []producer.ProducerMessage) error {
@@ -63,10 +63,10 @@ func (p *flowpipe) parseConfig(cfg *PipeConfig) {
 	p.format = cfg.Format
 	p.transport = cfg.Transport
 	p.producer = cfg.Producer
-	if cfg.NetFlowRegistry != nil {
-		p.netFlowRegistry = cfg.NetFlowRegistry
+	if cfg.TemplateStore != nil {
+		p.templateStore = cfg.TemplateStore
 	} else {
-		p.netFlowRegistry = templates.NewInMemoryRegistry(nil)
+		p.templateStore = templates.NewTemplateFlowStore()
 	}
 
 }
@@ -122,12 +122,14 @@ func (p *SFlowPipe) DecodeFlow(msg interface{}) error {
 		return &PipeMessageError{pkt, fmt.Errorf("sflow decode: %w", err)}
 	}
 
+	ctx := netflow.FlowContext{RouterKey: pkt.Src.String()}
 	args := producer.ProduceArgs{
-		Src: pkt.Src,
-		Dst: pkt.Dst,
-
-		TimeReceived:   pkt.Received,
+		Src:          pkt.Src,
+		Dst:          pkt.Dst,
+		TimeReceived: pkt.Received,
+		// SamplerAddress is the address used by producers for context.
 		SamplerAddress: pkt.Src.Addr(),
+		FlowContext:    &ctx,
 	}
 	if p.producer == nil {
 		return nil
@@ -158,8 +160,8 @@ func (p *NetFlowPipe) DecodeFlow(msg interface{}) error {
 	}
 	buf := bytes.NewBuffer(pkt.Payload)
 
-	key := pkt.Src.String()
-	templates := p.netFlowRegistry.GetSystem(key)
+	ctx := netflow.FlowContext{RouterKey: pkt.Src.String()}
+	templateStore := p.templateStore
 
 	var packetV5 netflowlegacy.PacketNetFlowV5
 	var packetNFv9 netflow.NFv9Packet
@@ -178,12 +180,12 @@ func (p *NetFlowPipe) DecodeFlow(msg interface{}) error {
 		}
 	case 9:
 		packetNFv9.Version = 9
-		if err := netflow.DecodeMessageNetFlow(buf, templates, &packetNFv9); err != nil {
+		if err := netflow.DecodeMessageNetFlow(buf, templateStore, ctx, &packetNFv9); err != nil {
 			return &PipeMessageError{pkt, fmt.Errorf("netflow v9 decode: %w", err)}
 		}
 	case 10:
 		packetIPFIX.Version = 10
-		if err := netflow.DecodeMessageIPFIX(buf, templates, &packetIPFIX); err != nil {
+		if err := netflow.DecodeMessageIPFIX(buf, templateStore, ctx, &packetIPFIX); err != nil {
 			return &PipeMessageError{pkt, fmt.Errorf("ipfix decode: %w", err)}
 		}
 	default:
@@ -228,9 +230,12 @@ func (p *NetFlowPipe) Close() {
 
 // GetTemplatesForAllSources returns a copy of templates for all known NetFlow sources.
 func (p *NetFlowPipe) GetTemplatesForAllSources() map[string]map[string]interface{} {
-	templates := p.netFlowRegistry.GetAll()
-	ret := make(map[string]map[string]interface{}, len(templates))
-	for key, systemTemplates := range templates {
+	if p.templateStore == nil {
+		return nil
+	}
+	templatesAll := p.templateStore.GetAll()
+	ret := make(map[string]map[string]interface{}, len(templatesAll))
+	for key, systemTemplates := range templatesAll {
 		formatted := make(map[string]interface{}, len(systemTemplates))
 		for templateKey, template := range systemTemplates {
 			formatted[formatTemplateKey(templateKey)] = template

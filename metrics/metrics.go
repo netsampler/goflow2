@@ -145,6 +145,38 @@ var (
 			Namespace: NAMESPACE},
 		[]string{"router", "version", "obs_domain_id", "template_id", "type"},
 	)
+	// NetFlowTemplateEntries records currently live template entries.
+	NetFlowTemplateEntries = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name:      "flow_process_nf_template_entries",
+			Help:      "Current NetFlow/IPFIX template entries.",
+			Namespace: NAMESPACE},
+		[]string{"router", "version", "obs_domain_id", "template_id", "type"},
+	)
+	// SamplingRateEntries records currently live sampling-rate entries.
+	SamplingRateEntries = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name:      "flow_sampling_rate_entries",
+			Help:      "Current sampling-rate entries.",
+			Namespace: NAMESPACE},
+		[]string{"router", "version", "obs_domain_id"},
+	)
+	// SamplingRateUpdatedTimestamp records when a sampling rate was set or updated.
+	SamplingRateUpdatedTimestamp = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name:      "flow_sampling_rate_updated_timestamp_seconds",
+			Help:      "Unix timestamp when a sampling rate was set or updated.",
+			Namespace: NAMESPACE},
+		[]string{"router", "version", "obs_domain_id"},
+	)
+	// SamplingRateAccessedTimestamp records when a sampling rate was last accessed.
+	SamplingRateAccessedTimestamp = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name:      "flow_sampling_rate_accessed_timestamp_seconds",
+			Help:      "Unix timestamp when a sampling rate was last accessed.",
+			Namespace: NAMESPACE},
+		[]string{"router", "version", "obs_domain_id"},
+	)
 	// SFlowStats counts processed sFlow packets.
 	SFlowStats = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
@@ -191,6 +223,10 @@ func init() {
 	prometheus.MustRegister(NetFlowTemplateAddedTimestamp)
 	prometheus.MustRegister(NetFlowTemplateUpdatedTimestamp)
 	prometheus.MustRegister(NetFlowTemplateAccessedTimestamp)
+	prometheus.MustRegister(NetFlowTemplateEntries)
+	prometheus.MustRegister(SamplingRateEntries)
+	prometheus.MustRegister(SamplingRateUpdatedTimestamp)
+	prometheus.MustRegister(SamplingRateAccessedTimestamp)
 
 	prometheus.MustRegister(SFlowStats)
 	prometheus.MustRegister(SFlowSampleStatsSum)

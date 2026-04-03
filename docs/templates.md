@@ -1,69 +1,126 @@
-# Templates: Registry vs System
+# TemplateStore
 
-This document explains the template abstractions used by the NetFlow/IPFIX pipeline, common wrappers (pruning, expiry, persistence),
-and guidance for adding a new persistence layer (e.g., Redis, S3).
+This document describes template storage and template-specific wiring. Generic `FlowStore` behavior and shared store relationships are documented in [`docs/flowstore.md`](./flowstore.md).
 
-## Concepts
+## TemplateStore
 
-* Template system: stores templates for a single router/source.
-  * Interface: `decoders/netflow.NetFlowTemplateSystem`
-  * Operations: add/get/remove templates, fetch all templates.
-* Registry: maps a router/source key to a template system.
-  * Interface: `utils/templates.Registry`
-  * Responsibilities: create per-router systems, enumerate templates across routers, start background work, close resources.
-  * Close should stop background work and flush/persist any pending state.
+The template API lives in `decoders/netflow/template_store.go`.
 
-The decoder is not aware of the "router" and uses the template system.
-The pipe system (handles packet processing) uses the registry to provide the decoder with the correct template system; the top-level application is responsible for calling `Registry.Start()` to initialize background work (for example in `cmd/goflow2/main.go`).
+* `netflow.FlowContext`
+  Carries routing metadata for template operations. Right now it contains `RouterKey`, which is used as the per-router namespace.
+* `netflow.TemplateStore`
+  The FlowStore-backed template interface used by the decoder.
+* `netflow.ManagedTemplateStore`
+  Extends `TemplateStore` with lifecycle and operational methods such as `RemoveTemplate`, `GetAll`, `Start`, `Close`, and `Errors`.
 
-    +------------------------+     +------------------------+
-    |      Registry A        | --> |      Registry B        |
-    | (JSON, Expiring, etc.) |     | (InMemory, etc.)       |
-    |                        |     |                        |
-    |  +------------------+  |     |  +------------------+  |
-    |  | TemplateSystem A |  | --> |  | TemplateSystem B |  |
-    |  | (wrappers, etc.) |  |     |  | (Basic store)    |  |
-    |  +------------------+  |     |  +------------------+  |
-    +------------------------+     +------------------------+
+The decoder receives a `TemplateStore` and a `FlowContext` and calls the store directly. In practice, decoding uses `AddTemplate` for template sets and `GetTemplate` for data sets; lifecycle methods such as `Start`, `Close`, and `Errors` belong to `ManagedTemplateStore` and are used by the surrounding application wiring.
 
-Registries and template systems can be chained, with the caveat that changes only flow inward (wrappers see inner changes) and removals are not propagated outward to wrapping systems.
-Expiration and loading should be handled at the top-level wrapper.
+### `utils/store/templates.TemplateFlowStore`
 
-## Base storage
+File: `utils/store/templates/store.go`
 
-* `decoders/netflow.BasicTemplateSystem` keeps templates in a map keyed by version/obs-domain/template ID.
-* `utils/templates.InMemoryRegistry` manages per-router systems using a generator (default uses `BasicTemplateSystem`).
+This is the primary `ManagedTemplateStore` implementation. It uses `FlowStore` underneath and adds:
 
-## Common wrappers
+* template-specific keys made of router, version, observation domain, and template ID
+* the decoder-facing `TemplateStore` interface
+* template lifecycle hooks
+* collector wiring
+* shared-store persistence and metrics hooks
 
-* Expiry wrapper (`utils/templates.ExpiringTemplateSystem` / `ExpiringRegistry`)
-  * Tracks template update timestamps and expires stale templates on a TTL.
-  * Maintains per-router counts in the registry and prunes empty routers (including empty systems that never received templates).
-  * Used as the top-level registry by default; a TTL of 0 disables template expiry but still allows empty-system pruning.
-  * Note: NetFlow v5 does not send templates, so empty-system pruning can cause churn if v5 sources are present; set the sweep interval to 0 to disable sweeping entirely when needed.
-* Persistence wrapper (`utils/templates.JSONRegistry` / `jsonPersistingTemplateSystem`)
-  * Persists all templates to a JSON file, batching writes.
-  * Starts a background flush loop via `Start()`.
-* Metrics wrapper (`metrics.PromTemplateSystem` / `PromTemplateRegistry`)
-  * Records Prometheus metrics on add/remove, delegates storage to wrapped system.
+It stores templates in `pkg/flowstore.Store` using a composite key:
 
-## Adding a new persistence layer
+* `RouterKey`
+* `Version`
+* `ObsDomainID`
+* `TemplateID`
 
-* Implement a `Registry` that:
-  * Wraps an existing registry (usually `NewInMemoryRegistry(nil)`).
-  * On `GetSystem(key)`, returns a wrapped `NetFlowTemplateSystem` that:
-    * Delegates storage to the wrapped system.
-    * Notifies the registry of changes for persistence.
-  * On persistence flush, uses `wrapped.GetAll()` to snapshot data.
-  * Optionally supports preload (read templates from Redis and call `AddTemplate` on wrapped systems).
+It supports:
 
-### Operational considerations
+* in-memory storage
+* TTL expiry
+* optional TTL refresh on access
+* background sweeping
+* lifecycle hooks for add, access, and remove events
+* runtime hook composition through `templates.ComposeHooks(...)`
+* an error channel for asynchronous store errors
 
-* Pruning:
-  * Empty router pruning is handled by the expiring registry using the same TTL rules.
-  * Inner registries/systems should not prune on their own; rely on `ExpiringRegistry` and its sweeper.
-* Snapshot consistency:
-  * Use `GetAll()` or `GetTemplates()` to snapshot templates for persistence.
-  * Ensure your persistence layer handles concurrent updates (lock or batch as needed).
-* Load order:
-  * If you preload templates, do it before calling `Start()`, so chains can initialize in order.
+Constructor:
+
+* `templates.NewTemplateFlowStore(opts ...FlowStoreOption)`
+
+Knobs:
+
+* `templates.WithTTL(ttl)`
+  Set a default TTL for template entries. `0` disables expiry.
+* `templates.WithExtendOnAccess(enable)`
+  Refresh TTL on reads.
+* `templates.WithSweepInterval(interval)`
+  Control the periodic expiry sweep interval.
+* `templates.WithHooks(hooks)`
+  Register lifecycle callbacks:
+  * `OnAdd`
+  * `OnAccess`
+  * `OnRemove`
+* `templates.WithNow(nowFn)`
+  Override the clock for tests.
+
+Lifecycle:
+
+* `Start()`
+  Starts the background sweeper.
+* `Close()`
+  Stops background work and closes the error channel.
+* `Errors()`
+  Returns asynchronous store errors. Shared JSON persistence errors come from `persistence.Manager`.
+
+### `metrics.TemplateStoreHooks`
+
+File: `metrics/store_hooks.go`
+
+This is a Prometheus hook adapter for template-store lifecycle events. It does not own storage. It records metrics on:
+
+* template add
+* template update
+* template access
+* template removal
+* current live template entries
+
+It is intended to be composed with other hook consumers, such as persistence hooks:
+
+* `templates.ComposeHooks(metrics.TemplateStoreHooks(), templates.PersistenceHooks(...))`
+
+```mermaid
+flowchart LR
+    Decoder[Decoder]
+    TS["decoders/netflow.TemplateStore"]
+    MTS["decoders/netflow.ManagedTemplateStore"]
+    TFS["utils/store/templates.TemplateFlowStore"]
+    MHooks["metrics.TemplateStoreHooks()"]
+    PHooks["templates.PersistenceHooks(...)"]
+    CHooks["templates.ComposeHooks(...)"]
+    FS["pkg/flowstore.Store[K,V]"]
+
+    Decoder -->|uses| TS
+    MTS -->|extends| TS
+    TFS -->|implements| MTS
+    CHooks -->|combines| MHooks
+    CHooks -->|combines| PHooks
+    TFS -->|installs| CHooks
+    TFS -->|uses| FS
+```
+
+### Test implementation
+
+File: `decoders/netflow/netflow_test.go`
+
+`testTemplateStore` is a test-only implementation used by decoder tests.
+
+## Adding another implementation
+
+Any replacement managed store should implement `netflow.ManagedTemplateStore` and should:
+
+* key templates by router, version, observation domain, and template ID
+* support `GetAll()` snapshots
+* allow preload before `Start()`
+* define clear `Start()` and `Close()` semantics
+* expose `Errors()` if it performs background persistence or async work

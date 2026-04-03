@@ -26,13 +26,19 @@ type Config struct {
 
 	Addr string
 
-	TemplatePath string
+	StoreHTTPPath string
+
 	TemplatesTTL time.Duration
 
 	TemplatesSweepInterval  time.Duration
 	TemplatesExtendOnAccess bool
-	TemplatesJSONPath       string
-	TemplatesJSONInterval   time.Duration
+
+	SamplingRatesTTL            time.Duration
+	SamplingRatesSweepInterval  time.Duration
+	SamplingRatesExtendOnAccess bool
+
+	StoreJSONPath     string
+	StoreJSONInterval time.Duration
 
 	MappingFile string
 }
@@ -47,12 +53,16 @@ func BindFlags(fs *flag.FlagSet) *Config {
 	fs.IntVar(&cfg.ErrCnt, "err.cnt", 10, "Maximum errors per batch for muting")
 	fs.DurationVar(&cfg.ErrInt, "err.int", time.Second*10, "Maximum errors interval for muting")
 	fs.StringVar(&cfg.Addr, "addr", ":8080", "HTTP server address")
-	fs.StringVar(&cfg.TemplatePath, "templates.path", "/templates", "NetFlow/IPFIX templates list")
+	fs.StringVar(&cfg.StoreHTTPPath, "store.http.path", "/store", "Flowstore HTTP path")
 	fs.DurationVar(&cfg.TemplatesTTL, "templates.ttl", 0, "NetFlow/IPFIX templates TTL (0 disables expiry)")
-	fs.DurationVar(&cfg.TemplatesSweepInterval, "templates.sweep-interval", time.Minute, "NetFlow/IPFIX template sweep interval (expiry + empty cleanup)")
+	fs.DurationVar(&cfg.TemplatesSweepInterval, "templates.sweep-interval", time.Minute, "NetFlow/IPFIX template expiry sweep interval")
 	fs.BoolVar(&cfg.TemplatesExtendOnAccess, "templates.ttl.extend-on-access", false, "Extend template TTL on access")
-	fs.StringVar(&cfg.TemplatesJSONPath, "templates.json.path", "", "NetFlow/IPFIX templates JSON output path (empty disables persistence)")
-	fs.DurationVar(&cfg.TemplatesJSONInterval, "templates.json.interval", time.Second*10, "NetFlow/IPFIX templates JSON write interval")
+	fs.StringVar(&cfg.StoreJSONPath, "store.json.path", "", "Shared flowstore JSON output path (empty disables persistence)")
+	fs.DurationVar(&cfg.StoreJSONInterval, "store.json.interval", time.Second*10, "Shared flowstore JSON write interval")
+
+	fs.DurationVar(&cfg.SamplingRatesTTL, "sampling.ttl", 0, "Sampling rates TTL (0 disables expiry)")
+	fs.DurationVar(&cfg.SamplingRatesSweepInterval, "sampling.sweep-interval", time.Minute, "Sampling rates expiry sweep interval")
+	fs.BoolVar(&cfg.SamplingRatesExtendOnAccess, "sampling.ttl.extend-on-access", false, "Extend sampling rate TTL on access")
 	fs.StringVar(&cfg.MappingFile, "mapping", "", "Configuration file for custom mappings")
 
 	return cfg

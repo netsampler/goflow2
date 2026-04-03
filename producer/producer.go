@@ -4,6 +4,8 @@ package producer
 import (
 	"net/netip"
 	"time"
+
+	"github.com/netsampler/goflow2/v3/decoders/netflow"
 )
 
 // ProducerMessage is the generic type returned by producers.
@@ -24,4 +26,5 @@ type ProduceArgs struct {
 	Dst            netip.AddrPort
 	SamplerAddress netip.Addr
 	TimeReceived   time.Time
+	FlowContext    *netflow.FlowContext
 }

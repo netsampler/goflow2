@@ -16,24 +16,19 @@ import (
 	"github.com/netsampler/goflow2/v3/transport"
 	"github.com/netsampler/goflow2/v3/utils"
 	"github.com/netsampler/goflow2/v3/utils/debug"
-	"github.com/netsampler/goflow2/v3/utils/templates"
+	"github.com/netsampler/goflow2/v3/utils/store/templates"
 )
 
 // Config configures a Collector.
 type Config struct {
-	Listeners []listen.ListenerConfig
-	Formatter format.FormatInterface
-	Transport *transport.Transport
-	Producer  producer.ProducerInterface
-	ErrCnt    int
-	ErrInt    time.Duration
-	Logger    *slog.Logger
-
-	TemplatesTTL            time.Duration
-	TemplatesSweepInterval  time.Duration
-	TemplatesExtendOnAccess bool
-	TemplatesJSONPath       string
-	TemplatesJSONInterval   time.Duration
+	Listeners     []listen.ListenerConfig
+	Formatter     format.FormatInterface
+	Transport     *transport.Transport
+	Producer      producer.ProducerInterface
+	TemplateStore netflow.ManagedTemplateStore
+	ErrCnt        int
+	ErrInt        time.Duration
+	Logger        *slog.Logger
 }
 
 // Collector manages receivers and flow pipes.
@@ -46,18 +41,12 @@ type Collector struct {
 	errInt    time.Duration
 	logger    *slog.Logger
 
-	receivers               []*utils.UDPReceiver
-	pipes                   []utils.FlowPipe
-	netflowTemplate         *utils.NetFlowPipe
-	netFlowRegistry         templates.Registry
-	jsonRegistry            *templates.JSONRegistry
-	templatesTTL            time.Duration
-	templatesSweepInterval  time.Duration
-	templatesExtendOnAccess bool
-	templatesJSONPath       string
-	templatesJSONInterval   time.Duration
-	stopCh                  chan struct{}
-	wg                      sync.WaitGroup
+	receivers       []*utils.UDPReceiver
+	pipes           []utils.FlowPipe
+	netflowTemplate *utils.NetFlowPipe
+	templateStore   netflow.ManagedTemplateStore
+	stopCh          chan struct{}
+	wg              sync.WaitGroup
 }
 
 // New creates a Collector from config.
@@ -66,20 +55,14 @@ func New(cfg Config) (*Collector, error) {
 		return nil, errors.New("logger is required")
 	}
 	return &Collector{
-		listeners:               cfg.Listeners,
-		formatter:               cfg.Formatter,
-		transport:               cfg.Transport,
-		producer:                cfg.Producer,
-		errCnt:                  cfg.ErrCnt,
-		errInt:                  cfg.ErrInt,
-		logger:                  cfg.Logger,
-		netFlowRegistry:         nil,
-		jsonRegistry:            nil,
-		templatesTTL:            cfg.TemplatesTTL,
-		templatesSweepInterval:  cfg.TemplatesSweepInterval,
-		templatesExtendOnAccess: cfg.TemplatesExtendOnAccess,
-		templatesJSONPath:       cfg.TemplatesJSONPath,
-		templatesJSONInterval:   cfg.TemplatesJSONInterval,
+		listeners:     cfg.Listeners,
+		formatter:     cfg.Formatter,
+		transport:     cfg.Transport,
+		producer:      cfg.Producer,
+		errCnt:        cfg.ErrCnt,
+		errInt:        cfg.ErrInt,
+		logger:        cfg.Logger,
+		templateStore: cfg.TemplateStore,
 	}, nil
 }
 
@@ -87,32 +70,14 @@ func New(cfg Config) (*Collector, error) {
 func (c *Collector) Start() error {
 	c.stopCh = make(chan struct{})
 
-	netFlowRegistry := templates.Registry(templates.NewInMemoryRegistry(nil))
-	var jsonRegistry *templates.JSONRegistry
-	if c.templatesJSONPath != "" {
-		jsonRegistry = templates.NewJSONRegistry(
-			c.templatesJSONPath,
-			netFlowRegistry,
-			templates.WithJSONFlushInterval(c.templatesJSONInterval),
+	templateStore := c.templateStore
+	if templateStore == nil {
+		templateStore = templates.NewTemplateFlowStore(
+			templates.WithHooks(metrics.TemplateStoreHooks()),
 		)
-		netFlowRegistry = jsonRegistry
 	}
-	netFlowRegistry = metrics.NewPromTemplateRegistry(netFlowRegistry)
-	expiring := templates.NewExpiringRegistry(
-		netFlowRegistry,
-		c.templatesTTL,
-		templates.WithExtendOnAccess(c.templatesExtendOnAccess),
-		templates.WithSweepInterval(c.templatesSweepInterval),
-	)
-	netFlowRegistry = expiring
-	if c.templatesJSONPath != "" {
-		if err := templates.PreloadJSONTemplates(c.templatesJSONPath, netFlowRegistry); err != nil {
-			c.logger.Warn("error preloading templates JSON", slog.String("error", err.Error()))
-		}
-	}
-	netFlowRegistry.Start()
-	c.netFlowRegistry = netFlowRegistry
-	c.jsonRegistry = jsonRegistry
+	templateStore.Start()
+	c.templateStore = templateStore
 
 	type recvErrSource struct {
 		ch     <-chan error
@@ -127,26 +92,6 @@ func (c *Collector) Start() error {
 	var recvErrCh chan recvErr
 	if len(c.listeners) > 0 {
 		recvErrCh = make(chan recvErr, len(c.listeners))
-	}
-
-	if jsonRegistry != nil {
-		c.wg.Add(1)
-		go func() {
-			defer c.wg.Done()
-
-			jsonErr := jsonRegistry.Errors()
-			for {
-				select {
-				case <-c.stopCh:
-					return
-				case err, ok := <-jsonErr:
-					if !ok {
-						return
-					}
-					c.logger.Error("template persistence error", slog.String("error", err.Error()))
-				}
-			}
-		}()
 	}
 
 	for _, listenCfg := range c.listeners {
@@ -175,10 +120,10 @@ func (c *Collector) Start() error {
 		}
 
 		pipeCfg := &utils.PipeConfig{
-			Format:          c.formatter,
-			Transport:       c.transport,
-			Producer:        c.producer,
-			NetFlowRegistry: netFlowRegistry,
+			Format:        c.formatter,
+			Transport:     c.transport,
+			Producer:      c.producer,
+			TemplateStore: templateStore,
 		}
 
 		var p utils.FlowPipe
@@ -336,8 +281,8 @@ func (c *Collector) Stop() {
 	for _, pipe := range c.pipes {
 		pipe.Close()
 	}
-	if c.netFlowRegistry != nil {
-		c.netFlowRegistry.Close()
+	if c.templateStore != nil {
+		c.templateStore.Close()
 	}
 	c.wg.Wait()
 }

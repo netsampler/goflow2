@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/netsampler/goflow2/v3/transport"
 	"github.com/netsampler/goflow2/v3/pkg/goflow2/listen"
+	"github.com/netsampler/goflow2/v3/transport"
 )
 
 type testTransportDriver struct {
@@ -46,18 +46,14 @@ func TestCollectorStopAfterTransportErrorsClose(t *testing.T) {
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, &slog.HandlerOptions{}))
 	coll, err := New(Config{
-		Listeners:               []listen.ListenerConfig{},
-		Formatter:               nil,
-		Transport:               transportObj,
-		Producer:                nil,
-		ErrCnt:                  1,
-		ErrInt:                  time.Millisecond,
-		Logger:                  logger,
-		TemplatesTTL:            0,
-		TemplatesSweepInterval:  0,
-		TemplatesExtendOnAccess: false,
-		TemplatesJSONPath:       "",
-		TemplatesJSONInterval:   0,
+		Listeners:     []listen.ListenerConfig{},
+		Formatter:     nil,
+		Transport:     transportObj,
+		Producer:      nil,
+		TemplateStore: nil,
+		ErrCnt:        1,
+		ErrInt:        time.Millisecond,
+		Logger:        logger,
 	})
 	if err != nil {
 		t.Fatalf("new collector: %v", err)
