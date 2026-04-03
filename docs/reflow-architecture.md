@@ -901,6 +901,47 @@ sink:
   type: stdout
 ```
 
+### Scenario Matrix
+
+The table below is not exhaustive. It is meant to capture common ReFlow paths and show how the same runtime can handle different sources and outputs.
+
+| Input | Source type | Decode / identify | Processor | Aggregator | Batch | Encoder | Output |
+|---|---|---|---|---|---|---|---|
+| sFlow datagrams from network devices | `udp` | `sflow` | built-in processor | optional | optional | `json` | `stdout` or file |
+| NetFlow v9 from routers | `udp` | `netflow_v9` | built-in processor | optional | optional | `json` | `stdout` or file |
+| NetFlow v5 from routers | `udp` | `netflow_v5` | built-in processor | optional | optional | `json` | `stdout` or file |
+| IPFIX from exporters | `udp` | `ipfix` | built-in processor | optional | optional | `json` | `stdout` or file |
+| VPC Flow Logs as JSON lines in datagrams | `udp` or `unixgram` | `json` | WASM or built-in mapping | optional | optional | `json` | `stdout`, file, or UDP |
+| Script collecting interface metrics as JSON | `udp` or `unixgram` | `json` | WASM maps fields to counter events | optional | optional | `json` | `stdout`, file, or UDP |
+| OpenWrt `ubus` messages exported as JSON | `udp` or `unixgram` | `json` | WASM maps fields to counters or flow-like events | optional | optional | `json` | `stdout`, file, or UDP |
+| Raw packet capture from `pcap_live` | `pcap_live` | packet decode up to L4 | built-in processor extracts src/dst/proto/ports | yes | yes | `sflow` | UDP |
+| Raw packet capture from `nflog` | `nflog` | packet decode up to L4 | built-in processor extracts src/dst/proto/ports | yes | yes | `sflow` | UDP |
+| JSON input converted to sFlow counters | `udp` or `unixgram` | `json` | WASM transforms JSON into counter events | optional | yes | `sflow` | UDP |
+| Packet stream converted to aggregated flow export | `pcap_live` or `nflog` | packet decode up to L4 | built-in processor extracts canonical packet fields | yes | yes | `sflow` now, IPFIX later | UDP |
+
+### Packet To Aggregated Export Example
+
+One important scenario for ReFlow is packet-to-flow conversion:
+
+1. A packet source such as `pcap_live` or `nflog` delivers packets.
+2. The packet decoder extracts fields such as `src_addr`, `dst_addr`, `proto`, `src_port`, and `dst_port`.
+3. The built-in processor materializes a canonical packet or flow-like event.
+4. The aggregator uses those fields as the FlowStore key.
+5. Packets in the same conversation keep updating the same FlowStore entry.
+6. When the bucket expires, the aggregator emits one aggregated flow record to the batch layer.
+7. The batch layer groups aggregated records and carries the schema needed by the encoder.
+8. The encoder turns the batch into protocol output.
+
+For the future IPFIX path specifically:
+
+* the aggregator emits the aggregated data record together with the schema context needed for export
+* the batch layer groups compatible records
+* the encoder emits an IPFIX template set plus the matching data set
+
+That gives a clean progression from packet input to aggregated protocol export:
+
+`packet -> canonical event -> FlowStore aggregation -> batch -> IPFIX template + data`
+
 ## Config Relationships
 
 ```mermaid
