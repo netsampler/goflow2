@@ -75,9 +75,10 @@ func TestEncodeDecodeNetFlowV9(t *testing.T) {
 	encoded, err := EncodeMessage(&packet)
 	assert.NoError(t, err)
 
-	templates := CreateTemplateSystem()
+	store := newTestTemplateStore()
+	ctx := FlowContext{RouterKey: "test-router"}
 	var decoded NFv9Packet
-	assert.NoError(t, DecodeMessageVersion(bytes.NewBuffer(encoded), templates, &decoded, nil))
+	assert.NoError(t, DecodeMessageVersion(bytes.NewBuffer(encoded), store, ctx, &decoded, nil))
 
 	assert.Equal(t, packet.Version, decoded.Version)
 	assert.Equal(t, packet.Count, decoded.Count)
@@ -180,9 +181,10 @@ func TestEncodeDecodeIPFIX(t *testing.T) {
 	encoded, err := EncodeMessage(&packet)
 	assert.NoError(t, err)
 
-	templates := CreateTemplateSystem()
+	store := newTestTemplateStore()
+	ctx := FlowContext{RouterKey: "test-router"}
 	var decoded IPFIXPacket
-	assert.NoError(t, DecodeMessageVersion(bytes.NewBuffer(encoded), templates, nil, &decoded))
+	assert.NoError(t, DecodeMessageVersion(bytes.NewBuffer(encoded), store, ctx, nil, &decoded))
 
 	assert.Equal(t, uint16(10), decoded.Version)
 	assert.Equal(t, uint16(len(encoded)), decoded.Length)
