@@ -249,9 +249,12 @@ flowchart LR
     I --> D[Decoder]
     D --> P[Processor Chain]
     P --> A{Aggregation Enabled?}
-    A -- no --> E[Encoder]
+    A -- no --> B{Batching Enabled?}
     A -- yes --> G[Aggregation Layer]
-    G --> E
+    G --> B
+    B -- no --> E[Encoder]
+    B -- yes --> H[Batching Layer]
+    H --> E
     E --> K[Sink]
 ```
 
@@ -265,7 +268,7 @@ Examples:
 * one packet event may be dropped and produce no output
 * ten packet events may update one FlowStore entry and eventually produce one aggregated flow event
 * one periodic scheduler tick may produce many output records from current store state
-* one aggregation flush may produce one encoded IPFIX message containing many records
+* one batch flush may produce one encoded sFlow message containing many records
 
 Every stage API should allow `0..N` outputs.
 Timer-driven stages should be modeled explicitly, not hidden as side effects inside sinks.
@@ -274,12 +277,14 @@ Timer-driven stages should be modeled explicitly, not hidden as side effects ins
 
 The architecture should explicitly distinguish between event-driven processing and state-driven emission.
 
-The aggregation layer includes two related responsibilities:
+The runtime has two related but distinct buffering responsibilities:
 
 * **state accumulation**
   Update FlowStore-backed state keyed by flow, counter, template, or another bucket definition.
 * **batch formation**
   Group emitted records before encoding/export when the output protocol benefits from grouped transmission.
+
+Batching may be used with or without stateful aggregation.
 
 ### Expiry-Driven Flush
 
@@ -288,7 +293,7 @@ Example:
 * packets with the same src/dst/proto/src-port/dst-port map to one aggregation key by default
 * each packet updates counters in FlowStore via `Add`
 * after 10 seconds of inactivity, the entry expires
-* expiry emits the finalized aggregated conversation record into the aggregation layer batcher
+* expiry emits the finalized aggregated conversation record into the batching layer
 * once the batcher reaches its thresholds, it serializes and sends an output message such as sFlow
 
 ```mermaid
@@ -298,7 +303,7 @@ flowchart LR
     STORE --> TTL[Inactivity TTL]
     TTL --> EXPIRE[Expiry Hook]
     EXPIRE --> AGG[Aggregated Flow Event]
-    AGG --> BATCH[Aggregation Batcher]
+    AGG --> BATCH[Batching Layer]
     BATCH --> ENC[sFlow Encoder]
     ENC --> SINK[Sink]
 ```
@@ -338,7 +343,7 @@ Example:
 * interface counters live in FlowStore without expiry
 * every 30 seconds, a scheduler walks the relevant keys
 * current values are materialized into counter events
-* the aggregation batcher and encoder emit an sFlow export
+* the batching layer and encoder emit an sFlow export
 
 ```mermaid
 flowchart LR
@@ -346,7 +351,7 @@ flowchart LR
     TICK[30s Scheduler] --> SNAP[Snapshot Query]
     STORE --> SNAP
     SNAP --> EVENTS[Counter Events]
-    EVENTS --> BATCH[Aggregation Batcher]
+    EVENTS --> BATCH[Batching Layer]
     BATCH --> ENC[sFlow Encoder]
     ENC --> SINK[Sink]
 ```
@@ -354,8 +359,20 @@ flowchart LR
 Periodic snapshot emission should be a first-class scheduler + query pattern.
 Snapshot semantics must be configurable: current value snapshot, delta since last flush, or reset-on-flush.
 
-Flush triggers emit materialized events into the aggregation output path.
+Flush triggers emit materialized events into the post-aggregation output path.
 Those events may go through transformation, batching, encoding, and then the sink.
+
+### Direct Batching Without Aggregation
+
+Batching can also be used without FlowStore aggregation.
+
+Example:
+
+* packet or message events are transformed directly
+* the batching layer groups them into sFlow datagrams
+* flush happens on record count, encoded size in bytes, or time
+
+This matters for sFlow because one export packet may carry many samples and packets may be truncated before export.
 
 ## Proposed Runtime Topology
 
@@ -501,27 +518,31 @@ Design the processor API around `[]Event` or an iterator-style emission callback
 
 The same non-1:1 rule should apply across processors, aggregators, and encoders.
 
-## Aggregation Layer Recommendation
+## Batching And Aggregation
 
-In ReFlow, `batcher` should be treated as part of the aggregation layer rather than as a separate top-level stage.
+Aggregation and batching are separate concerns.
 
 Responsibilities of the aggregation layer:
 
 * accumulate keyed state in FlowStore
 * emit finalized records on expiry
 * emit snapshots on fixed intervals
+
+Responsibilities of the batching layer:
+
 * group records into batches until thresholds are met
-* flush on size, count, time, or shutdown
+* flush on count, encoded size in bytes, time, or shutdown
 * preserve export-session context when needed before encoding
 
 Examples:
 
-* aggregate expired conversations into one IPFIX export packet
-* collect periodic counter records into one sFlow or IPFIX message
-* maintain rolling state with no aggregation batching when immediate emission is desired
+* aggregate expired conversations and then batch them into one sFlow export packet
+* collect periodic counter records into one sFlow message
+* batch transformed packet events directly into one sFlow packet without FlowStore aggregation
 
 Support aggregation modes with and without batching.
-Keep simple immediate single-path operation possible by skipping aggregation entirely.
+Support batching with and without aggregation.
+Keep simple immediate single-path operation possible by skipping both.
 
 ## WASM Integration Recommendation
 
@@ -931,7 +952,7 @@ Suggestion:
 
 Provide first-class built-in aggregators. Otherwise every serious deployment will reinvent the same keyed windows.
 
-### 5b. Aggregation flush semantics
+### 5b. Flush semantics
 
 Question:
 
@@ -944,7 +965,7 @@ Which built-in flush semantics do you want supported in the first implementation
 
 Suggestion:
 
-Implement inactivity expiry, periodic snapshot, and flush-on-shutdown first. Add size-triggered policies immediately after if needed.
+Implement inactivity expiry, periodic snapshot, flush-on-shutdown, and batching flushes based on count, encoded size in bytes, and time.
 
 ### 5c. Aggregation key customization
 
@@ -1041,7 +1062,7 @@ Deliver:
 
 * WASM processor
 * built-in FlowStore aggregators
-* aggregation-owned batching
+* batching layer with count, size, and time flush policies
 * periodic flush support
 * interface counter synthesis examples
 
