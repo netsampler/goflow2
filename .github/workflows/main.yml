@@ -183,25 +183,24 @@ jobs:
         restore-keys: |
           ${{ runner.os }}-gems-
 
-    - name: Cache apt lists and archives
-      if: matrix.package
-      id: cache-apt
-      uses: actions/cache@v5
-      with:
-        path: |
-          /var/cache/apt/archives
-          /var/lib/apt/lists
-        key: ${{ runner.os }}-apt-${{ hashFiles('.github/workflows/main.yml') }}
-        restore-keys: |
-          ${{ runner.os }}-apt-
+    # - name: Cache apt lists and archives
+    #   if: matrix.package
+    #   id: cache-apt
+    #   uses: actions/cache@v5
+    #   with:
+    #     path: |
+    #       /var/cache/apt/archives
+    #       /var/lib/apt/lists
+    #     key: ${{ runner.os }}-apt-${{ hashFiles('.github/workflows/main.yml') }}
+    #     restore-keys: |
+    #       ${{ runner.os }}-apt-
 
     - name: Install fpm
       if: matrix.package
       # fpm builds both rpm and deb artifacts from the Go binaries.
       run: |
-        if [[ "${{ steps.cache-apt.outputs.cache-hit }}" != "true" ]]; then
-          sudo apt-get update
-        fi
+        # Refresh package metadata each run now that apt caching is disabled.
+        sudo apt-get update
         sudo apt-get install -y rpm ruby ruby-dev
         gem install --user-install fpm
         echo "$(ruby -e 'print Gem.user_dir')/bin" >> $GITHUB_PATH
