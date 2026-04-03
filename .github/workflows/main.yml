@@ -215,7 +215,7 @@ jobs:
       run: make package-deb package-rpm
 
     - name: Upload Artifact
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v6
       with:
         name: dist-${{ matrix.goos }}-${{ matrix.goarch }}
         path: dist/*
@@ -279,7 +279,7 @@ jobs:
       contents: write
     steps:
     - name: Download Artifacts
-      uses: actions/download-artifact@v4
+      uses: actions/download-artifact@v8
       with:
         path: dist
         pattern: dist-*
