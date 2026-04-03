@@ -199,7 +199,9 @@ jobs:
       if: matrix.package
       # fpm builds both rpm and deb artifacts from the Go binaries.
       run: |
-        # Refresh package metadata each run now that apt caching is disabled.
+        # if [[ "${{ steps.cache-apt.outputs.cache-hit }}" != "true" ]]; then
+        #   sudo apt-get update
+        # fi
         sudo apt-get update
         sudo apt-get install -y rpm ruby ruby-dev
         gem install --user-install fpm
