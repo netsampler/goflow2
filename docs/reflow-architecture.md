@@ -14,7 +14,7 @@ ReFlow keeps the core spirit of GoFlow2:
 But it broadens the scope significantly:
 
 * input is no longer limited to UDP NetFlow/IPFIX/sFlow
-* payloads may be binary packets, framed messages, JSON objects, or arbitrary byte streams
+* payloads may be binary packets, JSON objects, or arbitrary byte streams
 * decoding must support protocol identification in addition to protocol parsing
 * output is no longer limited to protobuf/JSON over file/stdout/Kafka
 * ReFlow should be easy to start as a simple collector from the CLI with a usable default configuration
@@ -46,17 +46,16 @@ That model works well for:
 
 ReFlow should evolve the pipeline into:
 
-`source -> framing -> identification -> decode -> process -> aggregate? -> encode -> sink`
+`source -> identification -> decode -> process -> aggregate? -> batch? -> encode -> sink`
 
 Where:
 
 * **source** reads bytes/messages from UDP, sockets, pipes, live capture, or NFLOG
-* **framing** splits source input into packet/message boundaries when needed
 * **identification** determines what protocol or schema the payload likely is
 * **decode** parses the payload into typed internal events
 * **process** runs normalization, mapping, enrichment, transformation, and WASM callbacks
 * **aggregate** optionally uses FlowStore-backed stateful accumulation and batching
-* **encode** turns internal events into JSON, bytes, IPFIX, sFlow, or other output encodings
+* **encode** turns internal events into JSON, bytes, and sFlow output encodings
 * **sink** writes to stdout, file, UDP, or sockets/pipes
 
 ReFlow is **not** a strict 1-in / 1-out pipeline:
@@ -117,20 +116,7 @@ Some sources deliver **streams**:
 * TCP sockets
 * Unix streams
 
-### 2. Framer
-
-A `Framer` turns a raw byte stream into message boundaries.
-
-Examples:
-
-* newline-delimited JSON
-* length-prefixed frames
-* raw packet frames from pcap records
-* pass-through datagram framing
-
-Framing is mandatory for stream sources and optional/no-op for datagram and packet sources.
-
-### 3. Identifier
+### 2. Identifier
 
 An `Identifier` classifies a framed payload.
 
@@ -147,7 +133,7 @@ Examples:
 Identification should output both a **kind** and a **confidence/reason** for metrics and troubleshooting.
 Configuration should allow pinning the expected decoder when identification is unnecessary or too costly.
 
-### 4. Decoder
+### 3. Decoder
 
 A `Decoder` turns identified payloads into internal events.
 
@@ -168,7 +154,7 @@ Decoders may emit:
 * raw passthrough records
 * errors / unsupported payload notices
 
-### 5. Processor
+### 4. Processor
 
 The GoFlow2 `producer` concept becomes a broader `processor` stage.
 
@@ -185,7 +171,7 @@ Possible responsibilities:
 
 Use `processor` in the new codebase.
 
-### 6. Aggregator
+### 5. Aggregator
 
 Aggregation should be optional and explicit.
 
@@ -209,7 +195,7 @@ ReFlow should support at least these aggregation/emission modes:
 * **periodic control/protocol emission**
   Timers trigger periodic protocol messages such as IPFIX template refreshes even when no new input arrives.
 
-### 7. Encoder
+### 6. Encoder
 
 An `Encoder` serializes internal events for output.
 
@@ -226,7 +212,7 @@ ReFlow must support decoding and protocol re-encoding.
 Keep encoders independent from sinks.
 Define encoder outputs as either `[]byte` or a small framed-message struct carrying payload plus metadata.
 
-### 8. Sink
+### 7. Sink
 
 A `Sink` emits encoded output to a destination.
 
@@ -244,8 +230,7 @@ Model sinks as message destinations. Format belongs in the encoder stage.
 
 ```mermaid
 flowchart LR
-    S[Source] --> F[Framer]
-    F --> I[Identifier]
+    S[Source] --> I[Identifier]
     I --> D[Decoder]
     D --> P[Processor Chain]
     P --> A{Aggregation Enabled?}
@@ -452,7 +437,6 @@ Used by routing/encoding/sinks:
 * partition key
 * sink labels
 * content type
-* framing instructions
 * encoding hints
 
 ## Why A Layered Event Model Matters
@@ -614,14 +598,14 @@ Possibly also:
 1. `event encoder`
    Converts internal event types into protocol-specific records.
 2. `frame encoder`
-   Applies wire framing if needed.
+   Applies wire-level encoding details if needed.
 3. `sink writer`
    Sends the bytes.
 
 This avoids mixing:
 
 * protocol structure
-* framing
+* wire encoding details
 * destination I/O
 
 For sFlow specifically, the encoder layer may operate on batches rather than single events.
@@ -644,10 +628,9 @@ Message sources deliver already-formed telemetry messages:
 * UDP sFlow/NetFlow/IPFIX
 * UDP JSON
 * Unix datagram JSON
-* pipe newline-delimited JSON
 * socket byte stream
 
-These should go through framer + identifier + decoder.
+These should go through identifier + decoder.
 
 Treat packet sources and message sources as two distinct source families in the code structure and config schema.
 
@@ -664,7 +647,6 @@ internal/source/
 internal/source/udp/
 internal/source/pcap/
 internal/source/nflog/
-internal/framing/
 internal/identify/
 internal/decode/
 internal/process/
@@ -714,7 +696,7 @@ Reasons:
 
 * the mental model changes materially
 * the config schema will expand a lot
-* packet capture and stream framing introduce new concerns
+* packet capture introduces new concerns
 * output encoding direction is no longer one-way normalization only
 
 Build ReFlow in parallel first.
@@ -859,7 +841,6 @@ Add dead-letter style optional outputs later if needed, but do not block the fir
 ReFlow should expose:
 
 * source ingest rates
-* framing errors
 * identification success/failure counts
 * decoder success/failure counts
 * processor drop/mutate/error counts
@@ -881,7 +862,6 @@ Especially important for pcap and WASM.
 
 * WASM execution time and memory must be bounded
 * packet parsing should avoid unbounded allocations
-* stream framing should have max frame sizes
 * configuration should support disabling risky source/sink types
 * output encoders should validate generated protocol structures
 
@@ -1029,7 +1009,7 @@ Keep familiar defaults and naming where it helps operators, but do not keep old 
 Deliver:
 
 * event model
-* source/framer/identifier/decoder interfaces
+* source/identifier/decoder interfaces
 * processor/aggregator/encoder/sink interfaces
 * config schema draft
 * runtime lifecycle model
@@ -1130,9 +1110,9 @@ These are the questions I would ask you before turning this plan into implementa
 
 ## Suggested Initial Project Statement
 
-If you want a concise framing for the future PR/project description:
+If you want a concise summary for the future PR/project description:
 
-> ReFlow is a configurable traffic and telemetry runtime that ingests packets or framed messages from multiple sources, identifies and decodes them into internal events, processes and optionally aggregates them, then emits them as JSON or sFlow to a configured sink.
+> ReFlow is a configurable traffic and telemetry runtime that ingests packets or messages from multiple sources, identifies and decodes them into internal events, processes and optionally aggregates them, then emits them as JSON or sFlow to a configured sink.
 
 ## Suggested PR Title
 
