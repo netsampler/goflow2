@@ -50,13 +50,13 @@ ReFlow should evolve the pipeline into:
 
 Where:
 
-* **source** reads bytes/messages from UDP, sockets, pipes, live capture, or NFLOG
+* **source** reads datagrams or packets from UDP, Unix datagram sockets, live capture, or NFLOG
 * **identification** determines what protocol or schema the payload likely is
 * **decode** parses the payload into typed internal events
-* **process** runs normalization, mapping, enrichment, transformation, and WASM callbacks
-* **aggregate** optionally uses FlowStore-backed stateful accumulation and batching
+* **process** runs canonicalization, mapping, enrichment, transformation, and optional WASM callbacks
+* **aggregate** optionally uses FlowStore-backed stateful accumulation
 * **encode** turns internal events into JSON, bytes, and sFlow output encodings
-* **sink** writes to stdout, file, UDP, or sockets/pipes
+* **sink** writes to stdout, file, or UDP
 
 ReFlow is **not** a strict 1-in / 1-out pipeline:
 
@@ -71,11 +71,11 @@ These are the main architectural recommendations before implementation starts.
 1. Keep ReFlow as a **single-path runtime** in v1, not as a collection of special-case binaries.
 2. Separate **transport concerns** from **data-shape concerns**. "JSON over UDP" and "JSON to stdout" should share the same encoder, not duplicate logic.
 3. Introduce a first-class **internal event model**. Do not couple sources directly to output encoders.
-4. Treat **packet capture** and **message ingestion** as separate source classes. They both ingest bytes, but their semantics are different.
+4. Treat **packet capture** and **message ingestion** as separate source classes.
 5. Make **protocol identification** explicit and pluggable. This is new compared with GoFlow2 and should not be hidden inside source code.
-6. Preserve FlowStore as the default state layer for templates, sampling, and future aggregation, but do not force all processing through aggregation.
+6. Preserve FlowStore as the default state layer for aggregation and protocol state, but do not force all processing through aggregation.
 7. Keep **WASM limited and capability-based**. It should transform or emit events, not own transport or lifecycle.
-8. Start with **single-process, multi-source configuration**. Avoid introducing clustering or distributed coordination into the first architecture.
+8. Start with **single-process, multi-source configuration** and a single sink.
 9. Remove Kafka from the core plan unless a concrete need remains. Vector is a better downstream transport/forwarding boundary.
 10. Optimize first for **operability and correctness**, then for deep plugin ecosystems.
 
@@ -90,6 +90,21 @@ The first version should likely avoid:
 * a full GUI
 * highly dynamic hot-reloadable plugin loading unless operationally necessary
 
+## V1 Assumptions
+
+The current v1 scope assumes:
+
+* multiple sources
+* a single optional processor entry
+* a built-in in-code processor when no WASM processor is configured
+* a single optional aggregator entry
+* a single optional batch entry
+* a single encoder
+* a single sink
+* packet parsing up to L4
+* JSON output and sFlow encoding as the first output priorities
+* YAML as the only full config format
+
 ## Proposed Core Concepts
 
 ### 1. Source
@@ -100,7 +115,6 @@ Examples:
 
 * `udp` source
 * `unixgram` / `unix` socket source
-* `stdin` / named pipe source
 * `pcap_live` source
 * `nflog` source
 
@@ -112,9 +126,10 @@ Some sources deliver **message boundaries naturally**:
 
 Some sources deliver **streams**:
 
-* pipes
 * TCP sockets
 * Unix streams
+
+These are future concerns, not required for the current v1 path.
 
 ### 2. Identifier
 
@@ -125,7 +140,6 @@ Examples:
 * detect `sflow`
 * detect `netflow_v5`
 * detect `netflow_v9`
-* detect `ipfix`
 * detect `json`
 * detect `raw_bytes`
 * detect `unknown`
@@ -141,7 +155,6 @@ Examples:
 
 * `decoder/sflow`
 * `decoder/netflow`
-* `decoder/ipfix`
 * `decoder/json`
 * `decoder/bytes`
 * `decoder/pcap_l2`
@@ -181,10 +194,9 @@ Potential uses:
 * interface counter accumulation
 * periodic flush windows
 * stateful packet-to-counter synthesis
-* template and sampling cache persistence
+* protocol state persistence when needed
 
 Use `FlowStore` as the default in-memory state engine.
-Treat template and sampling storage as internal stores, and event aggregation as a separate store usage.
 
 ReFlow should support at least these aggregation/emission modes:
 
@@ -192,9 +204,6 @@ ReFlow should support at least these aggregation/emission modes:
   Multiple input events update a FlowStore bucket. When the bucket expires after inactivity, the final aggregated value is emitted downstream.
 * **periodic snapshot emission**
   A scheduler queries long-lived or non-expiring FlowStore state and emits snapshots on a fixed cadence.
-* **periodic control/protocol emission**
-  Timers trigger periodic protocol messages such as IPFIX template refreshes even when no new input arrives.
-
 ### 6. Encoder
 
 An `Encoder` serializes internal events for output.
@@ -204,7 +213,6 @@ Examples:
 * JSON encoder
 * text encoder
 * bytes encoder
-* protobuf encoder if retained
 * sFlow encoder
 
 ReFlow must support decoding and protocol re-encoding.
@@ -723,7 +731,6 @@ Message sources deliver already-formed telemetry messages:
 * UDP sFlow/NetFlow/IPFIX
 * UDP JSON
 * Unix datagram JSON
-* socket byte stream
 
 These should go through identifier + decoder.
 
@@ -971,142 +978,15 @@ Especially important for pcap and WASM.
 * configuration should support disabling risky source/sink types
 * output encoders should validate generated protocol structures
 
-## Main Open Architectural Questions
+## Remaining Open Questions
 
-These are the highest-value questions to answer before implementation.
+The main open points are now:
 
-### 1. Internal event model depth
-
-Question:
-
-Should ReFlow define a single rich canonical event model for flows/counters/packets, or a thinner envelope with protocol-specific payload variants?
-
-Suggestion:
-
-Start with a hybrid model:
-
-* canonical common fields for shared concepts
-* protocol-specific extension payloads when fidelity matters
-
-### 2. Configuration style
-
-Question:
-
-Do you want ReFlow v1 to stay with a single global path in configuration, or leave room now for future graph-style routing?
-
-Suggestion:
-
-Keep v1 configuration single-path. Add graph or pipeline semantics only when a real need appears.
-
-### 3. Output protocol support priority
-
-Question:
-
-What must be available in the first useful ReFlow milestone:
-
-* JSON
-* bytes
-* sFlow encode
-* protobuf compatibility
-
-Suggestion:
-
-Prioritize:
-
-1. JSON
-2. bytes
-3. sFlow encode
-4. only then protobuf compatibility if migration requires it
-
-### 4. Packet decoding boundary
-
-Question:
-
-For packet capture, should ReFlow itself parse L2/L3/L4 and derive higher-level events, or should packet capture mostly be handed to WASM/custom processors?
-
-Suggestion:
-
-ReFlow should own at least basic L2/L3/L4 parsing. Leaving that entirely to WASM would push core correctness and performance into the least safe extension layer.
-
-### 5. FlowStore role
-
-Question:
-
-Should FlowStore remain only a reusable primitive, or should ReFlow define first-class built-in aggregators on top of it?
-
-Suggestion:
-
-Provide first-class built-in aggregators. Otherwise every serious deployment will reinvent the same keyed windows.
-
-### 5b. Flush semantics
-
-Question:
-
-Which built-in flush semantics do you want supported in the first implementation:
-
-* inactivity expiry
-* fixed periodic snapshot
-* flush-on-size
-* flush-on-shutdown
-
-Suggestion:
-
-Implement inactivity expiry, periodic snapshot, flush-on-shutdown, and batching flushes based on count, encoded size in bytes, and time.
-
-### 5c. Aggregation key customization
-
-Question:
-
-Should aggregation keys in YAML be limited to canonical built-in fields, or should configuration also reference custom/vendor fields directly?
-
-Suggestion:
-
-Start with canonical built-in fields in YAML and use WASM overrides for advanced/custom keys. That keeps the base config stable while still allowing specialized logic.
-
-### 6. Ordering guarantees
-
-Question:
-
-Do you require ordering guarantees:
-
-* per source
-* per exporter
-* per aggregation key
-* none
-
-Suggestion:
-
-Define ordering only where state requires it, especially for templates, packet reassembly if any, and keyed aggregation.
-
-### 7. WASM host ABI
-
-Question:
-
-Should WASM operate on JSON-serialized events, protobuf-like binary schemas, or host-native structs exposed through a compact ABI?
-
-Suggestion:
-
-Use a compact versioned host ABI with clear typed operations, not ad hoc JSON as the only interface. JSON can still be an optional convenience wrapper.
-
-### 8. Source plugin model
-
-Question:
-
-Do you expect third parties to add source/decoder/sink plugins outside the main binary, or is compile-time registration acceptable initially?
-
-Suggestion:
-
-Use compile-time registration for v1. Add dynamic plugin loading only if a real extension ecosystem appears.
-
-### 9. Compatibility strategy
-
-Question:
-
-Do you want ReFlow to ingest the same config patterns and operational flags as GoFlow2 where possible, or should it intentionally break and simplify?
-
-Suggestion:
-
-Keep familiar defaults and naming where it helps operators, but do not keep old abstractions if they actively constrain the new architecture.
+1. Is protobuf compatibility needed at all, or can ReFlow stay focused on JSON, bytes, and sFlow?
+2. Do you want to commit to a WASM ABI early, for example via WIT, or leave that open until the event schema settles further?
+3. Should FlowStore aggregation in v1 support all of: inactivity expiry, periodic snapshot, flush-on-size, and flush-on-shutdown?
+4. Is live capture expected to run only in privileged local deployments, or do you want a cleaner separation between capture and processing later?
+5. Should ReFlow stay in this repository initially, or move to a separate repository/module once the scope grows?
 
 ## Suggested Implementation Phases
 
@@ -1158,7 +1038,7 @@ Deliver:
 Deliver:
 
 * sFlow encoder
-* socket/pipe sinks with framing
+* UDP sink support for encoded exports
 
 ## Architecture Risks
 
@@ -1197,23 +1077,17 @@ Use this section as implementation begins.
 
 | Topic | Decision | Status | Notes |
 |---|---|---|---|
-| Internal event model | Hybrid canonical + extension payloads | Proposed | Needs confirmation |
-| Config style | Single global path in v1 | Proposed | Lower config and runtime complexity |
-| Kafka support | Remove from core ReFlow scope | Proposed | Use Vector downstream |
-| FlowStore role | Built-in state engine and aggregator foundation | Proposed | Aligns with current repo strength |
-| WASM scope | Processor-only with bounded capabilities | Proposed | Avoid lifecycle/IO ownership |
-
-## Questions For You
-
-These are the questions I would ask you before turning this plan into implementation tickets.
-
-1. Do you want ReFlow’s internal model to preserve a high-fidelity original record alongside canonical fields, or is canonical output the primary goal?
-2. For packet capture, do you need only metadata/counters, or do you expect packet payload inspection and protocol parsing beyond L4?
-3. Is protobuf compatibility needed for migration, or can ReFlow break from that and standardize on JSON/bytes plus protocol encoders?
-4. For WASM, is the main use case transformation and aggregation key generation only, or do you also need lifecycle hooks later?
-5. Should FlowStore aggregation support inactivity expiry, periodic snapshot, flush-on-size, and flush-on-shutdown in v1?
-6. Is live packet capture expected to run with privileged local access only, or do you want a model that separates capture from processing for safer deployments?
-7. Do you want ReFlow to live inside this repository initially, or do you already expect a separate repository/new module?
+| Internal event model | Canonical envelope + typed extension fields | Decided | Fits WASM and protobuf better |
+| Config style | Single global path in v1 | Decided | Lower config and runtime complexity |
+| Config format | YAML only for full config in v1 | Decided | CLI is for bootstrap and overrides |
+| Sink model | Single sink in v1 | Decided | Simpler runtime and config |
+| Processor model | Single optional processor entry | Decided | Built-in processor unless WASM is configured |
+| Aggregator model | Single optional aggregator entry | Decided | FlowStore-backed |
+| Batch model | Single optional batch entry | Decided | Separate from aggregation |
+| Packet parsing | Up to L4 in v1 | Decided | Keeps packet work bounded |
+| Output priority | JSON and sFlow | Decided | First useful outputs |
+| Kafka support | Remove from core ReFlow scope | Decided | Use Vector downstream when needed |
+| WASM scope | Transform and aggregation key generation | Decided | No transport or lifecycle ownership |
 
 ## Suggested Initial Project Statement
 
