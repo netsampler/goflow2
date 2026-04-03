@@ -237,9 +237,10 @@ func encodeTemplateFlowSet(version uint16, flowSet *TemplateFlowSet) ([]byte, ui
 
 	id := flowSet.Id
 	if id == 0 {
-		if version == 9 {
+		switch version {
+		case 9:
 			id = 0
-		} else if version == 10 {
+		case 10:
 			id = 2
 		}
 	}
