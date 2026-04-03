@@ -439,6 +439,101 @@ Used by routing/encoding/sinks:
 * content type
 * encoding hints
 
+## Event Message Definition
+
+The canonical event message should be a single envelope with:
+
+* source metadata
+* event kind
+* canonical fields
+* optional protocol-specific extensions
+* optional raw/original payload
+* output metadata
+
+A concrete shape for v1:
+
+```go
+type Event struct {
+    Meta       EventMeta         `json:"meta"`
+    Kind       EventKind         `json:"kind"`
+    Canonical  CanonicalFields   `json:"canonical,omitempty"`
+    Extensions []ExtensionField  `json:"extensions,omitempty"`
+    Raw        *RawPayload       `json:"raw,omitempty"`
+    Output     OutputMetadata    `json:"output,omitempty"`
+}
+
+type EventMeta struct {
+    SourceID      string    `json:"source_id,omitempty"`
+    SourceType    string    `json:"source_type,omitempty"`
+    ReceiveTime   time.Time `json:"receive_time"`
+    ProtocolHint  string    `json:"protocol_hint,omitempty"`
+    RemoteAddr    string    `json:"remote_addr,omitempty"`
+    CaptureType   string    `json:"capture_type,omitempty"`
+}
+
+type EventKind string
+
+const (
+    EventPacket  EventKind = "packet"
+    EventFlow    EventKind = "flow"
+    EventCounter EventKind = "counter"
+    EventJSON    EventKind = "json"
+    EventBytes   EventKind = "bytes"
+    EventError   EventKind = "error"
+)
+
+type CanonicalFields struct {
+    SrcAddr   string `json:"src_addr,omitempty"`
+    DstAddr   string `json:"dst_addr,omitempty"`
+    Proto     uint32 `json:"proto,omitempty"`
+    SrcPort   uint32 `json:"src_port,omitempty"`
+    DstPort   uint32 `json:"dst_port,omitempty"`
+    Bytes     uint64 `json:"bytes,omitempty"`
+    Packets   uint64 `json:"packets,omitempty"`
+    InIf      uint32 `json:"in_if,omitempty"`
+    OutIf     uint32 `json:"out_if,omitempty"`
+    TimeStart uint64 `json:"time_start_ns,omitempty"`
+    TimeEnd   uint64 `json:"time_end_ns,omitempty"`
+}
+
+type ExtensionField struct {
+    Name  string         `json:"name"`
+    Value ExtensionValue `json:"value"`
+}
+
+type ExtensionValue struct {
+    Type   string  `json:"type"`
+    String string  `json:"string,omitempty"`
+    Bytes  []byte  `json:"bytes,omitempty"`
+    Int64  int64   `json:"int64,omitempty"`
+    Uint64 uint64  `json:"uint64,omitempty"`
+    Double float64 `json:"double,omitempty"`
+    Bool   bool    `json:"bool,omitempty"`
+}
+
+type RawPayload struct {
+    Format string `json:"format,omitempty"`
+    Data   []byte `json:"data,omitempty"`
+}
+
+type OutputMetadata struct {
+    ContentType string   `json:"content_type,omitempty"`
+    PartitionKey string  `json:"partition_key,omitempty"`
+    SinkLabels  []string `json:"sink_labels,omitempty"`
+}
+```
+
+Notes:
+
+* `Meta` and `Kind` are always present.
+* `Canonical` contains the stable built-in fields used by processors, aggregators, batchers, encoders, and WASM.
+* `Extensions` carries protocol-specific or vendor-specific fields that do not belong in the stable canonical set.
+* `Extensions` should use typed key/value entries rather than `map[string]any`.
+* `Raw` is optional and may be dropped by processors as soon as it is no longer needed.
+* `Output` is optional and lets processors or aggregators attach delivery hints without coupling to a sink implementation.
+
+The exact field set will evolve, but the model should stay as one envelope plus typed kind plus canonical fields.
+
 ## Why A Layered Event Model Matters
 
 It allows:
@@ -742,11 +837,21 @@ CLI flags are limited to bootstrap behavior and a small set of overrides.
 Configuration should define:
 
 * sources
-* processors
-* aggregators
+* processor
+* aggregator
+* batch
 * encoder
 * sink
 * observability
+
+The processor is optional.
+If no WASM processor is configured, ReFlow uses a built-in in-code processor.
+
+The aggregator is also optional.
+When enabled, v1 uses a single aggregation entry.
+
+The batch layer is optional.
+When enabled, v1 uses a single batch entry.
 
 ### Example configuration sketch
 
@@ -767,20 +872,20 @@ sources:
     interface: eth0
     decode: packet
 
-processors:
-  - id: custom-json
-    type: wasm
-    module: ./plugins/custom_counter.wasm
-    on: [json]
+processor:
+  type: wasm
+  module: ./plugins/custom_counter.wasm
+  on: [json]
 
-aggregators:
-  - id: interface-counters
-    type: flowstore_window
-    flush_interval: 10s
-    key_fields: [src_addr, dst_addr, proto, src_port, dst_port]
-    batch:
-      max_records: 64
-      flush_interval: 2s
+aggregator:
+  type: flowstore_window
+  flush_interval: 10s
+  key_fields: [src_addr, dst_addr, proto, src_port, dst_port]
+
+batch:
+  max_records: 64
+  max_bytes: 65535
+  flush_interval: 2s
 
 encoder:
   type: json
@@ -794,8 +899,9 @@ sink:
 ```mermaid
 flowchart TD
     C[Config] --> S[Sources]
-    C --> P[Processors]
-    C --> A[Aggregators]
+    C --> P[Processor]
+    C --> A[Aggregator]
+    C --> B[Batch]
     C --> E[Encoder]
     C --> K[Sink]
 ```
@@ -1010,7 +1116,7 @@ Deliver:
 
 * event model
 * source/identifier/decoder interfaces
-* processor/aggregator/encoder/sink interfaces
+* single processor/aggregator/batch/encoder/sink interfaces
 * config schema draft
 * runtime lifecycle model
 
@@ -1040,8 +1146,9 @@ Deliver:
 
 Deliver:
 
-* WASM processor
-* built-in FlowStore aggregators
+* optional WASM processor
+* built-in in-code default processor
+* built-in FlowStore aggregator
 * batching layer with count, size, and time flush policies
 * periodic flush support
 * interface counter synthesis examples
