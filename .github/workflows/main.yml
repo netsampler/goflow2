@@ -19,7 +19,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - name: Check out code into the Go module directory
-      uses: actions/checkout@v4
+      uses: actions/checkout@v6
       # Full history ensures tag-aware versioning for release builds.
       with:
         fetch-depth: 0
@@ -93,7 +93,7 @@ jobs:
         include: ${{ fromJSON(needs.matrix.outputs.include) }}
     steps:
     - name: Check out code into the Go module directory
-      uses: actions/checkout@v4
+      uses: actions/checkout@v6
       # Fetch tags so release builds can resolve VERSION.
       with:
         fetch-depth: 0
@@ -228,7 +228,7 @@ jobs:
     if: github.event_name != 'pull_request'
     steps:
     - name: Check out code into the Go module directory
-      uses: actions/checkout@v4
+      uses: actions/checkout@v6
       with:
         fetch-depth: 0
 
