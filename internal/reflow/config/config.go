@@ -41,8 +41,17 @@ type BuiltinProcessorConfig struct {
 }
 
 type EncoderConfig struct {
-	Type    string `yaml:"type"`
-	Workers int    `yaml:"workers"`
+	Type             string      `yaml:"type"`
+	Workers          int         `yaml:"workers"`
+	MaxDatagramBytes int         `yaml:"max_datagram_bytes"`
+	Batch            BatchConfig `yaml:"batch"`
+}
+
+type BatchConfig struct {
+	Enabled       bool `yaml:"enabled"`
+	MaxRecords    int  `yaml:"max_records"`
+	MaxBytes      int  `yaml:"max_bytes"`
+	FlushInterval int  `yaml:"flush_interval_ms"`
 }
 
 type SinkConfig struct {
@@ -99,6 +108,18 @@ func (c *Config) setDefaults() error {
 	}
 	if c.Encoder.Workers <= 0 {
 		c.Encoder.Workers = 1
+	}
+	if c.Encoder.MaxDatagramBytes <= 0 {
+		c.Encoder.MaxDatagramBytes = 1400
+	}
+	if c.Encoder.Batch.MaxRecords < 0 {
+		return fmt.Errorf("encoder.batch.max_records must be >= 0")
+	}
+	if c.Encoder.Batch.MaxBytes < 0 {
+		return fmt.Errorf("encoder.batch.max_bytes must be >= 0")
+	}
+	if c.Encoder.Batch.FlushInterval < 0 {
+		return fmt.Errorf("encoder.batch.flush_interval_ms must be >= 0")
 	}
 	switch c.Encoder.Type {
 	case "json", "sflow":

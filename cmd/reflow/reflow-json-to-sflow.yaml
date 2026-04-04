@@ -12,7 +12,15 @@ processor:
 
 encoder:
   type: sflow
-  workers: 2
+  # Batching is per encoder worker. Keep this at 1 when you want stronger
+  # packing and more multi-sample sFlow datagrams.
+  workers: 1
+  max_datagram_bytes: 1400
+  batch:
+    enabled: true
+    max_records: 8
+    max_bytes: 1200
+    flush_interval_ms: 4000
 
 sink:
   type: udp

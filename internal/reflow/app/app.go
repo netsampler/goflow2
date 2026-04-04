@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"sync"
+	"time"
 
 	"github.com/netsampler/goflow2/v3/internal/reflow/config"
 	"github.com/netsampler/goflow2/v3/internal/reflow/encode"
@@ -20,7 +21,7 @@ type App struct {
 	source           *socket.Source
 	processor        processor.Processor
 	processorWorkers int
-	encoder          encode.Encoder
+	encoderCfg       config.EncoderConfig
 	encoderWorkers   int
 	sink             sink.Sink
 }
@@ -40,10 +41,6 @@ func New(cfg *config.Config) (*App, error) {
 	if err != nil {
 		return nil, fmt.Errorf("init processor: %w", err)
 	}
-	enc, err := encode.New(cfg.Encoder)
-	if err != nil {
-		return nil, fmt.Errorf("init encoder: %w", err)
-	}
 	out, err := sink.New(cfg.Sink)
 	if err != nil {
 		return nil, fmt.Errorf("init sink: %w", err)
@@ -54,7 +51,7 @@ func New(cfg *config.Config) (*App, error) {
 		source:           src,
 		processor:        proc,
 		processorWorkers: cfg.Processor.Workers,
-		encoder:          enc,
+		encoderCfg:       cfg.Encoder,
 		encoderWorkers:   cfg.Encoder.Workers,
 		sink:             out,
 	}, nil
@@ -102,20 +99,64 @@ func (a *App) Run(ctx context.Context) error {
 		encodeWG.Add(1)
 		go func() {
 			defer encodeWG.Done()
-			for evt := range encodeJobs {
-				payloads, err := a.encoder.Encode(evt)
+			enc, err := encode.New(a.encoderCfg)
+			if err != nil {
+				select {
+				case errCh <- err:
+				default:
+				}
+				cancel()
+				return
+			}
+			var ticker *time.Ticker
+			if a.encoderCfg.Batch.Enabled && a.encoderCfg.Batch.FlushInterval > 0 {
+				ticker = time.NewTicker(time.Duration(a.encoderCfg.Batch.FlushInterval) * time.Millisecond)
+				defer ticker.Stop()
+			}
+			flush := func() bool {
+				payloads, err := enc.Flush()
 				if err != nil {
 					select {
 					case errCh <- err:
 					default:
 					}
 					cancel()
-					return
+					return false
 				}
 				for _, payload := range payloads {
 					if err := a.sink.Send(payload); err != nil {
 						a.logger.Error("sink write error", slog.String("error", err.Error()))
-						continue
+					}
+				}
+				return true
+			}
+			for {
+				select {
+				case <-ctx.Done():
+					flush()
+					return
+				case <-tickerChannel(ticker):
+					if !flush() {
+						return
+					}
+				case evt, ok := <-encodeJobs:
+					if !ok {
+						flush()
+						return
+					}
+					payloads, err := enc.Encode(evt)
+					if err != nil {
+						select {
+						case errCh <- err:
+						default:
+						}
+						cancel()
+						return
+					}
+					for _, payload := range payloads {
+						if err := a.sink.Send(payload); err != nil {
+							a.logger.Error("sink write error", slog.String("error", err.Error()))
+						}
 					}
 				}
 			}
@@ -151,4 +192,11 @@ func (a *App) Run(ctx context.Context) error {
 		}
 		return nil
 	}
+}
+
+func tickerChannel(t *time.Ticker) <-chan time.Time {
+	if t == nil {
+		return nil
+	}
+	return t.C
 }
