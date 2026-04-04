@@ -18,6 +18,7 @@ type Encoder interface {
 	Flush() ([][]byte, error)
 }
 
+// New builds the configured encoder. Each encoder worker gets its own instance.
 func New(cfg config.EncoderConfig) (Encoder, error) {
 	switch cfg.Type {
 	case "", "json":
@@ -31,10 +32,12 @@ func New(cfg config.EncoderConfig) (Encoder, error) {
 
 type JSONEncoder struct{}
 
+// NewJSONEncoder creates the stateless JSON event encoder.
 func NewJSONEncoder(_ config.EncoderConfig) *JSONEncoder {
 	return &JSONEncoder{}
 }
 
+// Encode serializes one event as a JSON line payload.
 func (JSONEncoder) Encode(evt *event.Event) ([][]byte, error) {
 	data, err := json.Marshal(evt)
 	if err != nil {
@@ -43,6 +46,7 @@ func (JSONEncoder) Encode(evt *event.Event) ([][]byte, error) {
 	return [][]byte{data}, nil
 }
 
+// Flush is a no-op for JSON because it does not keep internal batching state.
 func (JSONEncoder) Flush() ([][]byte, error) {
 	return nil, nil
 }
@@ -63,6 +67,7 @@ func NewSFlowEncoder(cfg config.EncoderConfig) *SFlowEncoder {
 	}
 }
 
+// Encode appends an event to the encoder-local batch or encodes it immediately.
 func (e *SFlowEncoder) Encode(evt *event.Event) ([][]byte, error) {
 	if !e.batch.Enabled {
 		packet, err := e.buildPacket([]*event.Event{evt})
@@ -79,6 +84,7 @@ func (e *SFlowEncoder) Encode(evt *event.Event) ([][]byte, error) {
 	return nil, nil
 }
 
+// Flush emits all buffered events, splitting them into multiple sFlow datagrams if needed.
 func (e *SFlowEncoder) Flush() ([][]byte, error) {
 	if len(e.events) == 0 {
 		return nil, nil
@@ -104,6 +110,7 @@ func (e *SFlowEncoder) Flush() ([][]byte, error) {
 	return payloads, nil
 }
 
+// shouldFlush checks the configured batch thresholds before the timer fires.
 func (e *SFlowEncoder) shouldFlush() bool {
 	if len(e.events) == 0 {
 		return false
@@ -117,6 +124,7 @@ func (e *SFlowEncoder) shouldFlush() bool {
 	return false
 }
 
+// estimatedBatchBytes provides a cheap threshold check before building an actual packet.
 func (e *SFlowEncoder) estimatedBatchBytes() int {
 	total := 0
 	for _, evt := range e.events {
@@ -141,6 +149,7 @@ func estimatedEventSize(evt *event.Event) int {
 	return total
 }
 
+// encodePacket turns one populated sFlow packet into the UDP payload sent by the sink.
 func (e *SFlowEncoder) encodePacket(packet *sflow.Packet) ([][]byte, error) {
 	data, err := sflow.EncodeMessage(packet)
 	if err != nil {
@@ -149,6 +158,7 @@ func (e *SFlowEncoder) encodePacket(packet *sflow.Packet) ([][]byte, error) {
 	return [][]byte{data}, nil
 }
 
+// buildPacket requires all input events to fit in a single datagram.
 func (e *SFlowEncoder) buildPacket(events []*event.Event) (*sflow.Packet, error) {
 	packet, accepted, err := e.buildPacketWithLimit(events)
 	if err != nil {
@@ -160,6 +170,7 @@ func (e *SFlowEncoder) buildPacket(events []*event.Event) (*sflow.Packet, error)
 	return packet, nil
 }
 
+// buildPacketWithLimit packs as many events as possible into one sFlow datagram.
 func (e *SFlowEncoder) buildPacketWithLimit(events []*event.Event) (*sflow.Packet, int, error) {
 	if len(events) == 0 {
 		return nil, 0, fmt.Errorf("empty sflow packet batch")
@@ -218,6 +229,7 @@ func (e *SFlowEncoder) buildPacketWithLimit(events []*event.Event) (*sflow.Packe
 	return packet, accepted, nil
 }
 
+// buildFlowSample maps the canonical event fields into one sFlow raw-header flow sample.
 func (e *SFlowEncoder) buildFlowSample(evt *event.Event) (sflow.FlowSample, error) {
 	fields := evt.Fields
 	if fields == nil {

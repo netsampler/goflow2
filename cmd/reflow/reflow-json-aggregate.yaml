@@ -1,0 +1,28 @@
+source:
+  network: udp
+  address: ":18082"
+  frame: datagram
+  message_type: json_raw_packet_header
+
+processor:
+  type: builtin
+  workers: 2
+  builtin:
+    drop_message: true
+
+aggregator:
+  type: flowstore_window
+  flush_interval_ms: 10000
+  key_fields:
+    - src_addr
+    - dst_addr
+    - proto
+    - src_port
+    - dst_port
+
+encoder:
+  type: json
+  workers: 1
+
+sink:
+  type: stdout

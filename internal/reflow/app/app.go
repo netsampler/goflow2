@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/netsampler/goflow2/v3/internal/reflow/aggregate"
 	"github.com/netsampler/goflow2/v3/internal/reflow/config"
 	"github.com/netsampler/goflow2/v3/internal/reflow/encode"
 	"github.com/netsampler/goflow2/v3/internal/reflow/event"
@@ -21,11 +22,13 @@ type App struct {
 	source           *socket.Source
 	processor        processor.Processor
 	processorWorkers int
+	aggregatorCfg    config.AggregatorConfig
 	encoderCfg       config.EncoderConfig
 	encoderWorkers   int
 	sink             sink.Sink
 }
 
+// New wires the current ReFlow runtime from source to sink.
 func New(cfg *config.Config) (*App, error) {
 	logger, err := logging.NewLogger(cfg.LogLevel, cfg.LogFormat)
 	if err != nil {
@@ -51,12 +54,14 @@ func New(cfg *config.Config) (*App, error) {
 		source:           src,
 		processor:        proc,
 		processorWorkers: cfg.Processor.Workers,
+		aggregatorCfg:    cfg.Aggregator,
 		encoderCfg:       cfg.Encoder,
 		encoderWorkers:   cfg.Encoder.Workers,
 		sink:             out,
 	}, nil
 }
 
+// Run owns the source, processor, aggregation, encoding, and sink goroutines.
 func (a *App) Run(ctx context.Context) error {
 	a.logger.Info("starting ReFlow")
 	defer a.sink.Close()
@@ -65,6 +70,7 @@ func (a *App) Run(ctx context.Context) error {
 	defer cancel()
 
 	processJobs := make(chan *event.Event, a.processorWorkers*2)
+	aggregateJobs := make(chan *event.Event, a.processorWorkers*2)
 	encodeJobs := make(chan *event.Event, a.encoderWorkers*2)
 	errCh := make(chan error, 1)
 
@@ -85,7 +91,7 @@ func (a *App) Run(ctx context.Context) error {
 				}
 				for _, item := range events {
 					select {
-					case encodeJobs <- item:
+					case aggregateJobs <- item:
 					case <-ctx.Done():
 						return
 					}
@@ -93,6 +99,78 @@ func (a *App) Run(ctx context.Context) error {
 			}
 		}()
 	}
+
+	agg, err := aggregate.New(a.aggregatorCfg)
+	if err != nil {
+		return fmt.Errorf("init aggregator: %w", err)
+	}
+
+	var aggregateWG sync.WaitGroup
+	aggregateWG.Add(1)
+	go func() {
+		defer aggregateWG.Done()
+		var ticker *time.Ticker
+		if interval := agg.Interval(); interval > 0 {
+			ticker = time.NewTicker(interval)
+			defer ticker.Stop()
+		}
+		forward := func(events []*event.Event) bool {
+			for _, evt := range events {
+				select {
+				case encodeJobs <- evt:
+				case <-ctx.Done():
+					return false
+				}
+			}
+			return true
+		}
+		flush := func(closeStore bool) bool {
+			var events []*event.Event
+			var err error
+			if closeStore {
+				events, err = agg.Close()
+			} else {
+				events, err = agg.Flush()
+			}
+			if err != nil {
+				select {
+				case errCh <- err:
+				default:
+				}
+				cancel()
+				return false
+			}
+			return forward(events)
+		}
+		for {
+			select {
+			case <-ctx.Done():
+				flush(true)
+				return
+			case <-tickerChannel(ticker):
+				if !flush(false) {
+					return
+				}
+			case evt, ok := <-aggregateJobs:
+				if !ok {
+					flush(true)
+					return
+				}
+				events, err := agg.Process(evt)
+				if err != nil {
+					select {
+					case errCh <- err:
+					default:
+					}
+					cancel()
+					return
+				}
+				if !forward(events) {
+					return
+				}
+			}
+		}
+	}()
 
 	var encodeWG sync.WaitGroup
 	for range a.encoderWorkers {
@@ -179,12 +257,16 @@ func (a *App) Run(ctx context.Context) error {
 	case err := <-errCh:
 		close(processJobs)
 		processWG.Wait()
+		close(aggregateJobs)
+		aggregateWG.Wait()
 		close(encodeJobs)
 		encodeWG.Wait()
 		return fmt.Errorf("run worker: %w", err)
 	case err := <-sourceDone:
 		close(processJobs)
 		processWG.Wait()
+		close(aggregateJobs)
+		aggregateWG.Wait()
 		close(encodeJobs)
 		encodeWG.Wait()
 		if err != nil && ctx.Err() == nil {
@@ -194,6 +276,7 @@ func (a *App) Run(ctx context.Context) error {
 	}
 }
 
+// tickerChannel keeps select logic simple when a stage does not need timer-driven flushing.
 func tickerChannel(t *time.Ticker) <-chan time.Time {
 	if t == nil {
 		return nil

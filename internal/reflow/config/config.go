@@ -15,12 +15,13 @@ type FlagConfig struct {
 }
 
 type Config struct {
-	LogLevel  string          `yaml:"-"`
-	LogFormat string          `yaml:"-"`
-	Source    SourceConfig    `yaml:"source"`
-	Processor ProcessorConfig `yaml:"processor"`
-	Encoder   EncoderConfig   `yaml:"encoder"`
-	Sink      SinkConfig      `yaml:"sink"`
+	LogLevel   string           `yaml:"-"`
+	LogFormat  string           `yaml:"-"`
+	Source     SourceConfig     `yaml:"source"`
+	Processor  ProcessorConfig  `yaml:"processor"`
+	Aggregator AggregatorConfig `yaml:"aggregator"`
+	Encoder    EncoderConfig    `yaml:"encoder"`
+	Sink       SinkConfig       `yaml:"sink"`
 }
 
 type SourceConfig struct {
@@ -38,6 +39,12 @@ type ProcessorConfig struct {
 
 type BuiltinProcessorConfig struct {
 	DropMessage bool `yaml:"drop_message"`
+}
+
+type AggregatorConfig struct {
+	Type          string   `yaml:"type"`
+	FlushInterval int      `yaml:"flush_interval_ms"`
+	KeyFields     []string `yaml:"key_fields"`
 }
 
 type EncoderConfig struct {
@@ -102,6 +109,21 @@ func (c *Config) setDefaults() error {
 	}
 	if c.Processor.Workers <= 0 {
 		c.Processor.Workers = 1
+	}
+	if c.Aggregator.Type == "" {
+		c.Aggregator.Type = "none"
+	}
+	switch c.Aggregator.Type {
+	case "none":
+	case "flowstore_window":
+		if c.Aggregator.FlushInterval <= 0 {
+			c.Aggregator.FlushInterval = 10000
+		}
+		if len(c.Aggregator.KeyFields) == 0 {
+			c.Aggregator.KeyFields = []string{"src_addr", "dst_addr", "proto", "src_port", "dst_port"}
+		}
+	default:
+		return fmt.Errorf("unsupported aggregator.type %q", c.Aggregator.Type)
 	}
 	if c.Encoder.Type == "" {
 		c.Encoder.Type = "json"
