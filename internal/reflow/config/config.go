@@ -15,27 +15,40 @@ type FlagConfig struct {
 }
 
 type Config struct {
-	LogLevel   string            `yaml:"-"`
-	LogFormat  string            `yaml:"-"`
-	Source     SourceConfig      `yaml:"source"`
-	Transforms []TransformConfig `yaml:"transforms"`
-	Output     OutputConfig      `yaml:"output"`
+	LogLevel  string          `yaml:"-"`
+	LogFormat string          `yaml:"-"`
+	Source    SourceConfig    `yaml:"source"`
+	Processor ProcessorConfig `yaml:"processor"`
+	Encoder   EncoderConfig   `yaml:"encoder"`
+	Sink      SinkConfig      `yaml:"sink"`
 }
 
 type SourceConfig struct {
-	Network string `yaml:"network"`
+	Network     string `yaml:"network"`
+	Address     string `yaml:"address"`
+	Frame       string `yaml:"frame"`
+	MessageType string `yaml:"message_type"`
+}
+
+type ProcessorConfig struct {
+	Type    string                 `yaml:"type"`
+	Workers int                    `yaml:"workers"`
+	Builtin BuiltinProcessorConfig `yaml:"builtin"`
+}
+
+type BuiltinProcessorConfig struct {
+	DropMessage bool `yaml:"drop_message"`
+}
+
+type EncoderConfig struct {
+	Type    string `yaml:"type"`
+	Workers int    `yaml:"workers"`
+}
+
+type SinkConfig struct {
+	Type    string `yaml:"type"`
+	Path    string `yaml:"path"`
 	Address string `yaml:"address"`
-	Frame   string `yaml:"frame"`
-}
-
-type TransformConfig struct {
-	Type   string         `yaml:"type"`
-	Fields map[string]any `yaml:"fields"`
-}
-
-type OutputConfig struct {
-	Type string `yaml:"type"`
-	Path string `yaml:"path"`
 }
 
 func BindFlags(fs *flag.FlagSet) (*FlagConfig, *bool) {
@@ -75,16 +88,36 @@ func (c *Config) setDefaults() error {
 	if c.Source.Frame != "datagram" {
 		return fmt.Errorf("unsupported source.frame %q", c.Source.Frame)
 	}
-	if c.Output.Type == "" {
-		c.Output.Type = "stdout"
+	if c.Processor.Type == "" {
+		c.Processor.Type = "builtin"
 	}
-	switch c.Output.Type {
-	case "stdout", "file":
+	if c.Processor.Workers <= 0 {
+		c.Processor.Workers = 1
+	}
+	if c.Encoder.Type == "" {
+		c.Encoder.Type = "json"
+	}
+	if c.Encoder.Workers <= 0 {
+		c.Encoder.Workers = 1
+	}
+	switch c.Encoder.Type {
+	case "json", "sflow":
 	default:
-		return fmt.Errorf("unsupported output.type %q", c.Output.Type)
+		return fmt.Errorf("unsupported encoder.type %q", c.Encoder.Type)
 	}
-	if c.Output.Type == "file" && c.Output.Path == "" {
-		return fmt.Errorf("output.path is required when output.type=file")
+	if c.Sink.Type == "" {
+		c.Sink.Type = "stdout"
+	}
+	switch c.Sink.Type {
+	case "stdout", "file", "udp", "unixgram":
+	default:
+		return fmt.Errorf("unsupported sink.type %q", c.Sink.Type)
+	}
+	if c.Sink.Type == "file" && c.Sink.Path == "" {
+		return fmt.Errorf("sink.path is required when sink.type=file")
+	}
+	if (c.Sink.Type == "udp" || c.Sink.Type == "unixgram") && c.Sink.Address == "" {
+		return fmt.Errorf("sink.address is required when sink.type=%s", c.Sink.Type)
 	}
 	return nil
 }

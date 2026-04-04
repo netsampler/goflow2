@@ -61,9 +61,10 @@ func (s *Source) Start(ctx context.Context, emit func(*event.Event) error) error
 		evt := &event.Event{
 			ReceivedAt: time.Now().UTC(),
 			Source: event.SourceMetadata{
-				Network: s.cfg.Network,
-				Address: s.cfg.Address,
-				Frame:   s.cfg.Frame,
+				Network:     s.cfg.Network,
+				Address:     s.cfg.Address,
+				Frame:       s.cfg.Frame,
+				MessageType: s.cfg.MessageType,
 			},
 			Message: raw,
 		}
