@@ -1,6 +1,7 @@
 package encode
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net/netip"
@@ -30,16 +31,19 @@ func New(cfg config.EncoderConfig) (Encoder, error) {
 	}
 }
 
-type JSONEncoder struct{}
-
-// NewJSONEncoder creates the stateless JSON event encoder.
-func NewJSONEncoder(_ config.EncoderConfig) *JSONEncoder {
-	return &JSONEncoder{}
+type JSONEncoder struct {
+	flavor string
 }
 
-// Encode serializes one event as a JSON line payload.
-func (JSONEncoder) Encode(evt *event.Event) ([][]byte, error) {
-	data, err := json.Marshal(evt)
+// NewJSONEncoder creates the stateless JSON event encoder.
+func NewJSONEncoder(cfg config.EncoderConfig) *JSONEncoder {
+	return &JSONEncoder{flavor: cfg.JSON.Flavor}
+}
+
+// Encode serializes one event as a JSON payload in the configured output flavor.
+func (e JSONEncoder) Encode(evt *event.Event) ([][]byte, error) {
+	payload := e.formatEvent(evt)
+	data, err := json.Marshal(payload)
 	if err != nil {
 		return nil, fmt.Errorf("marshal event: %w", err)
 	}
@@ -49,6 +53,76 @@ func (JSONEncoder) Encode(evt *event.Event) ([][]byte, error) {
 // Flush is a no-op for JSON because it does not keep internal batching state.
 func (JSONEncoder) Flush() ([][]byte, error) {
 	return nil, nil
+}
+
+func (e JSONEncoder) formatEvent(evt *event.Event) any {
+	switch e.flavor {
+	case "", "canonical":
+		return evt
+	case "vpc_flow_logs", "aws_vpc_flow_logs":
+		return map[string]any{
+			"srcaddr":    stringFieldOrZero(evt.Fields, "src_addr"),
+			"dstaddr":    stringFieldOrZero(evt.Fields, "dst_addr"),
+			"srcport":    uint32Field(evt.Fields, "src_port"),
+			"dstport":    uint32Field(evt.Fields, "dst_port"),
+			"protocol":   uint32Field(evt.Fields, "proto"),
+			"packets":    int64Field(evt.Fields, "packets"),
+			"bytes":      int64Field(evt.Fields, "bytes"),
+			"start":      int64Field(evt.Fields, "start_time_unix") / 1000,
+			"end":        int64Field(evt.Fields, "end_time_unix") / 1000,
+			"action":     stringFieldOrZero(evt.Fields, "action"),
+			"log_status": stringFieldOrZero(evt.Fields, "log_status"),
+		}
+	case "azure_flow_logs", "azure_nsg_flow_logs":
+		return map[string]any{
+			"time":             int64Field(evt.Fields, "start_time_unix") / 1000,
+			"src_ip":           stringFieldOrZero(evt.Fields, "src_addr"),
+			"dest_ip":          stringFieldOrZero(evt.Fields, "dst_addr"),
+			"src_port":         uint32Field(evt.Fields, "src_port"),
+			"dest_port":        uint32Field(evt.Fields, "dst_port"),
+			"protocol":         protoString(uint32Field(evt.Fields, "proto")),
+			"flow_direction":   stringFieldOrZero(evt.Fields, "flow_direction"),
+			"traffic_decision": stringFieldOrZero(evt.Fields, "traffic_decision"),
+			"packets":          int64Field(evt.Fields, "packets"),
+			"bytes":            int64Field(evt.Fields, "bytes"),
+		}
+	case "google_flow_logs", "gcp_vpc_flow_logs":
+		return map[string]any{
+			"connection": map[string]any{
+				"src_ip":    stringFieldOrZero(evt.Fields, "src_addr"),
+				"dest_ip":   stringFieldOrZero(evt.Fields, "dst_addr"),
+				"src_port":  uint32Field(evt.Fields, "src_port"),
+				"dest_port": uint32Field(evt.Fields, "dst_port"),
+				"protocol":  uint32Field(evt.Fields, "proto"),
+			},
+			"bytes_sent":  int64Field(evt.Fields, "bytes"),
+			"packets":     int64Field(evt.Fields, "packets"),
+			"start_time":  millisToRFC3339(int64Field(evt.Fields, "start_time_unix")),
+			"end_time":    millisToRFC3339(int64Field(evt.Fields, "end_time_unix")),
+			"reporter":    stringFieldOrZero(evt.Fields, "reporter"),
+			"disposition": stringFieldOrZero(evt.Fields, "disposition"),
+		}
+	case "goflow2v2":
+		out := map[string]any{
+			"sampler_address":    encodeIPBytes(stringFieldOrZero(evt.Fields, "agent_ip")),
+			"src_addr":           encodeIPBytes(stringFieldOrZero(evt.Fields, "src_addr")),
+			"dst_addr":           encodeIPBytes(stringFieldOrZero(evt.Fields, "dst_addr")),
+			"src_port":           uint32Field(evt.Fields, "src_port"),
+			"dst_port":           uint32Field(evt.Fields, "dst_port"),
+			"proto":              uint32Field(evt.Fields, "proto"),
+			"bytes":              int64Field(evt.Fields, "bytes"),
+			"packets":            int64Field(evt.Fields, "packets"),
+			"time_flow_start_ns": int64Field(evt.Fields, "start_time_unix") * int64(time.Millisecond),
+			"time_flow_end_ns":   int64Field(evt.Fields, "end_time_unix") * int64(time.Millisecond),
+			"sampling_rate":      uint32Field(evt.Fields, "sampling_rate"),
+			"in_if":              uint32Field(evt.Fields, "input_if"),
+			"out_if":             uint32Field(evt.Fields, "output_if"),
+			"type":               flowTypeField(evt.Fields),
+		}
+		return out
+	default:
+		return evt
+	}
 }
 
 type SFlowEncoder struct {
@@ -274,7 +348,22 @@ func stringField(fields map[string]any, key string) (string, error) {
 	return s, nil
 }
 
+func stringFieldOrZero(fields map[string]any, key string) string {
+	if fields == nil {
+		return ""
+	}
+	val, ok := fields[key]
+	if !ok {
+		return ""
+	}
+	s, _ := val.(string)
+	return s
+}
+
 func uint32Field(fields map[string]any, key string) uint32 {
+	if fields == nil {
+		return 0
+	}
 	val, ok := fields[key]
 	if !ok {
 		return 0
@@ -295,7 +384,34 @@ func uint32Field(fields map[string]any, key string) uint32 {
 	}
 }
 
+func int64Field(fields map[string]any, key string) int64 {
+	if fields == nil {
+		return 0
+	}
+	val, ok := fields[key]
+	if !ok {
+		return 0
+	}
+	switch v := val.(type) {
+	case int64:
+		return v
+	case uint64:
+		return int64(v)
+	case int:
+		return int64(v)
+	case uint32:
+		return int64(v)
+	case float64:
+		return int64(v)
+	default:
+		return 0
+	}
+}
+
 func bytesField(fields map[string]any, key string) []byte {
+	if fields == nil {
+		return nil
+	}
 	val, ok := fields[key]
 	if !ok {
 		return nil
@@ -307,5 +423,52 @@ func bytesField(fields map[string]any, key string) []byte {
 		return []byte(v)
 	default:
 		return nil
+	}
+}
+
+func protoString(proto uint32) string {
+	switch proto {
+	case 6:
+		return "T"
+	case 17:
+		return "U"
+	default:
+		return fmt.Sprint(proto)
+	}
+}
+
+func millisToRFC3339(ms int64) string {
+	if ms <= 0 {
+		return ""
+	}
+	return time.UnixMilli(ms).UTC().Format(time.RFC3339)
+}
+
+func encodeIPBytes(ip string) string {
+	if ip == "" {
+		return ""
+	}
+	addr, err := netip.ParseAddr(ip)
+	if err != nil {
+		return ""
+	}
+	return base64.StdEncoding.EncodeToString(addr.AsSlice())
+}
+
+func flowTypeField(fields map[string]any) any {
+	val := stringFieldOrZero(fields, "flow_type")
+	switch val {
+	case "sflow":
+		return 1
+	case "netflowv5":
+		return 2
+	case "netflowv9":
+		return 3
+	case "ipfix":
+		return 4
+	case "":
+		return 0
+	default:
+		return val
 	}
 }

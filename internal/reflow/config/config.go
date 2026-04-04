@@ -25,10 +25,10 @@ type Config struct {
 }
 
 type SourceConfig struct {
-	Network     string `yaml:"network"`
-	Address     string `yaml:"address"`
-	Frame       string `yaml:"frame"`
-	MessageType string `yaml:"message_type"`
+	Network string     `yaml:"network"`
+	Address string     `yaml:"address"`
+	Type    string     `yaml:"type"`
+	JSON    JSONConfig `yaml:"json"`
 }
 
 type ProcessorConfig struct {
@@ -52,6 +52,11 @@ type EncoderConfig struct {
 	Workers          int         `yaml:"workers"`
 	MaxDatagramBytes int         `yaml:"max_datagram_bytes"`
 	Batch            BatchConfig `yaml:"batch"`
+	JSON             JSONConfig  `yaml:"json"`
+}
+
+type JSONConfig struct {
+	Flavor string `yaml:"flavor"`
 }
 
 type BatchConfig struct {
@@ -97,12 +102,6 @@ func (c *Config) setDefaults() error {
 	}
 	if c.Source.Address == "" {
 		c.Source.Address = ":18080"
-	}
-	if c.Source.Frame == "" {
-		c.Source.Frame = "datagram"
-	}
-	if c.Source.Frame != "datagram" {
-		return fmt.Errorf("unsupported source.frame %q", c.Source.Frame)
 	}
 	if c.Processor.Type == "" {
 		c.Processor.Type = "builtin"

@@ -14,9 +14,13 @@ type Event struct {
 }
 
 type SourceMetadata struct {
-	Network     string `json:"network"`
-	Address     string `json:"address"`
-	Remote      string `json:"remote,omitempty"`
-	Frame       string `json:"frame"`
-	MessageType string `json:"message_type,omitempty"`
+	Network string       `json:"network"`
+	Address string       `json:"address"`
+	Remote  string       `json:"remote,omitempty"`
+	Type    string       `json:"type,omitempty"`
+	JSON    JSONMetadata `json:"json,omitempty"`
+}
+
+type JSONMetadata struct {
+	Flavor string `json:"flavor,omitempty"`
 }

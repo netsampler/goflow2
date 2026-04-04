@@ -199,7 +199,7 @@ func buildAggregatedEvent(key string, record FlowRecord) *event.Event {
 	return &event.Event{
 		ReceivedAt: time.Now(),
 		Source: event.SourceMetadata{
-			MessageType: "aggregated_flow",
+			Type: "aggregated_flow",
 		},
 		Fields: map[string]any{
 			"aggregation_key": key,

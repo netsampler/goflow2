@@ -1,8 +1,9 @@
 source:
   network: udp
   address: ":18081"
-  frame: datagram
-  message_type: json_raw_packet_header
+  type: json
+  json:
+    flavor: reflow
 
 processor:
   type: builtin
