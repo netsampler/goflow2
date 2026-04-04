@@ -43,6 +43,8 @@ func NewBuiltin(cfg config.ProcessorConfig) *Builtin {
 // Process dispatches to the built-in mapper for the incoming source message type.
 func (p *Builtin) Process(evt *event.Event) ([]*event.Event, error) {
 	switch evt.Source.Type {
+	case "bytes":
+		return nil, fmt.Errorf("builtin processor does not support source.type=bytes; use a custom WASM processor")
 	case "json":
 		return p.processJSONFlavor(evt)
 	default:

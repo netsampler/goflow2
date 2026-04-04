@@ -9,6 +9,7 @@ import (
 
 	"github.com/netsampler/goflow2/v3/internal/reflow/aggregate"
 	"github.com/netsampler/goflow2/v3/internal/reflow/config"
+	"github.com/netsampler/goflow2/v3/internal/reflow/decode"
 	"github.com/netsampler/goflow2/v3/internal/reflow/encode"
 	"github.com/netsampler/goflow2/v3/internal/reflow/event"
 	"github.com/netsampler/goflow2/v3/internal/reflow/processor"
@@ -20,6 +21,7 @@ import (
 type App struct {
 	logger           *slog.Logger
 	source           *socket.Source
+	decoder          decode.Decoder
 	processor        processor.Processor
 	processorWorkers int
 	aggregatorCfg    config.AggregatorConfig
@@ -52,6 +54,7 @@ func New(cfg *config.Config) (*App, error) {
 	return &App{
 		logger:           logger,
 		source:           src,
+		decoder:          decode.New(),
 		processor:        proc,
 		processorWorkers: cfg.Processor.Workers,
 		aggregatorCfg:    cfg.Aggregator,
@@ -69,10 +72,35 @@ func (a *App) Run(ctx context.Context) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
+	decodeJobs := make(chan *event.Event, a.processorWorkers*2)
 	processJobs := make(chan *event.Event, a.processorWorkers*2)
 	aggregateJobs := make(chan *event.Event, a.processorWorkers*2)
 	encodeJobs := make(chan *event.Event, a.encoderWorkers*2)
 	errCh := make(chan error, 1)
+
+	var decodeWG sync.WaitGroup
+	decodeWG.Add(1)
+	go func() {
+		defer decodeWG.Done()
+		for evt := range decodeJobs {
+			events, err := a.decoder.Decode(evt)
+			if err != nil {
+				select {
+				case errCh <- err:
+				default:
+				}
+				cancel()
+				return
+			}
+			for _, item := range events {
+				select {
+				case processJobs <- item:
+				case <-ctx.Done():
+					return
+				}
+			}
+		}
+	}()
 
 	var processWG sync.WaitGroup
 	for range a.processorWorkers {
@@ -245,7 +273,7 @@ func (a *App) Run(ctx context.Context) error {
 	go func() {
 		sourceDone <- a.source.Start(ctx, func(evt *event.Event) error {
 			select {
-			case processJobs <- evt:
+			case decodeJobs <- evt:
 				return nil
 			case <-ctx.Done():
 				return ctx.Err()
@@ -255,6 +283,8 @@ func (a *App) Run(ctx context.Context) error {
 
 	select {
 	case err := <-errCh:
+		close(decodeJobs)
+		decodeWG.Wait()
 		close(processJobs)
 		processWG.Wait()
 		close(aggregateJobs)
@@ -263,6 +293,8 @@ func (a *App) Run(ctx context.Context) error {
 		encodeWG.Wait()
 		return fmt.Errorf("run worker: %w", err)
 	case err := <-sourceDone:
+		close(decodeJobs)
+		decodeWG.Wait()
 		close(processJobs)
 		processWG.Wait()
 		close(aggregateJobs)
