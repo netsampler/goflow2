@@ -130,17 +130,28 @@ func (p *Builtin) processJSONFlavor(evt *event.Event) ([]*event.Event, error) {
 	switch evt.Source.JSON.Flavor {
 	case "reflow", "raw_packet_header":
 		return p.processReFlowJSON(evt, payload)
-	case "vpc_flow_logs", "aws_vpc_flow_logs":
-		return p.processVPCFlowLogs(evt, payload)
-	case "azure_flow_logs", "azure_nsg_flow_logs":
-		return p.processAzureFlowLogs(evt, payload)
-	case "google_flow_logs", "gcp_vpc_flow_logs":
-		return p.processGoogleFlowLogs(evt, payload)
+	case "vendor":
+		return p.processVendor(evt, payload)
 	case "goflow2v2":
 		return p.processGoFlow2V2(evt, payload)
 	default:
 		return nil, fmt.Errorf("unsupported source.json.flavor %q", evt.Source.JSON.Flavor)
 	}
+}
+
+func (p *Builtin) processVendor(evt *event.Event, payload any) ([]*event.Event, error) {
+	_, ok := payload.(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("vendor expects a JSON object")
+	}
+
+	fields := ensureFields(evt, 2)
+	fields["message_type"] = "vendor"
+	fields["json_flavor"] = evt.Source.JSON.Flavor
+	if p.cfg.DropMessage {
+		evt.Message = nil
+	}
+	return []*event.Event{evt}, nil
 }
 
 func (p *Builtin) processReFlowJSON(evt *event.Event, payload any) ([]*event.Event, error) {
@@ -155,123 +166,6 @@ func (p *Builtin) processReFlowJSON(evt *event.Event, payload any) ([]*event.Eve
 	}
 	evt.Message = data
 	return p.processJSONRawPacketHeader(evt)
-}
-
-func (p *Builtin) processVPCFlowLogs(evt *event.Event, payload any) ([]*event.Event, error) {
-	record, ok := payload.(map[string]any)
-	if !ok {
-		return nil, fmt.Errorf("vpc_flow_logs expects a JSON object")
-	}
-
-	fields := ensureFields(evt, 24)
-	setStringAlias(fields, record, "src_addr", "srcaddr", "src_addr")
-	setStringAlias(fields, record, "dst_addr", "dstaddr", "dst_addr")
-	setUint32Alias(fields, record, "src_port", "srcport", "src_port")
-	setUint32Alias(fields, record, "dst_port", "dstport", "dst_port")
-	setUint32Alias(fields, record, "proto", "protocol", "proto")
-	setInt64Alias(fields, record, "packets", "packets")
-	setInt64Alias(fields, record, "bytes", "bytes")
-	setStringAlias(fields, record, "action", "action")
-	setStringAlias(fields, record, "log_status", "log_status", "logstatus")
-	copyAlias(fields, record, "account_id", "account_id", "account-id")
-	copyAlias(fields, record, "interface_id", "interface_id", "interface-id")
-	copyAlias(fields, record, "instance_id", "instance_id", "instance-id")
-	copyAlias(fields, record, "vpc_id", "vpc_id", "vpc-id")
-	copyAlias(fields, record, "subnet_id", "subnet_id", "subnet-id")
-	copyAlias(fields, record, "region", "region")
-	setTimeAlias(fields, record, "start_time_unix", "start", "start_time")
-	setTimeAlias(fields, record, "end_time_unix", "end", "end_time")
-	fields["json_flavor"] = evt.Source.JSON.Flavor
-
-	if p.cfg.DropMessage {
-		evt.Message = nil
-	}
-	return []*event.Event{evt}, nil
-}
-
-func (p *Builtin) processAzureFlowLogs(evt *event.Event, payload any) ([]*event.Event, error) {
-	root, ok := payload.(map[string]any)
-	if !ok {
-		return nil, fmt.Errorf("azure_flow_logs expects a JSON object")
-	}
-
-	events := make([]*event.Event, 0, 8)
-	if tuples := collectAzureTuples(root); len(tuples) > 0 {
-		for _, tuple := range tuples {
-			item := cloneEvent(evt)
-			fields := ensureFields(item, 20)
-			fields["src_addr"] = tuple.SrcAddr
-			fields["dst_addr"] = tuple.DstAddr
-			fields["src_port"] = tuple.SrcPort
-			fields["dst_port"] = tuple.DstPort
-			fields["proto"] = tuple.Proto
-			fields["packets"] = tuple.Packets
-			fields["bytes"] = tuple.Bytes
-			fields["flow_direction"] = tuple.Direction
-			fields["traffic_decision"] = tuple.Decision
-			fields["flow_state"] = tuple.State
-			fields["start_time_unix"] = tuple.StartUnix
-			fields["json_flavor"] = evt.Source.JSON.Flavor
-			if p.cfg.DropMessage {
-				item.Message = nil
-			}
-			events = append(events, item)
-		}
-		return events, nil
-	}
-
-	fields := ensureFields(evt, 20)
-	setStringAlias(fields, root, "src_addr", "src_ip", "srcaddr", "srcAddr")
-	setStringAlias(fields, root, "dst_addr", "dest_ip", "dst_ip", "dstaddr", "dstAddr")
-	setUint32Alias(fields, root, "src_port", "src_port", "source_port", "srcPort")
-	setUint32Alias(fields, root, "dst_port", "dest_port", "dst_port", "destination_port", "dstPort")
-	setUint32Alias(fields, root, "proto", "protocol", "proto")
-	setInt64Alias(fields, root, "packets", "packets")
-	setInt64Alias(fields, root, "bytes", "bytes")
-	setStringAlias(fields, root, "flow_direction", "flow_direction", "traffic_flow")
-	setStringAlias(fields, root, "traffic_decision", "traffic_decision", "decision")
-	fields["json_flavor"] = evt.Source.JSON.Flavor
-
-	if p.cfg.DropMessage {
-		evt.Message = nil
-	}
-	return []*event.Event{evt}, nil
-}
-
-func (p *Builtin) processGoogleFlowLogs(evt *event.Event, payload any) ([]*event.Event, error) {
-	record, ok := payload.(map[string]any)
-	if !ok {
-		return nil, fmt.Errorf("google_flow_logs expects a JSON object")
-	}
-
-	fields := ensureFields(evt, 24)
-	connection := objectAt(record, "connection")
-	setStringAlias(fields, connection, "src_addr", "src_ip", "srcIp")
-	setStringAlias(fields, connection, "dst_addr", "dest_ip", "destIp")
-	setUint32Alias(fields, connection, "src_port", "src_port", "srcPort")
-	setUint32Alias(fields, connection, "dst_port", "dest_port", "destPort")
-	setUint32Alias(fields, connection, "proto", "protocol")
-
-	if len(fields) == 0 || fields["src_addr"] == nil {
-		setStringAlias(fields, record, "src_addr", "src_ip", "srcIp")
-		setStringAlias(fields, record, "dst_addr", "dest_ip", "dst_ip", "destIp")
-		setUint32Alias(fields, record, "src_port", "src_port", "srcPort")
-		setUint32Alias(fields, record, "dst_port", "dest_port", "dst_port", "destPort")
-		setUint32Alias(fields, record, "proto", "protocol")
-	}
-
-	setInt64Alias(fields, record, "bytes", "bytes_sent", "bytes")
-	setInt64Alias(fields, record, "packets", "packets_sent", "packets")
-	setStringAlias(fields, record, "reporter", "reporter")
-	setStringAlias(fields, record, "disposition", "disposition")
-	setTimeAlias(fields, record, "start_time_unix", "start_time")
-	setTimeAlias(fields, record, "end_time_unix", "end_time")
-	fields["json_flavor"] = evt.Source.JSON.Flavor
-
-	if p.cfg.DropMessage {
-		evt.Message = nil
-	}
-	return []*event.Event{evt}, nil
 }
 
 func (p *Builtin) processGoFlow2V2(evt *event.Event, payload any) ([]*event.Event, error) {
@@ -330,20 +224,6 @@ type packetTuple struct {
 	Proto   uint32
 	SrcPort uint32
 	DstPort uint32
-}
-
-type azureTuple struct {
-	StartUnix int64
-	SrcAddr   string
-	DstAddr   string
-	SrcPort   uint32
-	DstPort   uint32
-	Proto     uint32
-	Direction string
-	Decision  string
-	State     string
-	Packets   int64
-	Bytes     int64
 }
 
 // parsePacketTuple extracts a minimal L3/L4 tuple from a sampled raw packet header.
@@ -430,111 +310,6 @@ func ensureFields(evt *event.Event, capacity int) map[string]any {
 	return evt.Fields
 }
 
-func cloneEvent(evt *event.Event) *event.Event {
-	item := &event.Event{
-		ReceivedAt: evt.ReceivedAt,
-		Source:     evt.Source,
-		Message:    evt.Message,
-	}
-	if evt.Fields != nil {
-		item.Fields = make(map[string]any, len(evt.Fields))
-		for k, v := range evt.Fields {
-			item.Fields[k] = v
-		}
-	}
-	return item
-}
-
-func collectAzureTuples(root map[string]any) []azureTuple {
-	var out []azureTuple
-	walkAny(root, func(key string, value any) {
-		if key != "flowTuples" {
-			return
-		}
-		items, ok := value.([]any)
-		if !ok {
-			return
-		}
-		for _, item := range items {
-			s, ok := item.(string)
-			if !ok {
-				continue
-			}
-			if tuple, ok := parseAzureTuple(s); ok {
-				out = append(out, tuple)
-			}
-		}
-	})
-	return out
-}
-
-func walkAny(val any, visit func(key string, value any)) {
-	switch v := val.(type) {
-	case map[string]any:
-		for key, item := range v {
-			visit(key, item)
-			walkAny(item, visit)
-		}
-	case []any:
-		for _, item := range v {
-			walkAny(item, visit)
-		}
-	}
-}
-
-func parseAzureTuple(s string) (azureTuple, bool) {
-	parts := strings.Split(s, ",")
-	if len(parts) < 8 {
-		return azureTuple{}, false
-	}
-	out := azureTuple{
-		StartUnix: int64FromString(parts[0]),
-		SrcAddr:   parts[1],
-		DstAddr:   parts[2],
-		SrcPort:   uint32(int64FromString(parts[3])),
-		DstPort:   uint32(int64FromString(parts[4])),
-		Proto:     azureProtocol(parts[5]),
-		Direction: parts[6],
-		Decision:  parts[7],
-	}
-	if len(parts) > 8 {
-		out.State = parts[8]
-	}
-	if len(parts) > 9 {
-		out.Packets += int64FromString(parts[9])
-	}
-	if len(parts) > 10 {
-		out.Bytes += int64FromString(parts[10])
-	}
-	if len(parts) > 11 {
-		out.Packets += int64FromString(parts[11])
-	}
-	if len(parts) > 12 {
-		out.Bytes += int64FromString(parts[12])
-	}
-	return out, true
-}
-
-func azureProtocol(s string) uint32 {
-	switch strings.ToUpper(s) {
-	case "T", "TCP":
-		return 6
-	case "U", "UDP":
-		return 17
-	default:
-		return uint32(int64FromString(s))
-	}
-}
-
-func objectAt(m map[string]any, key string) map[string]any {
-	val, ok := m[key]
-	if !ok {
-		return nil
-	}
-	obj, _ := val.(map[string]any)
-	return obj
-}
-
 func stringAlias(m map[string]any, keys ...string) string {
 	for _, key := range keys {
 		if val, ok := m[key]; ok {
@@ -549,24 +324,6 @@ func stringAlias(m map[string]any, keys ...string) string {
 		}
 	}
 	return ""
-}
-
-func copyAlias(dst map[string]any, src map[string]any, dstKey string, srcKeys ...string) {
-	for _, key := range srcKeys {
-		if val, ok := src[key]; ok {
-			dst[dstKey] = val
-			return
-		}
-	}
-}
-
-func setStringAlias(dst map[string]any, src map[string]any, dstKey string, srcKeys ...string) {
-	if src == nil {
-		return
-	}
-	if val := stringAlias(src, srcKeys...); val != "" {
-		dst[dstKey] = val
-	}
 }
 
 func setUint32Alias(dst map[string]any, src map[string]any, dstKey string, srcKeys ...string) {
@@ -589,20 +346,6 @@ func setInt64Alias(dst map[string]any, src map[string]any, dstKey string, srcKey
 		if val, ok := src[key]; ok {
 			dst[dstKey] = int64FromAny(val)
 			return
-		}
-	}
-}
-
-func setTimeAlias(dst map[string]any, src map[string]any, dstKey string, srcKeys ...string) {
-	if src == nil {
-		return
-	}
-	for _, key := range srcKeys {
-		if val, ok := src[key]; ok {
-			if ts, ok := unixFromAny(val); ok {
-				dst[dstKey] = ts
-				return
-			}
 		}
 	}
 }
@@ -664,26 +407,6 @@ func int64FromAny(val any) int64 {
 func int64FromString(s string) int64 {
 	n, _ := strconv.ParseInt(strings.TrimSpace(s), 10, 64)
 	return n
-}
-
-func unixFromAny(val any) (int64, bool) {
-	switch v := val.(type) {
-	case float64:
-		return int64(v) * 1000, true
-	case int64:
-		return v * 1000, true
-	case int:
-		return int64(v) * 1000, true
-	case string:
-		if t, err := time.Parse(time.RFC3339, v); err == nil {
-			return t.UnixMilli(), true
-		}
-		n := int64FromString(v)
-		if n != 0 {
-			return n * 1000, true
-		}
-	}
-	return 0, false
 }
 
 func decodeMaybeBase64IP(val string) string {

@@ -59,48 +59,23 @@ func (e JSONEncoder) formatEvent(evt *event.Event) any {
 	switch e.flavor {
 	case "", "canonical":
 		return evt
-	case "vpc_flow_logs", "aws_vpc_flow_logs":
+	case "vendor":
 		return map[string]any{
-			"srcaddr":    stringFieldOrZero(evt.Fields, "src_addr"),
-			"dstaddr":    stringFieldOrZero(evt.Fields, "dst_addr"),
-			"srcport":    uint32Field(evt.Fields, "src_port"),
-			"dstport":    uint32Field(evt.Fields, "dst_port"),
-			"protocol":   uint32Field(evt.Fields, "proto"),
-			"packets":    int64Field(evt.Fields, "packets"),
-			"bytes":      int64Field(evt.Fields, "bytes"),
-			"start":      int64Field(evt.Fields, "start_time_unix") / 1000,
-			"end":        int64Field(evt.Fields, "end_time_unix") / 1000,
-			"action":     stringFieldOrZero(evt.Fields, "action"),
-			"log_status": stringFieldOrZero(evt.Fields, "log_status"),
-		}
-	case "azure_flow_logs", "azure_nsg_flow_logs":
-		return map[string]any{
-			"time":             int64Field(evt.Fields, "start_time_unix") / 1000,
-			"src_ip":           stringFieldOrZero(evt.Fields, "src_addr"),
-			"dest_ip":          stringFieldOrZero(evt.Fields, "dst_addr"),
+			"src_addr":         stringFieldOrZero(evt.Fields, "src_addr"),
+			"dst_addr":         stringFieldOrZero(evt.Fields, "dst_addr"),
 			"src_port":         uint32Field(evt.Fields, "src_port"),
-			"dest_port":        uint32Field(evt.Fields, "dst_port"),
-			"protocol":         protoString(uint32Field(evt.Fields, "proto")),
-			"flow_direction":   stringFieldOrZero(evt.Fields, "flow_direction"),
-			"traffic_decision": stringFieldOrZero(evt.Fields, "traffic_decision"),
+			"dst_port":         uint32Field(evt.Fields, "dst_port"),
+			"proto":            uint32Field(evt.Fields, "proto"),
 			"packets":          int64Field(evt.Fields, "packets"),
 			"bytes":            int64Field(evt.Fields, "bytes"),
-		}
-	case "google_flow_logs", "gcp_vpc_flow_logs":
-		return map[string]any{
-			"connection": map[string]any{
-				"src_ip":    stringFieldOrZero(evt.Fields, "src_addr"),
-				"dest_ip":   stringFieldOrZero(evt.Fields, "dst_addr"),
-				"src_port":  uint32Field(evt.Fields, "src_port"),
-				"dest_port": uint32Field(evt.Fields, "dst_port"),
-				"protocol":  uint32Field(evt.Fields, "proto"),
-			},
-			"bytes_sent":  int64Field(evt.Fields, "bytes"),
-			"packets":     int64Field(evt.Fields, "packets"),
-			"start_time":  millisToRFC3339(int64Field(evt.Fields, "start_time_unix")),
-			"end_time":    millisToRFC3339(int64Field(evt.Fields, "end_time_unix")),
-			"reporter":    stringFieldOrZero(evt.Fields, "reporter"),
-			"disposition": stringFieldOrZero(evt.Fields, "disposition"),
+			"start_time_unix":  int64Field(evt.Fields, "start_time_unix"),
+			"end_time_unix":    int64Field(evt.Fields, "end_time_unix"),
+			"flow_direction":   stringFieldOrZero(evt.Fields, "flow_direction"),
+			"traffic_decision": stringFieldOrZero(evt.Fields, "traffic_decision"),
+			"action":           stringFieldOrZero(evt.Fields, "action"),
+			"log_status":       stringFieldOrZero(evt.Fields, "log_status"),
+			"reporter":         stringFieldOrZero(evt.Fields, "reporter"),
+			"disposition":      stringFieldOrZero(evt.Fields, "disposition"),
 		}
 	case "goflow2v2":
 		out := map[string]any{
@@ -424,24 +399,6 @@ func bytesField(fields map[string]any, key string) []byte {
 	default:
 		return nil
 	}
-}
-
-func protoString(proto uint32) string {
-	switch proto {
-	case 6:
-		return "T"
-	case 17:
-		return "U"
-	default:
-		return fmt.Sprint(proto)
-	}
-}
-
-func millisToRFC3339(ms int64) string {
-	if ms <= 0 {
-		return ""
-	}
-	return time.UnixMilli(ms).UTC().Format(time.RFC3339)
 }
 
 func encodeIPBytes(ip string) string {
