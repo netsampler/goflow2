@@ -46,13 +46,12 @@ That model works well for:
 
 ReFlow should evolve the pipeline into:
 
-`source -> identification -> decode -> process -> aggregate? -> batch? -> encode -> sink`
+`source -> decode -> process -> aggregate? -> batch? -> encode -> sink`
 
 Where:
 
 * **source** reads datagrams or packets from UDP, Unix datagram sockets, live capture, or NFLOG
-* **identification** determines what protocol or schema the payload likely is
-* **decode** parses the payload into typed internal events
+* **decode** identifies the payload type when needed and parses it into typed internal events
 * **process** runs canonicalization, mapping, enrichment, transformation, and optional WASM callbacks
 * **aggregate** optionally uses FlowStore-backed stateful accumulation
 * **encode** turns internal events into JSON, bytes, and sFlow output encodings
@@ -72,7 +71,7 @@ These are the main architectural recommendations before implementation starts.
 2. Separate **transport concerns** from **data-shape concerns**. "JSON over UDP" and "JSON to stdout" should share the same encoder, not duplicate logic.
 3. Introduce a first-class **internal event model**. Do not couple sources directly to output encoders.
 4. Treat **packet capture** and **message ingestion** as separate source classes.
-5. Make **protocol identification** explicit and pluggable. This is new compared with GoFlow2 and should not be hidden inside source code.
+5. Keep **protocol identification** explicit and decoder-owned. Source code should stay transport-focused.
 6. Preserve FlowStore as the default state layer for aggregation and protocol state, but do not force all processing through aggregation.
 7. Keep **WASM limited and capability-based**. It should transform or emit events, not own transport or lifecycle.
 8. Start with **single-process, multi-source configuration** and a single sink.
@@ -131,43 +130,30 @@ Some sources deliver **streams**:
 
 These are future concerns, not required for the current v1 path.
 
-### 2. Identifier
+### 2. Decoder
 
-An `Identifier` classifies a framed payload.
-
-Examples:
-
-* detect `sflow`
-* detect `netflow_v5`
-* detect `netflow_v9`
-* detect `json`
-* detect `raw_bytes`
-* detect `unknown`
-
-Identification should output both a **kind** and a **confidence/reason** for metrics and troubleshooting.
-Configuration should allow pinning the expected decoder when identification is unnecessary or too costly.
-
-### 3. Decoder
-
-A `Decoder` turns identified payloads into internal events.
+A `Decoder` identifies payloads when needed and turns them into internal events.
 
 Examples:
 
-* `decoder/sflow`
-* `decoder/netflow`
+* `decoder/flow` with protocol identification for `sflow`, `netflow_v5`, `netflow_v9`, and `ipfix`
 * `decoder/json`
 * `decoder/bytes`
 * `decoder/pcap_l2`
 
 Decoders may emit:
 
+* identified but still-raw flow records
 * flow records
 * counter records
 * packet records
 * raw passthrough records
 * errors / unsupported payload notices
 
-### 4. Processor
+For `source.type: flow`, protocol identification belongs in the decoder stage rather than in the source.
+That keeps the source transport-oriented and lets the decoder own both dispatch and protocol parsing.
+
+### 3. Processor
 
 The GoFlow2 `producer` concept becomes a broader `processor` stage.
 
@@ -184,7 +170,7 @@ Possible responsibilities:
 
 Use `processor` in the new codebase.
 
-### 5. Aggregator
+### 4. Aggregator
 
 Aggregation should be optional and explicit.
 
@@ -204,7 +190,7 @@ ReFlow should support at least these aggregation/emission modes:
   Multiple input events update a FlowStore bucket. When the bucket expires after inactivity, the final aggregated value is emitted downstream.
 * **periodic snapshot emission**
   A scheduler queries long-lived or non-expiring FlowStore state and emits snapshots on a fixed cadence.
-### 6. Encoder
+### 5. Encoder
 
 An `Encoder` serializes internal events for output.
 
@@ -220,7 +206,7 @@ ReFlow must support decoding and protocol re-encoding.
 Keep encoders independent from sinks.
 Define encoder outputs as either `[]byte` or a small framed-message struct carrying payload plus metadata.
 
-### 7. Sink
+### 6. Sink
 
 A `Sink` emits encoded output to a destination.
 
@@ -238,9 +224,11 @@ Model sinks as message destinations. Format belongs in the encoder stage.
 
 ```mermaid
 flowchart LR
-    S[Source] --> I[Identifier]
-    I --> D[Decoder]
-    D --> P[Processor Chain]
+    S[Source]
+    D[Decode Stage]
+    P[Processor Chain]
+    S --> D
+    D --> P
     P --> A{Aggregation Enabled?}
     A -- no --> B{Batching Enabled?}
     A -- yes --> G[Aggregation Layer]
@@ -250,6 +238,32 @@ flowchart LR
     H --> E
     E --> K[Sink]
 ```
+
+## Current Runtime Wiring
+
+The current ReFlow implementation uses a dedicated decode stage in the runtime.
+
+```mermaid
+flowchart LR
+    SRC[Socket Source]
+    DECODE[Decode Worker]
+    PROC[Processor Workers]
+    AGG[Aggregator]
+    ENC[Encoder Workers]
+    SINK[Sink]
+
+    SRC -->|raw Event| DECODE
+    DECODE -->|decoded Events| PROC
+    PROC -->|processed Events| AGG
+    AGG -->|aggregated Events| ENC
+    ENC -->|encoded Bytes| SINK
+```
+
+Current behavior:
+
+* `source.type: json` emits JSON payload events directly
+* `source.type: flow` emits raw datagram events and the decode stage identifies `sflow`, `netflow_v5`, `netflow_v9`, or `ipfix`
+* `source.type: bytes` emits opaque byte events and the built-in processor rejects them, leaving a placeholder path for a future WASM processor
 
 ## Message Cardinality
 
