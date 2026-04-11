@@ -376,8 +376,9 @@ func DecodeMessageContext(ctx context.Context, payload *bytes.Buffer, templateKe
 	}
 	read := 16
 	startSize := payload.Len()
+	headerSize := binary.Size(FlowSetHeader{})
 
-	for i := 0; ((i < int(size) && version == 9) || (uint16(read) < size && version == 10)) && payload.Len() > 0; i++ {
+	for i := 0; payload.Len() >= headerSize && (version == 9 || uint16(read) < size); i++ {
 		fsheader := FlowSetHeader{}
 		if err := utils.BinaryDecoder(payload, &fsheader.Id, &fsheader.Length); err != nil {
 			return returnItem, fmt.Errorf("Error decoding FlowSet header: %v", err)
