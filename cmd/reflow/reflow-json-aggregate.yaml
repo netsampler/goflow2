@@ -10,6 +10,7 @@ processor:
   workers: 2
   builtin:
     drop_message: true
+    drop_payload: false
 
 aggregator:
   type: flowstore_window

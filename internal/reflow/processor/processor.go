@@ -47,9 +47,31 @@ func (p *Builtin) Process(evt *event.Event) ([]*event.Event, error) {
 		return nil, fmt.Errorf("builtin processor does not support source.type=bytes; use a custom WASM processor")
 	case "json":
 		return p.processJSONFlavor(evt)
+	case "flow":
+		return p.processFlow(evt)
 	default:
 		return []*event.Event{evt}, nil
 	}
+}
+
+// processFlow treats the built-in processor as the post-decode normalization boundary.
+// The decode stage already expands exporter packets into canonical flow events, so the
+// processor mainly validates the shape and optionally drops the raw datagram payload.
+func (p *Builtin) processFlow(evt *event.Event) ([]*event.Event, error) {
+	fields := ensureFields(evt, 2)
+	if _, ok := fields["message_type"]; !ok {
+		fields["message_type"] = "flow"
+	}
+	if _, ok := fields["flow_type"]; !ok {
+		return nil, fmt.Errorf("decoded flow event is missing flow_type")
+	}
+	if p.cfg.DropMessage {
+		evt.Message = nil
+	}
+	if p.cfg.DropPayload {
+		evt.Payload = nil
+	}
+	return []*event.Event{evt}, nil
 }
 
 type rawPacketHeaderInput struct {

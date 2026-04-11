@@ -1,0 +1,20 @@
+source:
+  network: udp
+  address: ":6343"
+  type: flow
+
+processor:
+  type: builtin
+  workers: 2
+  builtin:
+    drop_message: true
+    drop_payload: true
+
+encoder:
+  type: json
+  workers: 1
+  json:
+    flavor: canonical
+
+sink:
+  type: stdout

@@ -10,6 +10,7 @@ processor:
   workers: 4
   builtin:
     drop_message: false
+    drop_payload: true
 
 encoder:
   type: sflow

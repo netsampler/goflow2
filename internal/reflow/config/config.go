@@ -39,6 +39,7 @@ type ProcessorConfig struct {
 
 type BuiltinProcessorConfig struct {
 	DropMessage bool `yaml:"drop_message"`
+	DropPayload bool `yaml:"drop_payload"`
 }
 
 type AggregatorConfig struct {
