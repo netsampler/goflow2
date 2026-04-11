@@ -297,7 +297,8 @@ func DecodeDataSet(version uint16, payload *bytes.Buffer, listFields []Field) ([
 func DecodeMessageCommon(payload *bytes.Buffer, store TemplateStore, ctx FlowContext, obsDomainId uint32, size, version uint16) (flowSets []interface{}, err error) {
 	var read int
 	startSize := payload.Len()
-	for i := 0; ((i < int(size) && version == 9) || (uint16(read) < size && version == 10)) && payload.Len() > 0; i++ {
+	headerSize := binary.Size(FlowSetHeader{})
+	for i := 0; payload.Len() >= headerSize && (version == 9 || uint16(read) < size); i++ {
 		if flowSet, lerr := DecodeMessageCommonFlowSet(payload, store, ctx, obsDomainId, version); lerr != nil && !errors.Is(lerr, ErrorTemplateNotFound) {
 			return flowSets, fmt.Errorf("DecodeMessageCommon: %w", lerr)
 		} else {
