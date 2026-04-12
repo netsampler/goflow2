@@ -16,7 +16,7 @@ This is a design note, not an implemented feature.
 
 ReFlow already has a stage-based runtime:
 
-`source -> decode -> process -> aggregate -> encode -> sink`
+`sources -> decode -> process -> aggregators -> encode -> sink`
 
 That makes WASM a natural fit as a stage-boundary interceptor.
 

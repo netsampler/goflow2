@@ -46,7 +46,7 @@ That model works well for:
 
 ReFlow should evolve the pipeline into:
 
-`source -> decode -> process -> aggregate? -> batch? -> encode -> sink`
+`sources -> decode -> process -> aggregators? -> batch? -> encode -> sink`
 
 Where:
 
@@ -96,7 +96,7 @@ The current v1 scope assumes:
 * multiple sources
 * a single optional processor entry
 * a built-in in-code processor when no WASM processor is configured
-* a single optional aggregator entry
+* one or more optional aggregator entries
 * a single optional batch entry
 * a single encoder
 * a single sink
@@ -1161,7 +1161,7 @@ Use this section as implementation begins.
 | Config format | YAML only for full config in v1 | Decided | CLI is for bootstrap and overrides |
 | Sink model | Single sink in v1 | Decided | Simpler runtime and config |
 | Processor model | Single optional processor entry | Decided | Built-in processor unless WASM is configured |
-| Aggregator model | Single optional aggregator entry | Decided | FlowStore-backed |
+| Aggregator model | One or more optional aggregator entries | Decided | FlowStore-backed |
 | Batch model | Single optional batch entry | Decided | Separate from aggregation |
 | Packet parsing | Up to L4 in v1 | Decided | Keeps packet work bounded |
 | Output priority | JSON and sFlow | Decided | First useful outputs |

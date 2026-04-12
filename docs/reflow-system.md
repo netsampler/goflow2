@@ -250,10 +250,10 @@ That would look like:
 
 ```mermaid
 flowchart LR
-    S[Source] --> P[Processor]
+    S[Sources] --> P[Processor]
     P --> R{Record Kind}
-    R -- flow_data --> F[Flow Aggregation]
-    R -- options_data --> O[Options Aggregation]
+    R -- flow_data --> F[Flow Aggregators]
+    R -- options_data --> O[Options Aggregators]
     F --> E[Encoder]
     O --> E
     E --> K[Sink]

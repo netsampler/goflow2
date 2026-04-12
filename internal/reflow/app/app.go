@@ -221,16 +221,18 @@ func (a *App) Run(ctx context.Context) error {
 	}()
 
 	var encodeWG sync.WaitGroup
-	for range a.encoderWorkers {
+	encoders := make([]encode.Encoder, 0, a.encoderWorkers)
+	for i := range a.encoderWorkers {
+		enc, err := encode.New(a.encoderCfg)
+		if err != nil {
+			return fmt.Errorf("init encoder %d: %w", i, err)
+		}
+		encoders = append(encoders, enc)
+	}
+	for _, enc := range encoders {
 		encodeWG.Add(1)
-		go func() {
+		go func(enc encode.Encoder) {
 			defer encodeWG.Done()
-			enc, err := encode.New(a.encoderCfg)
-			if err != nil {
-				a.logger.Error("init encoder error", slog.String("error", err.Error()))
-				stopSource()
-				return
-			}
 			var ticker *time.Ticker
 			if interval := encoderTickInterval(a.encoderCfg); interval > 0 {
 				ticker = time.NewTicker(interval)
@@ -272,7 +274,7 @@ func (a *App) Run(ctx context.Context) error {
 					}
 				}
 			}
-		}()
+		}(enc)
 	}
 
 	for _, worker := range aggregateWorkers {
