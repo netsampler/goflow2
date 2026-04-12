@@ -19,6 +19,7 @@ encoder:
   type: sflow
   workers: 1
   max_datagram_bytes: 1400
+  allow_truncate: true
   sflow:
     batch_over:
       agent_ip: true

@@ -59,6 +59,7 @@ type EncoderConfig struct {
 	Type             string      `yaml:"type"`
 	Workers          int         `yaml:"workers"`
 	MaxDatagramBytes int         `yaml:"max_datagram_bytes"`
+	AllowTruncate    bool        `yaml:"allow_truncate"`
 	Batch            BatchConfig `yaml:"batch"`
 	JSON             JSONConfig  `yaml:"json"`
 	SFlow            SFlowConfig `yaml:"sflow"`
@@ -76,9 +77,8 @@ type BatchConfig struct {
 }
 
 type SFlowConfig struct {
-	AgentIP       string               `yaml:"agent_ip"`
-	AllowTruncate bool                 `yaml:"allow_truncate"`
-	BatchOver     SFlowBatchOverConfig `yaml:"batch_over"`
+	AgentIP   string               `yaml:"agent_ip"`
+	BatchOver SFlowBatchOverConfig `yaml:"batch_over"`
 }
 
 type SFlowBatchOverConfig struct {

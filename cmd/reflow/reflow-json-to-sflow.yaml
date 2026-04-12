@@ -3,7 +3,7 @@ source:
   address: ":18081"
   type: json
   json:
-    flavor: reflow
+    flavor: goflow2v2
 
 processor:
   type: builtin
@@ -19,6 +19,7 @@ encoder:
   # packing and more multi-sample sFlow datagrams.
   workers: 1
   max_datagram_bytes: 1400
+  allow_truncate: true
   batch:
     enabled: true
     max_records: 8

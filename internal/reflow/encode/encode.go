@@ -23,6 +23,19 @@ type Encoder interface {
 
 var ErrSFlowSampleTooLarge = errors.New("sflow sample exceeds max_datagram_bytes")
 
+type sflowSampleTooLargeError struct {
+	MaxDatagramBytes int
+	CurrentSize      int
+}
+
+func (e *sflowSampleTooLargeError) Error() string {
+	return fmt.Sprintf("%s: current_size=%d max_datagram_bytes=%d", ErrSFlowSampleTooLarge, e.CurrentSize, e.MaxDatagramBytes)
+}
+
+func (e *sflowSampleTooLargeError) Unwrap() error {
+	return ErrSFlowSampleTooLarge
+}
+
 // New builds the configured encoder. Each encoder worker gets its own instance.
 func New(cfg config.EncoderConfig) (Encoder, error) {
 	switch cfg.Type {
@@ -108,6 +121,7 @@ type SFlowEncoder struct {
 	seq              atomic.Uint32
 	started          time.Time
 	maxDatagramBytes int
+	allowTruncate    bool
 	batch            config.BatchConfig
 	cfg              config.SFlowConfig
 	events           []*event.Event
@@ -117,6 +131,7 @@ func NewSFlowEncoder(cfg config.EncoderConfig) *SFlowEncoder {
 	return &SFlowEncoder{
 		started:          time.Now(),
 		maxDatagramBytes: cfg.MaxDatagramBytes,
+		allowTruncate:    cfg.AllowTruncate,
 		batch:            cfg.Batch,
 		cfg:              cfg.SFlow,
 	}
@@ -128,7 +143,7 @@ func (e *SFlowEncoder) Encode(evt *event.Event) ([][]byte, error) {
 		packet, err := e.buildPacket([]*event.Event{evt})
 		if err != nil {
 			if errors.Is(err, ErrSFlowSampleTooLarge) {
-				slog.Warn("dropping oversized sflow sample", slog.Int("max_datagram_bytes", e.maxDatagramBytes))
+				logOversizedSample(err)
 				return nil, nil
 			}
 			return nil, err
@@ -173,7 +188,7 @@ func (e *SFlowEncoder) Flush() ([][]byte, error) {
 		packet, accepted, err := e.buildPacketWithLimit(pending)
 		if err != nil {
 			if errors.Is(err, ErrSFlowSampleTooLarge) {
-				slog.Warn("dropping oversized sflow sample", slog.Int("max_datagram_bytes", e.maxDatagramBytes))
+				logOversizedSample(err)
 				pending = pending[1:]
 				continue
 			}
@@ -293,13 +308,15 @@ func (e *SFlowEncoder) buildPacketWithLimit(events []*event.Event) (*sflow.Packe
 			return nil, accepted, err
 		}
 		packet.Samples = append(packet.Samples, sample)
+		lastSize := 0
 		if e.maxDatagramBytes > 0 {
 			data, err := sflow.EncodeMessage(packet)
 			if err != nil {
 				return nil, accepted, fmt.Errorf("encode sflow packet: %w", err)
 			}
+			lastSize = len(data)
 			if len(data) > e.maxDatagramBytes {
-				if e.cfg.AllowTruncate {
+				if e.allowTruncate {
 					truncated, ok, err := e.truncateLastSampleToFit(packet)
 					if err != nil {
 						return nil, accepted, err
@@ -311,6 +328,12 @@ func (e *SFlowEncoder) buildPacketWithLimit(events []*event.Event) (*sflow.Packe
 					}
 				}
 				packet.Samples = packet.Samples[:len(packet.Samples)-1]
+				if accepted == 0 {
+					return nil, 0, &sflowSampleTooLargeError{
+						MaxDatagramBytes: e.maxDatagramBytes,
+						CurrentSize:      lastSize,
+					}
+				}
 				break
 			}
 		}
@@ -318,7 +341,10 @@ func (e *SFlowEncoder) buildPacketWithLimit(events []*event.Event) (*sflow.Packe
 	}
 
 	if accepted == 0 {
-		return nil, 0, fmt.Errorf("%w=%d", ErrSFlowSampleTooLarge, e.maxDatagramBytes)
+		return nil, 0, &sflowSampleTooLargeError{
+			MaxDatagramBytes: e.maxDatagramBytes,
+			CurrentSize:      0,
+		}
 	}
 
 	packet.SamplesCount = uint32(len(packet.Samples))
@@ -386,7 +412,10 @@ func (e *SFlowEncoder) sflowAgentIP(evt *event.Event) string {
 	if evt.SFlow != nil && evt.SFlow.AgentIP != "" {
 		return evt.SFlow.AgentIP
 	}
-	return stringFieldOrZero(evt.Fields, "agent_ip")
+	if agentIP := stringFieldOrZero(evt.Fields, "agent_ip"); agentIP != "" {
+		return agentIP
+	}
+	return "127.0.0.1"
 }
 
 func (e *SFlowEncoder) compatibleTopLevel(left, right *event.Event) bool {
@@ -610,6 +639,19 @@ func sflowDrops(sf *event.SFlowMetadata, fields map[string]any) uint32 {
 
 func batchOverEnabled(v *bool) bool {
 	return v == nil || *v
+}
+
+func logOversizedSample(err error) {
+	var sizeErr *sflowSampleTooLargeError
+	if errors.As(err, &sizeErr) {
+		slog.Warn(
+			"dropping oversized sflow sample",
+			slog.Int("max_datagram_bytes", sizeErr.MaxDatagramBytes),
+			slog.Int("current_size", sizeErr.CurrentSize),
+		)
+		return
+	}
+	slog.Warn("dropping oversized sflow sample", slog.String("error", err.Error()))
 }
 
 func encodeIPBytes(ip string) string {
