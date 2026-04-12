@@ -203,6 +203,40 @@ func TestBuiltinProcessBytesTruncatesRetainedPacketData(t *testing.T) {
 	}
 }
 
+func TestBuiltinProcessBytesFallsBackToCaptureInterfaceIndex(t *testing.T) {
+	proc := NewBuiltin(config.ProcessorConfig{})
+
+	packet := []byte{
+		0x00, 0x11, 0x22, 0x33, 0x44, 0x55,
+		0x66, 0x77, 0x88, 0x99, 0xaa, 0xbb,
+		0x08, 0x00,
+		0x45, 0x00, 0x00, 0x28, 0x00, 0x00, 0x00, 0x00, 0x40, 0x06, 0x00, 0x00,
+		0xc0, 0x00, 0x02, 0x01,
+		0xc6, 0x33, 0x64, 0x02,
+		0x30, 0x39, 0x01, 0xbb,
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x50, 0x02, 0x00, 0x00,
+		0x00, 0x00, 0x00, 0x00,
+	}
+
+	events, err := proc.Process(&event.Event{
+		Source: event.SourceMetadata{
+			Type:                  "bytes",
+			CaptureInterfaceIndex: 15,
+		},
+		Payload: packet,
+	})
+	if err != nil {
+		t.Fatalf("Process returned error: %v", err)
+	}
+	fields := events[0].Fields
+	if got := fields["input_if"]; got != uint32(15) {
+		t.Fatalf("expected input_if=15, got %#v", got)
+	}
+	if got := fields["output_if"]; got != uint32(15) {
+		t.Fatalf("expected output_if=15, got %#v", got)
+	}
+}
+
 func TestBuiltinProcessGoFlow2V2BuildsPseudoPacket(t *testing.T) {
 	proc := NewBuiltin(config.ProcessorConfig{
 		Builtin: config.BuiltinProcessorConfig{

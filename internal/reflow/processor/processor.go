@@ -83,6 +83,7 @@ func (p *Builtin) processBytes(evt *event.Event) ([]*event.Event, error) {
 	if evt.SFlow.AgentIP == "" {
 		evt.SFlow.AgentIP = fieldStringOrZero(fields, "agent_ip")
 	}
+	p.setDefaultInterfaces(evt, fields)
 
 	if !p.cfg.DisablePacketMapping {
 		if tuple, err := parsePacketTuple(payload); err == nil {
@@ -103,6 +104,18 @@ func (p *Builtin) processBytes(evt *event.Event) ([]*event.Event, error) {
 		evt.Payload = nil
 	}
 	return []*event.Event{evt}, nil
+}
+
+func (p *Builtin) setDefaultInterfaces(evt *event.Event, fields map[string]any) {
+	if fieldUint32(fields, "input_if") != 0 || fieldUint32(fields, "output_if") != 0 {
+		return
+	}
+	if evt.Source.CaptureInterfaceIndex <= 0 {
+		return
+	}
+	ifIndex := uint32(evt.Source.CaptureInterfaceIndex)
+	fields["input_if"] = ifIndex
+	fields["output_if"] = ifIndex
 }
 
 func (p *Builtin) truncatePacketData(evt *event.Event, fields map[string]any) {

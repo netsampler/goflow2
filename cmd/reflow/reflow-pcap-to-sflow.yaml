@@ -19,6 +19,9 @@ encoder:
   type: sflow
   workers: 1
   max_datagram_bytes: 1400
+  # If an encoded sFlow datagram exceeds max_datagram_bytes, ReFlow truncates
+  # the last sample payload just enough to fit. Small packets are not truncated
+  # unless they are the sample that pushes a datagram over the size limit.
   allow_truncate: true
   sflow:
     batch_over:

@@ -92,6 +92,7 @@ func (s *Source) Start(ctx context.Context, emit func(*event.Event) error) error
 		if !s.shouldEmitCurrentPacket() {
 			continue
 		}
+		drops := s.currentDropCount()
 
 		evt := &event.Event{
 			ReceivedAt: time.Now().UTC(),
@@ -109,12 +110,14 @@ func (s *Source) Start(ctx context.Context, emit func(*event.Event) error) error
 				AgentIP:      s.agentIP,
 				SamplingRate: uint32(s.cfg.SampleEvery),
 				SamplePool:   uint32(s.seenCount),
+				Drops:        drops,
 			},
 			Payload: append([]byte(nil), data...),
 			Fields: map[string]any{
 				"agent_ip":       s.agentIP,
 				"sampling_rate":  uint32(s.cfg.SampleEvery),
 				"sample_pool":    uint32(s.seenCount),
+				"drops":          drops,
 				"capture_length": ci.CaptureLength,
 				"wire_length":    ci.Length,
 			},
@@ -124,6 +127,17 @@ func (s *Source) Start(ctx context.Context, emit func(*event.Event) error) error
 			return err
 		}
 	}
+}
+
+func (s *Source) currentDropCount() uint32 {
+	if s.handle == nil {
+		return 0
+	}
+	stats, err := s.handle.Stats()
+	if err != nil || stats == nil {
+		return 0
+	}
+	return uint32(stats.PacketsDropped + stats.PacketsIfDropped)
 }
 
 func (s *Source) shouldEmitCurrentPacket() bool {
