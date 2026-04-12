@@ -118,7 +118,8 @@ func (e JSONEncoder) formatEvent(evt *event.Event) any {
 }
 
 type SFlowEncoder struct {
-	seq              atomic.Uint32
+	packetSeq        atomic.Uint32
+	sampleSeq        atomic.Uint32
 	started          time.Time
 	maxDatagramBytes int
 	allowTruncate    bool
@@ -283,7 +284,7 @@ func (e *SFlowEncoder) buildPacketWithLimit(events []*event.Event) (*sflow.Packe
 
 	packetSeq := top.SequenceNumber
 	if packetSeq == 0 {
-		packetSeq = e.seq.Add(1)
+		packetSeq = e.packetSeq.Add(1)
 	}
 	uptime := top.Uptime
 	if uptime == 0 {
@@ -443,10 +444,7 @@ func (e *SFlowEncoder) compatibleTopLevel(left, right *event.Event) bool {
 }
 
 func (e *SFlowEncoder) sampleSequence(evt *event.Event) uint32 {
-	if evt.SFlow != nil && evt.SFlow.SequenceNumber != 0 {
-		return evt.SFlow.SequenceNumber
-	}
-	return e.seq.Add(1)
+	return e.sampleSeq.Add(1)
 }
 
 func (e *SFlowEncoder) truncateLastSampleToFit(packet *sflow.Packet) (sflow.FlowSample, bool, error) {

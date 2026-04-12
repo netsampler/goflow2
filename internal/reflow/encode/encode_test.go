@@ -167,6 +167,57 @@ func TestSFlowEncoderTruncatesOversizedSampleWhenEnabled(t *testing.T) {
 	}
 }
 
+func TestSFlowEncoderPacketSequenceAdvancesPerDatagram(t *testing.T) {
+	enc := NewSFlowEncoder(config.EncoderConfig{
+		Type: "sflow",
+		Batch: config.BatchConfig{
+			Enabled:    true,
+			MaxRecords: 2,
+		},
+	})
+
+	firstPayloads, err := enc.Encode(testSFlowEvent("198.51.100.10"))
+	if err != nil {
+		t.Fatalf("Encode(first) returned error: %v", err)
+	}
+	if len(firstPayloads) != 0 {
+		t.Fatalf("expected first event to stay buffered, got %d payloads", len(firstPayloads))
+	}
+
+	secondPayloads, err := enc.Encode(testSFlowEvent("198.51.100.10"))
+	if err != nil {
+		t.Fatalf("Encode(second) returned error: %v", err)
+	}
+	if len(secondPayloads) != 1 {
+		t.Fatalf("expected one flushed payload after second event, got %d", len(secondPayloads))
+	}
+
+	thirdPayloads, err := enc.Encode(testSFlowEvent("198.51.100.10"))
+	if err != nil {
+		t.Fatalf("Encode(third) returned error: %v", err)
+	}
+	if len(thirdPayloads) != 0 {
+		t.Fatalf("expected third event to stay buffered, got %d payloads", len(thirdPayloads))
+	}
+
+	fourthPayloads, err := enc.Encode(testSFlowEvent("198.51.100.10"))
+	if err != nil {
+		t.Fatalf("Encode(fourth) returned error: %v", err)
+	}
+	if len(fourthPayloads) != 1 {
+		t.Fatalf("expected one flushed payload after fourth event, got %d", len(fourthPayloads))
+	}
+
+	firstPacket := decodeSFlowPacket(t, secondPayloads[0])
+	secondPacket := decodeSFlowPacket(t, fourthPayloads[0])
+	if firstPacket.SequenceNumber != 1 {
+		t.Fatalf("expected first packet sequence 1, got %d", firstPacket.SequenceNumber)
+	}
+	if secondPacket.SequenceNumber != 2 {
+		t.Fatalf("expected second packet sequence 2, got %d", secondPacket.SequenceNumber)
+	}
+}
+
 func testSFlowEvent(agentIP string) *event.Event {
 	return &event.Event{
 		Fields: map[string]any{
