@@ -31,6 +31,9 @@ type builtIn struct {
 
 // Decode handles protocol identification for raw flow payloads and passes through other event types.
 func (d *builtIn) Decode(evt *event.Event) ([]*event.Event, error) {
+	if evt != nil && evt.Kind == "control" {
+		return []*event.Event{evt}, nil
+	}
 	switch evt.Source.Type {
 	case "flow":
 		return d.decodeFlow(evt)

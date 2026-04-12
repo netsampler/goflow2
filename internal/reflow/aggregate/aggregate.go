@@ -14,6 +14,7 @@ import (
 
 // Aggregator receives processed events and optionally emits aggregated ones.
 type Aggregator interface {
+	InitEvents() ([]*event.Event, error)
 	Process(evt *event.Event) ([]*event.Event, error)
 	Flush() ([]*event.Event, error)
 	Close() ([]*event.Event, error)
@@ -30,6 +31,7 @@ func New(cfg config.AggregatorConfig) (Aggregator, error) {
 
 type passthrough struct{}
 
+func (passthrough) InitEvents() ([]*event.Event, error)              { return nil, nil }
 func (passthrough) Process(evt *event.Event) ([]*event.Event, error) { return []*event.Event{evt}, nil }
 func (passthrough) Flush() ([]*event.Event, error)                   { return nil, nil }
 func (passthrough) Close() ([]*event.Event, error)                   { return nil, nil }
@@ -107,7 +109,40 @@ func NewStateful(cfg config.AggregatorConfig) *Stateful {
 	return a
 }
 
+func (a *Stateful) InitEvents() ([]*event.Event, error) {
+	if !a.cfg.Enabled {
+		return nil, nil
+	}
+	fieldNames := orderedSchemaFields(a.cfg)
+	return []*event.Event{
+		{
+			ReceivedAt: time.Now().UTC(),
+			Kind:       "control",
+			Source: event.SourceMetadata{
+				Type: "aggregator",
+			},
+			Control: &event.ControlMetadata{
+				Type:   "schema",
+				Stream: "flow_data",
+			},
+			Payload: event.AggregationSchema{
+				Stream:         "flow_data",
+				FieldNames:     fieldNames,
+				KeyFields:      append([]string(nil), a.cfg.KeyFields...),
+				SumFields:      append([]string(nil), a.cfg.Sum...),
+				FirstFields:    append([]string(nil), a.cfg.First...),
+				CurrentFields:  append([]string(nil), a.cfg.Current...),
+				StaticFields:   cloneFields(a.cfg.StaticFields),
+				BaseTemplateID: a.cfg.TemplateID,
+			},
+		},
+	}, nil
+}
+
 func (a *Stateful) Process(evt *event.Event) ([]*event.Event, error) {
+	if evt != nil && evt.Kind == "control" {
+		return []*event.Event{evt}, nil
+	}
 	key, record, err := aggregateFromEvent(a.cfg, evt)
 	if err != nil {
 		var missingKeyErr *missingAggregationKeyError
@@ -132,6 +167,40 @@ func (a *Stateful) Process(evt *event.Event) ([]*event.Event, error) {
 	a.state[key] = current
 	a.mu.Unlock()
 	return nil, nil
+}
+
+func orderedSchemaFields(cfg config.AggregatorConfig) []string {
+	seen := make(map[string]struct{})
+	var out []string
+	appendField := func(field string) {
+		if field == "" {
+			return
+		}
+		if _, ok := seen[field]; ok {
+			return
+		}
+		seen[field] = struct{}{}
+		out = append(out, field)
+	}
+	for _, field := range cfg.KeyFields {
+		appendField(field)
+	}
+	for _, field := range cfg.Sum {
+		appendField(field)
+	}
+	for _, field := range cfg.First {
+		appendField(field)
+	}
+	for _, field := range cfg.Current {
+		appendField(field)
+	}
+	for field := range cfg.StaticFields {
+		appendField(field)
+	}
+	if cfg.TemplateID != 0 {
+		appendField("template_id")
+	}
+	return out
 }
 
 func (a *Stateful) Flush() ([]*event.Event, error) {

@@ -6,12 +6,41 @@ import (
 )
 
 type Event struct {
-	ReceivedAt time.Time       `json:"received_at"`
-	Source     SourceMetadata  `json:"source"`
-	Message    json.RawMessage `json:"message,omitempty"`
-	Fields     map[string]any  `json:"fields,omitempty"`
-	SFlow      *SFlowMetadata  `json:"sflow,omitempty"`
-	Payload    any             `json:"-"`
+	ReceivedAt time.Time        `json:"received_at"`
+	Kind       string           `json:"kind,omitempty"`
+	Source     SourceMetadata   `json:"source"`
+	Control    *ControlMetadata `json:"control,omitempty"`
+	Message    json.RawMessage  `json:"message,omitempty"`
+	Fields     map[string]any   `json:"fields,omitempty"`
+	SFlow      *SFlowMetadata   `json:"sflow,omitempty"`
+	Payload    any              `json:"-"`
+}
+
+type ControlMetadata struct {
+	Type   string `json:"type,omitempty"`
+	Stream string `json:"stream,omitempty"`
+}
+
+type AggregationSchema struct {
+	Stream         string         `json:"stream,omitempty"`
+	FieldNames     []string       `json:"field_names,omitempty"`
+	KeyFields      []string       `json:"key_fields,omitempty"`
+	SumFields      []string       `json:"sum_fields,omitempty"`
+	FirstFields    []string       `json:"first_fields,omitempty"`
+	CurrentFields  []string       `json:"current_fields,omitempty"`
+	StaticFields   map[string]any `json:"static_fields,omitempty"`
+	BaseTemplateID uint16         `json:"base_template_id,omitempty"`
+}
+
+type SourceInit struct {
+	Stream       string `json:"stream,omitempty"`
+	AgentIP      string `json:"agent_ip,omitempty"`
+	SourceID     uint32 `json:"source_id,omitempty"`
+	SamplingRate uint32 `json:"sampling_rate,omitempty"`
+	SamplePool   uint32 `json:"sample_pool,omitempty"`
+	Drops        uint32 `json:"drops,omitempty"`
+	InputIf      uint32 `json:"input_if,omitempty"`
+	OutputIf     uint32 `json:"output_if,omitempty"`
 }
 
 type SourceMetadata struct {

@@ -67,6 +67,8 @@ type EncoderConfig struct {
 	Workers          int             `yaml:"workers"`
 	MaxDatagramBytes int             `yaml:"max_datagram_bytes"`
 	AllowTruncate    bool            `yaml:"allow_truncate"`
+	TemplateRefresh  int             `yaml:"template_refresh_ms"`
+	OptionsRefresh   int             `yaml:"options_refresh_ms"`
 	Batch            BatchConfig     `yaml:"batch"`
 	TFlowData        TFlowDataConfig `yaml:"tflow_data"`
 	JSON             JSONConfig      `yaml:"json"`
@@ -202,6 +204,18 @@ func (c *Config) setDefaults(configPath string) error {
 	}
 	if c.Encoder.MaxDatagramBytes <= 0 {
 		c.Encoder.MaxDatagramBytes = 1400
+	}
+	if c.Encoder.TemplateRefresh < 0 {
+		return fmt.Errorf("encoder.template_refresh_ms must be >= 0")
+	}
+	if c.Encoder.OptionsRefresh < 0 {
+		return fmt.Errorf("encoder.options_refresh_ms must be >= 0")
+	}
+	if (c.Encoder.Type == "ipfix" || c.Encoder.Type == "netflowv9") && c.Encoder.TemplateRefresh == 0 {
+		c.Encoder.TemplateRefresh = 60000
+	}
+	if (c.Encoder.Type == "ipfix" || c.Encoder.Type == "netflowv9") && c.Encoder.OptionsRefresh == 0 {
+		c.Encoder.OptionsRefresh = 30000
 	}
 	defaultTrue(&c.Encoder.SFlow.BatchOver.AgentIP)
 	defaultTrue(&c.Encoder.SFlow.BatchOver.SubAgentID)

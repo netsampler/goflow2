@@ -43,6 +43,9 @@ func NewBuiltin(cfg config.ProcessorConfig) *Builtin {
 
 // Process dispatches to the built-in mapper for the incoming source message type.
 func (p *Builtin) Process(evt *event.Event) ([]*event.Event, error) {
+	if evt != nil && evt.Kind == "control" {
+		return []*event.Event{evt}, nil
+	}
 	switch evt.Source.Type {
 	case "bytes":
 		return p.processBytes(evt)

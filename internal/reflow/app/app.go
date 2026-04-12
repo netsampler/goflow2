@@ -200,8 +200,8 @@ func (a *App) Run(ctx context.Context) error {
 				return
 			}
 			var ticker *time.Ticker
-			if a.encoderCfg.Batch.Enabled && a.encoderCfg.Batch.FlushInterval > 0 {
-				ticker = time.NewTicker(time.Duration(a.encoderCfg.Batch.FlushInterval) * time.Millisecond)
+			if interval := encoderTickInterval(a.encoderCfg); interval > 0 {
+				ticker = time.NewTicker(interval)
 				defer ticker.Stop()
 			}
 			flush := func() bool {
@@ -246,6 +246,18 @@ func (a *App) Run(ctx context.Context) error {
 		}()
 	}
 
+	initEvents, err := agg.InitEvents()
+	if err != nil {
+		return fmt.Errorf("init aggregator events: %w", err)
+	}
+	for _, evt := range initEvents {
+		select {
+		case encodeJobs <- evt:
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+
 	sourceDone := make(chan error, 1)
 	go func() {
 		sourceDone <- a.source.Start(ctx, func(evt *event.Event) error {
@@ -281,4 +293,23 @@ func tickerChannel(t *time.Ticker) <-chan time.Time {
 		return nil
 	}
 	return t.C
+}
+
+func encoderTickInterval(cfg config.EncoderConfig) time.Duration {
+	var min time.Duration
+	add := func(ms int) {
+		if ms <= 0 {
+			return
+		}
+		d := time.Duration(ms) * time.Millisecond
+		if min == 0 || d < min {
+			min = d
+		}
+	}
+	if cfg.Batch.Enabled {
+		add(cfg.Batch.FlushInterval)
+	}
+	add(cfg.TemplateRefresh)
+	add(cfg.OptionsRefresh)
+	return min
 }
