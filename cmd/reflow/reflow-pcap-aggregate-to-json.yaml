@@ -16,8 +16,10 @@ processor:
 
 aggregator:
   enabled: true
-  reset_interval_ms: 10000
-  periodic_interval_ms: 60000
+  window:
+    idle_flush_after_ms: 10000
+  periodic:
+    every_ms: 60000
   key_fields:
     - src_addr
     - dst_addr

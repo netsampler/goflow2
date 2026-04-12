@@ -43,7 +43,8 @@ processor:
 
 aggregator:
   enabled: true
-  reset_interval_ms: 5000
+  window:
+    idle_flush_after_ms: 5000
   template_id: 256
   static_fields:
     exporter_name: reflow-test
@@ -75,8 +76,8 @@ sink:
 	if !cfg.Aggregator.Enabled {
 		t.Fatalf("expected aggregator.enabled=true")
 	}
-	if cfg.Aggregator.ResetInterval != 5000 {
-		t.Fatalf("expected aggregator.reset_interval_ms=5000, got %d", cfg.Aggregator.ResetInterval)
+	if cfg.Aggregator.Window.IdleFlushAfter != 5000 {
+		t.Fatalf("expected aggregator.window.idle_flush_after_ms=5000, got %d", cfg.Aggregator.Window.IdleFlushAfter)
 	}
 	if len(cfg.Aggregator.Sum) == 0 || cfg.Aggregator.Sum[0] != "bytes" {
 		t.Fatalf("expected default sum fields to include bytes, got %#v", cfg.Aggregator.Sum)
@@ -119,6 +120,8 @@ processor:
 
 aggregator:
   enabled: true
+  periodic:
+    every_ms: 60000
 
 encoder:
   type: json
@@ -134,14 +137,41 @@ sink:
 		t.Fatalf("Load returned error: %v", err)
 	}
 
-	if cfg.Aggregator.PeriodicInterval != 60000 {
-		t.Fatalf("expected periodic_interval_ms default 60000, got %d", cfg.Aggregator.PeriodicInterval)
-	}
-	if cfg.Aggregator.ResetInterval != 0 {
-		t.Fatalf("expected reset_interval_ms default 0, got %d", cfg.Aggregator.ResetInterval)
+	if cfg.Aggregator.Periodic.Every != 60000 {
+		t.Fatalf("expected periodic.every_ms=60000, got %d", cfg.Aggregator.Periodic.Every)
 	}
 	if len(cfg.Aggregator.Sum) == 0 || len(cfg.Aggregator.First) == 0 || len(cfg.Aggregator.Current) == 0 {
 		t.Fatalf("expected aggregation defaults to be populated, got sum=%#v first=%#v current=%#v", cfg.Aggregator.Sum, cfg.Aggregator.First, cfg.Aggregator.Current)
+	}
+}
+
+func TestLoadRejectsAggregatorWithoutExportTrigger(t *testing.T) {
+	dir := t.TempDir()
+
+	cfgPath := filepath.Join(dir, "reflow.yaml")
+	if err := os.WriteFile(cfgPath, []byte(`
+source:
+  network: udp
+  address: ":18081"
+  type: json
+
+processor:
+  type: builtin
+
+aggregator:
+  enabled: true
+
+encoder:
+  type: json
+
+sink:
+  type: stdout
+`), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	if _, err := Load(cfgPath); err == nil {
+		t.Fatalf("expected Load to reject aggregator without export trigger")
 	}
 }
 

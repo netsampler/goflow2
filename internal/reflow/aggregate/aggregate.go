@@ -9,7 +9,6 @@ import (
 
 	"github.com/netsampler/goflow2/v3/internal/reflow/config"
 	"github.com/netsampler/goflow2/v3/internal/reflow/event"
-	"github.com/netsampler/goflow2/v3/pkg/flowstore"
 )
 
 // Aggregator receives processed events and optionally emits aggregated ones.
@@ -41,6 +40,7 @@ type aggregateRecord struct {
 	Fields    map[string]any
 	FirstSeen time.Time
 	LastSeen  time.Time
+	Dirty     bool
 }
 
 type missingAggregationKeyError struct {
@@ -53,6 +53,7 @@ func (e *missingAggregationKeyError) Error() string {
 
 func (r *aggregateRecord) Add(delta aggregateRecord, existed bool) error {
 	if !existed {
+		delta.Dirty = true
 		*r = delta
 		return nil
 	}
@@ -66,47 +67,37 @@ func (r *aggregateRecord) Add(delta aggregateRecord, existed bool) error {
 	if delta.LastSeen.After(r.LastSeen) {
 		r.LastSeen = delta.LastSeen
 	}
+	r.Dirty = true
 	return nil
 }
 
-// Stateful keeps aggregate state and optionally expires keyed buckets.
+// Stateful keeps all aggregation policy in one place.
+//
+// The old aggregator relied on FlowStore TTL only, which was fine for
+// "flush when idle" but not enough once ReFlow needed:
+// - idle-based flush
+// - max lifetime flush
+// - periodic snapshot export
+// - periodic export with optional bucket reset
+// - silent stale bucket cleanup without exporting
+//
+// Keeping those timers together here makes the behavior explicit and easier to
+// reason about than mixing TTL expiration with separate periodic logic.
 type Stateful struct {
-	cfg     config.AggregatorConfig
-	emitted chan *event.Event
+	cfg config.AggregatorConfig
 
-	store *flowstore.Store[string, aggregateRecord]
-
-	mu    sync.Mutex
-	state map[string]aggregateRecord
+	mu              sync.Mutex
+	state           map[string]aggregateRecord
+	startedAt       time.Time
+	lastPeriodicRun time.Time
 }
 
 func NewStateful(cfg config.AggregatorConfig) *Stateful {
-	a := &Stateful{
-		cfg:     cfg,
-		emitted: make(chan *event.Event, 1024),
+	return &Stateful{
+		cfg:       cfg,
+		state:     make(map[string]aggregateRecord),
+		startedAt: time.Now(),
 	}
-	if cfg.ResetInterval > 0 {
-		a.store = flowstore.NewStore[string, aggregateRecord](
-			flowstore.WithDefaultTTL[string, aggregateRecord](time.Duration(cfg.ResetInterval)*time.Millisecond),
-			flowstore.WithRefreshTTLOnWrite[string, aggregateRecord](),
-			flowstore.WithHooks[string, aggregateRecord](flowstore.Hooks[string, aggregateRecord]{
-				OnDelete: func(key string, value aggregateRecord, reason flowstore.DeleteReason) {
-					if reason != flowstore.DeleteReasonExpired && reason != flowstore.DeleteReasonFlushed {
-						return
-					}
-					select {
-					case a.emitted <- buildAggregatedEvent(key, value):
-					default:
-					}
-				},
-			}),
-		)
-		a.store.Start(a.sweeperInterval())
-		return a
-	}
-
-	a.state = make(map[string]aggregateRecord)
-	return a
 }
 
 func (a *Stateful) InitEvents() ([]*event.Event, error) {
@@ -150,13 +141,6 @@ func (a *Stateful) Process(evt *event.Event) ([]*event.Event, error) {
 		}
 		return nil, err
 	}
-	if a.store != nil {
-		if err := a.store.Add(key, record); err != nil {
-			return nil, fmt.Errorf("flowstore add %q: %w", key, err)
-		}
-		return a.drainEmitted(), nil
-	}
-
 	a.mu.Lock()
 	current, exists := a.state[key]
 	if err := current.Add(record, exists); err != nil {
@@ -202,13 +186,17 @@ func orderedSchemaFields(cfg config.AggregatorConfig) []string {
 }
 
 func (a *Stateful) Flush() ([]*event.Event, error) {
-	if a.store != nil {
-		return a.drainEmitted(), nil
-	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.flushAt(time.Now(), false), nil
+}
 
+func (a *Stateful) Close() ([]*event.Event, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
+	// On shutdown ReFlow should not silently drop aggregate state. Close exports
+	// every remaining bucket one last time regardless of dirty state.
 	out := make([]*event.Event, 0, len(a.state))
 	for key, record := range a.state {
 		out = append(out, buildAggregatedEvent(key, record))
@@ -216,39 +204,111 @@ func (a *Stateful) Flush() ([]*event.Event, error) {
 	return out, nil
 }
 
-func (a *Stateful) Close() ([]*event.Event, error) {
-	if a.store != nil {
-		a.store.Close()
-		return a.drainEmitted(), nil
-	}
-	return a.Flush()
-}
-
 func (a *Stateful) Interval() time.Duration {
-	if !a.cfg.Enabled || a.cfg.PeriodicInterval <= 0 {
+	if !a.cfg.Enabled {
 		return 0
 	}
-	return time.Duration(a.cfg.PeriodicInterval) * time.Millisecond
-}
-
-func (a *Stateful) sweeperInterval() time.Duration {
-	interval := time.Duration(a.cfg.ResetInterval) * time.Millisecond / 2
-	if interval <= 0 {
-		return time.Second
-	}
-	return interval
-}
-
-func (a *Stateful) drainEmitted() []*event.Event {
-	var out []*event.Event
-	for {
-		select {
-		case evt := <-a.emitted:
-			out = append(out, evt)
-		default:
-			return out
+	var min time.Duration
+	add := func(ms int) {
+		if ms <= 0 {
+			return
+		}
+		d := time.Duration(ms) * time.Millisecond
+		if min == 0 || d < min {
+			min = d
 		}
 	}
+	add(a.cfg.Window.IdleFlushAfter)
+	add(a.cfg.Window.MaxFlushAfter)
+	add(a.cfg.Window.IdleEraseAfter)
+	add(a.cfg.Periodic.Every)
+	return min
+}
+
+// flushAt evaluates every bucket against the configured timers.
+//
+// Evaluation order:
+// 1. idle window flush
+// 2. max lifetime window flush
+// 3. periodic snapshot export
+// 4. idle erase without export
+//
+// That order is intentional:
+//   - a bucket that qualifies for a real window flush should be exported, not only
+//     snapshotted and kept around
+//   - silent erase is last so it only applies when no export trigger fired
+func (a *Stateful) flushAt(now time.Time, closing bool) []*event.Event {
+	out := make([]*event.Event, 0, len(a.state))
+	periodicDue := a.periodicDue(now)
+	for key, record := range a.state {
+		if closing {
+			out = append(out, buildAggregatedEvent(key, record))
+			continue
+		}
+
+		if a.shouldFlushIdle(record, now) || a.shouldFlushMax(record, now) {
+			out = append(out, buildAggregatedEvent(key, record))
+			delete(a.state, key)
+			continue
+		}
+
+		if periodicDue && a.shouldEmitPeriodic(record) {
+			out = append(out, buildAggregatedEvent(key, record))
+			if a.cfg.Periodic.ResetBuckets {
+				delete(a.state, key)
+			} else {
+				record.Dirty = false
+				a.state[key] = record
+			}
+			continue
+		}
+
+		if a.shouldEraseIdle(record, now) {
+			delete(a.state, key)
+		}
+	}
+	if periodicDue {
+		a.lastPeriodicRun = now
+	}
+	return out
+}
+
+func (a *Stateful) shouldFlushIdle(record aggregateRecord, now time.Time) bool {
+	if a.cfg.Window.IdleFlushAfter <= 0 {
+		return false
+	}
+	return now.Sub(record.LastSeen) >= time.Duration(a.cfg.Window.IdleFlushAfter)*time.Millisecond
+}
+
+func (a *Stateful) shouldFlushMax(record aggregateRecord, now time.Time) bool {
+	if a.cfg.Window.MaxFlushAfter <= 0 {
+		return false
+	}
+	return now.Sub(record.FirstSeen) >= time.Duration(a.cfg.Window.MaxFlushAfter)*time.Millisecond
+}
+
+// Periodic export is intentionally driven by the aggregate worker ticker. The
+// dirty bit prevents the same untouched bucket from being emitted over and over
+// when periodic snapshots are enabled.
+func (a *Stateful) shouldEmitPeriodic(record aggregateRecord) bool {
+	return record.Dirty
+}
+
+func (a *Stateful) shouldEraseIdle(record aggregateRecord, now time.Time) bool {
+	if a.cfg.Window.IdleEraseAfter <= 0 {
+		return false
+	}
+	return now.Sub(record.LastSeen) >= time.Duration(a.cfg.Window.IdleEraseAfter)*time.Millisecond
+}
+
+func (a *Stateful) periodicDue(now time.Time) bool {
+	if a.cfg.Periodic.Every <= 0 {
+		return false
+	}
+	if a.lastPeriodicRun.IsZero() {
+		return now.Sub(a.startedAt) >= time.Duration(a.cfg.Periodic.Every)*time.Millisecond
+	}
+	return now.Sub(a.lastPeriodicRun) >= time.Duration(a.cfg.Periodic.Every)*time.Millisecond
 }
 
 func aggregateFromEvent(cfg config.AggregatorConfig, evt *event.Event) (string, aggregateRecord, error) {
@@ -262,10 +322,13 @@ func aggregateFromEvent(cfg config.AggregatorConfig, evt *event.Event) (string, 
 		return "", aggregateRecord{}, err
 	}
 
-	now := evt.ReceivedAt
-	if now.IsZero() {
-		now = time.Now()
-	}
+	// Aggregation window timers are runtime policy, not event timestamps.
+	//
+	// Using evt.ReceivedAt here would make replayed traffic or synthetic test
+	// events look instantly ancient, which would trigger max/idle flushes
+	// incorrectly. The actual flow timestamps remain in start_time_unix and
+	// end_time_unix; the bucket lifecycle timers should follow wall-clock time.
+	now := time.Now()
 
 	recordFields := make(map[string]any)
 	for key, val := range cfg.StaticFields {

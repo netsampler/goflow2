@@ -101,8 +101,11 @@ Aggregation is optional.
 Current config direction:
 
 * `aggregator.enabled`
-* `aggregator.reset_interval_ms`
-* `aggregator.periodic_interval_ms`
+* `aggregator.window.idle_flush_after_ms`
+* `aggregator.window.max_flush_after_ms`
+* `aggregator.window.idle_erase_after_ms`
+* `aggregator.periodic.every_ms`
+* `aggregator.periodic.reset_buckets`
 * `aggregator.key_fields`
 * `aggregator.sum`
 * `aggregator.first`
@@ -115,6 +118,39 @@ Current config direction:
 * `sum`: add numeric values into the bucket on every update
 * `first`: keep the first value seen when the bucket is created
 * `current`: replace with the latest value seen for the bucket
+
+### Aggregation Timers
+
+```mermaid
+flowchart TD
+    U[Bucket Updated] --> I{idle_flush_after?}
+    I -- yes --> F1[Emit bucket and delete]
+    I -- no --> M{max_flush_after?}
+    M -- yes --> F2[Emit bucket and delete]
+    M -- no --> P{periodic.every?}
+    P -- yes --> D[Emit snapshot]
+    D --> R{reset_buckets?}
+    R -- yes --> X[Delete bucket]
+    R -- no --> K[Keep bucket]
+    P -- no --> E{idle_erase_after?}
+    E -- yes --> Z[Delete without emit]
+    E -- no --> K
+```
+
+The aggregator evaluates each bucket with four independent timers:
+
+* idle window flush
+* max lifetime window flush
+* periodic snapshot export
+* idle erase without export
+
+If all export triggers are disabled:
+
+* `window.idle_flush_after_ms = 0`
+* `window.max_flush_after_ms = 0`
+* `periodic.every_ms = 0`
+
+then config loading should fail because buckets would never be exported.
 
 ### Two Main Aggregation Modes
 
@@ -130,7 +166,8 @@ Typical keys:
 * `src_port`
 * `dst_port`
 
-If `reset_interval_ms > 0`, a bucket is emitted when it has been idle for that amount of time.
+If `window.idle_flush_after_ms > 0`, a bucket is emitted when it has been idle for that amount of time.
+If `window.max_flush_after_ms > 0`, a bucket is emitted once the bucket lifetime reaches that limit even if traffic continues.
 
 2. Accumulative metadata aggregation
 
@@ -139,8 +176,9 @@ Used for current exporter metadata or periodic option-style records.
 Typical shape:
 
 * no `key_fields`
-* `reset_interval_ms: 0`
-* `periodic_interval_ms: 60000`
+* `window.idle_flush_after_ms: 0`
+* `window.max_flush_after_ms: 0`
+* `periodic.every_ms: 60000`
 * mostly `current`
 
 This lets ReFlow keep the current state and emit periodic snapshots without idle-expiry bucket closure.

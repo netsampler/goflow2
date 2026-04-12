@@ -51,31 +51,54 @@ type BuiltinProcessorConfig struct {
 }
 
 type AggregatorConfig struct {
-	Enabled          bool           `yaml:"enabled"`
-	ResetInterval    int            `yaml:"reset_interval_ms"`
-	PeriodicInterval int            `yaml:"periodic_interval_ms"`
-	KeyFields        []string       `yaml:"key_fields"`
-	Sum              []string       `yaml:"sum"`
-	First            []string       `yaml:"first"`
-	Current          []string       `yaml:"current"`
-	TemplateID       uint16         `yaml:"template_id"`
-	StaticFields     map[string]any `yaml:"static_fields"`
+	Enabled bool `yaml:"enabled"`
+	// Window controls bucket closure based on activity and age.
+	Window AggregatorWindowConfig `yaml:"window"`
+	// Periodic controls snapshot-style exports of current bucket state.
+	Periodic     AggregatorPeriodicConfig `yaml:"periodic"`
+	KeyFields    []string                 `yaml:"key_fields"`
+	Sum          []string                 `yaml:"sum"`
+	First        []string                 `yaml:"first"`
+	Current      []string                 `yaml:"current"`
+	TemplateID   uint16                   `yaml:"template_id"`
+	StaticFields map[string]any           `yaml:"static_fields"`
+
+	// Deprecated compatibility knobs. They are still parsed so older configs keep
+	// loading, then mapped into the explicit window/periodic sections.
+	ResetInterval    int `yaml:"reset_interval_ms"`
+	PeriodicInterval int `yaml:"periodic_interval_ms"`
+}
+
+type AggregatorWindowConfig struct {
+	// IdleFlushAfter exports and removes a bucket after this much time without updates.
+	IdleFlushAfter int `yaml:"idle_flush_after_ms"`
+	// MaxFlushAfter exports and removes a bucket once it reaches this lifetime.
+	MaxFlushAfter int `yaml:"max_flush_after_ms"`
+	// IdleEraseAfter removes stale buckets without exporting them.
+	IdleEraseAfter int `yaml:"idle_erase_after_ms"`
+}
+
+type AggregatorPeriodicConfig struct {
+	// Every emits periodic snapshots of current bucket state.
+	Every int `yaml:"every_ms"`
+	// ResetBuckets turns periodic export into "emit and clear" instead of "emit snapshot and keep".
+	ResetBuckets bool `yaml:"reset_buckets"`
 }
 
 type EncoderConfig struct {
-	Type                string          `yaml:"type"`
-	Workers             int             `yaml:"workers"`
-	TemplateBaseID      uint16          `yaml:"template_base_id"`
-	OptionsTemplateBaseID uint16        `yaml:"options_template_base_id"`
-	ObservationDomainID uint32          `yaml:"observation_domain_id"`
-	MaxDatagramBytes    int             `yaml:"max_datagram_bytes"`
-	AllowTruncate       bool            `yaml:"allow_truncate"`
-	TemplateRefresh     int             `yaml:"template_refresh_ms"`
-	OptionsRefresh      int             `yaml:"options_refresh_ms"`
-	Batch               BatchConfig     `yaml:"batch"`
-	TFlowData           TFlowDataConfig `yaml:"tflow_data"`
-	JSON                JSONConfig      `yaml:"json"`
-	SFlow               SFlowConfig     `yaml:"sflow"`
+	Type                  string          `yaml:"type"`
+	Workers               int             `yaml:"workers"`
+	TemplateBaseID        uint16          `yaml:"template_base_id"`
+	OptionsTemplateBaseID uint16          `yaml:"options_template_base_id"`
+	ObservationDomainID   uint32          `yaml:"observation_domain_id"`
+	MaxDatagramBytes      int             `yaml:"max_datagram_bytes"`
+	AllowTruncate         bool            `yaml:"allow_truncate"`
+	TemplateRefresh       int             `yaml:"template_refresh_ms"`
+	OptionsRefresh        int             `yaml:"options_refresh_ms"`
+	Batch                 BatchConfig     `yaml:"batch"`
+	TFlowData             TFlowDataConfig `yaml:"tflow_data"`
+	JSON                  JSONConfig      `yaml:"json"`
+	SFlow                 SFlowConfig     `yaml:"sflow"`
 }
 
 type JSONConfig struct {
@@ -188,11 +211,9 @@ func (c *Config) setDefaults(configPath string) error {
 		return fmt.Errorf("processor.builtin.truncate_packet_bytes must be >= 0")
 	}
 	if c.Aggregator.Enabled {
-		if c.Aggregator.PeriodicInterval <= 0 {
-			c.Aggregator.PeriodicInterval = 60000
-		}
-		if c.Aggregator.ResetInterval < 0 {
-			return fmt.Errorf("aggregator.reset_interval_ms must be >= 0")
+		applyAggregatorCompatibility(&c.Aggregator)
+		if err := validateAggregatorConfig(c.Aggregator); err != nil {
+			return err
 		}
 		defaultAggregateFields(&c.Aggregator)
 	}
@@ -317,7 +338,7 @@ func defaultAggregateFields(cfg *AggregatorConfig) {
 			"agent_ip",
 			"sub_agent_id",
 			"source_id",
-			"flow_start_ns",
+			"start_time_unix",
 		}
 	}
 	if len(cfg.Current) == 0 {
@@ -330,7 +351,38 @@ func defaultAggregateFields(cfg *AggregatorConfig) {
 			"sampling_rate",
 			"sample_pool",
 			"drops",
-			"flow_end_ns",
+			"end_time_unix",
 		}
 	}
+}
+
+func applyAggregatorCompatibility(cfg *AggregatorConfig) {
+	if cfg.Window.IdleFlushAfter == 0 && cfg.ResetInterval > 0 {
+		cfg.Window.IdleFlushAfter = cfg.ResetInterval
+	}
+	if cfg.Periodic.Every == 0 && cfg.PeriodicInterval > 0 {
+		cfg.Periodic.Every = cfg.PeriodicInterval
+	}
+}
+
+func validateAggregatorConfig(cfg AggregatorConfig) error {
+	if cfg.Window.IdleFlushAfter < 0 {
+		return fmt.Errorf("aggregator.window.idle_flush_after_ms must be >= 0")
+	}
+	if cfg.Window.MaxFlushAfter < 0 {
+		return fmt.Errorf("aggregator.window.max_flush_after_ms must be >= 0")
+	}
+	if cfg.Window.IdleEraseAfter < 0 {
+		return fmt.Errorf("aggregator.window.idle_erase_after_ms must be >= 0")
+	}
+	if cfg.Periodic.Every < 0 {
+		return fmt.Errorf("aggregator.periodic.every_ms must be >= 0")
+	}
+	if cfg.Periodic.ResetBuckets && cfg.Periodic.Every == 0 {
+		return fmt.Errorf("aggregator.periodic.reset_buckets requires aggregator.periodic.every_ms > 0")
+	}
+	if cfg.Window.IdleFlushAfter == 0 && cfg.Window.MaxFlushAfter == 0 && cfg.Periodic.Every == 0 {
+		return fmt.Errorf("aggregator requires at least one export trigger: window.idle_flush_after_ms, window.max_flush_after_ms, or periodic.every_ms")
+	}
+	return nil
 }

@@ -14,10 +14,12 @@ processor:
 
 aggregator:
   enabled: true
-  # If > 0, a bucket is emitted after this much idle time with no updates.
-  reset_interval_ms: 10000
-  # Periodic snapshots are emitted even when buckets do not expire.
-  periodic_interval_ms: 60000
+  # Window flush exports a bucket when it has been idle for the configured time.
+  window:
+    idle_flush_after_ms: 10000
+  # Periodic snapshots export the current state even if a bucket stays open.
+  periodic:
+    every_ms: 60000
   key_fields:
     - src_addr
     - dst_addr
