@@ -65,6 +65,8 @@ type AggregatorConfig struct {
 type EncoderConfig struct {
 	Type                string          `yaml:"type"`
 	Workers             int             `yaml:"workers"`
+	TemplateBaseID      uint16          `yaml:"template_base_id"`
+	OptionsTemplateBaseID uint16        `yaml:"options_template_base_id"`
 	ObservationDomainID uint32          `yaml:"observation_domain_id"`
 	MaxDatagramBytes    int             `yaml:"max_datagram_bytes"`
 	AllowTruncate       bool            `yaml:"allow_truncate"`
@@ -205,6 +207,12 @@ func (c *Config) setDefaults(configPath string) error {
 	}
 	if c.Encoder.MaxDatagramBytes <= 0 {
 		c.Encoder.MaxDatagramBytes = 1400
+	}
+	if (c.Encoder.Type == "ipfix" || c.Encoder.Type == "netflowv9") && c.Encoder.TemplateBaseID == 0 {
+		c.Encoder.TemplateBaseID = 256
+	}
+	if (c.Encoder.Type == "ipfix" || c.Encoder.Type == "netflowv9") && c.Encoder.OptionsTemplateBaseID == 0 {
+		c.Encoder.OptionsTemplateBaseID = 1024
 	}
 	if c.Encoder.TemplateRefresh < 0 {
 		return fmt.Errorf("encoder.template_refresh_ms must be >= 0")

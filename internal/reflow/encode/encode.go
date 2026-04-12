@@ -1204,6 +1204,15 @@ func (e *IPFIXEncoder) registerSchema(evt *event.Event) ([][]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+	if state.baseTemplateID == 0 {
+		state.baseTemplateID = e.cfg.TemplateBaseID
+	}
+	if state.ipv4Template.TemplateId == 0 || state.baseTemplateID != state.ipv4Template.TemplateId {
+		state, err = buildSchemaStateWithBase(e.cfg.TFlowData, schema, false, state.baseTemplateID)
+		if err != nil {
+			return nil, err
+		}
+	}
 	e.dataSchemas[eventStream(evt, schema.Stream)] = state
 	return e.encodeSchemaTemplates(state)
 }
@@ -1221,6 +1230,15 @@ func (e *NFv9Encoder) registerSchema(evt *event.Event) ([][]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+	if state.baseTemplateID == 0 {
+		state.baseTemplateID = e.cfg.TemplateBaseID
+	}
+	if state.ipv4Template.TemplateId == 0 || state.baseTemplateID != state.ipv4Template.TemplateId {
+		state, err = buildSchemaStateWithBase(e.cfg.TFlowData, schema, true, state.baseTemplateID)
+		if err != nil {
+			return nil, err
+		}
+	}
 	e.dataSchemas[eventStream(evt, schema.Stream)] = state
 	return e.encodeSchemaTemplates(state)
 }
@@ -1231,7 +1249,7 @@ func (e *IPFIXEncoder) registerSourceInit(evt *event.Event) ([][]byte, error) {
 		state.stream = eventStream(evt, "options_data")
 	}
 	if state.templateID == 0 {
-		state.templateID = 1024
+		state.templateID = e.cfg.OptionsTemplateBaseID
 	}
 	if e.cfg.ObservationDomainID != 0 {
 		state.observationDomainID = e.cfg.ObservationDomainID
@@ -1246,7 +1264,7 @@ func (e *NFv9Encoder) registerSourceInit(evt *event.Event) ([][]byte, error) {
 		state.stream = eventStream(evt, "options_data")
 	}
 	if state.templateID == 0 {
-		state.templateID = 1024
+		state.templateID = e.cfg.OptionsTemplateBaseID
 	}
 	if e.cfg.ObservationDomainID != 0 {
 		state.observationDomainID = e.cfg.ObservationDomainID
@@ -1451,11 +1469,18 @@ func (e *NFv9Encoder) encodeSourceOptions(state sourceOptionsState) ([][]byte, e
 }
 
 func buildSchemaState(cfg config.TFlowDataConfig, schema event.AggregationSchema, netflowV9 bool) (templatedSchemaState, error) {
+	baseTemplateID := schema.BaseTemplateID
+	if baseTemplateID == 0 {
+		baseTemplateID = 256
+	}
+	return buildSchemaStateWithBase(cfg, schema, netflowV9, baseTemplateID)
+}
+
+func buildSchemaStateWithBase(cfg config.TFlowDataConfig, schema event.AggregationSchema, netflowV9 bool, baseTemplateID uint16) (templatedSchemaState, error) {
 	stream := schema.Stream
 	if stream == "" {
 		stream = "flow_data"
 	}
-	baseTemplateID := schema.BaseTemplateID
 	if baseTemplateID == 0 {
 		baseTemplateID = 256
 	}

@@ -126,14 +126,13 @@ func (a *Stateful) InitEvents() ([]*event.Event, error) {
 				Stream: "flow_data",
 			},
 			Payload: event.AggregationSchema{
-				Stream:         "flow_data",
-				FieldNames:     fieldNames,
-				KeyFields:      append([]string(nil), a.cfg.KeyFields...),
-				SumFields:      append([]string(nil), a.cfg.Sum...),
-				FirstFields:    append([]string(nil), a.cfg.First...),
-				CurrentFields:  append([]string(nil), a.cfg.Current...),
-				StaticFields:   cloneFields(a.cfg.StaticFields),
-				BaseTemplateID: a.cfg.TemplateID,
+				Stream:        "flow_data",
+				FieldNames:    fieldNames,
+				KeyFields:     append([]string(nil), a.cfg.KeyFields...),
+				SumFields:     append([]string(nil), a.cfg.Sum...),
+				FirstFields:   append([]string(nil), a.cfg.First...),
+				CurrentFields: append([]string(nil), a.cfg.Current...),
+				StaticFields:  cloneFields(a.cfg.StaticFields),
 			},
 		},
 	}, nil
@@ -198,9 +197,6 @@ func orderedSchemaFields(cfg config.AggregatorConfig) []string {
 	appendField("end_time_unix")
 	for field := range cfg.StaticFields {
 		appendField(field)
-	}
-	if cfg.TemplateID != 0 {
-		appendField("template_id")
 	}
 	return out
 }
@@ -275,16 +271,13 @@ func aggregateFromEvent(cfg config.AggregatorConfig, evt *event.Event) (string, 
 	for key, val := range cfg.StaticFields {
 		recordFields[key] = val
 	}
-	if cfg.TemplateID != 0 {
-		recordFields["template_id"] = cfg.TemplateID
-	}
 	for _, keyField := range cfg.KeyFields {
 		if val, ok := fields[keyField]; ok {
 			recordFields[keyField] = val
 		}
 	}
 	for _, sumField := range cfg.Sum {
-		recordFields[sumField] = int64Field(fields, sumField)
+		recordFields[sumField] = sumValue{Value: int64Field(fields, sumField)}
 	}
 	for _, firstField := range cfg.First {
 		if val, ok := fields[firstField]; ok {
@@ -346,6 +339,8 @@ func cloneFields(in map[string]any) map[string]any {
 	out := make(map[string]any, len(in)+3)
 	for key, val := range in {
 		switch typed := val.(type) {
+		case sumValue:
+			out[key] = typed.Value
 		case firstValue:
 			out[key] = typed.Value
 		case currentValue:
@@ -358,6 +353,7 @@ func cloneFields(in map[string]any) map[string]any {
 }
 
 type firstValue struct{ Value any }
+type sumValue struct{ Value any }
 type currentValue struct{ Value any }
 
 func mergeFields(dst, src map[string]any) {
@@ -371,6 +367,9 @@ func mergeFields(dst, src map[string]any) {
 			continue
 		}
 		switch incoming := val.(type) {
+		case sumValue:
+			dst[key] = sumValue{Value: sumValueOf(dst[key]) + int64FromAny(incoming.Value)}
+			continue
 		case firstValue:
 			if _, exists := dst[key]; !exists {
 				dst[key] = incoming
@@ -378,18 +377,17 @@ func mergeFields(dst, src map[string]any) {
 		case currentValue:
 			dst[key] = incoming
 		default:
-			if existing, ok := dst[key]; ok {
-				switch lhs := existing.(type) {
-				case int64:
-					dst[key] = lhs + int64FromAny(val)
-					continue
-				case uint32:
-					dst[key] = uint32(uint64(lhs) + uint64(uint32FromAny(val)))
-					continue
-				}
-			}
 			dst[key] = val
 		}
+	}
+}
+
+func sumValueOf(val any) int64 {
+	switch typed := val.(type) {
+	case sumValue:
+		return int64FromAny(typed.Value)
+	default:
+		return int64FromAny(val)
 	}
 }
 

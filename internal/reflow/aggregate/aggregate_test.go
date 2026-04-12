@@ -175,3 +175,53 @@ func TestStatefulTracksMinStartAndMaxEndTimestamps(t *testing.T) {
 		t.Fatalf("expected end_time_unix=9000, got %#v", got)
 	}
 }
+
+func TestStatefulOnlySumsConfiguredSumFields(t *testing.T) {
+	agg, err := New(config.AggregatorConfig{
+		Enabled:   true,
+		KeyFields: []string{"src_addr", "dst_addr", "proto", "src_port", "dst_port"},
+		Sum:       []string{"bytes", "packets"},
+	})
+	if err != nil {
+		t.Fatalf("New returned error: %v", err)
+	}
+
+	_, _ = agg.Process(&event.Event{
+		ReceivedAt: time.Unix(1, 0),
+		Fields: map[string]any{
+			"src_addr": "192.0.2.1",
+			"dst_addr": "198.51.100.2",
+			"proto":    uint32(6),
+			"src_port": uint32(12345),
+			"dst_port": uint32(443),
+			"bytes":    int64(60),
+			"packets":  int64(1),
+		},
+	})
+	_, _ = agg.Process(&event.Event{
+		ReceivedAt: time.Unix(2, 0),
+		Fields: map[string]any{
+			"src_addr": "192.0.2.1",
+			"dst_addr": "198.51.100.2",
+			"proto":    uint32(6),
+			"src_port": uint32(12345),
+			"dst_port": uint32(443),
+			"bytes":    int64(70),
+			"packets":  int64(1),
+		},
+	})
+
+	out, err := agg.Flush()
+	if err != nil {
+		t.Fatalf("Flush returned error: %v", err)
+	}
+	if got := out[0].Fields["proto"]; got != uint32(6) {
+		t.Fatalf("expected proto=6 to remain stable, got %#v", got)
+	}
+	if got := out[0].Fields["bytes"]; got != int64(130) {
+		t.Fatalf("expected bytes=130, got %#v", got)
+	}
+	if got := out[0].Fields["packets"]; got != int64(2) {
+		t.Fatalf("expected packets=2, got %#v", got)
+	}
+}
