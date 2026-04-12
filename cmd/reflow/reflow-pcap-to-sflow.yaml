@@ -1,0 +1,36 @@
+source:
+  network: pcap_live
+  interface: en0
+  snaplen: 65535
+  sample_every: 1
+  sample_offset: 0
+  type: bytes
+
+processor:
+  type: builtin
+  workers: 2
+  builtin:
+    drop_message: true
+    drop_payload: false
+
+encoder:
+  type: sflow
+  workers: 1
+  max_datagram_bytes: 1400
+  sflow:
+    batch_over:
+      agent_ip: true
+      sub_agent_id: true
+      sequence_number: true
+      uptime: true
+  batch:
+    enabled: true
+    max_records: 8
+    max_bytes: 1200
+    flush_interval_ms: 1000
+
+sink:
+  type: udp
+  address: "127.0.0.1:6343"
+  # If set, this overrides the outgoing sFlow agent address.
+  # agent_ip: "192.0.2.10"

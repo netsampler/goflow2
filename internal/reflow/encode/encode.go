@@ -105,6 +105,7 @@ type SFlowEncoder struct {
 	started          time.Time
 	maxDatagramBytes int
 	batch            config.BatchConfig
+	cfg              config.SFlowConfig
 	events           []*event.Event
 }
 
@@ -113,6 +114,7 @@ func NewSFlowEncoder(cfg config.EncoderConfig) *SFlowEncoder {
 		started:          time.Now(),
 		maxDatagramBytes: cfg.MaxDatagramBytes,
 		batch:            cfg.Batch,
+		cfg:              cfg.SFlow,
 	}
 }
 
@@ -124,6 +126,22 @@ func (e *SFlowEncoder) Encode(evt *event.Event) ([][]byte, error) {
 			return nil, err
 		}
 		return e.encodePacket(packet)
+	}
+
+	if len(e.events) > 0 && !e.compatibleTopLevel(e.events[0], evt) {
+		payloads, err := e.Flush()
+		if err != nil {
+			return nil, err
+		}
+		e.events = append(e.events, evt)
+		if e.shouldFlush() {
+			flushed, err := e.Flush()
+			if err != nil {
+				return nil, err
+			}
+			return append(payloads, flushed...), nil
+		}
+		return payloads, nil
 	}
 
 	e.events = append(e.events, evt)
@@ -226,32 +244,37 @@ func (e *SFlowEncoder) buildPacketWithLimit(events []*event.Event) (*sflow.Packe
 	}
 
 	first := events[0]
-	fields := first.Fields
-	if fields == nil {
-		return nil, 0, fmt.Errorf("event fields are empty")
-	}
-
-	agentIPStr, err := stringField(fields, "agent_ip")
+	top, err := e.packetTopLevel(first)
 	if err != nil {
 		return nil, 0, err
 	}
-	addr, err := netip.ParseAddr(agentIPStr)
+	addr, err := netip.ParseAddr(top.AgentIP)
 	if err != nil {
-		return nil, 0, fmt.Errorf("parse agent_ip %q: %w", agentIPStr, err)
+		return nil, 0, fmt.Errorf("parse agent_ip %q: %w", top.AgentIP, err)
 	}
 
-	packetSeq := e.seq.Add(1)
+	packetSeq := top.SequenceNumber
+	if packetSeq == 0 {
+		packetSeq = e.seq.Add(1)
+	}
+	uptime := top.Uptime
+	if uptime == 0 {
+		uptime = uint32(time.Since(e.started).Milliseconds())
+	}
 	packet := &sflow.Packet{
 		Version:        5,
 		AgentIP:        utils.IPAddress(addr.AsSlice()),
-		SubAgentId:     uint32Field(fields, "sub_agent_id"),
+		SubAgentId:     top.SubAgentID,
 		SequenceNumber: packetSeq,
-		Uptime:         uint32(time.Since(e.started).Milliseconds()),
+		Uptime:         uptime,
 		Samples:        make([]interface{}, 0, len(events)),
 	}
 
 	accepted := 0
 	for _, evt := range events {
+		if accepted > 0 && !e.compatibleTopLevel(first, evt) {
+			break
+		}
 		sample, err := e.buildFlowSample(evt)
 		if err != nil {
 			return nil, accepted, err
@@ -284,17 +307,18 @@ func (e *SFlowEncoder) buildFlowSample(evt *event.Event) (sflow.FlowSample, erro
 	if fields == nil {
 		return sflow.FlowSample{}, fmt.Errorf("event fields are empty")
 	}
+	sf := evt.SFlow
 
 	return sflow.FlowSample{
 		Header: sflow.SampleHeader{
 			Format:               sflow.SAMPLE_FORMAT_FLOW,
-			SampleSequenceNumber: e.seq.Add(1),
+			SampleSequenceNumber: e.sampleSequence(evt),
 			SourceIdType:         0,
-			SourceIdValue:        uint32Field(fields, "source_id"),
+			SourceIdValue:        sflowSourceID(sf, fields),
 		},
-		SamplingRate: uint32Field(fields, "sampling_rate"),
-		SamplePool:   uint32Field(fields, "sample_pool"),
-		Drops:        uint32Field(fields, "drops"),
+		SamplingRate: sflowSamplingRate(sf, fields),
+		SamplePool:   sflowSamplePool(sf, fields),
+		Drops:        sflowDrops(sf, fields),
 		Input:        uint32Field(fields, "input_if"),
 		Output:       uint32Field(fields, "output_if"),
 		Records: []sflow.FlowRecord{
@@ -309,6 +333,67 @@ func (e *SFlowEncoder) buildFlowSample(evt *event.Event) (sflow.FlowSample, erro
 			},
 		},
 	}, nil
+}
+
+type sflowPacketTopLevel struct {
+	AgentIP        string
+	SubAgentID     uint32
+	SequenceNumber uint32
+	Uptime         uint32
+}
+
+func (e *SFlowEncoder) packetTopLevel(evt *event.Event) (sflowPacketTopLevel, error) {
+	top := sflowPacketTopLevel{
+		AgentIP:        e.sflowAgentIP(evt),
+		SubAgentID:     sflowSubAgentID(evt.SFlow, evt.Fields),
+		SequenceNumber: sflowSequenceNumber(evt.SFlow),
+		Uptime:         sflowUptime(evt.SFlow),
+	}
+	if top.AgentIP == "" {
+		return sflowPacketTopLevel{}, fmt.Errorf("missing field \"agent_ip\"")
+	}
+	return top, nil
+}
+
+func (e *SFlowEncoder) sflowAgentIP(evt *event.Event) string {
+	if e.cfg.AgentIP != "" {
+		return e.cfg.AgentIP
+	}
+	if evt.SFlow != nil && evt.SFlow.AgentIP != "" {
+		return evt.SFlow.AgentIP
+	}
+	return stringFieldOrZero(evt.Fields, "agent_ip")
+}
+
+func (e *SFlowEncoder) compatibleTopLevel(left, right *event.Event) bool {
+	leftTop, err := e.packetTopLevel(left)
+	if err != nil {
+		return false
+	}
+	rightTop, err := e.packetTopLevel(right)
+	if err != nil {
+		return false
+	}
+	if !batchOverEnabled(e.cfg.BatchOver.AgentIP) && leftTop.AgentIP != rightTop.AgentIP {
+		return false
+	}
+	if !batchOverEnabled(e.cfg.BatchOver.SubAgentID) && leftTop.SubAgentID != rightTop.SubAgentID {
+		return false
+	}
+	if !batchOverEnabled(e.cfg.BatchOver.SequenceNumber) && leftTop.SequenceNumber != rightTop.SequenceNumber {
+		return false
+	}
+	if !batchOverEnabled(e.cfg.BatchOver.Uptime) && leftTop.Uptime != rightTop.Uptime {
+		return false
+	}
+	return true
+}
+
+func (e *SFlowEncoder) sampleSequence(evt *event.Event) uint32 {
+	if evt.SFlow != nil && evt.SFlow.SequenceNumber != 0 {
+		return evt.SFlow.SequenceNumber
+	}
+	return e.seq.Add(1)
 }
 
 func stringField(fields map[string]any, key string) (string, error) {
@@ -399,6 +484,59 @@ func bytesField(fields map[string]any, key string) []byte {
 	default:
 		return nil
 	}
+}
+
+func sflowSubAgentID(sf *event.SFlowMetadata, fields map[string]any) uint32 {
+	if sf != nil && sf.SubAgentID != 0 {
+		return sf.SubAgentID
+	}
+	return uint32Field(fields, "sub_agent_id")
+}
+
+func sflowSequenceNumber(sf *event.SFlowMetadata) uint32 {
+	if sf == nil {
+		return 0
+	}
+	return sf.SequenceNumber
+}
+
+func sflowUptime(sf *event.SFlowMetadata) uint32 {
+	if sf == nil {
+		return 0
+	}
+	return sf.Uptime
+}
+
+func sflowSourceID(sf *event.SFlowMetadata, fields map[string]any) uint32 {
+	if sf != nil && sf.SourceID != 0 {
+		return sf.SourceID
+	}
+	return uint32Field(fields, "source_id")
+}
+
+func sflowSamplingRate(sf *event.SFlowMetadata, fields map[string]any) uint32 {
+	if sf != nil && sf.SamplingRate != 0 {
+		return sf.SamplingRate
+	}
+	return uint32Field(fields, "sampling_rate")
+}
+
+func sflowSamplePool(sf *event.SFlowMetadata, fields map[string]any) uint32 {
+	if sf != nil && sf.SamplePool != 0 {
+		return sf.SamplePool
+	}
+	return uint32Field(fields, "sample_pool")
+}
+
+func sflowDrops(sf *event.SFlowMetadata, fields map[string]any) uint32 {
+	if sf != nil && sf.Drops != 0 {
+		return sf.Drops
+	}
+	return uint32Field(fields, "drops")
+}
+
+func batchOverEnabled(v *bool) bool {
+	return v == nil || *v
 }
 
 func encodeIPBytes(ip string) string {

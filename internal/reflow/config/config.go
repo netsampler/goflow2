@@ -58,6 +58,7 @@ type EncoderConfig struct {
 	MaxDatagramBytes int         `yaml:"max_datagram_bytes"`
 	Batch            BatchConfig `yaml:"batch"`
 	JSON             JSONConfig  `yaml:"json"`
+	SFlow            SFlowConfig `yaml:"sflow"`
 }
 
 type JSONConfig struct {
@@ -71,10 +72,23 @@ type BatchConfig struct {
 	FlushInterval int  `yaml:"flush_interval_ms"`
 }
 
+type SFlowConfig struct {
+	AgentIP   string               `yaml:"agent_ip"`
+	BatchOver SFlowBatchOverConfig `yaml:"batch_over"`
+}
+
+type SFlowBatchOverConfig struct {
+	AgentIP        *bool `yaml:"agent_ip"`
+	SubAgentID     *bool `yaml:"sub_agent_id"`
+	SequenceNumber *bool `yaml:"sequence_number"`
+	Uptime         *bool `yaml:"uptime"`
+}
+
 type SinkConfig struct {
 	Type    string `yaml:"type"`
 	Path    string `yaml:"path"`
 	Address string `yaml:"address"`
+	AgentIP string `yaml:"agent_ip"`
 }
 
 func BindFlags(fs *flag.FlagSet) (*FlagConfig, *bool) {
@@ -158,6 +172,10 @@ func (c *Config) setDefaults() error {
 	if c.Encoder.MaxDatagramBytes <= 0 {
 		c.Encoder.MaxDatagramBytes = 1400
 	}
+	defaultTrue(&c.Encoder.SFlow.BatchOver.AgentIP)
+	defaultTrue(&c.Encoder.SFlow.BatchOver.SubAgentID)
+	defaultTrue(&c.Encoder.SFlow.BatchOver.SequenceNumber)
+	defaultTrue(&c.Encoder.SFlow.BatchOver.Uptime)
 	if c.Encoder.Batch.MaxRecords < 0 {
 		return fmt.Errorf("encoder.batch.max_records must be >= 0")
 	}
@@ -187,4 +205,12 @@ func (c *Config) setDefaults() error {
 		return fmt.Errorf("sink.address is required when sink.type=%s", c.Sink.Type)
 	}
 	return nil
+}
+
+func defaultTrue(dst **bool) {
+	if *dst != nil {
+		return
+	}
+	v := true
+	*dst = &v
 }

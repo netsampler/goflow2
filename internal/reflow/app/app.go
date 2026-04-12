@@ -51,6 +51,11 @@ func New(cfg *config.Config) (*App, error) {
 		return nil, fmt.Errorf("init sink: %w", err)
 	}
 
+	encoderCfg := cfg.Encoder
+	if cfg.Sink.AgentIP != "" && encoderCfg.Type == "sflow" {
+		encoderCfg.SFlow.AgentIP = cfg.Sink.AgentIP
+	}
+
 	return &App{
 		logger:           logger,
 		source:           src,
@@ -58,7 +63,7 @@ func New(cfg *config.Config) (*App, error) {
 		processor:        proc,
 		processorWorkers: cfg.Processor.Workers,
 		aggregatorCfg:    cfg.Aggregator,
-		encoderCfg:       cfg.Encoder,
+		encoderCfg:       encoderCfg,
 		encoderWorkers:   cfg.Encoder.Workers,
 		sink:             out,
 	}, nil

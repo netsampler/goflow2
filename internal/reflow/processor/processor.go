@@ -76,6 +76,12 @@ func (p *Builtin) processBytes(evt *event.Event) ([]*event.Event, error) {
 	if _, ok := fields["protocol"]; !ok {
 		fields["protocol"] = uint32(1)
 	}
+	if evt.SFlow == nil {
+		evt.SFlow = &event.SFlowMetadata{}
+	}
+	if evt.SFlow.AgentIP == "" {
+		evt.SFlow.AgentIP = fieldStringOrZero(fields, "agent_ip")
+	}
 
 	if tuple, err := parsePacketTuple(payload); err == nil {
 		fields["src_addr"] = tuple.SrcAddr.String()
@@ -104,6 +110,13 @@ func (p *Builtin) processFlow(evt *event.Event) ([]*event.Event, error) {
 	}
 	if _, ok := fields["flow_type"]; !ok {
 		return nil, fmt.Errorf("decoded flow event is missing flow_type")
+	}
+	if evt.SFlow == nil && (fieldStringOrZero(fields, "agent_ip") != "" || fieldUint32(fields, "sub_agent_id") != 0 || fieldUint32(fields, "source_id") != 0) {
+		evt.SFlow = &event.SFlowMetadata{
+			AgentIP:    fieldStringOrZero(fields, "agent_ip"),
+			SubAgentID: fieldUint32(fields, "sub_agent_id"),
+			SourceID:   fieldUint32(fields, "source_id"),
+		}
 	}
 	if p.cfg.DropMessage {
 		evt.Message = nil
@@ -168,6 +181,14 @@ func (p *Builtin) processJSONRawPacketHeader(evt *event.Event) ([]*event.Event, 
 	fields["message_type"] = evt.Source.Type
 	fields["bytes"] = int64(in.OriginalLength)
 	fields["packets"] = int64(1)
+	evt.SFlow = &event.SFlowMetadata{
+		AgentIP:      in.AgentIP,
+		SubAgentID:   in.SubAgentID,
+		SourceID:     in.SourceID,
+		SamplingRate: in.SamplingRate,
+		SamplePool:   in.SamplePool,
+		Drops:        in.Drops,
+	}
 
 	if tuple, err := parsePacketTuple(headerData); err == nil {
 		fields["src_addr"] = tuple.SrcAddr.String()
@@ -275,6 +296,14 @@ func (p *Builtin) processGoFlow2V2(evt *event.Event, payload any) ([]*event.Even
 			fields["flow_type"] = flowType
 		}
 	}
+	evt.SFlow = &event.SFlowMetadata{
+		AgentIP:      fieldStringOrZero(fields, "agent_ip"),
+		SubAgentID:   fieldUint32(fields, "sub_agent_id"),
+		SourceID:     fieldUint32(fields, "source_id"),
+		SamplingRate: fieldUint32(fields, "sampling_rate"),
+		SamplePool:   fieldUint32(fields, "sample_pool"),
+		Drops:        fieldUint32(fields, "drops"),
+	}
 
 	if p.cfg.DropMessage {
 		evt.Message = nil
@@ -372,6 +401,33 @@ func ensureFields(evt *event.Event, capacity int) map[string]any {
 		evt.Fields = make(map[string]any, capacity)
 	}
 	return evt.Fields
+}
+
+func fieldStringOrZero(fields map[string]any, key string) string {
+	if fields == nil {
+		return ""
+	}
+	val, ok := fields[key]
+	if !ok {
+		return ""
+	}
+	switch v := val.(type) {
+	case string:
+		return v
+	default:
+		return fmt.Sprint(v)
+	}
+}
+
+func fieldUint32(fields map[string]any, key string) uint32 {
+	if fields == nil {
+		return 0
+	}
+	val, ok := fields[key]
+	if !ok {
+		return 0
+	}
+	return uint32FromAny(val)
 }
 
 func stringAlias(m map[string]any, keys ...string) string {

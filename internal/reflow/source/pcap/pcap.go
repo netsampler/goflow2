@@ -15,6 +15,7 @@ import (
 
 type Source struct {
 	cfg                   config.SourceConfig
+	agentIP               string
 	handle                *pcap.Handle
 	captureInterfaceIndex int
 	wg                    sync.WaitGroup
@@ -41,8 +42,10 @@ func New(cfg config.SourceConfig) (*Source, error) {
 	if err != nil {
 		return nil, fmt.Errorf("lookup capture interface %s: %w", cfg.Interface, err)
 	}
+	agentIP := firstInterfaceIP(iface)
 	return &Source{
 		cfg:                   cfg,
+		agentIP:               agentIP,
 		captureInterfaceIndex: iface.Index,
 	}, nil
 }
@@ -102,8 +105,12 @@ func (s *Source) Start(ctx context.Context, emit func(*event.Event) error) error
 					Flavor: s.cfg.JSON.Flavor,
 				},
 			},
+			SFlow: &event.SFlowMetadata{
+				AgentIP: s.agentIP,
+			},
 			Payload: append([]byte(nil), data...),
 			Fields: map[string]any{
+				"agent_ip":       s.agentIP,
 				"capture_length": ci.CaptureLength,
 				"wire_length":    ci.Length,
 			},
@@ -129,4 +136,34 @@ func (s *Source) Close() error {
 	}
 	s.wg.Wait()
 	return nil
+}
+
+func firstInterfaceIP(iface *net.Interface) string {
+	addrs, err := iface.Addrs()
+	if err != nil {
+		return "127.0.0.1"
+	}
+	var fallback string
+	for _, addr := range addrs {
+		var ip net.IP
+		switch v := addr.(type) {
+		case *net.IPNet:
+			ip = v.IP
+		case *net.IPAddr:
+			ip = v.IP
+		}
+		if ip == nil || ip.IsLoopback() {
+			continue
+		}
+		if ipv4 := ip.To4(); ipv4 != nil {
+			return ipv4.String()
+		}
+		if fallback == "" {
+			fallback = ip.String()
+		}
+	}
+	if fallback != "" {
+		return fallback
+	}
+	return "127.0.0.1"
 }

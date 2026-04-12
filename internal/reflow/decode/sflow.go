@@ -42,6 +42,16 @@ func (d *builtIn) decodeSFlow(evt *event.Event, payload []byte, version uint32) 
 func (d *builtIn) eventFromSFlowSample(base *event.Event, packet *sflow.Packet, sample sflow.FlowSample) *event.Event {
 	evt := cloneEvent(base)
 	fields := ensureFields(evt, 16)
+	evt.SFlow = &event.SFlowMetadata{
+		AgentIP:        fmt.Sprint(packet.AgentIP),
+		SubAgentID:     packet.SubAgentId,
+		SequenceNumber: packet.SequenceNumber,
+		Uptime:         packet.Uptime,
+		SourceID:       sample.Header.SourceIdValue,
+		SamplingRate:   sample.SamplingRate,
+		SamplePool:     sample.SamplePool,
+		Drops:          sample.Drops,
+	}
 	fields["message_type"] = "flow"
 	fields["flow_type"] = "sflow"
 	fields["flow_version"] = packet.Version
@@ -97,6 +107,16 @@ func (d *builtIn) eventFromSFlowSample(base *event.Event, packet *sflow.Packet, 
 func (d *builtIn) eventFromExpandedSFlowSample(base *event.Event, packet *sflow.Packet, sample sflow.ExpandedFlowSample) *event.Event {
 	evt := cloneEvent(base)
 	fields := ensureFields(evt, 16)
+	evt.SFlow = &event.SFlowMetadata{
+		AgentIP:        fmt.Sprint(packet.AgentIP),
+		SubAgentID:     packet.SubAgentId,
+		SequenceNumber: packet.SequenceNumber,
+		Uptime:         packet.Uptime,
+		SourceID:       sample.Header.SourceIdValue,
+		SamplingRate:   sample.SamplingRate,
+		SamplePool:     sample.SamplePool,
+		Drops:          sample.Drops,
+	}
 	fields["message_type"] = "flow"
 	fields["flow_type"] = "sflow"
 	fields["flow_version"] = packet.Version

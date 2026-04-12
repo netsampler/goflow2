@@ -22,6 +22,10 @@ func cloneEvent(evt *event.Event) *event.Event {
 		Message:    evt.Message,
 		Payload:    evt.Payload,
 	}
+	if evt.SFlow != nil {
+		copy := *evt.SFlow
+		item.SFlow = &copy
+	}
 	if evt.Fields != nil {
 		item.Fields = make(map[string]any, len(evt.Fields))
 		for k, v := range evt.Fields {
