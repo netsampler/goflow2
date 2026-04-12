@@ -356,6 +356,71 @@ func TestSFlowEncoderEmitsInterfaceCounterSample(t *testing.T) {
 	}
 }
 
+func TestSFlowEncoderUsesConfiguredExpandedCounterFormat(t *testing.T) {
+	enc := NewSFlowEncoder(config.EncoderConfig{
+		Type: "sflow",
+		SFlow: config.SFlowConfig{
+			CounterFormat: "expanded",
+		},
+	})
+
+	payloads, err := enc.Encode(&event.Event{
+		Fields: map[string]any{
+			"message_type": "counter",
+			"record_kind":  "interface_counter",
+			"agent_ip":     "192.0.2.1",
+			"source_id":    uint32(8),
+			"source_id_type": uint32(2),
+			"if_index":     uint32(9),
+		},
+	})
+	if err != nil {
+		t.Fatalf("Encode returned error: %v", err)
+	}
+
+	packet := decodeSFlowPacket(t, payloads[0])
+	sample := packet.Samples[0].(sflow.CounterSample)
+	if sample.Header.Format != sflow.SAMPLE_FORMAT_EXPANDED_COUNTER {
+		t.Fatalf("expected expanded counter sample format, got %d", sample.Header.Format)
+	}
+	if sample.Header.SourceIdType != 2 {
+		t.Fatalf("expected source_id_type 2, got %d", sample.Header.SourceIdType)
+	}
+}
+
+func TestSFlowCounterEventOverridesConfiguredFormat(t *testing.T) {
+	enc := NewSFlowEncoder(config.EncoderConfig{
+		Type: "sflow",
+		SFlow: config.SFlowConfig{
+			CounterFormat: "standard",
+		},
+	})
+
+	payloads, err := enc.Encode(&event.Event{
+		Fields: map[string]any{
+			"message_type":  "counter",
+			"record_kind":   "interface_counter",
+			"counter_format": "expanded",
+			"agent_ip":      "192.0.2.1",
+			"source_id":     uint32(8),
+			"source_id_type": uint32(3),
+			"if_index":      uint32(9),
+		},
+	})
+	if err != nil {
+		t.Fatalf("Encode returned error: %v", err)
+	}
+
+	packet := decodeSFlowPacket(t, payloads[0])
+	sample := packet.Samples[0].(sflow.CounterSample)
+	if sample.Header.Format != sflow.SAMPLE_FORMAT_EXPANDED_COUNTER {
+		t.Fatalf("expected event override to force expanded format, got %d", sample.Header.Format)
+	}
+	if sample.Header.SourceIdType != 3 {
+		t.Fatalf("expected source_id_type 3, got %d", sample.Header.SourceIdType)
+	}
+}
+
 func TestIPFIXEncoderEmitsTemplateAndDataRecord(t *testing.T) {
 	enc := NewIPFIXEncoder(testTFlowEncoderConfig("ipfix"))
 	evt := testTemplatedFlowEvent()

@@ -564,12 +564,13 @@ func (e *SFlowEncoder) buildCounterSample(evt *event.Event) (sflow.CounterSample
 		return sflow.CounterSample{}, fmt.Errorf("event fields are empty")
 	}
 	sf := evt.SFlow
+	format, sourceIDType := e.counterSampleFormat(fields)
 
 	return sflow.CounterSample{
 		Header: sflow.SampleHeader{
-			Format:               sflow.SAMPLE_FORMAT_COUNTER,
+			Format:               format,
 			SampleSequenceNumber: e.sampleSequence(evt),
-			SourceIdType:         0,
+			SourceIdType:         sourceIDType,
 			SourceIdValue:        sflowSourceID(sf, fields),
 		},
 		CounterRecordsCount: 1,
@@ -599,6 +600,22 @@ func (e *SFlowEncoder) buildCounterSample(evt *event.Event) (sflow.CounterSample
 			},
 		},
 	}, nil
+}
+
+func (e *SFlowEncoder) counterSampleFormat(fields map[string]any) (uint32, uint32) {
+	switch stringFieldOrZero(fields, "counter_format") {
+	case "expanded":
+		return sflow.SAMPLE_FORMAT_EXPANDED_COUNTER, uint32Field(fields, "source_id_type")
+	case "standard":
+		return sflow.SAMPLE_FORMAT_COUNTER, 0
+	}
+
+	switch e.cfg.CounterFormat {
+	case "expanded":
+		return sflow.SAMPLE_FORMAT_EXPANDED_COUNTER, uint32Field(fields, "source_id_type")
+	default:
+		return sflow.SAMPLE_FORMAT_COUNTER, 0
+	}
 }
 
 type sflowPacketTopLevel struct {
@@ -1952,6 +1969,9 @@ func eventHasIPv6(fields map[string]any) bool {
 }
 
 func eventStream(evt *event.Event, fallback string) string {
+	if evt != nil && evt.Stream != "" {
+		return evt.Stream
+	}
 	if evt != nil && evt.Control != nil && evt.Control.Stream != "" {
 		return evt.Control.Stream
 	}

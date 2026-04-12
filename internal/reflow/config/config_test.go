@@ -143,6 +143,12 @@ sink:
 	if len(cfg.Aggregator.Sum) == 0 || len(cfg.Aggregator.First) == 0 || len(cfg.Aggregator.Current) == 0 {
 		t.Fatalf("expected aggregation defaults to be populated, got sum=%#v first=%#v current=%#v", cfg.Aggregator.Sum, cfg.Aggregator.First, cfg.Aggregator.Current)
 	}
+	if len(cfg.Aggregators) != 1 {
+		t.Fatalf("expected legacy aggregator to be normalized into aggregators list, got %d entries", len(cfg.Aggregators))
+	}
+	if cfg.Aggregators[0].Stream != "flow_data" {
+		t.Fatalf("expected default stream=flow_data, got %q", cfg.Aggregators[0].Stream)
+	}
 }
 
 func TestLoadRejectsAggregatorWithoutExportTrigger(t *testing.T) {
@@ -172,6 +178,103 @@ sink:
 
 	if _, err := Load(cfgPath); err == nil {
 		t.Fatalf("expected Load to reject aggregator without export trigger")
+	}
+}
+
+func TestLoadSupportsAggregatorList(t *testing.T) {
+	dir := t.TempDir()
+
+	cfgPath := filepath.Join(dir, "reflow.yaml")
+	if err := os.WriteFile(cfgPath, []byte(`
+source:
+  network: udp
+  address: ":18081"
+  type: json
+
+processor:
+  type: builtin
+
+aggregators:
+  - enabled: true
+    stream: agg_samples
+    periodic:
+      every_ms: 1000
+    match:
+      record_kind: packet
+  - enabled: true
+    stream: agg_counters
+    periodic:
+      every_ms: 1000
+    match:
+      record_kind: interface_counter
+    current:
+      - if_in_octets
+
+encoder:
+  type: json
+
+sink:
+  type: stdout
+`), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	cfg, err := Load(cfgPath)
+	if err != nil {
+		t.Fatalf("Load returned error: %v", err)
+	}
+
+	if len(cfg.Aggregators) != 2 {
+		t.Fatalf("expected 2 aggregators, got %d", len(cfg.Aggregators))
+	}
+	if cfg.Aggregators[0].Stream != "agg_samples" {
+		t.Fatalf("expected first stream agg_samples, got %q", cfg.Aggregators[0].Stream)
+	}
+	if cfg.Aggregators[0].Match["record_kind"] != "packet" {
+		t.Fatalf("expected first match record_kind=packet, got %#v", cfg.Aggregators[0].Match)
+	}
+	if cfg.Aggregators[1].Stream != "agg_counters" {
+		t.Fatalf("expected second stream agg_counters, got %q", cfg.Aggregators[1].Stream)
+	}
+	if cfg.Aggregators[1].Match["record_kind"] != "interface_counter" {
+		t.Fatalf("expected second match record_kind=interface_counter, got %#v", cfg.Aggregators[1].Match)
+	}
+}
+
+func TestLoadRejectsLegacyAndListAggregatorsTogether(t *testing.T) {
+	dir := t.TempDir()
+
+	cfgPath := filepath.Join(dir, "reflow.yaml")
+	if err := os.WriteFile(cfgPath, []byte(`
+source:
+  network: udp
+  address: ":18081"
+  type: json
+
+processor:
+  type: builtin
+
+aggregator:
+  enabled: true
+  periodic:
+    every_ms: 1000
+
+aggregators:
+  - enabled: true
+    periodic:
+      every_ms: 1000
+
+encoder:
+  type: json
+
+sink:
+  type: stdout
+`), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	if _, err := Load(cfgPath); err == nil {
+		t.Fatalf("expected Load to reject aggregator and aggregators together")
 	}
 }
 
@@ -212,5 +315,39 @@ sink:
 	}
 	if cfg.Encoder.JSON.DropFields[0] != "header_data" || cfg.Encoder.JSON.DropFields[1] != "payload" {
 		t.Fatalf("unexpected json.drop_fields contents: %#v", cfg.Encoder.JSON.DropFields)
+	}
+}
+
+func TestLoadSupportsSFlowCounterFormat(t *testing.T) {
+	dir := t.TempDir()
+
+	cfgPath := filepath.Join(dir, "reflow.yaml")
+	if err := os.WriteFile(cfgPath, []byte(`
+source:
+  network: udp
+  address: ":18081"
+  type: json
+
+processor:
+  type: builtin
+
+encoder:
+  type: sflow
+  sflow:
+    counter_format: expanded
+
+sink:
+  type: stdout
+`), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	cfg, err := Load(cfgPath)
+	if err != nil {
+		t.Fatalf("Load returned error: %v", err)
+	}
+
+	if cfg.Encoder.SFlow.CounterFormat != "expanded" {
+		t.Fatalf("expected sflow.counter_format=expanded, got %#v", cfg.Encoder.SFlow.CounterFormat)
 	}
 }

@@ -16,13 +16,14 @@ type FlagConfig struct {
 }
 
 type Config struct {
-	LogLevel   string           `yaml:"-"`
-	LogFormat  string           `yaml:"-"`
-	Source     SourceConfig     `yaml:"source"`
-	Processor  ProcessorConfig  `yaml:"processor"`
-	Aggregator AggregatorConfig `yaml:"aggregator"`
-	Encoder    EncoderConfig    `yaml:"encoder"`
-	Sink       SinkConfig       `yaml:"sink"`
+	LogLevel    string             `yaml:"-"`
+	LogFormat   string             `yaml:"-"`
+	Source      SourceConfig       `yaml:"source"`
+	Processor   ProcessorConfig    `yaml:"processor"`
+	Aggregator  AggregatorConfig   `yaml:"aggregator"`
+	Aggregators []AggregatorConfig `yaml:"aggregators"`
+	Encoder     EncoderConfig      `yaml:"encoder"`
+	Sink        SinkConfig         `yaml:"sink"`
 }
 
 type SourceConfig struct {
@@ -51,7 +52,8 @@ type BuiltinProcessorConfig struct {
 }
 
 type AggregatorConfig struct {
-	Enabled bool `yaml:"enabled"`
+	Enabled bool   `yaml:"enabled"`
+	Stream  string `yaml:"stream"`
 	// Window controls bucket closure based on activity and age.
 	Window AggregatorWindowConfig `yaml:"window"`
 	// Periodic controls snapshot-style exports of current bucket state.
@@ -60,6 +62,7 @@ type AggregatorConfig struct {
 	Sum          []string                 `yaml:"sum"`
 	First        []string                 `yaml:"first"`
 	Current      []string                 `yaml:"current"`
+	Match        map[string]string        `yaml:"match"`
 	TemplateID   uint16                   `yaml:"template_id"`
 	StaticFields map[string]any           `yaml:"static_fields"`
 
@@ -114,8 +117,9 @@ type BatchConfig struct {
 }
 
 type SFlowConfig struct {
-	AgentIP   string               `yaml:"agent_ip"`
-	BatchOver SFlowBatchOverConfig `yaml:"batch_over"`
+	AgentIP       string               `yaml:"agent_ip"`
+	CounterFormat string               `yaml:"counter_format"`
+	BatchOver     SFlowBatchOverConfig `yaml:"batch_over"`
 }
 
 type SFlowBatchOverConfig struct {
@@ -217,6 +221,20 @@ func (c *Config) setDefaults(configPath string) error {
 		}
 		defaultAggregateFields(&c.Aggregator)
 	}
+	if len(c.Aggregators) > 0 {
+		if c.Aggregator.Enabled || !isZeroAggregatorConfig(c.Aggregator) {
+			return fmt.Errorf("config cannot define both aggregator and aggregators")
+		}
+		for i := range c.Aggregators {
+			applyAggregatorCompatibility(&c.Aggregators[i])
+			if err := validateAggregatorConfig(c.Aggregators[i]); err != nil {
+				return fmt.Errorf("aggregators[%d]: %w", i, err)
+			}
+			defaultAggregateFields(&c.Aggregators[i])
+		}
+	} else if c.Aggregator.Enabled || !isZeroAggregatorConfig(c.Aggregator) {
+		c.Aggregators = []AggregatorConfig{c.Aggregator}
+	}
 	if err := c.loadFlowDataCatalog(configPath); err != nil {
 		return err
 	}
@@ -251,6 +269,13 @@ func (c *Config) setDefaults(configPath string) error {
 	defaultTrue(&c.Encoder.SFlow.BatchOver.SubAgentID)
 	defaultTrue(&c.Encoder.SFlow.BatchOver.SequenceNumber)
 	defaultTrue(&c.Encoder.SFlow.BatchOver.Uptime)
+	switch c.Encoder.SFlow.CounterFormat {
+	case "", "standard":
+		c.Encoder.SFlow.CounterFormat = "standard"
+	case "expanded":
+	default:
+		return fmt.Errorf("unsupported encoder.sflow.counter_format %q", c.Encoder.SFlow.CounterFormat)
+	}
 	if c.Encoder.Batch.MaxRecords < 0 {
 		return fmt.Errorf("encoder.batch.max_records must be >= 0")
 	}
@@ -330,6 +355,9 @@ func mergeIPFIXFields(sources ...map[string]IPFIXFieldDefinition) map[string]IPF
 }
 
 func defaultAggregateFields(cfg *AggregatorConfig) {
+	if cfg.Stream == "" {
+		cfg.Stream = "flow_data"
+	}
 	if len(cfg.Sum) == 0 {
 		cfg.Sum = []string{"bytes", "packets"}
 	}
@@ -385,4 +413,20 @@ func validateAggregatorConfig(cfg AggregatorConfig) error {
 		return fmt.Errorf("aggregator requires at least one export trigger: window.idle_flush_after_ms, window.max_flush_after_ms, or periodic.every_ms")
 	}
 	return nil
+}
+
+func isZeroAggregatorConfig(cfg AggregatorConfig) bool {
+	return !cfg.Enabled &&
+		cfg.Stream == "" &&
+		cfg.Window == (AggregatorWindowConfig{}) &&
+		cfg.Periodic == (AggregatorPeriodicConfig{}) &&
+		len(cfg.KeyFields) == 0 &&
+		len(cfg.Sum) == 0 &&
+		len(cfg.First) == 0 &&
+		len(cfg.Current) == 0 &&
+		len(cfg.Match) == 0 &&
+		cfg.TemplateID == 0 &&
+		len(cfg.StaticFields) == 0 &&
+		cfg.ResetInterval == 0 &&
+		cfg.PeriodicInterval == 0
 }
