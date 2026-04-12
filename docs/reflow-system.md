@@ -18,18 +18,18 @@ ReFlow keeps a simple single-path runtime:
 
 ```mermaid
 flowchart LR
-    S[Source] --> D[Decode]
+    S[Sources] --> D[Decode]
     D --> P[Processor]
     P --> A{Aggregation Enabled?}
     A -- no --> E[Encoder]
-    A -- yes --> G[Aggregator]
+    A -- yes --> G[Aggregators]
     G --> E
     E --> K[Sink]
 ```
 
 The simplified mental model is still:
 
-`source -> processor -> optional aggregator -> sink`
+`sources -> processor -> optional aggregators -> sink`
 
 but the encoder sits between the internal event path and the transport sink.
 
@@ -58,6 +58,10 @@ Sources may emit:
 
 * normal packets or datagrams
 * periodic metadata events
+
+Multiple sources may run at the same time and fan into the same decode and
+processing pipeline. Each event must therefore carry enough source metadata to
+keep origin and exporter state explicit.
 
 Examples of periodic source metadata:
 
@@ -229,14 +233,14 @@ This block is intended to be shared by templated exporters such as:
 
 ## Timestamps
 
-The preferred canonical direction is integer nanoseconds in internal events.
+The current canonical direction is integer Unix timestamps stored on the event.
 
 Examples:
 
-* `flow_start_ns`
-* `flow_end_ns`
+* `start_time_unix`
+* `end_time_unix`
 
-Exporters can then convert those into protocol-specific units during encoding.
+Exporters can convert those into protocol-specific units or field types during encoding.
 
 ## Options Data Direction
 

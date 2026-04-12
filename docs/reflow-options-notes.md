@@ -106,15 +106,19 @@ In other words, the same way data templates are flowing, option templates should
 Likely future config shape:
 
 ```yaml
-source:
-  emit_options:
-    enabled: true
-    periodic_interval_ms: 60000
-    include:
-      - sampling_rate
-      - sample_pool
-      - drops
-      - interface
+sources:
+  - network: udp
+    address: ":18081"
+    type: flow
+    emit_options:
+      enabled: true
+      periodic:
+        every_ms: 60000
+      include:
+        - sampling_rate
+        - sample_pool
+        - drops
+        - interface
 
 aggregators:
   - enabled: true

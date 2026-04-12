@@ -1,10 +1,10 @@
-source:
-  network: pcap_live
-  interface: en0
-  snaplen: 65535
-  sample_every: 1
-  sample_offset: 0
-  type: bytes
+sources:
+  - network: pcap_live
+    interface: en0
+    snaplen: 65535
+    sample_every: 1
+    sample_offset: 0
+    type: bytes
 
 processor:
   type: builtin

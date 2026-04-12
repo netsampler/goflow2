@@ -1,7 +1,7 @@
-source:
-  network: udp
-  address: ":6343"
-  type: flow
+sources:
+  - network: udp
+    address: ":6343"
+    type: flow
 
 processor:
   type: builtin

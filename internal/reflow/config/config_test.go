@@ -31,12 +31,12 @@ fields:
 
 	cfgPath := filepath.Join(dir, "reflow.yaml")
 	if err := os.WriteFile(cfgPath, []byte(`
-source:
-  network: udp
-  address: ":18081"
-  type: json
-  json:
-    flavor: reflow
+sources:
+  - network: udp
+    address: ":18081"
+    type: json
+    json:
+      flavor: reflow
 
 processor:
   type: builtin
@@ -73,6 +73,12 @@ sink:
 		t.Fatalf("Load returned error: %v", err)
 	}
 
+	if len(cfg.Sources) != 1 {
+		t.Fatalf("expected 1 source, got %d", len(cfg.Sources))
+	}
+	if cfg.Sources[0].Address != ":18081" {
+		t.Fatalf("expected sources[0].address=:18081, got %q", cfg.Sources[0].Address)
+	}
 	if len(cfg.Aggregators) != 1 {
 		t.Fatalf("expected 1 aggregator, got %d", len(cfg.Aggregators))
 	}
@@ -111,12 +117,12 @@ func TestLoadSupportsAccumulativeAggregatorDefaults(t *testing.T) {
 
 	cfgPath := filepath.Join(dir, "reflow.yaml")
 	if err := os.WriteFile(cfgPath, []byte(`
-source:
-  network: udp
-  address: ":18081"
-  type: json
-  json:
-    flavor: reflow
+sources:
+  - network: udp
+    address: ":18081"
+    type: json
+    json:
+      flavor: reflow
 
 processor:
   type: builtin
@@ -159,10 +165,10 @@ func TestLoadRejectsAggregatorWithoutExportTrigger(t *testing.T) {
 
 	cfgPath := filepath.Join(dir, "reflow.yaml")
 	if err := os.WriteFile(cfgPath, []byte(`
-source:
-  network: udp
-  address: ":18081"
-  type: json
+sources:
+  - network: udp
+    address: ":18081"
+    type: json
 
 processor:
   type: builtin
@@ -189,10 +195,10 @@ func TestLoadSupportsAggregatorList(t *testing.T) {
 
 	cfgPath := filepath.Join(dir, "reflow.yaml")
 	if err := os.WriteFile(cfgPath, []byte(`
-source:
-  network: udp
-  address: ":18081"
-  type: json
+sources:
+  - network: udp
+    address: ":18081"
+    type: json
 
 processor:
   type: builtin
@@ -249,10 +255,10 @@ func TestLoadSupportsJSONDropFields(t *testing.T) {
 
 	cfgPath := filepath.Join(dir, "reflow.yaml")
 	if err := os.WriteFile(cfgPath, []byte(`
-source:
-  network: udp
-  address: ":18081"
-  type: json
+sources:
+  - network: udp
+    address: ":18081"
+    type: json
 
 processor:
   type: builtin
@@ -289,10 +295,10 @@ func TestLoadSupportsSFlowCounterFormat(t *testing.T) {
 
 	cfgPath := filepath.Join(dir, "reflow.yaml")
 	if err := os.WriteFile(cfgPath, []byte(`
-source:
-  network: udp
-  address: ":18081"
-  type: json
+sources:
+  - network: udp
+    address: ":18081"
+    type: json
 
 processor:
   type: builtin
@@ -315,5 +321,27 @@ sink:
 
 	if cfg.Encoder.SFlow.CounterFormat != "expanded" {
 		t.Fatalf("expected sflow.counter_format=expanded, got %#v", cfg.Encoder.SFlow.CounterFormat)
+	}
+}
+
+func TestLoadRejectsMissingSources(t *testing.T) {
+	dir := t.TempDir()
+
+	cfgPath := filepath.Join(dir, "reflow.yaml")
+	if err := os.WriteFile(cfgPath, []byte(`
+processor:
+  type: builtin
+
+encoder:
+  type: json
+
+sink:
+  type: stdout
+`), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	if _, err := Load(cfgPath); err == nil {
+		t.Fatalf("expected Load to reject missing sources")
 	}
 }

@@ -1,9 +1,9 @@
-source:
-  network: udp
-  address: ":18081"
-  type: json
-  json:
-    flavor: goflow2v2
+sources:
+  - network: udp
+    address: ":18081"
+    type: json
+    json:
+      flavor: goflow2v2
 
 processor:
   type: builtin

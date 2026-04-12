@@ -901,8 +901,10 @@ processor:
 aggregators:
   - enabled: true
     stream: flow_data
-    reset_interval_ms: 10000
-    periodic_interval_ms: 60000
+    window:
+      idle_flush_after_ms: 10000
+    periodic:
+      every_ms: 60000
     key_fields: [src_addr, dst_addr, proto, src_port, dst_port]
     template_id: 256
     static_fields:
@@ -910,9 +912,9 @@ aggregators:
     # sum: add numeric counters into the active bucket
     sum: [bytes, packets]
     # first: keep the first value seen when the bucket is created
-    first: [agent_ip, flow_start_ns]
+    first: [agent_ip, start_time_unix]
   # current: replace with the latest value seen for the bucket
-  current: [agent_ip, input_if, output_if, sampling_rate, sample_pool, drops, flow_end_ns]
+  current: [agent_ip, input_if, output_if, sampling_rate, sample_pool, drops, end_time_unix]
 
 batch:
   max_records: 64

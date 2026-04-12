@@ -20,7 +20,7 @@ import (
 
 type App struct {
 	logger           *slog.Logger
-	source           source.Source
+	sources          []source.Source
 	decoder          decode.Decoder
 	processor        processor.Processor
 	processorWorkers int
@@ -38,9 +38,13 @@ func New(cfg *config.Config) (*App, error) {
 	}
 	slog.SetDefault(logger)
 
-	src, err := source.New(cfg.Source)
-	if err != nil {
-		return nil, fmt.Errorf("init source: %w", err)
+	sources := make([]source.Source, 0, len(cfg.Sources))
+	for i, srcCfg := range cfg.Sources {
+		src, err := source.New(srcCfg)
+		if err != nil {
+			return nil, fmt.Errorf("init source %d: %w", i, err)
+		}
+		sources = append(sources, src)
 	}
 	proc, err := processor.New(cfg.Processor)
 	if err != nil {
@@ -67,7 +71,7 @@ func New(cfg *config.Config) (*App, error) {
 
 	return &App{
 		logger:           logger,
-		source:           src,
+		sources:          sources,
 		decoder:          decode.New(),
 		processor:        proc,
 		processorWorkers: cfg.Processor.Workers,
@@ -280,25 +284,36 @@ func (a *App) Run(ctx context.Context) error {
 			encodeJobs <- evt
 		}
 	}
-	sourceInitEvents, err := a.source.InitEvents()
-	if err != nil {
-		return fmt.Errorf("init source events: %w", err)
-	}
-	for _, evt := range sourceInitEvents {
-		encodeJobs <- evt
+	for i, src := range a.sources {
+		sourceInitEvents, err := src.InitEvents()
+		if err != nil {
+			return fmt.Errorf("init source %d events: %w", i, err)
+		}
+		for _, evt := range sourceInitEvents {
+			encodeJobs <- evt
+		}
 	}
 
-	sourceDone := make(chan error, 1)
-	go func() {
-		sourceDone <- a.source.Start(sourceCtx, func(evt *event.Event) error {
-			select {
-			case decodeJobs <- evt:
-				return nil
-			case <-sourceCtx.Done():
-				return ctx.Err()
+	sourceDone := make(chan error, len(a.sources))
+	var sourceWG sync.WaitGroup
+	for i, src := range a.sources {
+		sourceWG.Add(1)
+		go func(i int, src source.Source) {
+			defer sourceWG.Done()
+			err := src.Start(sourceCtx, func(evt *event.Event) error {
+				select {
+				case decodeJobs <- evt:
+					return nil
+				case <-sourceCtx.Done():
+					return ctx.Err()
+				}
+			})
+			sourceDone <- err
+			if err != nil && sourceCtx.Err() == nil {
+				a.logger.Error("source error", slog.Int("source_index", i), slog.String("error", err.Error()))
 			}
-		})
-	}()
+		}(i, src)
+	}
 
 	shutdown := func() {
 		close(decodeJobs)
@@ -314,6 +329,11 @@ func (a *App) Run(ctx context.Context) error {
 
 	select {
 	case err := <-sourceDone:
+		stopSource()
+		for _, src := range a.sources {
+			_ = src.Close()
+		}
+		sourceWG.Wait()
 		shutdown()
 		if err != nil && sourceCtx.Err() == nil {
 			return fmt.Errorf("run source: %w", err)
@@ -321,8 +341,10 @@ func (a *App) Run(ctx context.Context) error {
 		return nil
 	case <-ctx.Done():
 		stopSource()
-		_ = a.source.Close()
-		<-sourceDone
+		for _, src := range a.sources {
+			_ = src.Close()
+		}
+		sourceWG.Wait()
 		shutdown()
 		return nil
 	}

@@ -18,7 +18,7 @@ type FlagConfig struct {
 type Config struct {
 	LogLevel    string             `yaml:"-"`
 	LogFormat   string             `yaml:"-"`
-	Source      SourceConfig       `yaml:"source"`
+	Sources     []SourceConfig     `yaml:"sources"`
 	Processor   ProcessorConfig    `yaml:"processor"`
 	Aggregators []AggregatorConfig `yaml:"aggregators"`
 	Encoder     EncoderConfig      `yaml:"encoder"`
@@ -178,30 +178,12 @@ func Load(path string) (*Config, error) {
 }
 
 func (c *Config) setDefaults(configPath string) error {
-	if c.Source.Network == "" {
-		c.Source.Network = "udp"
+	if len(c.Sources) == 0 {
+		return fmt.Errorf("sources must contain at least one source")
 	}
-	if c.Source.Network != "pcap_live" && c.Source.Address == "" {
-		c.Source.Address = ":18080"
-	}
-	if c.Source.Network == "pcap_live" {
-		if c.Source.Interface == "" {
-			return fmt.Errorf("source.interface is required when source.network=pcap_live")
-		}
-		if c.Source.SnapLen <= 0 {
-			c.Source.SnapLen = 65535
-		}
-		if c.Source.SampleEvery <= 0 {
-			c.Source.SampleEvery = 1
-		}
-		if c.Source.SampleOffset < 0 || c.Source.SampleOffset >= c.Source.SampleEvery {
-			return fmt.Errorf("source.sample_offset must be >= 0 and < source.sample_every")
-		}
-		if c.Source.Address == "" {
-			c.Source.Address = c.Source.Interface
-		}
-		if c.Source.Type == "" {
-			c.Source.Type = "bytes"
+	for i := range c.Sources {
+		if err := applySourceDefaults(&c.Sources[i]); err != nil {
+			return fmt.Errorf("sources[%d]: %w", i, err)
 		}
 	}
 	if c.Processor.Type == "" {
@@ -290,6 +272,36 @@ func (c *Config) setDefaults(configPath string) error {
 	}
 	if (c.Sink.Type == "udp" || c.Sink.Type == "unixgram") && c.Sink.Address == "" {
 		return fmt.Errorf("sink.address is required when sink.type=%s", c.Sink.Type)
+	}
+	return nil
+}
+
+func applySourceDefaults(src *SourceConfig) error {
+	if src.Network == "" {
+		src.Network = "udp"
+	}
+	if src.Network != "pcap_live" && src.Address == "" {
+		src.Address = ":18080"
+	}
+	if src.Network == "pcap_live" {
+		if src.Interface == "" {
+			return fmt.Errorf("source.interface is required when source.network=pcap_live")
+		}
+		if src.SnapLen <= 0 {
+			src.SnapLen = 65535
+		}
+		if src.SampleEvery <= 0 {
+			src.SampleEvery = 1
+		}
+		if src.SampleOffset < 0 || src.SampleOffset >= src.SampleEvery {
+			return fmt.Errorf("source.sample_offset must be >= 0 and < source.sample_every")
+		}
+		if src.Address == "" {
+			src.Address = src.Interface
+		}
+		if src.Type == "" {
+			src.Type = "bytes"
+		}
 	}
 	return nil
 }
