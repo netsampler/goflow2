@@ -73,8 +73,9 @@ type BatchConfig struct {
 }
 
 type SFlowConfig struct {
-	AgentIP   string               `yaml:"agent_ip"`
-	BatchOver SFlowBatchOverConfig `yaml:"batch_over"`
+	AgentIP       string               `yaml:"agent_ip"`
+	AllowTruncate bool                 `yaml:"allow_truncate"`
+	BatchOver     SFlowBatchOverConfig `yaml:"batch_over"`
 }
 
 type SFlowBatchOverConfig struct {

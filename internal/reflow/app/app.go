@@ -81,7 +81,6 @@ func (a *App) Run(ctx context.Context) error {
 	processJobs := make(chan *event.Event, a.processorWorkers*2)
 	aggregateJobs := make(chan *event.Event, a.processorWorkers*2)
 	encodeJobs := make(chan *event.Event, a.encoderWorkers*2)
-	errCh := make(chan error, 1)
 
 	var decodeWG sync.WaitGroup
 	decodeWG.Add(1)
@@ -90,12 +89,8 @@ func (a *App) Run(ctx context.Context) error {
 		for evt := range decodeJobs {
 			events, err := a.decoder.Decode(evt)
 			if err != nil {
-				select {
-				case errCh <- err:
-				default:
-				}
-				cancel()
-				return
+				a.logger.Error("decode error", slog.String("error", err.Error()))
+				continue
 			}
 			for _, item := range events {
 				select {
@@ -115,12 +110,8 @@ func (a *App) Run(ctx context.Context) error {
 			for evt := range processJobs {
 				events, err := a.processor.Process(evt)
 				if err != nil {
-					select {
-					case errCh <- err:
-					default:
-					}
-					cancel()
-					return
+					a.logger.Error("process error", slog.String("error", err.Error()))
+					continue
 				}
 				for _, item := range events {
 					select {
@@ -166,12 +157,8 @@ func (a *App) Run(ctx context.Context) error {
 				events, err = agg.Flush()
 			}
 			if err != nil {
-				select {
-				case errCh <- err:
-				default:
-				}
-				cancel()
-				return false
+				a.logger.Error("aggregate flush error", slog.String("error", err.Error()))
+				return true
 			}
 			return forward(events)
 		}
@@ -191,12 +178,8 @@ func (a *App) Run(ctx context.Context) error {
 				}
 				events, err := agg.Process(evt)
 				if err != nil {
-					select {
-					case errCh <- err:
-					default:
-					}
-					cancel()
-					return
+					a.logger.Error("aggregate error", slog.String("error", err.Error()))
+					continue
 				}
 				if !forward(events) {
 					return
@@ -212,10 +195,7 @@ func (a *App) Run(ctx context.Context) error {
 			defer encodeWG.Done()
 			enc, err := encode.New(a.encoderCfg)
 			if err != nil {
-				select {
-				case errCh <- err:
-				default:
-				}
+				a.logger.Error("init encoder error", slog.String("error", err.Error()))
 				cancel()
 				return
 			}
@@ -227,12 +207,8 @@ func (a *App) Run(ctx context.Context) error {
 			flush := func() bool {
 				payloads, err := enc.Flush()
 				if err != nil {
-					select {
-					case errCh <- err:
-					default:
-					}
-					cancel()
-					return false
+					a.logger.Error("encode flush error", slog.String("error", err.Error()))
+					return true
 				}
 				for _, payload := range payloads {
 					if err := a.sink.Send(payload); err != nil {
@@ -257,12 +233,8 @@ func (a *App) Run(ctx context.Context) error {
 					}
 					payloads, err := enc.Encode(evt)
 					if err != nil {
-						select {
-						case errCh <- err:
-						default:
-						}
-						cancel()
-						return
+						a.logger.Error("encode error", slog.String("error", err.Error()))
+						continue
 					}
 					for _, payload := range payloads {
 						if err := a.sink.Send(payload); err != nil {
@@ -287,16 +259,6 @@ func (a *App) Run(ctx context.Context) error {
 	}()
 
 	select {
-	case err := <-errCh:
-		close(decodeJobs)
-		decodeWG.Wait()
-		close(processJobs)
-		processWG.Wait()
-		close(aggregateJobs)
-		aggregateWG.Wait()
-		close(encodeJobs)
-		encodeWG.Wait()
-		return fmt.Errorf("run worker: %w", err)
 	case err := <-sourceDone:
 		close(decodeJobs)
 		decodeWG.Wait()

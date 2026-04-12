@@ -3,7 +3,9 @@ package encode
 import (
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"log/slog"
 	"net/netip"
 	"sync/atomic"
 	"time"
@@ -18,6 +20,8 @@ type Encoder interface {
 	Encode(evt *event.Event) ([][]byte, error)
 	Flush() ([][]byte, error)
 }
+
+var ErrSFlowSampleTooLarge = errors.New("sflow sample exceeds max_datagram_bytes")
 
 // New builds the configured encoder. Each encoder worker gets its own instance.
 func New(cfg config.EncoderConfig) (Encoder, error) {
@@ -123,6 +127,10 @@ func (e *SFlowEncoder) Encode(evt *event.Event) ([][]byte, error) {
 	if !e.batch.Enabled {
 		packet, err := e.buildPacket([]*event.Event{evt})
 		if err != nil {
+			if errors.Is(err, ErrSFlowSampleTooLarge) {
+				slog.Warn("dropping oversized sflow sample", slog.Int("max_datagram_bytes", e.maxDatagramBytes))
+				return nil, nil
+			}
 			return nil, err
 		}
 		return e.encodePacket(packet)
@@ -164,6 +172,11 @@ func (e *SFlowEncoder) Flush() ([][]byte, error) {
 	for len(pending) > 0 {
 		packet, accepted, err := e.buildPacketWithLimit(pending)
 		if err != nil {
+			if errors.Is(err, ErrSFlowSampleTooLarge) {
+				slog.Warn("dropping oversized sflow sample", slog.Int("max_datagram_bytes", e.maxDatagramBytes))
+				pending = pending[1:]
+				continue
+			}
 			return nil, err
 		}
 		encoded, err := e.encodePacket(packet)
@@ -286,6 +299,17 @@ func (e *SFlowEncoder) buildPacketWithLimit(events []*event.Event) (*sflow.Packe
 				return nil, accepted, fmt.Errorf("encode sflow packet: %w", err)
 			}
 			if len(data) > e.maxDatagramBytes {
+				if e.cfg.AllowTruncate {
+					truncated, ok, err := e.truncateLastSampleToFit(packet)
+					if err != nil {
+						return nil, accepted, err
+					}
+					if ok {
+						packet.Samples[len(packet.Samples)-1] = truncated
+						accepted++
+						continue
+					}
+				}
 				packet.Samples = packet.Samples[:len(packet.Samples)-1]
 				break
 			}
@@ -294,7 +318,7 @@ func (e *SFlowEncoder) buildPacketWithLimit(events []*event.Event) (*sflow.Packe
 	}
 
 	if accepted == 0 {
-		return nil, 0, fmt.Errorf("sflow sample exceeds max_datagram_bytes=%d", e.maxDatagramBytes)
+		return nil, 0, fmt.Errorf("%w=%d", ErrSFlowSampleTooLarge, e.maxDatagramBytes)
 	}
 
 	packet.SamplesCount = uint32(len(packet.Samples))
@@ -394,6 +418,55 @@ func (e *SFlowEncoder) sampleSequence(evt *event.Event) uint32 {
 		return evt.SFlow.SequenceNumber
 	}
 	return e.seq.Add(1)
+}
+
+func (e *SFlowEncoder) truncateLastSampleToFit(packet *sflow.Packet) (sflow.FlowSample, bool, error) {
+	lastIdx := len(packet.Samples) - 1
+	if lastIdx < 0 {
+		return sflow.FlowSample{}, false, nil
+	}
+	sample, ok := packet.Samples[lastIdx].(sflow.FlowSample)
+	if !ok || len(sample.Records) != 1 {
+		return sflow.FlowSample{}, false, nil
+	}
+	header, ok := sample.Records[0].Data.(sflow.SampledHeader)
+	if !ok || len(header.HeaderData) == 0 {
+		return sflow.FlowSample{}, false, nil
+	}
+
+	original := append([]byte(nil), header.HeaderData...)
+	best := sample
+	fit := false
+	low, high := 0, len(original)
+	for low <= high {
+		mid := (low + high) / 2
+		candidate := sample
+		candidateHeader := header
+		candidateHeader.HeaderData = append([]byte(nil), original[:mid]...)
+		candidate.Records = append([]sflow.FlowRecord(nil), sample.Records...)
+		candidate.Records[0] = sflow.FlowRecord{
+			Header: sample.Records[0].Header,
+			Data:   candidateHeader,
+		}
+		packet.Samples[lastIdx] = candidate
+		data, err := sflow.EncodeMessage(packet)
+		if err != nil {
+			packet.Samples[lastIdx] = sample
+			return sflow.FlowSample{}, false, fmt.Errorf("encode truncated sflow packet: %w", err)
+		}
+		if len(data) <= e.maxDatagramBytes {
+			best = candidate
+			fit = true
+			low = mid + 1
+			continue
+		}
+		high = mid - 1
+	}
+	packet.Samples[lastIdx] = sample
+	if !fit {
+		return sflow.FlowSample{}, false, nil
+	}
+	return best, true, nil
 }
 
 func stringField(fields map[string]any, key string) (string, error) {

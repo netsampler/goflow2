@@ -82,6 +82,63 @@ func TestSFlowEncoderSplitsBatchByAgentIPWhenConfigured(t *testing.T) {
 	}
 }
 
+func TestSFlowEncoderDropsOversizedSampleWithoutError(t *testing.T) {
+	enc := NewSFlowEncoder(config.EncoderConfig{
+		Type:             "sflow",
+		MaxDatagramBytes: 64,
+	})
+
+	payloads, err := enc.Encode(&event.Event{
+		Fields: map[string]any{
+			"agent_ip":        "192.0.2.1",
+			"protocol":        uint32(1),
+			"frame_length":    uint32(200),
+			"original_length": uint32(200),
+			"header_data":     bytes.Repeat([]byte{0xaa}, 200),
+		},
+	})
+	if err != nil {
+		t.Fatalf("Encode returned error for oversized sample: %v", err)
+	}
+	if len(payloads) != 0 {
+		t.Fatalf("expected oversized sample to be dropped without payload, got %d payloads", len(payloads))
+	}
+}
+
+func TestSFlowEncoderTruncatesOversizedSampleWhenEnabled(t *testing.T) {
+	enc := NewSFlowEncoder(config.EncoderConfig{
+		Type:             "sflow",
+		MaxDatagramBytes: 96,
+		SFlow: config.SFlowConfig{
+			AllowTruncate: true,
+		},
+	})
+
+	originalHeader := bytes.Repeat([]byte{0xaa}, 200)
+	payloads, err := enc.Encode(&event.Event{
+		Fields: map[string]any{
+			"agent_ip":        "192.0.2.1",
+			"protocol":        uint32(1),
+			"frame_length":    uint32(200),
+			"original_length": uint32(200),
+			"header_data":     originalHeader,
+		},
+	})
+	if err != nil {
+		t.Fatalf("Encode returned error for truncatable sample: %v", err)
+	}
+	if len(payloads) != 1 {
+		t.Fatalf("expected one truncated payload, got %d", len(payloads))
+	}
+
+	packet := decodeSFlowPacket(t, payloads[0])
+	sample := packet.Samples[0].(sflow.FlowSample)
+	header := sample.Records[0].Data.(sflow.SampledHeader)
+	if len(header.HeaderData) >= len(originalHeader) {
+		t.Fatalf("expected truncated header_data length < %d, got %d", len(originalHeader), len(header.HeaderData))
+	}
+}
+
 func testSFlowEvent(agentIP string) *event.Event {
 	return &event.Event{
 		Fields: map[string]any{
