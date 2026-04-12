@@ -10,6 +10,7 @@ import (
 	"github.com/netsampler/goflow2/v3/decoders/netflow"
 	"github.com/netsampler/goflow2/v3/decoders/netflowlegacy"
 	"github.com/netsampler/goflow2/v3/decoders/sflow"
+	"github.com/netsampler/goflow2/v3/internal/reflow/aggregate"
 	"github.com/netsampler/goflow2/v3/internal/reflow/config"
 	"github.com/netsampler/goflow2/v3/internal/reflow/event"
 	"github.com/netsampler/goflow2/v3/utils/store/templates"
@@ -429,6 +430,55 @@ func TestNFv9EncoderPassesThroughOptionsTemplate(t *testing.T) {
 
 	if _, ok := decoded.FlowSets[0].(netflow.NFv9OptionsTemplateFlowSet); !ok {
 		t.Fatalf("expected options template flow set, got %T", decoded.FlowSets[0])
+	}
+}
+
+func TestIPFIXEncoderUsesIPv6InformationElementsForIPv6Addresses(t *testing.T) {
+	enc := NewIPFIXEncoder(testTFlowEncoderConfig("ipfix"))
+	evt := testTemplatedFlowEvent()
+	evt.Fields["src_addr"] = "2001:db8::10"
+	evt.Fields["dst_addr"] = "2001:db8::20"
+
+	payloads, err := enc.Encode(evt)
+	if err != nil {
+		t.Fatalf("Encode returned error: %v", err)
+	}
+
+	store := templates.NewTemplateFlowStore()
+	store.Start()
+	var decoded netflow.IPFIXPacket
+	if err := netflow.DecodeMessageVersion(bytes.NewBuffer(payloads[0]), store, netflow.FlowContext{RouterKey: "test-router"}, nil, &decoded); err != nil {
+		t.Fatalf("decode ipfix payload: %v", err)
+	}
+
+	templateSet := decoded.FlowSets[0].(netflow.TemplateFlowSet)
+	if templateSet.Records[0].Fields[0].Type != netflow.IPFIX_FIELD_sourceIPv6Address {
+		t.Fatalf("expected IPv6 src IE, got %d", templateSet.Records[0].Fields[0].Type)
+	}
+	if templateSet.Records[0].Fields[1].Type != netflow.IPFIX_FIELD_destinationIPv6Address {
+		t.Fatalf("expected IPv6 dst IE, got %d", templateSet.Records[0].Fields[1].Type)
+	}
+}
+
+func TestAggregatorDropsPacketsMissingConfiguredKeys(t *testing.T) {
+	agg, err := aggregate.New(config.AggregatorConfig{
+		Enabled:   true,
+		KeyFields: []string{"src_addr", "dst_addr"},
+	})
+	if err != nil {
+		t.Fatalf("New aggregator returned error: %v", err)
+	}
+
+	events, err := agg.Process(&event.Event{
+		Fields: map[string]any{
+			"bytes": int64(64),
+		},
+	})
+	if err != nil {
+		t.Fatalf("Process returned error: %v", err)
+	}
+	if len(events) != 0 {
+		t.Fatalf("expected packet without aggregation keys to be dropped, got %d events", len(events))
 	}
 }
 

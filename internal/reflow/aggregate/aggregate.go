@@ -1,6 +1,7 @@
 package aggregate
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -38,6 +39,14 @@ type aggregateRecord struct {
 	Fields    map[string]any
 	FirstSeen time.Time
 	LastSeen  time.Time
+}
+
+type missingAggregationKeyError struct {
+	Key string
+}
+
+func (e *missingAggregationKeyError) Error() string {
+	return fmt.Sprintf("missing aggregation key field %q", e.Key)
 }
 
 func (r *aggregateRecord) Add(delta aggregateRecord, existed bool) error {
@@ -101,6 +110,10 @@ func NewStateful(cfg config.AggregatorConfig) *Stateful {
 func (a *Stateful) Process(evt *event.Event) ([]*event.Event, error) {
 	key, record, err := aggregateFromEvent(a.cfg, evt)
 	if err != nil {
+		var missingKeyErr *missingAggregationKeyError
+		if errors.As(err, &missingKeyErr) {
+			return nil, nil
+		}
 		return nil, err
 	}
 	if a.store != nil {
@@ -228,7 +241,7 @@ func buildKey(fields map[string]any, keyFields []string) (string, error) {
 	for _, key := range keyFields {
 		val, ok := fields[key]
 		if !ok {
-			return "", fmt.Errorf("missing aggregation key field %q", key)
+			return "", &missingAggregationKeyError{Key: key}
 		}
 		parts = append(parts, fmt.Sprint(val))
 	}

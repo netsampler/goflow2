@@ -1071,6 +1071,7 @@ func buildTemplatedDataRecord(cfg config.TFlowDataConfig, fieldMap map[string]an
 		if !ok {
 			continue
 		}
+		def = resolvedFieldDefinition(name, def, val)
 		encoded, err := encodeIPFIXValue(def, val)
 		if err != nil {
 			return netflow.TemplateRecord{}, netflow.DataRecord{}, fmt.Errorf("encode field %q: %w", name, err)
@@ -1163,6 +1164,36 @@ func encodeIPFIXValue(def config.IPFIXFieldDefinition, val any) ([]byte, error) 
 			return encodeUnsigned("unsigned64", val)
 		}
 	}
+}
+
+func resolvedFieldDefinition(name string, def config.IPFIXFieldDefinition, val any) config.IPFIXFieldDefinition {
+	ipStr, ok := val.(string)
+	if !ok {
+		return def
+	}
+	addr, err := netip.ParseAddr(ipStr)
+	if err != nil {
+		return def
+	}
+	switch name {
+	case "src_addr":
+		if addr.Is6() {
+			def.Name = "sourceIPv6Address"
+			def.ID = netflow.IPFIX_FIELD_sourceIPv6Address
+			def.NetFlowV9ID = netflow.NFV9_FIELD_IPV6_SRC_ADDR
+			def.Length = 16
+			def.Type = "ipv6Address"
+		}
+	case "dst_addr":
+		if addr.Is6() {
+			def.Name = "destinationIPv6Address"
+			def.ID = netflow.IPFIX_FIELD_destinationIPv6Address
+			def.NetFlowV9ID = netflow.NFV9_FIELD_IPV6_DST_ADDR
+			def.Length = 16
+			def.Type = "ipv6Address"
+		}
+	}
+	return def
 }
 
 func ipfixFieldLength(def config.IPFIXFieldDefinition, encoded []byte) uint16 {
