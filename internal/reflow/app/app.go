@@ -74,8 +74,8 @@ func (a *App) Run(ctx context.Context) error {
 	a.logger.Info("starting ReFlow")
 	defer a.sink.Close()
 
-	ctx, cancel := context.WithCancel(ctx)
-	defer cancel()
+	sourceCtx, stopSource := context.WithCancel(ctx)
+	defer stopSource()
 
 	decodeJobs := make(chan *event.Event, a.processorWorkers*2)
 	processJobs := make(chan *event.Event, a.processorWorkers*2)
@@ -93,11 +93,7 @@ func (a *App) Run(ctx context.Context) error {
 				continue
 			}
 			for _, item := range events {
-				select {
-				case processJobs <- item:
-				case <-ctx.Done():
-					return
-				}
+				processJobs <- item
 			}
 		}
 	}()
@@ -114,11 +110,7 @@ func (a *App) Run(ctx context.Context) error {
 					continue
 				}
 				for _, item := range events {
-					select {
-					case aggregateJobs <- item:
-					case <-ctx.Done():
-						return
-					}
+					aggregateJobs <- item
 				}
 			}
 		}()
@@ -140,11 +132,7 @@ func (a *App) Run(ctx context.Context) error {
 		}
 		forward := func(events []*event.Event) bool {
 			for _, evt := range events {
-				select {
-				case encodeJobs <- evt:
-				case <-ctx.Done():
-					return false
-				}
+				encodeJobs <- evt
 			}
 			return true
 		}
@@ -164,9 +152,6 @@ func (a *App) Run(ctx context.Context) error {
 		}
 		for {
 			select {
-			case <-ctx.Done():
-				flush(true)
-				return
 			case <-tickerChannel(ticker):
 				if !flush(false) {
 					return
@@ -196,7 +181,7 @@ func (a *App) Run(ctx context.Context) error {
 			enc, err := encode.New(a.encoderCfg)
 			if err != nil {
 				a.logger.Error("init encoder error", slog.String("error", err.Error()))
-				cancel()
+				stopSource()
 				return
 			}
 			var ticker *time.Ticker
@@ -219,9 +204,6 @@ func (a *App) Run(ctx context.Context) error {
 			}
 			for {
 				select {
-				case <-ctx.Done():
-					flush()
-					return
 				case <-tickerChannel(ticker):
 					if !flush() {
 						return
@@ -251,27 +233,22 @@ func (a *App) Run(ctx context.Context) error {
 		return fmt.Errorf("init aggregator events: %w", err)
 	}
 	for _, evt := range initEvents {
-		select {
-		case encodeJobs <- evt:
-		case <-ctx.Done():
-			return ctx.Err()
-		}
+		encodeJobs <- evt
 	}
 
 	sourceDone := make(chan error, 1)
 	go func() {
-		sourceDone <- a.source.Start(ctx, func(evt *event.Event) error {
+		sourceDone <- a.source.Start(sourceCtx, func(evt *event.Event) error {
 			select {
 			case decodeJobs <- evt:
 				return nil
-			case <-ctx.Done():
+			case <-sourceCtx.Done():
 				return ctx.Err()
 			}
 		})
 	}()
 
-	select {
-	case err := <-sourceDone:
+	shutdown := func() {
 		close(decodeJobs)
 		decodeWG.Wait()
 		close(processJobs)
@@ -280,9 +257,20 @@ func (a *App) Run(ctx context.Context) error {
 		aggregateWG.Wait()
 		close(encodeJobs)
 		encodeWG.Wait()
-		if err != nil && ctx.Err() == nil {
+	}
+
+	select {
+	case err := <-sourceDone:
+		shutdown()
+		if err != nil && sourceCtx.Err() == nil {
 			return fmt.Errorf("run source: %w", err)
 		}
+		return nil
+	case <-ctx.Done():
+		stopSource()
+		_ = a.source.Close()
+		<-sourceDone
+		shutdown()
 		return nil
 	}
 }
