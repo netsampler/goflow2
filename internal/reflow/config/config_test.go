@@ -50,7 +50,7 @@ aggregator:
 
 encoder:
   type: json
-  flow_data:
+  tflow_data:
     fields_path: ipfix-fields.yaml
     overrides:
       custom_counter:
@@ -87,11 +87,11 @@ sink:
 	if len(cfg.Aggregator.Current) == 0 || cfg.Aggregator.Current[0] != "agent_ip" {
 		t.Fatalf("expected default current fields to include agent_ip, got %#v", cfg.Aggregator.Current)
 	}
-	custom := cfg.Encoder.FlowData.Catalog["custom_counter"]
+	custom := cfg.Encoder.TFlowData.Catalog["custom_counter"]
 	if custom.ID != 2000 || custom.PEN != 64512 {
 		t.Fatalf("expected override for custom_counter to win, got %#v", custom)
 	}
-	if cfg.Encoder.FlowData.Catalog["bytes"].ID != 1 {
+	if cfg.Encoder.TFlowData.Catalog["bytes"].ID != 1 {
 		t.Fatalf("expected bytes field definition to be loaded from external catalog")
 	}
 	if cfg.Aggregator.TemplateID != 256 {

@@ -63,14 +63,14 @@ type AggregatorConfig struct {
 }
 
 type EncoderConfig struct {
-	Type             string         `yaml:"type"`
-	Workers          int            `yaml:"workers"`
-	MaxDatagramBytes int            `yaml:"max_datagram_bytes"`
-	AllowTruncate    bool           `yaml:"allow_truncate"`
-	Batch            BatchConfig    `yaml:"batch"`
-	FlowData         FlowDataConfig `yaml:"flow_data"`
-	JSON             JSONConfig     `yaml:"json"`
-	SFlow            SFlowConfig    `yaml:"sflow"`
+	Type             string          `yaml:"type"`
+	Workers          int             `yaml:"workers"`
+	MaxDatagramBytes int             `yaml:"max_datagram_bytes"`
+	AllowTruncate    bool            `yaml:"allow_truncate"`
+	Batch            BatchConfig     `yaml:"batch"`
+	TFlowData        TFlowDataConfig `yaml:"tflow_data"`
+	JSON             JSONConfig      `yaml:"json"`
+	SFlow            SFlowConfig     `yaml:"sflow"`
 }
 
 type JSONConfig struct {
@@ -96,7 +96,7 @@ type SFlowBatchOverConfig struct {
 	Uptime         *bool `yaml:"uptime"`
 }
 
-type FlowDataConfig struct {
+type TFlowDataConfig struct {
 	Select     []string                        `yaml:"fields"`
 	FieldsPath string                          `yaml:"fields_path"`
 	Catalog    map[string]IPFIXFieldDefinition `yaml:"-"`
@@ -246,11 +246,11 @@ func defaultTrue(dst **bool) {
 }
 
 func (c *Config) loadFlowDataCatalog(configPath string) error {
-	if c.Encoder.FlowData.FieldsPath == "" {
-		c.Encoder.FlowData.FieldsPath = "reflow-ipfix-fields.yaml"
+	if c.Encoder.TFlowData.FieldsPath == "" {
+		c.Encoder.TFlowData.FieldsPath = "reflow-ipfix-fields.yaml"
 	}
-	if !filepath.IsAbs(c.Encoder.FlowData.FieldsPath) {
-		c.Encoder.FlowData.FieldsPath = filepath.Join(filepath.Dir(configPath), c.Encoder.FlowData.FieldsPath)
+	if !filepath.IsAbs(c.Encoder.TFlowData.FieldsPath) {
+		c.Encoder.TFlowData.FieldsPath = filepath.Join(filepath.Dir(configPath), c.Encoder.TFlowData.FieldsPath)
 	}
 
 	type ipfixCatalog struct {
@@ -258,19 +258,19 @@ func (c *Config) loadFlowDataCatalog(configPath string) error {
 	}
 
 	catalog := ipfixCatalog{}
-	raw, err := os.ReadFile(c.Encoder.FlowData.FieldsPath)
+	raw, err := os.ReadFile(c.Encoder.TFlowData.FieldsPath)
 	if err != nil {
 		if os.IsNotExist(err) {
-			c.Encoder.FlowData.Catalog = mergeIPFIXFields(c.Encoder.FlowData.Catalog, c.Encoder.FlowData.Overrides)
+			c.Encoder.TFlowData.Catalog = mergeIPFIXFields(c.Encoder.TFlowData.Catalog, c.Encoder.TFlowData.Overrides)
 			return nil
 		}
-		return fmt.Errorf("load flow_data fields %s: %w", c.Encoder.FlowData.FieldsPath, err)
+		return fmt.Errorf("load tflow_data fields %s: %w", c.Encoder.TFlowData.FieldsPath, err)
 	}
 	if err := yaml.Unmarshal(raw, &catalog); err != nil {
-		return fmt.Errorf("decode flow_data fields %s: %w", c.Encoder.FlowData.FieldsPath, err)
+		return fmt.Errorf("decode tflow_data fields %s: %w", c.Encoder.TFlowData.FieldsPath, err)
 	}
 
-	c.Encoder.FlowData.Catalog = mergeIPFIXFields(catalog.Fields, c.Encoder.FlowData.Catalog, c.Encoder.FlowData.Overrides)
+	c.Encoder.TFlowData.Catalog = mergeIPFIXFields(catalog.Fields, c.Encoder.TFlowData.Catalog, c.Encoder.TFlowData.Overrides)
 	return nil
 }
 

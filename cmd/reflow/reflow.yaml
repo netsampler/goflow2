@@ -23,7 +23,7 @@ encoder:
     max_records: 8
     max_bytes: 1200
     flush_interval_ms: 1000
-  flow_data:
+  tflow_data:
     fields_path: reflow-ipfix-fields.yaml
 
 sink:

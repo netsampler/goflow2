@@ -920,7 +920,7 @@ batch:
 
 encoder:
   type: json
-  flow_data:
+  tflow_data:
     # If `fields` is empty, the exporter sees every field passed from aggregation.
     fields_path: ./reflow-ipfix-fields.yaml
     overrides:

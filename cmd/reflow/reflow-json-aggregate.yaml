@@ -44,7 +44,7 @@ aggregator:
 encoder:
   type: json
   workers: 1
-  flow_data:
+  tflow_data:
     # If omitted or empty, all fields produced by aggregation are eligible for export.
     fields_path: reflow-ipfix-fields.yaml
     overrides:
