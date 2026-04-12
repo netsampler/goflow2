@@ -13,14 +13,20 @@ processor:
     drop_payload: false
 
 aggregator:
-  type: window
-  flush_interval_ms: 10000
+  enabled: true
+  # If > 0, a bucket is emitted after this much idle time with no updates.
+  reset_interval_ms: 10000
+  # Periodic snapshots are emitted even when buckets do not expire.
+  periodic_interval_ms: 60000
   key_fields:
     - src_addr
     - dst_addr
     - proto
     - src_port
     - dst_port
+  template_id: 256
+  static_fields:
+    exporter_name: reflow-example
   # `sum` adds numeric values into the bucket on every matching event.
   sum:
     - bytes
@@ -35,19 +41,19 @@ aggregator:
     - flow_end_ns
     - sampling_rate
 
-ipfix:
-  fields_path: reflow-ipfix-fields.yaml
-  overrides:
-    src_addr:
-      name: sourceIPv4Address
-      id: 8
-      length: 4
-      type: ipv4Address
-      netflow_v9_id: 8
-
 encoder:
   type: json
   workers: 1
+  flow_data:
+    # If omitted or empty, all fields produced by aggregation are eligible for export.
+    fields_path: reflow-ipfix-fields.yaml
+    overrides:
+      src_addr:
+        name: sourceIPv4Address
+        id: 8
+        length: 4
+        type: ipv4Address
+        netflow_v9_id: 8
 
 sink:
   type: stdout

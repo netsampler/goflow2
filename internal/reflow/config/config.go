@@ -21,7 +21,6 @@ type Config struct {
 	Source     SourceConfig     `yaml:"source"`
 	Processor  ProcessorConfig  `yaml:"processor"`
 	Aggregator AggregatorConfig `yaml:"aggregator"`
-	IPFIX      IPFIXConfig      `yaml:"ipfix"`
 	Encoder    EncoderConfig    `yaml:"encoder"`
 	Sink       SinkConfig       `yaml:"sink"`
 }
@@ -52,23 +51,26 @@ type BuiltinProcessorConfig struct {
 }
 
 type AggregatorConfig struct {
-	Type             string   `yaml:"type"`
-	FlushInterval    int      `yaml:"flush_interval_ms"`
-	PeriodicInterval int      `yaml:"periodic_interval_ms"`
-	KeyFields        []string `yaml:"key_fields"`
-	Sum              []string `yaml:"sum"`
-	First            []string `yaml:"first"`
-	Current          []string `yaml:"current"`
+	Enabled          bool           `yaml:"enabled"`
+	ResetInterval    int            `yaml:"reset_interval_ms"`
+	PeriodicInterval int            `yaml:"periodic_interval_ms"`
+	KeyFields        []string       `yaml:"key_fields"`
+	Sum              []string       `yaml:"sum"`
+	First            []string       `yaml:"first"`
+	Current          []string       `yaml:"current"`
+	TemplateID       uint16         `yaml:"template_id"`
+	StaticFields     map[string]any `yaml:"static_fields"`
 }
 
 type EncoderConfig struct {
-	Type             string      `yaml:"type"`
-	Workers          int         `yaml:"workers"`
-	MaxDatagramBytes int         `yaml:"max_datagram_bytes"`
-	AllowTruncate    bool        `yaml:"allow_truncate"`
-	Batch            BatchConfig `yaml:"batch"`
-	JSON             JSONConfig  `yaml:"json"`
-	SFlow            SFlowConfig `yaml:"sflow"`
+	Type             string         `yaml:"type"`
+	Workers          int            `yaml:"workers"`
+	MaxDatagramBytes int            `yaml:"max_datagram_bytes"`
+	AllowTruncate    bool           `yaml:"allow_truncate"`
+	Batch            BatchConfig    `yaml:"batch"`
+	FlowData         FlowDataConfig `yaml:"flow_data"`
+	JSON             JSONConfig     `yaml:"json"`
+	SFlow            SFlowConfig    `yaml:"sflow"`
 }
 
 type JSONConfig struct {
@@ -94,9 +96,10 @@ type SFlowBatchOverConfig struct {
 	Uptime         *bool `yaml:"uptime"`
 }
 
-type IPFIXConfig struct {
+type FlowDataConfig struct {
+	Select     []string                        `yaml:"fields"`
 	FieldsPath string                          `yaml:"fields_path"`
-	Fields     map[string]IPFIXFieldDefinition `yaml:"fields"`
+	Catalog    map[string]IPFIXFieldDefinition `yaml:"-"`
 	Overrides  map[string]IPFIXFieldDefinition `yaml:"overrides"`
 }
 
@@ -178,28 +181,16 @@ func (c *Config) setDefaults(configPath string) error {
 	if c.Processor.Builtin.TruncatePacketBytes < 0 {
 		return fmt.Errorf("processor.builtin.truncate_packet_bytes must be >= 0")
 	}
-	if c.Aggregator.Type == "" {
-		c.Aggregator.Type = "none"
-	}
-	switch c.Aggregator.Type {
-	case "none":
-	case "window":
-		if c.Aggregator.FlushInterval <= 0 {
-			c.Aggregator.FlushInterval = 10000
-		}
-		if len(c.Aggregator.KeyFields) == 0 {
-			c.Aggregator.KeyFields = []string{"src_addr", "dst_addr", "proto", "src_port", "dst_port"}
-		}
-		defaultAggregateFields(&c.Aggregator)
-	case "periodic":
+	if c.Aggregator.Enabled {
 		if c.Aggregator.PeriodicInterval <= 0 {
-			c.Aggregator.PeriodicInterval = 30000
+			c.Aggregator.PeriodicInterval = 60000
+		}
+		if c.Aggregator.ResetInterval < 0 {
+			return fmt.Errorf("aggregator.reset_interval_ms must be >= 0")
 		}
 		defaultAggregateFields(&c.Aggregator)
-	default:
-		return fmt.Errorf("unsupported aggregator.type %q", c.Aggregator.Type)
 	}
-	if err := c.loadIPFIXFields(configPath); err != nil {
+	if err := c.loadFlowDataCatalog(configPath); err != nil {
 		return err
 	}
 	if c.Encoder.Type == "" {
@@ -254,12 +245,12 @@ func defaultTrue(dst **bool) {
 	*dst = &v
 }
 
-func (c *Config) loadIPFIXFields(configPath string) error {
-	if c.IPFIX.FieldsPath == "" {
-		c.IPFIX.FieldsPath = "reflow-ipfix-fields.yaml"
+func (c *Config) loadFlowDataCatalog(configPath string) error {
+	if c.Encoder.FlowData.FieldsPath == "" {
+		c.Encoder.FlowData.FieldsPath = "reflow-ipfix-fields.yaml"
 	}
-	if !filepath.IsAbs(c.IPFIX.FieldsPath) {
-		c.IPFIX.FieldsPath = filepath.Join(filepath.Dir(configPath), c.IPFIX.FieldsPath)
+	if !filepath.IsAbs(c.Encoder.FlowData.FieldsPath) {
+		c.Encoder.FlowData.FieldsPath = filepath.Join(filepath.Dir(configPath), c.Encoder.FlowData.FieldsPath)
 	}
 
 	type ipfixCatalog struct {
@@ -267,19 +258,19 @@ func (c *Config) loadIPFIXFields(configPath string) error {
 	}
 
 	catalog := ipfixCatalog{}
-	raw, err := os.ReadFile(c.IPFIX.FieldsPath)
+	raw, err := os.ReadFile(c.Encoder.FlowData.FieldsPath)
 	if err != nil {
 		if os.IsNotExist(err) {
-			c.IPFIX.Fields = mergeIPFIXFields(c.IPFIX.Fields, c.IPFIX.Overrides)
+			c.Encoder.FlowData.Catalog = mergeIPFIXFields(c.Encoder.FlowData.Catalog, c.Encoder.FlowData.Overrides)
 			return nil
 		}
-		return fmt.Errorf("load ipfix fields %s: %w", c.IPFIX.FieldsPath, err)
+		return fmt.Errorf("load flow_data fields %s: %w", c.Encoder.FlowData.FieldsPath, err)
 	}
 	if err := yaml.Unmarshal(raw, &catalog); err != nil {
-		return fmt.Errorf("decode ipfix fields %s: %w", c.IPFIX.FieldsPath, err)
+		return fmt.Errorf("decode flow_data fields %s: %w", c.Encoder.FlowData.FieldsPath, err)
 	}
 
-	c.IPFIX.Fields = mergeIPFIXFields(catalog.Fields, c.IPFIX.Fields, c.IPFIX.Overrides)
+	c.Encoder.FlowData.Catalog = mergeIPFIXFields(catalog.Fields, c.Encoder.FlowData.Catalog, c.Encoder.FlowData.Overrides)
 	return nil
 }
 

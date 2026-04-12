@@ -12,9 +12,6 @@ processor:
     drop_message: false
     drop_payload: true
 
-ipfix:
-  fields_path: reflow-ipfix-fields.yaml
-
 encoder:
   type: sflow
   # Batching is per encoder worker. Keep this at 1 when you want stronger
@@ -26,6 +23,8 @@ encoder:
     max_records: 8
     max_bytes: 1200
     flush_interval_ms: 1000
+  flow_data:
+    fields_path: reflow-ipfix-fields.yaml
 
 sink:
   type: udp

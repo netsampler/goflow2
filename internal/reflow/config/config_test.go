@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-func TestLoadSetsAggregatorDefaultsAndLoadsIPFIXFields(t *testing.T) {
+func TestLoadSetsAggregatorDefaultsAndLoadsFlowDataFields(t *testing.T) {
 	dir := t.TempDir()
 
 	ipfixPath := filepath.Join(dir, "ipfix-fields.yaml")
@@ -42,22 +42,24 @@ processor:
   type: builtin
 
 aggregator:
-  type: window
-  flush_interval_ms: 5000
-
-ipfix:
-  fields_path: ipfix-fields.yaml
-  overrides:
-    custom_counter:
-      name: customCounterOverride
-      id: 2000
-      pen: 64512
-      enterprise_scoped: true
-      length: 8
-      type: unsigned64
+  enabled: true
+  reset_interval_ms: 5000
+  template_id: 256
+  static_fields:
+    exporter_name: reflow-test
 
 encoder:
   type: json
+  flow_data:
+    fields_path: ipfix-fields.yaml
+    overrides:
+      custom_counter:
+        name: customCounterOverride
+        id: 2000
+        pen: 64512
+        enterprise_scoped: true
+        length: 8
+        type: unsigned64
 
 sink:
   type: stdout
@@ -70,8 +72,11 @@ sink:
 		t.Fatalf("Load returned error: %v", err)
 	}
 
-	if cfg.Aggregator.Type != "window" {
-		t.Fatalf("expected aggregator.type=window, got %q", cfg.Aggregator.Type)
+	if !cfg.Aggregator.Enabled {
+		t.Fatalf("expected aggregator.enabled=true")
+	}
+	if cfg.Aggregator.ResetInterval != 5000 {
+		t.Fatalf("expected aggregator.reset_interval_ms=5000, got %d", cfg.Aggregator.ResetInterval)
 	}
 	if len(cfg.Aggregator.Sum) == 0 || cfg.Aggregator.Sum[0] != "bytes" {
 		t.Fatalf("expected default sum fields to include bytes, got %#v", cfg.Aggregator.Sum)
@@ -82,16 +87,22 @@ sink:
 	if len(cfg.Aggregator.Current) == 0 || cfg.Aggregator.Current[0] != "agent_ip" {
 		t.Fatalf("expected default current fields to include agent_ip, got %#v", cfg.Aggregator.Current)
 	}
-	custom := cfg.IPFIX.Fields["custom_counter"]
+	custom := cfg.Encoder.FlowData.Catalog["custom_counter"]
 	if custom.ID != 2000 || custom.PEN != 64512 {
 		t.Fatalf("expected override for custom_counter to win, got %#v", custom)
 	}
-	if cfg.IPFIX.Fields["bytes"].ID != 1 {
+	if cfg.Encoder.FlowData.Catalog["bytes"].ID != 1 {
 		t.Fatalf("expected bytes field definition to be loaded from external catalog")
+	}
+	if cfg.Aggregator.TemplateID != 256 {
+		t.Fatalf("expected aggregator.template_id=256, got %d", cfg.Aggregator.TemplateID)
+	}
+	if cfg.Aggregator.StaticFields["exporter_name"] != "reflow-test" {
+		t.Fatalf("expected static field exporter_name to be loaded, got %#v", cfg.Aggregator.StaticFields["exporter_name"])
 	}
 }
 
-func TestLoadSupportsPeriodicAggregator(t *testing.T) {
+func TestLoadSupportsAccumulativeAggregatorDefaults(t *testing.T) {
 	dir := t.TempDir()
 
 	cfgPath := filepath.Join(dir, "reflow.yaml")
@@ -107,7 +118,7 @@ processor:
   type: builtin
 
 aggregator:
-  type: periodic
+  enabled: true
 
 encoder:
   type: json
@@ -123,10 +134,13 @@ sink:
 		t.Fatalf("Load returned error: %v", err)
 	}
 
-	if cfg.Aggregator.PeriodicInterval != 30000 {
-		t.Fatalf("expected periodic_interval_ms default 30000, got %d", cfg.Aggregator.PeriodicInterval)
+	if cfg.Aggregator.PeriodicInterval != 60000 {
+		t.Fatalf("expected periodic_interval_ms default 60000, got %d", cfg.Aggregator.PeriodicInterval)
+	}
+	if cfg.Aggregator.ResetInterval != 0 {
+		t.Fatalf("expected reset_interval_ms default 0, got %d", cfg.Aggregator.ResetInterval)
 	}
 	if len(cfg.Aggregator.Sum) == 0 || len(cfg.Aggregator.First) == 0 || len(cfg.Aggregator.Current) == 0 {
-		t.Fatalf("expected periodic aggregator defaults to be populated, got sum=%#v first=%#v current=%#v", cfg.Aggregator.Sum, cfg.Aggregator.First, cfg.Aggregator.Current)
+		t.Fatalf("expected aggregation defaults to be populated, got sum=%#v first=%#v current=%#v", cfg.Aggregator.Sum, cfg.Aggregator.First, cfg.Aggregator.Current)
 	}
 }

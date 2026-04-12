@@ -899,26 +899,19 @@ processor:
   on: [json]
 
 aggregator:
-  type: window
-  flush_interval: 10s
+  enabled: true
+  reset_interval_ms: 10000
+  periodic_interval_ms: 60000
   key_fields: [src_addr, dst_addr, proto, src_port, dst_port]
+  template_id: 256
+  static_fields:
+    exporter_name: core-router
   # sum: add numeric counters into the active bucket
   sum: [bytes, packets]
   # first: keep the first value seen when the bucket is created
   first: [agent_ip, flow_start_ns]
   # current: replace with the latest value seen for the bucket
   current: [agent_ip, input_if, output_if, sampling_rate, sample_pool, drops, flow_end_ns]
-
-ipfix:
-  fields_path: ./reflow-ipfix-fields.yaml
-  overrides:
-    custom_counter:
-      name: customCounter
-      id: 1000
-      pen: 424242
-      enterprise_scoped: true
-      length: 8
-      type: unsigned64
 
 batch:
   max_records: 64
@@ -927,6 +920,17 @@ batch:
 
 encoder:
   type: json
+  flow_data:
+    # If `fields` is empty, the exporter sees every field passed from aggregation.
+    fields_path: ./reflow-ipfix-fields.yaml
+    overrides:
+      custom_counter:
+        name: customCounter
+        id: 1000
+        pen: 424242
+        enterprise_scoped: true
+        length: 8
+        type: unsigned64
 
 sink:
   type: stdout
