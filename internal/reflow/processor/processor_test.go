@@ -328,3 +328,59 @@ func TestBuiltinProcessReFlowJSONPreservesCounterFields(t *testing.T) {
 		t.Fatalf("expected sflow metadata to be populated, got %#v", events[0].SFlow)
 	}
 }
+
+func TestBuiltinProcessRawPacketHeaderRequiresExplicitFlavor(t *testing.T) {
+	proc := NewBuiltin(config.ProcessorConfig{})
+
+	msg, err := json.Marshal(map[string]any{
+		"agent_ip":        "127.0.0.1",
+		"sub_agent_id":    1,
+		"source_id":       1,
+		"sampling_rate":   100,
+		"sample_pool":     1000,
+		"drops":           0,
+		"input_if":        10,
+		"output_if":       20,
+		"protocol":        1,
+		"frame_length":    74,
+		"stripped":        0,
+		"original_length": 54,
+		"header_hex":      "00112233445566778899aabb0800450000281234400040060000c0000201c6336401303901bb00000001000000005002200000000000",
+	})
+	if err != nil {
+		t.Fatalf("Marshal returned error: %v", err)
+	}
+
+	events, err := proc.Process(&event.Event{
+		Source: event.SourceMetadata{
+			Type: "json",
+			JSON: event.JSONMetadata{Flavor: "reflow"},
+		},
+		Message: msg,
+	})
+	if err != nil {
+		t.Fatalf("Process returned error: %v", err)
+	}
+
+	fields := events[0].Fields
+	if got := fields["header_hex"]; got == nil {
+		t.Fatalf("expected header_hex to remain a canonical field when flavor=reflow")
+	}
+	if _, ok := fields["header_data"]; ok {
+		t.Fatalf("did not expect raw packet header decoding for flavor=reflow")
+	}
+
+	events, err = proc.Process(&event.Event{
+		Source: event.SourceMetadata{
+			Type: "json",
+			JSON: event.JSONMetadata{Flavor: "raw_packet_header"},
+		},
+		Message: msg,
+	})
+	if err != nil {
+		t.Fatalf("Process returned error for raw_packet_header flavor: %v", err)
+	}
+	if _, ok := events[0].Fields["header_data"]; !ok {
+		t.Fatalf("expected raw_packet_header flavor to decode header_data")
+	}
+}

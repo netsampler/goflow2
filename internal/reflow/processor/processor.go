@@ -397,8 +397,19 @@ func (p *Builtin) processJSONFlavor(evt *event.Event) ([]*event.Event, error) {
 	}
 
 	switch evt.Source.JSON.Flavor {
-	case "reflow", "raw_packet_header":
+	case "reflow":
 		return p.processReFlowJSON(evt, payload)
+	case "raw_packet_header":
+		record, ok := payload.(map[string]any)
+		if !ok {
+			return nil, fmt.Errorf("raw_packet_header expects a JSON object")
+		}
+		data, err := json.Marshal(record)
+		if err != nil {
+			return nil, fmt.Errorf("encode raw_packet_header payload: %w", err)
+		}
+		evt.Message = data
+		return p.processJSONRawPacketHeader(evt)
 	case "vendor":
 		return p.processVendor(evt, payload)
 	case "goflow2v2":
@@ -428,16 +439,7 @@ func (p *Builtin) processReFlowJSON(evt *event.Event, payload any) ([]*event.Eve
 	if !ok {
 		return nil, fmt.Errorf("reflow expects a JSON object")
 	}
-	if _, ok := record["header_hex"]; !ok {
-		return p.processReFlowFields(evt, record), nil
-	}
-
-	data, err := json.Marshal(record)
-	if err != nil {
-		return nil, fmt.Errorf("encode reflow payload: %w", err)
-	}
-	evt.Message = data
-	return p.processJSONRawPacketHeader(evt)
+	return p.processReFlowFields(evt, record), nil
 }
 
 func (p *Builtin) processReFlowFields(evt *event.Event, record map[string]any) []*event.Event {
