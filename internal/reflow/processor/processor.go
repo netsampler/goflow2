@@ -74,6 +74,11 @@ func (p *Builtin) processBytes(evt *event.Event) ([]*event.Event, error) {
 	fields["header_data"] = append([]byte(nil), payload...)
 	fields["bytes"] = int64(len(payload))
 	fields["packets"] = int64(1)
+	if evt.ReceivedAt.IsZero() {
+		evt.ReceivedAt = time.Now().UTC()
+	}
+	fields["start_time_unix"] = evt.ReceivedAt.UnixMilli()
+	fields["end_time_unix"] = evt.ReceivedAt.UnixMilli()
 
 	// sFlow raw packet headers expect protocol metadata in addition to the bytes.
 	// ReFlow currently assumes Ethernet-framed capture for live pcap input.
@@ -567,16 +572,57 @@ func parseIPv6Tuple(data []byte) (packetTuple, error) {
 	if !ok {
 		return packetTuple{}, fmt.Errorf("invalid ipv6 destination address")
 	}
+	nextHeader := data[6]
+	offset := 40
+	for {
+		if !isIPv6ExtensionHeader(nextHeader) {
+			break
+		}
+		if len(data) < offset+2 {
+			return packetTuple{}, fmt.Errorf("truncated ipv6 extension header")
+		}
+		switch nextHeader {
+		case 44:
+			if len(data) < offset+8 {
+				return packetTuple{}, fmt.Errorf("truncated ipv6 fragment header")
+			}
+			nextHeader = data[offset]
+			offset += 8
+		case 51:
+			hdrLen := (int(data[offset+1]) + 2) * 4
+			if len(data) < offset+hdrLen {
+				return packetTuple{}, fmt.Errorf("truncated ipv6 authentication header")
+			}
+			nextHeader = data[offset]
+			offset += hdrLen
+		default:
+			hdrLen := (int(data[offset+1]) + 1) * 8
+			if len(data) < offset+hdrLen {
+				return packetTuple{}, fmt.Errorf("truncated ipv6 extension header")
+			}
+			nextHeader = data[offset]
+			offset += hdrLen
+		}
+	}
 	tuple := packetTuple{
 		SrcAddr: src,
 		DstAddr: dst,
-		Proto:   uint32(data[6]),
+		Proto:   uint32(nextHeader),
 	}
-	if len(data) >= 44 && (tuple.Proto == 6 || tuple.Proto == 17) {
-		tuple.SrcPort = uint32(uint16(data[40])<<8 | uint16(data[41]))
-		tuple.DstPort = uint32(uint16(data[42])<<8 | uint16(data[43]))
+	if len(data) >= offset+4 && (tuple.Proto == 6 || tuple.Proto == 17) {
+		tuple.SrcPort = uint32(uint16(data[offset])<<8 | uint16(data[offset+1]))
+		tuple.DstPort = uint32(uint16(data[offset+2])<<8 | uint16(data[offset+3]))
 	}
 	return tuple, nil
+}
+
+func isIPv6ExtensionHeader(nextHeader byte) bool {
+	switch nextHeader {
+	case 0, 43, 44, 50, 51, 60, 135, 139, 140:
+		return true
+	default:
+		return false
+	}
 }
 
 func ensureFields(evt *event.Event, capacity int) map[string]any {

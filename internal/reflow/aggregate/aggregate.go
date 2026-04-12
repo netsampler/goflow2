@@ -194,6 +194,8 @@ func orderedSchemaFields(cfg config.AggregatorConfig) []string {
 	for _, field := range cfg.Current {
 		appendField(field)
 	}
+	appendField("start_time_unix")
+	appendField("end_time_unix")
 	for field := range cfg.StaticFields {
 		appendField(field)
 	}
@@ -294,12 +296,20 @@ func aggregateFromEvent(cfg config.AggregatorConfig, evt *event.Event) (string, 
 			recordFields[currentField] = currentValue{Value: val}
 		}
 	}
+	seedTimestamps(recordFields, fields, now)
 
 	return key, aggregateRecord{
 		Fields:    recordFields,
 		FirstSeen: now,
 		LastSeen:  now,
 	}, nil
+}
+
+func seedTimestamps(dst, src map[string]any, now time.Time) {
+	start := timestampFieldOrNow(src, "start_time_unix", now)
+	end := timestampFieldOrNow(src, "end_time_unix", now)
+	dst["start_time_unix"] = start
+	dst["end_time_unix"] = end
 }
 
 func buildKey(fields map[string]any, keyFields []string) (string, error) {
@@ -352,6 +362,14 @@ type currentValue struct{ Value any }
 
 func mergeFields(dst, src map[string]any) {
 	for key, val := range src {
+		if key == "start_time_unix" {
+			dst[key] = minTimestamp(int64FromAny(dst[key]), int64FromAny(val))
+			continue
+		}
+		if key == "end_time_unix" {
+			dst[key] = maxTimestamp(int64FromAny(dst[key]), int64FromAny(val))
+			continue
+		}
 		switch incoming := val.(type) {
 		case firstValue:
 			if _, exists := dst[key]; !exists {
@@ -373,6 +391,38 @@ func mergeFields(dst, src map[string]any) {
 			dst[key] = val
 		}
 	}
+}
+
+func timestampFieldOrNow(fields map[string]any, key string, now time.Time) int64 {
+	if fields != nil {
+		if val, ok := fields[key]; ok {
+			ts := int64FromAny(val)
+			if ts != 0 {
+				return ts
+			}
+		}
+	}
+	return now.UnixMilli()
+}
+
+func minTimestamp(a, b int64) int64 {
+	if a == 0 {
+		return b
+	}
+	if b == 0 || a <= b {
+		return a
+	}
+	return b
+}
+
+func maxTimestamp(a, b int64) int64 {
+	if a == 0 {
+		return b
+	}
+	if b == 0 || a >= b {
+		return a
+	}
+	return b
 }
 
 func int64Field(fields map[string]any, key string) int64 {

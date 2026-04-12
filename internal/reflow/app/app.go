@@ -55,6 +55,15 @@ func New(cfg *config.Config) (*App, error) {
 	if cfg.Sink.AgentIP != "" && encoderCfg.Type == "sflow" {
 		encoderCfg.SFlow.AgentIP = cfg.Sink.AgentIP
 	}
+	encoderWorkers := cfg.Encoder.Workers
+	if requiresOrderedExporter(encoderCfg.Type) && encoderWorkers > 1 {
+		logger.Warn(
+			"forcing encoder workers to 1 for ordered exporter",
+			slog.String("encoder_type", encoderCfg.Type),
+			slog.Int("requested_workers", encoderWorkers),
+		)
+		encoderWorkers = 1
+	}
 
 	return &App{
 		logger:           logger,
@@ -64,7 +73,7 @@ func New(cfg *config.Config) (*App, error) {
 		processorWorkers: cfg.Processor.Workers,
 		aggregatorCfg:    cfg.Aggregator,
 		encoderCfg:       encoderCfg,
-		encoderWorkers:   cfg.Encoder.Workers,
+		encoderWorkers:   encoderWorkers,
 		sink:             out,
 	}, nil
 }
@@ -300,4 +309,13 @@ func encoderTickInterval(cfg config.EncoderConfig) time.Duration {
 	add(cfg.TemplateRefresh)
 	add(cfg.OptionsRefresh)
 	return min
+}
+
+func requiresOrderedExporter(encoderType string) bool {
+	switch encoderType {
+	case "sflow", "ipfix", "netflowv9", "netflowv5":
+		return true
+	default:
+		return false
+	}
 }

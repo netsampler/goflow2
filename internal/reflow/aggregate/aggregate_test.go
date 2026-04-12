@@ -124,3 +124,54 @@ func TestStatefulTTLFlushSumsPacketCounters(t *testing.T) {
 		t.Fatalf("expected bytes=130, got %#v", got)
 	}
 }
+
+func TestStatefulTracksMinStartAndMaxEndTimestamps(t *testing.T) {
+	agg, err := New(config.AggregatorConfig{
+		Enabled:   true,
+		KeyFields: []string{"src_addr", "dst_addr", "proto", "src_port", "dst_port"},
+		Sum:       []string{"bytes", "packets"},
+	})
+	if err != nil {
+		t.Fatalf("New returned error: %v", err)
+	}
+
+	_, _ = agg.Process(&event.Event{
+		ReceivedAt: time.Unix(10, 0),
+		Fields: map[string]any{
+			"src_addr":        "192.0.2.1",
+			"dst_addr":        "198.51.100.2",
+			"proto":           uint32(6),
+			"src_port":        uint32(12345),
+			"dst_port":        uint32(443),
+			"bytes":           int64(60),
+			"packets":         int64(1),
+			"start_time_unix": int64(5_000),
+			"end_time_unix":   int64(8_000),
+		},
+	})
+	_, _ = agg.Process(&event.Event{
+		ReceivedAt: time.Unix(11, 0),
+		Fields: map[string]any{
+			"src_addr":        "192.0.2.1",
+			"dst_addr":        "198.51.100.2",
+			"proto":           uint32(6),
+			"src_port":        uint32(12345),
+			"dst_port":        uint32(443),
+			"bytes":           int64(70),
+			"packets":         int64(1),
+			"start_time_unix": int64(4_000),
+			"end_time_unix":   int64(9_000),
+		},
+	})
+
+	out, err := agg.Flush()
+	if err != nil {
+		t.Fatalf("Flush returned error: %v", err)
+	}
+	if got := out[0].Fields["start_time_unix"]; got != int64(4_000) {
+		t.Fatalf("expected start_time_unix=4000, got %#v", got)
+	}
+	if got := out[0].Fields["end_time_unix"]; got != int64(9_000) {
+		t.Fatalf("expected end_time_unix=9000, got %#v", got)
+	}
+}
