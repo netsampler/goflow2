@@ -3,6 +3,7 @@ package decode
 import (
 	"fmt"
 	"github.com/netsampler/goflow2/v3/internal/reflow/event"
+	"github.com/netsampler/goflow2/v3/utils/store/samplingrate"
 	"github.com/netsampler/goflow2/v3/utils/store/templates"
 )
 
@@ -15,11 +16,17 @@ type Decoder interface {
 func New() Decoder {
 	store := templates.NewTemplateFlowStore()
 	store.Start()
-	return &builtIn{templates: store}
+	sampling := samplingrate.NewSamplingRateFlowStore()
+	sampling.Start()
+	return &builtIn{
+		templates: store,
+		sampling:  sampling,
+	}
 }
 
 type builtIn struct {
 	templates *templates.TemplateFlowStore
+	sampling  samplingrate.Store
 }
 
 // Decode handles protocol identification for raw flow payloads and passes through other event types.

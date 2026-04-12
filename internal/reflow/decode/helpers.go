@@ -55,6 +55,17 @@ func decodeUint32(val any) uint32 {
 	}
 }
 
+func fieldUint32(fields map[string]any, key string) uint32 {
+	if fields == nil {
+		return 0
+	}
+	val, ok := fields[key]
+	if !ok {
+		return 0
+	}
+	return decodeUint32(val)
+}
+
 func decodeUint64(val any) uint64 {
 	switch v := val.(type) {
 	case []byte:
