@@ -106,11 +106,15 @@ func (s *Source) Start(ctx context.Context, emit func(*event.Event) error) error
 				},
 			},
 			SFlow: &event.SFlowMetadata{
-				AgentIP: s.agentIP,
+				AgentIP:      s.agentIP,
+				SamplingRate: uint32(s.cfg.SampleEvery),
+				SamplePool:   uint32(s.seenCount),
 			},
 			Payload: append([]byte(nil), data...),
 			Fields: map[string]any{
 				"agent_ip":       s.agentIP,
+				"sampling_rate":  uint32(s.cfg.SampleEvery),
+				"sample_pool":    uint32(s.seenCount),
 				"capture_length": ci.CaptureLength,
 				"wire_length":    ci.Length,
 			},

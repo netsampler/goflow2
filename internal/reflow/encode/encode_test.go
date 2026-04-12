@@ -218,6 +218,35 @@ func TestSFlowEncoderPacketSequenceAdvancesPerDatagram(t *testing.T) {
 	}
 }
 
+func TestSFlowEncoderUsesEventSamplingRate(t *testing.T) {
+	enc := NewSFlowEncoder(config.EncoderConfig{
+		Type: "sflow",
+	})
+
+	evt := testSFlowEvent("198.51.100.10")
+	evt.SFlow.SamplingRate = 100
+	evt.SFlow.SamplePool = 12345
+	evt.Fields["sampling_rate"] = uint32(100)
+	evt.Fields["sample_pool"] = uint32(12345)
+
+	payloads, err := enc.Encode(evt)
+	if err != nil {
+		t.Fatalf("Encode returned error: %v", err)
+	}
+	if len(payloads) != 1 {
+		t.Fatalf("expected 1 payload, got %d", len(payloads))
+	}
+
+	packet := decodeSFlowPacket(t, payloads[0])
+	sample := packet.Samples[0].(sflow.FlowSample)
+	if sample.SamplingRate != 100 {
+		t.Fatalf("expected sampling_rate 100, got %d", sample.SamplingRate)
+	}
+	if sample.SamplePool != 12345 {
+		t.Fatalf("expected sample_pool 12345, got %d", sample.SamplePool)
+	}
+}
+
 func testSFlowEvent(agentIP string) *event.Event {
 	return &event.Event{
 		Fields: map[string]any{
