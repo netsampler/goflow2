@@ -13,7 +13,7 @@ processor:
     drop_payload: false
 
 aggregator:
-  type: flowstore_window
+  type: window
   flush_interval_ms: 10000
   key_fields:
     - src_addr
@@ -21,6 +21,36 @@ aggregator:
     - proto
     - src_port
     - dst_port
+  sum:
+    - bytes
+    - packets
+  first:
+    - agent_ip
+    - flow_start_ns
+    - src_addr
+    - dst_addr
+    - proto
+    - src_port
+    - dst_port
+  current:
+    - agent_ip
+    - flow_end_ns
+    - src_addr
+    - dst_addr
+    - proto
+    - src_port
+    - dst_port
+    - sampling_rate
+
+ipfix:
+  fields_path: reflow-ipfix-fields.yaml
+  overrides:
+    src_addr:
+      name: sourceIPv4Address
+      id: 8
+      length: 4
+      type: ipv4Address
+      netflow_v9_id: 8
 
 encoder:
   type: json

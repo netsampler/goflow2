@@ -2,8 +2,8 @@ package aggregate
 
 import (
 	"fmt"
-	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/netsampler/goflow2/v3/internal/reflow/config"
@@ -24,8 +24,10 @@ func New(cfg config.AggregatorConfig) (Aggregator, error) {
 	switch cfg.Type {
 	case "", "none":
 		return passthrough{}, nil
-	case "flowstore_window":
-		return NewFlowStoreWindow(cfg), nil
+	case "window":
+		return NewWindow(cfg), nil
+	case "periodic":
+		return NewPeriodic(cfg), nil
 	default:
 		return nil, fmt.Errorf("unsupported aggregator.type %q", cfg.Type)
 	}
@@ -33,75 +35,59 @@ func New(cfg config.AggregatorConfig) (Aggregator, error) {
 
 type passthrough struct{}
 
-func (passthrough) Process(evt *event.Event) ([]*event.Event, error) {
-	return []*event.Event{evt}, nil
+func (passthrough) Process(evt *event.Event) ([]*event.Event, error) { return []*event.Event{evt}, nil }
+func (passthrough) Flush() ([]*event.Event, error)                   { return nil, nil }
+func (passthrough) Close() ([]*event.Event, error)                   { return nil, nil }
+func (passthrough) Interval() time.Duration                          { return 0 }
+
+type aggregateRecord struct {
+	Fields    map[string]any
+	FirstSeen time.Time
+	LastSeen  time.Time
 }
 
-func (passthrough) Flush() ([]*event.Event, error) {
-	return nil, nil
-}
-
-func (passthrough) Close() ([]*event.Event, error) {
-	return nil, nil
-}
-
-func (passthrough) Interval() time.Duration {
-	return 0
-}
-
-// FlowRecord is the stored value for one active aggregation bucket.
-type FlowRecord struct {
-	AgentIP    string
-	SubAgentID uint32
-	SourceID   uint32
-	SrcAddr    string
-	DstAddr    string
-	Proto      uint32
-	SrcPort    uint32
-	DstPort    uint32
-	Bytes      int64
-	Packets    int64
-	FirstSeen  time.Time
-	LastSeen   time.Time
-}
-
-// Add merges packet deltas into the stored flow value.
-func (r *FlowRecord) Add(delta FlowRecord, existed bool) error {
+// Add merges event deltas into the stored aggregate value.
+func (r *aggregateRecord) Add(delta aggregateRecord, existed bool) error {
 	if !existed {
 		*r = delta
 		return nil
 	}
-	r.Bytes += delta.Bytes
-	r.Packets += delta.Packets
+	if r.Fields == nil {
+		r.Fields = make(map[string]any)
+	}
+	mergeFields(r.Fields, delta.Fields)
+	if delta.FirstSeen.Before(r.FirstSeen) {
+		r.FirstSeen = delta.FirstSeen
+	}
 	if delta.LastSeen.After(r.LastSeen) {
 		r.LastSeen = delta.LastSeen
 	}
 	return nil
 }
 
-// FlowStoreWindow aggregates events until they expire out of FlowStore.
-type FlowStoreWindow struct {
+// Window aggregates events until they expire out of FlowStore.
+type Window struct {
 	cfg     config.AggregatorConfig
-	store   *flowstore.Store[string, FlowRecord]
+	store   *flowstore.Store[string, aggregateRecord]
 	emitted chan *event.Event
 }
 
-// NewFlowStoreWindow creates a TTL-backed flow aggregator keyed by configured fields.
-func NewFlowStoreWindow(cfg config.AggregatorConfig) *FlowStoreWindow {
-	a := &FlowStoreWindow{
+// NewWindow creates a TTL-backed aggregator keyed by configured fields.
+func NewWindow(cfg config.AggregatorConfig) *Window {
+	a := &Window{
 		cfg:     cfg,
 		emitted: make(chan *event.Event, 1024),
 	}
-	a.store = flowstore.NewStore[string, FlowRecord](
-		flowstore.WithDefaultTTL[string, FlowRecord](time.Duration(cfg.FlushInterval)*time.Millisecond),
-		flowstore.WithRefreshTTLOnWrite[string, FlowRecord](),
-		flowstore.WithHooks[string, FlowRecord](flowstore.Hooks[string, FlowRecord]{
-			OnDelete: func(key string, value FlowRecord, reason flowstore.DeleteReason) {
+	a.store = flowstore.NewStore[string, aggregateRecord](
+		flowstore.WithDefaultTTL[string, aggregateRecord](time.Duration(cfg.FlushInterval)*time.Millisecond),
+		flowstore.WithRefreshTTLOnWrite[string, aggregateRecord](),
+		flowstore.WithHooks[string, aggregateRecord](flowstore.Hooks[string, aggregateRecord]{
+			OnDelete: func(key string, value aggregateRecord, reason flowstore.DeleteReason) {
 				if reason != flowstore.DeleteReasonExpired && reason != flowstore.DeleteReasonFlushed {
 					return
 				}
 				select {
-				case a.emitted <- buildAggregatedEvent(key, value):
+				case a.emitted <- buildAggregatedEvent("window", key, value):
 				default:
 				}
 			},
@@ -111,9 +97,8 @@ func NewFlowStoreWindow(cfg config.AggregatorConfig) *FlowStoreWindow {
 	return a
 }
 
-// Process updates the active flow bucket for this event.
-func (a *FlowStoreWindow) Process(evt *event.Event) ([]*event.Event, error) {
-	key, record, err := a.recordFromEvent(evt)
+func (a *Window) Process(evt *event.Event) ([]*event.Event, error) {
+	key, record, err := aggregateFromEvent(a.cfg, evt)
 	if err != nil {
 		return nil, err
 	}
@@ -123,8 +108,7 @@ func (a *FlowStoreWindow) Process(evt *event.Event) ([]*event.Event, error) {
 	return a.Flush()
 }
 
-// Flush drains any expiry-driven records that have already been emitted by FlowStore hooks.
-func (a *FlowStoreWindow) Flush() ([]*event.Event, error) {
+func (a *Window) Flush() ([]*event.Event, error) {
 	var out []*event.Event
 	for {
 		select {
@@ -136,14 +120,12 @@ func (a *FlowStoreWindow) Flush() ([]*event.Event, error) {
 	}
 }
 
-// Close flushes the store so remaining active records are emitted before shutdown.
-func (a *FlowStoreWindow) Close() ([]*event.Event, error) {
+func (a *Window) Close() ([]*event.Event, error) {
 	a.store.Close()
 	return a.Flush()
 }
 
-// Interval returns the sweeper cadence used to turn expired buckets into output events.
-func (a *FlowStoreWindow) Interval() time.Duration {
+func (a *Window) Interval() time.Duration {
 	interval := time.Duration(a.cfg.FlushInterval) * time.Millisecond / 2
 	if interval <= 0 {
 		return time.Second
@@ -151,15 +133,68 @@ func (a *FlowStoreWindow) Interval() time.Duration {
 	return interval
 }
 
-func (a *FlowStoreWindow) recordFromEvent(evt *event.Event) (string, FlowRecord, error) {
+// Periodic keeps aggregate state and emits snapshots at a fixed interval without expiring buckets.
+type Periodic struct {
+	cfg   config.AggregatorConfig
+	mu    sync.Mutex
+	state map[string]aggregateRecord
+}
+
+func NewPeriodic(cfg config.AggregatorConfig) *Periodic {
+	return &Periodic{
+		cfg:   cfg,
+		state: make(map[string]aggregateRecord),
+	}
+}
+
+func (a *Periodic) Process(evt *event.Event) ([]*event.Event, error) {
+	key, record, err := aggregateFromEvent(a.cfg, evt)
+	if err != nil {
+		return nil, err
+	}
+	a.mu.Lock()
+	current, exists := a.state[key]
+	if err := current.Add(record, exists); err != nil {
+		a.mu.Unlock()
+		return nil, err
+	}
+	a.state[key] = current
+	a.mu.Unlock()
+	return nil, nil
+}
+
+func (a *Periodic) Flush() ([]*event.Event, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	out := make([]*event.Event, 0, len(a.state))
+	for key, record := range a.state {
+		out = append(out, buildAggregatedEvent("periodic", key, record))
+	}
+	return out, nil
+}
+
+func (a *Periodic) Close() ([]*event.Event, error) {
+	return a.Flush()
+}
+
+func (a *Periodic) Interval() time.Duration {
+	interval := time.Duration(a.cfg.PeriodicInterval) * time.Millisecond
+	if interval <= 0 {
+		return 30 * time.Second
+	}
+	return interval
+}
+
+func aggregateFromEvent(cfg config.AggregatorConfig, evt *event.Event) (string, aggregateRecord, error) {
 	fields := evt.Fields
 	if fields == nil {
-		return "", FlowRecord{}, fmt.Errorf("event fields are empty")
+		return "", aggregateRecord{}, fmt.Errorf("event fields are empty")
 	}
 
-	key, err := buildKey(fields, a.cfg.KeyFields)
+	key, err := buildKey(fields, cfg.KeyFields)
 	if err != nil {
-		return "", FlowRecord{}, err
+		return "", aggregateRecord{}, err
 	}
 
 	now := evt.ReceivedAt
@@ -167,23 +202,37 @@ func (a *FlowStoreWindow) recordFromEvent(evt *event.Event) (string, FlowRecord,
 		now = time.Now()
 	}
 
-	return key, FlowRecord{
-		AgentIP:    stringOrZero(fields, "agent_ip"),
-		SubAgentID: uint32Field(fields, "sub_agent_id"),
-		SourceID:   uint32Field(fields, "source_id"),
-		SrcAddr:    stringOrZero(fields, "src_addr"),
-		DstAddr:    stringOrZero(fields, "dst_addr"),
-		Proto:      uint32Field(fields, "proto"),
-		SrcPort:    uint32Field(fields, "src_port"),
-		DstPort:    uint32Field(fields, "dst_port"),
-		Bytes:      int64Field(fields, "bytes"),
-		Packets:    int64Field(fields, "packets"),
-		FirstSeen:  now,
-		LastSeen:   now,
+	recordFields := make(map[string]any)
+	for _, keyField := range cfg.KeyFields {
+		if val, ok := fields[keyField]; ok {
+			recordFields[keyField] = val
+		}
+	}
+	for _, sumField := range cfg.Sum {
+		recordFields[sumField] = int64Field(fields, sumField)
+	}
+	for _, firstField := range cfg.First {
+		if val, ok := fields[firstField]; ok {
+			recordFields[firstField] = firstValue{Value: val}
+		}
+	}
+	for _, currentField := range cfg.Current {
+		if val, ok := fields[currentField]; ok {
+			recordFields[currentField] = currentValue{Value: val}
+		}
+	}
+
+	return key, aggregateRecord{
+		Fields:    recordFields,
+		FirstSeen: now,
+		LastSeen:  now,
 	}, nil
 }
 
 func buildKey(fields map[string]any, keyFields []string) (string, error) {
+	if len(keyFields) == 0 {
+		return "__all__", nil
+	}
 	parts := make([]string, 0, len(keyFields))
 	for _, key := range keyFields {
 		val, ok := fields[key]
@@ -195,57 +244,67 @@ func buildKey(fields map[string]any, keyFields []string) (string, error) {
 	return strings.Join(parts, "|"), nil
 }
 
-func buildAggregatedEvent(key string, record FlowRecord) *event.Event {
+func buildAggregatedEvent(kind, key string, record aggregateRecord) *event.Event {
+	fields := cloneFields(record.Fields)
+	fields["aggregation_type"] = kind
+	fields["aggregation_key"] = key
+	fields["first_seen_unix"] = record.FirstSeen.UnixMilli()
+	fields["last_seen_unix"] = record.LastSeen.UnixMilli()
+
 	return &event.Event{
 		ReceivedAt: time.Now(),
 		Source: event.SourceMetadata{
 			Type: "aggregated_flow",
 		},
-		Fields: map[string]any{
-			"aggregation_key": key,
-			"agent_ip":        record.AgentIP,
-			"sub_agent_id":    record.SubAgentID,
-			"source_id":       record.SourceID,
-			"src_addr":        record.SrcAddr,
-			"dst_addr":        record.DstAddr,
-			"proto":           record.Proto,
-			"src_port":        record.SrcPort,
-			"dst_port":        record.DstPort,
-			"bytes":           record.Bytes,
-			"packets":         record.Packets,
-			"first_seen_unix": record.FirstSeen.UnixMilli(),
-			"last_seen_unix":  record.LastSeen.UnixMilli(),
-		},
+		Fields: fields,
 	}
 }
 
-func stringOrZero(fields map[string]any, key string) string {
-	val, ok := fields[key]
-	if !ok {
-		return ""
+func cloneFields(in map[string]any) map[string]any {
+	out := make(map[string]any, len(in)+4)
+	for key, val := range in {
+		switch typed := val.(type) {
+		case firstValue:
+			out[key] = typed.Value
+		case currentValue:
+			out[key] = typed.Value
+		default:
+			out[key] = val
+		}
 	}
-	s, _ := val.(string)
-	return s
+	return out
 }
 
-func uint32Field(fields map[string]any, key string) uint32 {
-	val, ok := fields[key]
-	if !ok {
-		return 0
-	}
-	switch v := val.(type) {
-	case uint32:
-		return v
-	case uint64:
-		return uint32(v)
-	case int:
-		return uint32(v)
-	case int64:
-		return uint32(v)
-	case float64:
-		return uint32(v)
-	default:
-		return 0
+type firstValue struct {
+	Value any
+}
+
+type currentValue struct {
+	Value any
+}
+
+func mergeFields(dst, src map[string]any) {
+	for key, val := range src {
+		switch incoming := val.(type) {
+		case firstValue:
+			if _, exists := dst[key]; !exists {
+				dst[key] = incoming
+			}
+		case currentValue:
+			dst[key] = incoming
+		default:
+			if existing, ok := dst[key]; ok {
+				switch lhs := existing.(type) {
+				case int64:
+					dst[key] = lhs + int64FromAny(val)
+					continue
+				case uint32:
+					dst[key] = uint32(uint64(lhs) + uint64(uint32FromAny(val)))
+					continue
+				}
+			}
+			dst[key] = val
+		}
 	}
 }
 
@@ -259,15 +318,46 @@ func int64Field(fields map[string]any, key string) int64 {
 		return v
 	case uint64:
 		return int64(v)
-	case int:
-		return int64(v)
 	case uint32:
+		return int64(v)
+	case int:
 		return int64(v)
 	case float64:
 		return int64(v)
-	case string:
-		n, _ := strconv.ParseInt(v, 10, 64)
-		return n
+	default:
+		return 0
+	}
+}
+
+func uint32FromAny(val any) uint32 {
+	switch v := val.(type) {
+	case uint32:
+		return v
+	case uint64:
+		return uint32(v)
+	case int:
+		return uint32(v)
+	case int64:
+		return uint32(v)
+	case float64:
+		return uint32(v)
+	default:
+		return 0
+	}
+}
+
+func int64FromAny(val any) int64 {
+	switch v := val.(type) {
+	case int64:
+		return v
+	case uint64:
+		return int64(v)
+	case uint32:
+		return int64(v)
+	case int:
+		return int64(v)
+	case float64:
+		return int64(v)
 	default:
 		return 0
 	}

@@ -4,6 +4,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"gopkg.in/yaml.v3"
 )
@@ -20,6 +21,7 @@ type Config struct {
 	Source     SourceConfig     `yaml:"source"`
 	Processor  ProcessorConfig  `yaml:"processor"`
 	Aggregator AggregatorConfig `yaml:"aggregator"`
+	IPFIX      IPFIXConfig      `yaml:"ipfix"`
 	Encoder    EncoderConfig    `yaml:"encoder"`
 	Sink       SinkConfig       `yaml:"sink"`
 }
@@ -50,9 +52,13 @@ type BuiltinProcessorConfig struct {
 }
 
 type AggregatorConfig struct {
-	Type          string   `yaml:"type"`
-	FlushInterval int      `yaml:"flush_interval_ms"`
-	KeyFields     []string `yaml:"key_fields"`
+	Type             string   `yaml:"type"`
+	FlushInterval    int      `yaml:"flush_interval_ms"`
+	PeriodicInterval int      `yaml:"periodic_interval_ms"`
+	KeyFields        []string `yaml:"key_fields"`
+	Sum              []string `yaml:"sum"`
+	First            []string `yaml:"first"`
+	Current          []string `yaml:"current"`
 }
 
 type EncoderConfig struct {
@@ -88,6 +94,23 @@ type SFlowBatchOverConfig struct {
 	Uptime         *bool `yaml:"uptime"`
 }
 
+type IPFIXConfig struct {
+	FieldsPath string                          `yaml:"fields_path"`
+	Fields     map[string]IPFIXFieldDefinition `yaml:"fields"`
+	Overrides  map[string]IPFIXFieldDefinition `yaml:"overrides"`
+}
+
+type IPFIXFieldDefinition struct {
+	Name             string `yaml:"name"`
+	ID               uint16 `yaml:"id"`
+	PEN              uint32 `yaml:"pen"`
+	Length           uint16 `yaml:"length"`
+	Type             string `yaml:"type"`
+	Format           string `yaml:"format"`
+	NetFlowV9ID      uint16 `yaml:"netflow_v9_id"`
+	EnterpriseScoped bool   `yaml:"enterprise_scoped"`
+}
+
 type SinkConfig struct {
 	Type    string `yaml:"type"`
 	Path    string `yaml:"path"`
@@ -113,13 +136,13 @@ func Load(path string) (*Config, error) {
 	if err := yaml.Unmarshal(raw, cfg); err != nil {
 		return nil, fmt.Errorf("decode config %s: %w", path, err)
 	}
-	if err := cfg.setDefaults(); err != nil {
+	if err := cfg.setDefaults(path); err != nil {
 		return nil, err
 	}
 	return cfg, nil
 }
 
-func (c *Config) setDefaults() error {
+func (c *Config) setDefaults(configPath string) error {
 	if c.Source.Network == "" {
 		c.Source.Network = "udp"
 	}
@@ -160,15 +183,24 @@ func (c *Config) setDefaults() error {
 	}
 	switch c.Aggregator.Type {
 	case "none":
-	case "flowstore_window":
+	case "window":
 		if c.Aggregator.FlushInterval <= 0 {
 			c.Aggregator.FlushInterval = 10000
 		}
 		if len(c.Aggregator.KeyFields) == 0 {
 			c.Aggregator.KeyFields = []string{"src_addr", "dst_addr", "proto", "src_port", "dst_port"}
 		}
+		defaultAggregateFields(&c.Aggregator)
+	case "periodic":
+		if c.Aggregator.PeriodicInterval <= 0 {
+			c.Aggregator.PeriodicInterval = 30000
+		}
+		defaultAggregateFields(&c.Aggregator)
 	default:
 		return fmt.Errorf("unsupported aggregator.type %q", c.Aggregator.Type)
+	}
+	if err := c.loadIPFIXFields(configPath); err != nil {
+		return err
 	}
 	if c.Encoder.Type == "" {
 		c.Encoder.Type = "json"
@@ -220,4 +252,75 @@ func defaultTrue(dst **bool) {
 	}
 	v := true
 	*dst = &v
+}
+
+func (c *Config) loadIPFIXFields(configPath string) error {
+	if c.IPFIX.FieldsPath == "" {
+		c.IPFIX.FieldsPath = "reflow-ipfix-fields.yaml"
+	}
+	if !filepath.IsAbs(c.IPFIX.FieldsPath) {
+		c.IPFIX.FieldsPath = filepath.Join(filepath.Dir(configPath), c.IPFIX.FieldsPath)
+	}
+
+	type ipfixCatalog struct {
+		Fields map[string]IPFIXFieldDefinition `yaml:"fields"`
+	}
+
+	catalog := ipfixCatalog{}
+	raw, err := os.ReadFile(c.IPFIX.FieldsPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			c.IPFIX.Fields = mergeIPFIXFields(c.IPFIX.Fields, c.IPFIX.Overrides)
+			return nil
+		}
+		return fmt.Errorf("load ipfix fields %s: %w", c.IPFIX.FieldsPath, err)
+	}
+	if err := yaml.Unmarshal(raw, &catalog); err != nil {
+		return fmt.Errorf("decode ipfix fields %s: %w", c.IPFIX.FieldsPath, err)
+	}
+
+	c.IPFIX.Fields = mergeIPFIXFields(catalog.Fields, c.IPFIX.Fields, c.IPFIX.Overrides)
+	return nil
+}
+
+func mergeIPFIXFields(sources ...map[string]IPFIXFieldDefinition) map[string]IPFIXFieldDefinition {
+	merged := make(map[string]IPFIXFieldDefinition)
+	for _, source := range sources {
+		for key, def := range source {
+			merged[key] = def
+		}
+	}
+	return merged
+}
+
+func defaultAggregateFields(cfg *AggregatorConfig) {
+	if len(cfg.Sum) == 0 {
+		cfg.Sum = []string{"bytes", "packets"}
+	}
+	if len(cfg.First) == 0 {
+		cfg.First = []string{
+			"agent_ip",
+			"sub_agent_id",
+			"source_id",
+			"src_addr",
+			"dst_addr",
+			"proto",
+			"src_port",
+			"dst_port",
+			"flow_start_ns",
+		}
+	}
+	if len(cfg.Current) == 0 {
+		cfg.Current = []string{
+			"agent_ip",
+			"sub_agent_id",
+			"source_id",
+			"input_if",
+			"output_if",
+			"sampling_rate",
+			"sample_pool",
+			"drops",
+			"flow_end_ns",
+		}
+	}
 }

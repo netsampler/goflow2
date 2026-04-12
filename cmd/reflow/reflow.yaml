@@ -12,6 +12,9 @@ processor:
     drop_message: false
     drop_payload: true
 
+ipfix:
+  fields_path: reflow-ipfix-fields.yaml
+
 encoder:
   type: sflow
   # Batching is per encoder worker. Keep this at 1 when you want stronger

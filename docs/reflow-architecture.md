@@ -899,9 +899,23 @@ processor:
   on: [json]
 
 aggregator:
-  type: flowstore_window
+  type: window
   flush_interval: 10s
   key_fields: [src_addr, dst_addr, proto, src_port, dst_port]
+  sum: [bytes, packets]
+  first: [agent_ip, src_addr, dst_addr, proto, src_port, dst_port, flow_start_ns]
+  current: [agent_ip, input_if, output_if, sampling_rate, sample_pool, drops, flow_end_ns]
+
+ipfix:
+  fields_path: ./reflow-ipfix-fields.yaml
+  overrides:
+    custom_counter:
+      name: customCounter
+      id: 1000
+      pen: 424242
+      enterprise_scoped: true
+      length: 8
+      type: unsigned64
 
 batch:
   max_records: 64
@@ -1124,7 +1138,7 @@ Mitigation:
 
 Mitigation:
 
-* define windowing, flush, and keying semantics before adding multiple aggregators
+* define window and periodic semantics before adding more aggregation families
 
 ## Decision Log Template
 
