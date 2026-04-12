@@ -20,36 +20,37 @@ processor:
     disable_packet_mapping: false
     truncate_packet_bytes: 0
 
-aggregator:
-  enabled: true
-  window:
-    idle_flush_after_ms: 10000
-  periodic:
-    every_ms: 60000
-  key_fields:
-    - src_addr
-    - dst_addr
-    - proto
-    - src_port
-    - dst_port
-  template_id: 256
-  # `sum` adds numeric counters into the bucket on every matching event.
-  sum:
-    - bytes
-    - packets
-  # `first` keeps the first observed value for the lifetime of the bucket.
-  first:
-    - agent_ip
-    - start_time_unix
-  # `current` replaces the stored value on every bucket update.
-  current:
-    - agent_ip
-    - input_if
-    - output_if
-    - sampling_rate
-    - sample_pool
-    - drops
-    - end_time_unix
+aggregators:
+  - enabled: true
+    stream: flow_data
+    window:
+      idle_flush_after_ms: 10000
+    periodic:
+      every_ms: 60000
+    key_fields:
+      - src_addr
+      - dst_addr
+      - proto
+      - src_port
+      - dst_port
+    template_id: 256
+    # `sum` adds numeric counters into the bucket on every matching event.
+    sum:
+      - bytes
+      - packets
+    # `first` keeps the first observed value for the lifetime of the bucket.
+    first:
+      - agent_ip
+      - start_time_unix
+    # `current` replaces the stored value on every bucket update.
+    current:
+      - agent_ip
+      - input_if
+      - output_if
+      - sampling_rate
+      - sample_pool
+      - drops
+      - end_time_unix
 
 encoder:
   type: ipfix

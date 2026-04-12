@@ -20,7 +20,6 @@ type Config struct {
 	LogFormat   string             `yaml:"-"`
 	Source      SourceConfig       `yaml:"source"`
 	Processor   ProcessorConfig    `yaml:"processor"`
-	Aggregator  AggregatorConfig   `yaml:"aggregator"`
 	Aggregators []AggregatorConfig `yaml:"aggregators"`
 	Encoder     EncoderConfig      `yaml:"encoder"`
 	Sink        SinkConfig         `yaml:"sink"`
@@ -214,17 +213,7 @@ func (c *Config) setDefaults(configPath string) error {
 	if c.Processor.Builtin.TruncatePacketBytes < 0 {
 		return fmt.Errorf("processor.builtin.truncate_packet_bytes must be >= 0")
 	}
-	if c.Aggregator.Enabled {
-		applyAggregatorCompatibility(&c.Aggregator)
-		if err := validateAggregatorConfig(c.Aggregator); err != nil {
-			return err
-		}
-		defaultAggregateFields(&c.Aggregator)
-	}
 	if len(c.Aggregators) > 0 {
-		if c.Aggregator.Enabled || !isZeroAggregatorConfig(c.Aggregator) {
-			return fmt.Errorf("config cannot define both aggregator and aggregators")
-		}
 		for i := range c.Aggregators {
 			applyAggregatorCompatibility(&c.Aggregators[i])
 			if err := validateAggregatorConfig(c.Aggregators[i]); err != nil {
@@ -232,8 +221,6 @@ func (c *Config) setDefaults(configPath string) error {
 			}
 			defaultAggregateFields(&c.Aggregators[i])
 		}
-	} else if c.Aggregator.Enabled || !isZeroAggregatorConfig(c.Aggregator) {
-		c.Aggregators = []AggregatorConfig{c.Aggregator}
 	}
 	if err := c.loadFlowDataCatalog(configPath); err != nil {
 		return err
@@ -413,20 +400,4 @@ func validateAggregatorConfig(cfg AggregatorConfig) error {
 		return fmt.Errorf("aggregator requires at least one export trigger: window.idle_flush_after_ms, window.max_flush_after_ms, or periodic.every_ms")
 	}
 	return nil
-}
-
-func isZeroAggregatorConfig(cfg AggregatorConfig) bool {
-	return !cfg.Enabled &&
-		cfg.Stream == "" &&
-		cfg.Window == (AggregatorWindowConfig{}) &&
-		cfg.Periodic == (AggregatorPeriodicConfig{}) &&
-		len(cfg.KeyFields) == 0 &&
-		len(cfg.Sum) == 0 &&
-		len(cfg.First) == 0 &&
-		len(cfg.Current) == 0 &&
-		len(cfg.Match) == 0 &&
-		cfg.TemplateID == 0 &&
-		len(cfg.StaticFields) == 0 &&
-		cfg.ResetInterval == 0 &&
-		cfg.PeriodicInterval == 0
 }

@@ -116,17 +116,18 @@ source:
       - drops
       - interface
 
-aggregator:
-  enabled: true
-  ...
-
-options_aggregator:
-  enabled: true
-  periodic_interval_ms: 60000
-  key_fields: [agent_ip, source_id]
-  first: [agent_ip, source_id]
-  current: [sampling_rate, sample_pool, drops]
-  template_id: 300
+aggregators:
+  - enabled: true
+    stream: flow_data
+    ...
+  - enabled: true
+    stream: options_data
+    periodic:
+      every_ms: 60000
+    key_fields: [agent_ip, source_id]
+    first: [agent_ip, source_id]
+    current: [sampling_rate, sample_pool, drops]
+    template_id: 300
 
 encoder:
   type: ipfix

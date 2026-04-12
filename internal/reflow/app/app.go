@@ -24,7 +24,7 @@ type App struct {
 	decoder          decode.Decoder
 	processor        processor.Processor
 	processorWorkers int
-	aggregatorCfg    config.AggregatorConfig
+	aggregatorCfgs   []config.AggregatorConfig
 	encoderCfg       config.EncoderConfig
 	encoderWorkers   int
 	sink             sink.Sink
@@ -71,7 +71,7 @@ func New(cfg *config.Config) (*App, error) {
 		decoder:          decode.New(),
 		processor:        proc,
 		processorWorkers: cfg.Processor.Workers,
-		aggregatorCfg:    cfg.Aggregator,
+		aggregatorCfgs:   cfg.Aggregators,
 		encoderCfg:       encoderCfg,
 		encoderWorkers:   encoderWorkers,
 		sink:             out,
@@ -88,7 +88,7 @@ func (a *App) Run(ctx context.Context) error {
 
 	decodeJobs := make(chan *event.Event, a.processorWorkers*2)
 	processJobs := make(chan *event.Event, a.processorWorkers*2)
-	aggregateJobs := make(chan *event.Event, a.processorWorkers*2)
+	aggregateRouteJobs := make(chan *event.Event, a.processorWorkers*2)
 	encodeJobs := make(chan *event.Event, a.encoderWorkers*2)
 
 	var decodeWG sync.WaitGroup
@@ -119,66 +119,100 @@ func (a *App) Run(ctx context.Context) error {
 					continue
 				}
 				for _, item := range events {
-					aggregateJobs <- item
+					aggregateRouteJobs <- item
 				}
 			}
 		}()
 	}
 
-	agg, err := aggregate.New(a.aggregatorCfg)
-	if err != nil {
-		return fmt.Errorf("init aggregator: %w", err)
+	var aggregateWG sync.WaitGroup
+	aggregateWorkers := make([]aggregateWorker, 0, len(a.aggregatorCfgs))
+	for _, aggCfg := range a.aggregatorCfgs {
+		agg, err := aggregate.New(aggCfg)
+		if err != nil {
+			return fmt.Errorf("init aggregator %q: %w", aggCfg.Stream, err)
+		}
+		worker := aggregateWorker{
+			cfg:  aggCfg,
+			agg:  agg,
+			jobs: make(chan *event.Event, a.processorWorkers*2),
+		}
+		aggregateWorkers = append(aggregateWorkers, worker)
+		aggregateWG.Add(1)
+		go func(worker aggregateWorker) {
+			defer aggregateWG.Done()
+			var ticker *time.Ticker
+			if interval := worker.agg.Interval(); interval > 0 {
+				ticker = time.NewTicker(interval)
+				defer ticker.Stop()
+			}
+			forward := func(events []*event.Event) {
+				for _, evt := range events {
+					encodeJobs <- evt
+				}
+			}
+			flush := func(closeStore bool) {
+				var (
+					events []*event.Event
+					err    error
+				)
+				if closeStore {
+					events, err = worker.agg.Close()
+				} else {
+					events, err = worker.agg.Flush()
+				}
+				if err != nil {
+					a.logger.Error("aggregate flush error", slog.String("stream", worker.cfg.Stream), slog.String("error", err.Error()))
+					return
+				}
+				forward(events)
+			}
+			for {
+				select {
+				case <-tickerChannel(ticker):
+					flush(false)
+				case evt, ok := <-worker.jobs:
+					if !ok {
+						flush(true)
+						return
+					}
+					events, err := worker.agg.Process(evt)
+					if err != nil {
+						a.logger.Error("aggregate error", slog.String("stream", worker.cfg.Stream), slog.String("error", err.Error()))
+						continue
+					}
+					forward(events)
+				}
+			}
+		}(worker)
 	}
 
-	var aggregateWG sync.WaitGroup
-	aggregateWG.Add(1)
+	var aggregateRouteWG sync.WaitGroup
+	aggregateRouteWG.Add(1)
 	go func() {
-		defer aggregateWG.Done()
-		var ticker *time.Ticker
-		if interval := agg.Interval(); interval > 0 {
-			ticker = time.NewTicker(interval)
-			defer ticker.Stop()
-		}
-		forward := func(events []*event.Event) bool {
-			for _, evt := range events {
+		defer aggregateRouteWG.Done()
+		for evt := range aggregateRouteJobs {
+			if evt == nil {
+				continue
+			}
+			if evt.Kind == "control" {
 				encodeJobs <- evt
+				continue
 			}
-			return true
-		}
-		flush := func(closeStore bool) bool {
-			var events []*event.Event
-			var err error
-			if closeStore {
-				events, err = agg.Close()
-			} else {
-				events, err = agg.Flush()
-			}
-			if err != nil {
-				a.logger.Error("aggregate flush error", slog.String("error", err.Error()))
-				return true
-			}
-			return forward(events)
-		}
-		for {
-			select {
-			case <-tickerChannel(ticker):
-				if !flush(false) {
-					return
-				}
-			case evt, ok := <-aggregateJobs:
-				if !ok {
-					flush(true)
-					return
-				}
-				events, err := agg.Process(evt)
-				if err != nil {
-					a.logger.Error("aggregate error", slog.String("error", err.Error()))
+			matched := false
+			for _, worker := range aggregateWorkers {
+				if !aggregatorMatches(worker.cfg, evt) {
 					continue
 				}
-				if !forward(events) {
-					return
-				}
+				matched = true
+				worker.jobs <- evt
 			}
+			if !matched {
+				encodeJobs <- evt
+			}
+		}
+		for _, worker := range aggregateWorkers {
+			close(worker.jobs)
 		}
 	}()
 
@@ -237,12 +271,14 @@ func (a *App) Run(ctx context.Context) error {
 		}()
 	}
 
-	initEvents, err := agg.InitEvents()
-	if err != nil {
-		return fmt.Errorf("init aggregator events: %w", err)
-	}
-	for _, evt := range initEvents {
-		encodeJobs <- evt
+	for _, worker := range aggregateWorkers {
+		initEvents, err := worker.agg.InitEvents()
+		if err != nil {
+			return fmt.Errorf("init aggregator events for %q: %w", worker.cfg.Stream, err)
+		}
+		for _, evt := range initEvents {
+			encodeJobs <- evt
+		}
 	}
 	sourceInitEvents, err := a.source.InitEvents()
 	if err != nil {
@@ -269,7 +305,8 @@ func (a *App) Run(ctx context.Context) error {
 		decodeWG.Wait()
 		close(processJobs)
 		processWG.Wait()
-		close(aggregateJobs)
+		close(aggregateRouteJobs)
+		aggregateRouteWG.Wait()
 		aggregateWG.Wait()
 		close(encodeJobs)
 		encodeWG.Wait()
@@ -289,6 +326,49 @@ func (a *App) Run(ctx context.Context) error {
 		shutdown()
 		return nil
 	}
+}
+
+type aggregateWorker struct {
+	cfg  config.AggregatorConfig
+	agg  aggregate.Aggregator
+	jobs chan *event.Event
+}
+
+func aggregatorMatches(cfg config.AggregatorConfig, evt *event.Event) bool {
+	if len(cfg.Match) == 0 {
+		return true
+	}
+	for key, want := range cfg.Match {
+		if eventMatchValue(evt, key) != want {
+			return false
+		}
+	}
+	return true
+}
+
+func eventMatchValue(evt *event.Event, key string) string {
+	if evt == nil {
+		return ""
+	}
+	switch key {
+	case "stream":
+		return evt.Stream
+	case "kind":
+		return evt.Kind
+	case "source.type":
+		return evt.Source.Type
+	case "source.network":
+		return evt.Source.Network
+	case "source.address":
+		return evt.Source.Address
+	}
+	if evt.Fields == nil {
+		return ""
+	}
+	if val, ok := evt.Fields[key]; ok {
+		return fmt.Sprint(val)
+	}
+	return ""
 }
 
 // tickerChannel keeps select logic simple when a stage does not need timer-driven flushing.

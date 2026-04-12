@@ -14,26 +14,27 @@ processor:
     drop_payload: false
     disable_packet_mapping: false
 
-aggregator:
-  enabled: true
-  window:
-    idle_flush_after_ms: 10000
-  periodic:
-    every_ms: 60000
-  key_fields:
-    - src_addr
-    - dst_addr
-    - proto
-    - src_port
-    - dst_port
-  template_id: 256
-  sum:
-    - bytes
-    - packets
-  current:
-    - input_if
-    - output_if
-    - flow_end_ns
+aggregators:
+  - enabled: true
+    stream: flow_data
+    window:
+      idle_flush_after_ms: 10000
+    periodic:
+      every_ms: 60000
+    key_fields:
+      - src_addr
+      - dst_addr
+      - proto
+      - src_port
+      - dst_port
+    template_id: 256
+    sum:
+      - bytes
+      - packets
+    current:
+      - input_if
+      - output_if
+      - flow_end_ns
 
 encoder:
   type: json

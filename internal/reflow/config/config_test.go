@@ -41,13 +41,13 @@ source:
 processor:
   type: builtin
 
-aggregator:
-  enabled: true
-  window:
-    idle_flush_after_ms: 5000
-  template_id: 256
-  static_fields:
-    exporter_name: reflow-test
+aggregators:
+  - enabled: true
+    window:
+      idle_flush_after_ms: 5000
+    template_id: 256
+    static_fields:
+      exporter_name: reflow-test
 
 encoder:
   type: json
@@ -73,20 +73,23 @@ sink:
 		t.Fatalf("Load returned error: %v", err)
 	}
 
-	if !cfg.Aggregator.Enabled {
-		t.Fatalf("expected aggregator.enabled=true")
+	if len(cfg.Aggregators) != 1 {
+		t.Fatalf("expected 1 aggregator, got %d", len(cfg.Aggregators))
 	}
-	if cfg.Aggregator.Window.IdleFlushAfter != 5000 {
-		t.Fatalf("expected aggregator.window.idle_flush_after_ms=5000, got %d", cfg.Aggregator.Window.IdleFlushAfter)
+	if !cfg.Aggregators[0].Enabled {
+		t.Fatalf("expected aggregators[0].enabled=true")
 	}
-	if len(cfg.Aggregator.Sum) == 0 || cfg.Aggregator.Sum[0] != "bytes" {
-		t.Fatalf("expected default sum fields to include bytes, got %#v", cfg.Aggregator.Sum)
+	if cfg.Aggregators[0].Window.IdleFlushAfter != 5000 {
+		t.Fatalf("expected aggregators[0].window.idle_flush_after_ms=5000, got %d", cfg.Aggregators[0].Window.IdleFlushAfter)
 	}
-	if len(cfg.Aggregator.First) == 0 || cfg.Aggregator.First[0] != "agent_ip" {
-		t.Fatalf("expected default first fields to include agent_ip, got %#v", cfg.Aggregator.First)
+	if len(cfg.Aggregators[0].Sum) == 0 || cfg.Aggregators[0].Sum[0] != "bytes" {
+		t.Fatalf("expected default sum fields to include bytes, got %#v", cfg.Aggregators[0].Sum)
 	}
-	if len(cfg.Aggregator.Current) == 0 || cfg.Aggregator.Current[0] != "agent_ip" {
-		t.Fatalf("expected default current fields to include agent_ip, got %#v", cfg.Aggregator.Current)
+	if len(cfg.Aggregators[0].First) == 0 || cfg.Aggregators[0].First[0] != "agent_ip" {
+		t.Fatalf("expected default first fields to include agent_ip, got %#v", cfg.Aggregators[0].First)
+	}
+	if len(cfg.Aggregators[0].Current) == 0 || cfg.Aggregators[0].Current[0] != "agent_ip" {
+		t.Fatalf("expected default current fields to include agent_ip, got %#v", cfg.Aggregators[0].Current)
 	}
 	custom := cfg.Encoder.TFlowData.Catalog["custom_counter"]
 	if custom.ID != 2000 || custom.PEN != 64512 {
@@ -95,11 +98,11 @@ sink:
 	if cfg.Encoder.TFlowData.Catalog["bytes"].ID != 1 {
 		t.Fatalf("expected bytes field definition to be loaded from external catalog")
 	}
-	if cfg.Aggregator.TemplateID != 256 {
-		t.Fatalf("expected aggregator.template_id=256, got %d", cfg.Aggregator.TemplateID)
+	if cfg.Aggregators[0].TemplateID != 256 {
+		t.Fatalf("expected aggregators[0].template_id=256, got %d", cfg.Aggregators[0].TemplateID)
 	}
-	if cfg.Aggregator.StaticFields["exporter_name"] != "reflow-test" {
-		t.Fatalf("expected static field exporter_name to be loaded, got %#v", cfg.Aggregator.StaticFields["exporter_name"])
+	if cfg.Aggregators[0].StaticFields["exporter_name"] != "reflow-test" {
+		t.Fatalf("expected static field exporter_name to be loaded, got %#v", cfg.Aggregators[0].StaticFields["exporter_name"])
 	}
 }
 
@@ -118,10 +121,10 @@ source:
 processor:
   type: builtin
 
-aggregator:
-  enabled: true
-  periodic:
-    every_ms: 60000
+aggregators:
+  - enabled: true
+    periodic:
+      every_ms: 60000
 
 encoder:
   type: json
@@ -137,14 +140,14 @@ sink:
 		t.Fatalf("Load returned error: %v", err)
 	}
 
-	if cfg.Aggregator.Periodic.Every != 60000 {
-		t.Fatalf("expected periodic.every_ms=60000, got %d", cfg.Aggregator.Periodic.Every)
-	}
-	if len(cfg.Aggregator.Sum) == 0 || len(cfg.Aggregator.First) == 0 || len(cfg.Aggregator.Current) == 0 {
-		t.Fatalf("expected aggregation defaults to be populated, got sum=%#v first=%#v current=%#v", cfg.Aggregator.Sum, cfg.Aggregator.First, cfg.Aggregator.Current)
-	}
 	if len(cfg.Aggregators) != 1 {
-		t.Fatalf("expected legacy aggregator to be normalized into aggregators list, got %d entries", len(cfg.Aggregators))
+		t.Fatalf("expected 1 aggregator, got %d", len(cfg.Aggregators))
+	}
+	if cfg.Aggregators[0].Periodic.Every != 60000 {
+		t.Fatalf("expected periodic.every_ms=60000, got %d", cfg.Aggregators[0].Periodic.Every)
+	}
+	if len(cfg.Aggregators[0].Sum) == 0 || len(cfg.Aggregators[0].First) == 0 || len(cfg.Aggregators[0].Current) == 0 {
+		t.Fatalf("expected aggregation defaults to be populated, got sum=%#v first=%#v current=%#v", cfg.Aggregators[0].Sum, cfg.Aggregators[0].First, cfg.Aggregators[0].Current)
 	}
 	if cfg.Aggregators[0].Stream != "flow_data" {
 		t.Fatalf("expected default stream=flow_data, got %q", cfg.Aggregators[0].Stream)
@@ -164,8 +167,8 @@ source:
 processor:
   type: builtin
 
-aggregator:
-  enabled: true
+aggregators:
+  - enabled: true
 
 encoder:
   type: json
@@ -238,43 +241,6 @@ sink:
 	}
 	if cfg.Aggregators[1].Match["record_kind"] != "interface_counter" {
 		t.Fatalf("expected second match record_kind=interface_counter, got %#v", cfg.Aggregators[1].Match)
-	}
-}
-
-func TestLoadRejectsLegacyAndListAggregatorsTogether(t *testing.T) {
-	dir := t.TempDir()
-
-	cfgPath := filepath.Join(dir, "reflow.yaml")
-	if err := os.WriteFile(cfgPath, []byte(`
-source:
-  network: udp
-  address: ":18081"
-  type: json
-
-processor:
-  type: builtin
-
-aggregator:
-  enabled: true
-  periodic:
-    every_ms: 1000
-
-aggregators:
-  - enabled: true
-    periodic:
-      every_ms: 1000
-
-encoder:
-  type: json
-
-sink:
-  type: stdout
-`), 0o644); err != nil {
-		t.Fatalf("write config: %v", err)
-	}
-
-	if _, err := Load(cfgPath); err == nil {
-		t.Fatalf("expected Load to reject aggregator and aggregators together")
 	}
 }
 

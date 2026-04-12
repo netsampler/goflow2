@@ -8,6 +8,7 @@ import (
 type Event struct {
 	ReceivedAt time.Time        `json:"received_at"`
 	Kind       string           `json:"kind,omitempty"`
+	Stream     string           `json:"stream,omitempty"`
 	Source     SourceMetadata   `json:"source"`
 	Control    *ControlMetadata `json:"control,omitempty"`
 	Message    json.RawMessage  `json:"message,omitempty"`

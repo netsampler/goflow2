@@ -109,21 +109,23 @@ func (a *Stateful) InitEvents() ([]*event.Event, error) {
 		{
 			ReceivedAt: time.Now().UTC(),
 			Kind:       "control",
+			Stream:     a.cfg.Stream,
 			Source: event.SourceMetadata{
 				Type: "aggregator",
 			},
 			Control: &event.ControlMetadata{
 				Type:   "schema",
-				Stream: "flow_data",
+				Stream: a.cfg.Stream,
 			},
 			Payload: event.AggregationSchema{
-				Stream:        "flow_data",
-				FieldNames:    fieldNames,
-				KeyFields:     append([]string(nil), a.cfg.KeyFields...),
-				SumFields:     append([]string(nil), a.cfg.Sum...),
-				FirstFields:   append([]string(nil), a.cfg.First...),
-				CurrentFields: append([]string(nil), a.cfg.Current...),
-				StaticFields:  cloneFields(a.cfg.StaticFields),
+				Stream:         a.cfg.Stream,
+				FieldNames:     fieldNames,
+				KeyFields:      append([]string(nil), a.cfg.KeyFields...),
+				SumFields:      append([]string(nil), a.cfg.Sum...),
+				FirstFields:    append([]string(nil), a.cfg.First...),
+				CurrentFields:  append([]string(nil), a.cfg.Current...),
+				StaticFields:   cloneFields(a.cfg.StaticFields),
+				BaseTemplateID: a.cfg.TemplateID,
 			},
 		},
 	}, nil
@@ -199,7 +201,7 @@ func (a *Stateful) Close() ([]*event.Event, error) {
 	// every remaining bucket one last time regardless of dirty state.
 	out := make([]*event.Event, 0, len(a.state))
 	for key, record := range a.state {
-		out = append(out, buildAggregatedEvent(key, record))
+		out = append(out, buildAggregatedEvent(a.cfg.Stream, key, record))
 	}
 	return out, nil
 }
@@ -242,18 +244,18 @@ func (a *Stateful) flushAt(now time.Time, closing bool) []*event.Event {
 	periodicDue := a.periodicDue(now)
 	for key, record := range a.state {
 		if closing {
-			out = append(out, buildAggregatedEvent(key, record))
+			out = append(out, buildAggregatedEvent(a.cfg.Stream, key, record))
 			continue
 		}
 
 		if a.shouldFlushIdle(record, now) || a.shouldFlushMax(record, now) {
-			out = append(out, buildAggregatedEvent(key, record))
+			out = append(out, buildAggregatedEvent(a.cfg.Stream, key, record))
 			delete(a.state, key)
 			continue
 		}
 
 		if periodicDue && a.shouldEmitPeriodic(record) {
-			out = append(out, buildAggregatedEvent(key, record))
+			out = append(out, buildAggregatedEvent(a.cfg.Stream, key, record))
 			if a.cfg.Periodic.ResetBuckets {
 				delete(a.state, key)
 			} else {
@@ -383,7 +385,7 @@ func buildKey(fields map[string]any, keyFields []string) (string, error) {
 	return strings.Join(parts, "|"), nil
 }
 
-func buildAggregatedEvent(key string, record aggregateRecord) *event.Event {
+func buildAggregatedEvent(stream, key string, record aggregateRecord) *event.Event {
 	fields := cloneFields(record.Fields)
 	fields["aggregation_key"] = key
 	fields["first_seen_unix"] = record.FirstSeen.UnixMilli()
@@ -391,6 +393,7 @@ func buildAggregatedEvent(key string, record aggregateRecord) *event.Event {
 
 	return &event.Event{
 		ReceivedAt: time.Now(),
+		Stream:     stream,
 		Source: event.SourceMetadata{
 			Type: "aggregated_flow",
 		},

@@ -68,6 +68,76 @@ func TestStatefulFlushSumsPacketCounters(t *testing.T) {
 	}
 }
 
+func TestStatefulInitEventsCarryConfiguredStreamAndTemplateBaseID(t *testing.T) {
+	agg, err := New(config.AggregatorConfig{
+		Enabled: true,
+		Stream:  "agg_packets",
+		Periodic: config.AggregatorPeriodicConfig{
+			Every: 1,
+		},
+		TemplateID: 512,
+	})
+	if err != nil {
+		t.Fatalf("New returned error: %v", err)
+	}
+
+	events, err := agg.InitEvents()
+	if err != nil {
+		t.Fatalf("InitEvents returned error: %v", err)
+	}
+	if len(events) != 1 {
+		t.Fatalf("expected 1 init event, got %d", len(events))
+	}
+	if events[0].Stream != "agg_packets" {
+		t.Fatalf("expected event stream agg_packets, got %q", events[0].Stream)
+	}
+	if events[0].Control == nil || events[0].Control.Stream != "agg_packets" {
+		t.Fatalf("expected control stream agg_packets, got %#v", events[0].Control)
+	}
+	schema, ok := events[0].Payload.(event.AggregationSchema)
+	if !ok {
+		t.Fatalf("expected aggregation schema payload, got %T", events[0].Payload)
+	}
+	if schema.Stream != "agg_packets" {
+		t.Fatalf("expected schema stream agg_packets, got %q", schema.Stream)
+	}
+	if schema.BaseTemplateID != 512 {
+		t.Fatalf("expected base template id 512, got %d", schema.BaseTemplateID)
+	}
+}
+
+func TestStatefulAggregatedEventsCarryConfiguredStream(t *testing.T) {
+	agg, err := New(config.AggregatorConfig{
+		Enabled: true,
+		Stream:  "agg_counters",
+		Periodic: config.AggregatorPeriodicConfig{
+			Every: 1,
+		},
+	})
+	if err != nil {
+		t.Fatalf("New returned error: %v", err)
+	}
+
+	if _, err := agg.Process(&event.Event{
+		Fields: map[string]any{
+			"if_in_octets": int64(64),
+		},
+	}); err != nil {
+		t.Fatalf("Process returned error: %v", err)
+	}
+
+	out, err := agg.Close()
+	if err != nil {
+		t.Fatalf("Close returned error: %v", err)
+	}
+	if len(out) != 1 {
+		t.Fatalf("expected 1 aggregated event, got %d", len(out))
+	}
+	if out[0].Stream != "agg_counters" {
+		t.Fatalf("expected stream agg_counters, got %q", out[0].Stream)
+	}
+}
+
 func TestStatefulTTLFlushSumsPacketCounters(t *testing.T) {
 	agg, err := New(config.AggregatorConfig{
 		Enabled: true,

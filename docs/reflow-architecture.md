@@ -898,18 +898,19 @@ processor:
   module: ./plugins/custom_counter.wasm
   on: [json]
 
-aggregator:
-  enabled: true
-  reset_interval_ms: 10000
-  periodic_interval_ms: 60000
-  key_fields: [src_addr, dst_addr, proto, src_port, dst_port]
-  template_id: 256
-  static_fields:
-    exporter_name: core-router
-  # sum: add numeric counters into the active bucket
-  sum: [bytes, packets]
-  # first: keep the first value seen when the bucket is created
-  first: [agent_ip, flow_start_ns]
+aggregators:
+  - enabled: true
+    stream: flow_data
+    reset_interval_ms: 10000
+    periodic_interval_ms: 60000
+    key_fields: [src_addr, dst_addr, proto, src_port, dst_port]
+    template_id: 256
+    static_fields:
+      exporter_name: core-router
+    # sum: add numeric counters into the active bucket
+    sum: [bytes, packets]
+    # first: keep the first value seen when the bucket is created
+    first: [agent_ip, flow_start_ns]
   # current: replace with the latest value seen for the bucket
   current: [agent_ip, input_if, output_if, sampling_rate, sample_pool, drops, flow_end_ns]
 
