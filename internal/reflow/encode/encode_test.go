@@ -297,6 +297,65 @@ func TestSFlowEncoderUsesEventSamplingRate(t *testing.T) {
 	}
 }
 
+func TestSFlowEncoderEmitsInterfaceCounterSample(t *testing.T) {
+	enc := NewSFlowEncoder(config.EncoderConfig{
+		Type: "sflow",
+	})
+
+	payloads, err := enc.Encode(&event.Event{
+		Fields: map[string]any{
+			"message_type":       "counter",
+			"record_kind":        "interface_counter",
+			"agent_ip":           "192.0.2.1",
+			"sub_agent_id":       uint32(7),
+			"source_id":          uint32(8),
+			"if_index":           uint32(9),
+			"if_type":            uint32(6),
+			"if_speed":           uint64(1000),
+			"if_direction":       uint32(1),
+			"if_status":          uint32(3),
+			"if_in_octets":       uint64(100),
+			"if_out_octets":      uint64(200),
+			"if_in_errors":       uint32(2),
+			"if_out_errors":      uint32(4),
+			"if_promiscuous_mode": uint32(1),
+		},
+		SFlow: &event.SFlowMetadata{
+			AgentIP:    "192.0.2.1",
+			SubAgentID: 7,
+			SourceID:   8,
+		},
+	})
+	if err != nil {
+		t.Fatalf("Encode returned error: %v", err)
+	}
+	if len(payloads) != 1 {
+		t.Fatalf("expected 1 payload, got %d", len(payloads))
+	}
+
+	packet := decodeSFlowPacket(t, payloads[0])
+	sample, ok := packet.Samples[0].(sflow.CounterSample)
+	if !ok {
+		t.Fatalf("expected counter sample, got %T", packet.Samples[0])
+	}
+	if sample.Header.SourceIdValue != 8 {
+		t.Fatalf("expected source id 8, got %d", sample.Header.SourceIdValue)
+	}
+	if sample.CounterRecordsCount != 1 {
+		t.Fatalf("expected 1 counter record, got %d", sample.CounterRecordsCount)
+	}
+	record, ok := sample.Records[0].Data.(sflow.IfCounters)
+	if !ok {
+		t.Fatalf("expected IfCounters record, got %T", sample.Records[0].Data)
+	}
+	if record.IfIndex != 9 {
+		t.Fatalf("expected if_index 9, got %d", record.IfIndex)
+	}
+	if record.IfOutOctets != 200 {
+		t.Fatalf("expected if_out_octets 200, got %d", record.IfOutOctets)
+	}
+}
+
 func TestIPFIXEncoderEmitsTemplateAndDataRecord(t *testing.T) {
 	enc := NewIPFIXEncoder(testTFlowEncoderConfig("ipfix"))
 	evt := testTemplatedFlowEvent()

@@ -25,6 +25,10 @@ func (d *builtIn) decodeSFlow(evt *event.Event, payload []byte, version uint32) 
 			out = append(out, d.eventFromExpandedSFlowSample(evt, packet, s))
 		case *sflow.ExpandedFlowSample:
 			out = append(out, d.eventFromExpandedSFlowSample(evt, packet, *s))
+		case sflow.CounterSample:
+			out = append(out, d.eventsFromSFlowCounterSample(evt, packet, s)...)
+		case *sflow.CounterSample:
+			out = append(out, d.eventsFromSFlowCounterSample(evt, packet, *s)...)
 		}
 	}
 
@@ -158,4 +162,52 @@ func (d *builtIn) eventFromExpandedSFlowSample(base *event.Event, packet *sflow.
 	}
 
 	return evt
+}
+
+func (d *builtIn) eventsFromSFlowCounterSample(base *event.Event, packet *sflow.Packet, sample sflow.CounterSample) []*event.Event {
+	agentIP := ipSliceString(packet.AgentIP)
+	out := make([]*event.Event, 0, len(sample.Records))
+	for _, record := range sample.Records {
+		data, ok := record.Data.(sflow.IfCounters)
+		if !ok {
+			continue
+		}
+		evt := cloneEvent(base)
+		fields := ensureFields(evt, 24)
+		evt.SFlow = &event.SFlowMetadata{
+			AgentIP:        agentIP,
+			SubAgentID:     packet.SubAgentId,
+			SequenceNumber: packet.SequenceNumber,
+			Uptime:         packet.Uptime,
+			SourceID:       sample.Header.SourceIdValue,
+		}
+		fields["message_type"] = "counter"
+		fields["counter_type"] = "sflow"
+		fields["record_kind"] = "interface_counter"
+		fields["sflow_version"] = packet.Version
+		fields["agent_ip"] = agentIP
+		fields["sub_agent_id"] = packet.SubAgentId
+		fields["source_id"] = sample.Header.SourceIdValue
+		fields["if_index"] = data.IfIndex
+		fields["if_type"] = data.IfType
+		fields["if_speed"] = data.IfSpeed
+		fields["if_direction"] = data.IfDirection
+		fields["if_status"] = data.IfStatus
+		fields["if_in_octets"] = data.IfInOctets
+		fields["if_in_ucast_pkts"] = data.IfInUcastPkts
+		fields["if_in_multicast_pkts"] = data.IfInMulticastPkts
+		fields["if_in_broadcast_pkts"] = data.IfInBroadcastPkts
+		fields["if_in_discards"] = data.IfInDiscards
+		fields["if_in_errors"] = data.IfInErrors
+		fields["if_in_unknown_protos"] = data.IfInUnknownProtos
+		fields["if_out_octets"] = data.IfOutOctets
+		fields["if_out_ucast_pkts"] = data.IfOutUcastPkts
+		fields["if_out_multicast_pkts"] = data.IfOutMulticastPkts
+		fields["if_out_broadcast_pkts"] = data.IfOutBroadcastPkts
+		fields["if_out_discards"] = data.IfOutDiscards
+		fields["if_out_errors"] = data.IfOutErrors
+		fields["if_promiscuous_mode"] = data.IfPromiscuousMode
+		out = append(out, evt)
+	}
+	return out
 }

@@ -281,3 +281,50 @@ func TestBuiltinProcessGoFlow2V2BuildsPseudoPacket(t *testing.T) {
 		t.Fatalf("expected frame_length=%d, got %#v", len(headerData), got)
 	}
 }
+
+func TestBuiltinProcessReFlowJSONPreservesCounterFields(t *testing.T) {
+	proc := NewBuiltin(config.ProcessorConfig{})
+
+	msg, err := json.Marshal(map[string]any{
+		"message_type":    "counter",
+		"record_kind":     "interface_counter",
+		"agent_ip":        "192.0.2.10",
+		"sub_agent_id":    3,
+		"source_id":       4,
+		"if_index":        5,
+		"if_in_octets":    1234,
+		"if_out_octets":   5678,
+		"if_out_errors":   9,
+		"if_status":       3,
+		"if_direction":    1,
+		"if_promiscuous_mode": 0,
+	})
+	if err != nil {
+		t.Fatalf("Marshal returned error: %v", err)
+	}
+
+	events, err := proc.Process(&event.Event{
+		Source: event.SourceMetadata{
+			Type: "json",
+			JSON: event.JSONMetadata{Flavor: "reflow"},
+		},
+		Message: msg,
+	})
+	if err != nil {
+		t.Fatalf("Process returned error: %v", err)
+	}
+	if len(events) != 1 {
+		t.Fatalf("expected 1 event, got %d", len(events))
+	}
+
+	fields := events[0].Fields
+	if got := fields["message_type"]; got != "counter" {
+		t.Fatalf("expected message_type=counter, got %#v", got)
+	}
+	if got := fields["if_index"]; got != float64(5) {
+		t.Fatalf("expected if_index=5, got %#v", got)
+	}
+	if events[0].SFlow == nil || events[0].SFlow.AgentIP != "192.0.2.10" {
+		t.Fatalf("expected sflow metadata to be populated, got %#v", events[0].SFlow)
+	}
+}

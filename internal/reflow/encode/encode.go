@@ -469,7 +469,7 @@ func (e *SFlowEncoder) buildPacketWithLimit(events []*event.Event) (*sflow.Packe
 		if accepted > 0 && !e.compatibleTopLevel(first, evt) {
 			break
 		}
-		sample, err := e.buildFlowSample(evt)
+		sample, err := e.buildSample(evt)
 		if err != nil {
 			return nil, accepted, err
 		}
@@ -517,6 +517,13 @@ func (e *SFlowEncoder) buildPacketWithLimit(events []*event.Event) (*sflow.Packe
 	return packet, accepted, nil
 }
 
+func (e *SFlowEncoder) buildSample(evt *event.Event) (interface{}, error) {
+	if isSFlowCounterEvent(evt) {
+		return e.buildCounterSample(evt)
+	}
+	return e.buildFlowSample(evt)
+}
+
 // buildFlowSample maps the canonical event fields into one sFlow raw-header flow sample.
 func (e *SFlowEncoder) buildFlowSample(evt *event.Event) (sflow.FlowSample, error) {
 	fields := evt.Fields
@@ -545,6 +552,49 @@ func (e *SFlowEncoder) buildFlowSample(evt *event.Event) (sflow.FlowSample, erro
 					Stripped:       uint32Field(fields, "stripped"),
 					OriginalLength: uint32Field(fields, "original_length"),
 					HeaderData:     bytesField(fields, "header_data"),
+				},
+			},
+		},
+	}, nil
+}
+
+func (e *SFlowEncoder) buildCounterSample(evt *event.Event) (sflow.CounterSample, error) {
+	fields := evt.Fields
+	if fields == nil {
+		return sflow.CounterSample{}, fmt.Errorf("event fields are empty")
+	}
+	sf := evt.SFlow
+
+	return sflow.CounterSample{
+		Header: sflow.SampleHeader{
+			Format:               sflow.SAMPLE_FORMAT_COUNTER,
+			SampleSequenceNumber: e.sampleSequence(evt),
+			SourceIdType:         0,
+			SourceIdValue:        sflowSourceID(sf, fields),
+		},
+		CounterRecordsCount: 1,
+		Records: []sflow.CounterRecord{
+			{
+				Data: sflow.IfCounters{
+					IfIndex:            uint32Field(fields, "if_index"),
+					IfType:             uint32Field(fields, "if_type"),
+					IfSpeed:            uint64Field(fields, "if_speed"),
+					IfDirection:        uint32Field(fields, "if_direction"),
+					IfStatus:           uint32Field(fields, "if_status"),
+					IfInOctets:         uint64Field(fields, "if_in_octets"),
+					IfInUcastPkts:      uint32Field(fields, "if_in_ucast_pkts"),
+					IfInMulticastPkts:  uint32Field(fields, "if_in_multicast_pkts"),
+					IfInBroadcastPkts:  uint32Field(fields, "if_in_broadcast_pkts"),
+					IfInDiscards:       uint32Field(fields, "if_in_discards"),
+					IfInErrors:         uint32Field(fields, "if_in_errors"),
+					IfInUnknownProtos:  uint32Field(fields, "if_in_unknown_protos"),
+					IfOutOctets:        uint64Field(fields, "if_out_octets"),
+					IfOutUcastPkts:     uint32Field(fields, "if_out_ucast_pkts"),
+					IfOutMulticastPkts: uint32Field(fields, "if_out_multicast_pkts"),
+					IfOutBroadcastPkts: uint32Field(fields, "if_out_broadcast_pkts"),
+					IfOutDiscards:      uint32Field(fields, "if_out_discards"),
+					IfOutErrors:        uint32Field(fields, "if_out_errors"),
+					IfPromiscuousMode:  uint32Field(fields, "if_promiscuous_mode"),
 				},
 			},
 		},
@@ -610,6 +660,13 @@ func (e *SFlowEncoder) compatibleTopLevel(left, right *event.Event) bool {
 
 func (e *SFlowEncoder) sampleSequence(evt *event.Event) uint32 {
 	return e.sampleSeq.Add(1)
+}
+
+func isSFlowCounterEvent(evt *event.Event) bool {
+	if evt == nil || evt.Fields == nil {
+		return false
+	}
+	return stringFieldOrZero(evt.Fields, "message_type") == "counter" || stringFieldOrZero(evt.Fields, "record_kind") == "interface_counter"
 }
 
 func (e *SFlowEncoder) truncateLastSampleToFit(packet *sflow.Packet) (sflow.FlowSample, bool, error) {
@@ -708,6 +765,17 @@ func uint32Field(fields map[string]any, key string) uint32 {
 	default:
 		return 0
 	}
+}
+
+func uint64Field(fields map[string]any, key string) uint64 {
+	if fields == nil {
+		return 0
+	}
+	val, ok := fields[key]
+	if !ok {
+		return 0
+	}
+	return uint64FromAny(val)
 }
 
 func int64Field(fields map[string]any, key string) int64 {
@@ -1214,7 +1282,12 @@ func (e *IPFIXEncoder) registerSchema(evt *event.Event) ([][]byte, error) {
 		}
 	}
 	e.dataSchemas[eventStream(evt, schema.Stream)] = state
-	return e.encodeSchemaTemplates(state)
+	payloads, err := e.encodeSchemaTemplates(state)
+	if err != nil {
+		return nil, err
+	}
+	e.lastTemplateRun = time.Now().UTC()
+	return payloads, nil
 }
 
 func (e *NFv9Encoder) registerSchema(evt *event.Event) ([][]byte, error) {
@@ -1240,7 +1313,12 @@ func (e *NFv9Encoder) registerSchema(evt *event.Event) ([][]byte, error) {
 		}
 	}
 	e.dataSchemas[eventStream(evt, schema.Stream)] = state
-	return e.encodeSchemaTemplates(state)
+	payloads, err := e.encodeSchemaTemplates(state)
+	if err != nil {
+		return nil, err
+	}
+	e.lastTemplateRun = time.Now().UTC()
+	return payloads, nil
 }
 
 func (e *IPFIXEncoder) registerSourceInit(evt *event.Event) ([][]byte, error) {
@@ -1255,7 +1333,12 @@ func (e *IPFIXEncoder) registerSourceInit(evt *event.Event) ([][]byte, error) {
 		state.observationDomainID = e.cfg.ObservationDomainID
 	}
 	e.sourceOptions[state.stream] = state
-	return e.encodeSourceOptions(state)
+	payloads, err := e.encodeSourceOptions(state)
+	if err != nil {
+		return nil, err
+	}
+	e.lastOptionsRun = time.Now().UTC()
+	return payloads, nil
 }
 
 func (e *NFv9Encoder) registerSourceInit(evt *event.Event) ([][]byte, error) {
@@ -1270,7 +1353,12 @@ func (e *NFv9Encoder) registerSourceInit(evt *event.Event) ([][]byte, error) {
 		state.observationDomainID = e.cfg.ObservationDomainID
 	}
 	e.sourceOptions[state.stream] = state
-	return e.encodeSourceOptions(state)
+	payloads, err := e.encodeSourceOptions(state)
+	if err != nil {
+		return nil, err
+	}
+	e.lastOptionsRun = time.Now().UTC()
+	return payloads, nil
 }
 
 func (e *IPFIXEncoder) flushControlPackets(now time.Time) ([][]byte, error) {

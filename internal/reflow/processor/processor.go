@@ -428,6 +428,9 @@ func (p *Builtin) processReFlowJSON(evt *event.Event, payload any) ([]*event.Eve
 	if !ok {
 		return nil, fmt.Errorf("reflow expects a JSON object")
 	}
+	if _, ok := record["header_hex"]; !ok {
+		return p.processReFlowFields(evt, record), nil
+	}
 
 	data, err := json.Marshal(record)
 	if err != nil {
@@ -435,6 +438,24 @@ func (p *Builtin) processReFlowJSON(evt *event.Event, payload any) ([]*event.Eve
 	}
 	evt.Message = data
 	return p.processJSONRawPacketHeader(evt)
+}
+
+func (p *Builtin) processReFlowFields(evt *event.Event, record map[string]any) []*event.Event {
+	fields := ensureFields(evt, len(record))
+	for key, value := range record {
+		fields[key] = value
+	}
+	if evt.SFlow == nil && (fieldStringOrZero(fields, "agent_ip") != "" || fieldUint32(fields, "sub_agent_id") != 0 || fieldUint32(fields, "source_id") != 0) {
+		evt.SFlow = &event.SFlowMetadata{
+			AgentIP:    fieldStringOrZero(fields, "agent_ip"),
+			SubAgentID: fieldUint32(fields, "sub_agent_id"),
+			SourceID:   fieldUint32(fields, "source_id"),
+		}
+	}
+	if p.cfg.DropMessage {
+		evt.Message = nil
+	}
+	return []*event.Event{evt}
 }
 
 func (p *Builtin) processGoFlow2V2(evt *event.Event, payload any) ([]*event.Event, error) {
