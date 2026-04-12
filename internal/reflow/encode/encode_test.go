@@ -162,6 +162,9 @@ func TestSFlowEncoderTruncatesOversizedSampleWhenEnabled(t *testing.T) {
 	if len(header.HeaderData) >= len(originalHeader) {
 		t.Fatalf("expected truncated header_data length < %d, got %d", len(originalHeader), len(header.HeaderData))
 	}
+	if int(header.OriginalLength) != len(header.HeaderData) {
+		t.Fatalf("expected OriginalLength=%d to match truncated header_data length, got %d", len(header.HeaderData), header.OriginalLength)
+	}
 }
 
 func testSFlowEvent(agentIP string) *event.Event {

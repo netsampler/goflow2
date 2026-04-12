@@ -472,6 +472,7 @@ func (e *SFlowEncoder) truncateLastSampleToFit(packet *sflow.Packet) (sflow.Flow
 		candidate := sample
 		candidateHeader := header
 		candidateHeader.HeaderData = append([]byte(nil), original[:mid]...)
+		candidateHeader.OriginalLength = uint32(len(candidateHeader.HeaderData))
 		candidate.Records = append([]sflow.FlowRecord(nil), sample.Records...)
 		candidate.Records[0] = sflow.FlowRecord{
 			Header: sample.Records[0].Header,
