@@ -299,8 +299,10 @@ func TestSFlowEncoderUsesEventSamplingRate(t *testing.T) {
 
 func TestIPFIXEncoderEmitsTemplateAndDataRecord(t *testing.T) {
 	enc := NewIPFIXEncoder(testTFlowEncoderConfig("ipfix"))
+	evt := testTemplatedFlowEvent()
+	evt.Fields["observation_domain_id"] = uint32(42)
 
-	payloads, err := enc.Encode(testTemplatedFlowEvent())
+	payloads, err := enc.Encode(evt)
 	if err != nil {
 		t.Fatalf("Encode returned error: %v", err)
 	}
@@ -519,6 +521,62 @@ func TestIPFIXTemplatePacketDoesNotAdvanceSequence(t *testing.T) {
 	}
 }
 
+func TestIPFIXSchemaDrivenDataRecordKeepsTemplateWidth(t *testing.T) {
+	cfg := testTFlowEncoderConfig("ipfix")
+	cfg.ObservationDomainID = 42
+	enc := NewIPFIXEncoder(cfg)
+
+	_, err := enc.Encode(&event.Event{
+		Kind: "control",
+		Control: &event.ControlMetadata{
+			Type:   "schema",
+			Stream: "flow_data",
+		},
+		Payload: event.AggregationSchema{
+			Stream:         "flow_data",
+			FieldNames:     []string{"src_addr", "dst_addr", "src_port", "dst_port", "proto", "bytes", "packets", "start_time_unix", "end_time_unix"},
+			BaseTemplateID: 256,
+		},
+	})
+	if err != nil {
+		t.Fatalf("schema Encode returned error: %v", err)
+	}
+
+	evt := testTemplatedFlowEvent()
+	delete(evt.Fields, "end_time_unix")
+	evt.Fields["observation_domain_id"] = uint32(42)
+
+	payloads, err := enc.Encode(evt)
+	if err != nil {
+		t.Fatalf("data Encode returned error: %v", err)
+	}
+
+	store := templates.NewTemplateFlowStore()
+	store.Start()
+	ctx := netflow.FlowContext{RouterKey: "test-router"}
+
+	// Prime the decode-side template store with the same schema packet.
+	templatePayloads, err := enc.encodeSchemaTemplates(enc.dataSchemas["flow_data"])
+	if err != nil {
+		t.Fatalf("encodeSchemaTemplates returned error: %v", err)
+	}
+	for _, payload := range templatePayloads {
+		var templatePacket netflow.IPFIXPacket
+		if err := netflow.DecodeMessageVersion(bytes.NewBuffer(payload), store, ctx, nil, &templatePacket); err != nil {
+			t.Fatalf("decode schema template payload: %v", err)
+		}
+	}
+
+	var decoded netflow.IPFIXPacket
+	if err := netflow.DecodeMessageVersion(bytes.NewBuffer(payloads[0]), store, ctx, nil, &decoded); err != nil {
+		t.Fatalf("decode ipfix data payload: %v", err)
+	}
+	dataSet := decoded.FlowSets[0].(netflow.DataFlowSet)
+	if len(dataSet.Records[0].Values) != 9 {
+		t.Fatalf("expected 9 values in data record, got %d", len(dataSet.Records[0].Values))
+	}
+}
+
 func TestIPFIXEncoderUsesIPv6InformationElementsForIPv6Addresses(t *testing.T) {
 	enc := NewIPFIXEncoder(testTFlowEncoderConfig("ipfix"))
 	evt := testTemplatedFlowEvent()
@@ -598,13 +656,15 @@ func testTFlowEncoderConfig(typ string) config.EncoderConfig {
 		TFlowData: config.TFlowDataConfig{
 			Select: []string{"src_addr", "dst_addr", "src_port", "dst_port", "proto", "bytes", "packets"},
 			Catalog: map[string]config.IPFIXFieldDefinition{
-				"src_addr": {ID: 8, NetFlowV9ID: 8, Length: 4, Type: "ipv4Address"},
-				"dst_addr": {ID: 12, NetFlowV9ID: 12, Length: 4, Type: "ipv4Address"},
-				"src_port": {ID: 7, NetFlowV9ID: 7, Length: 2, Type: "unsigned16"},
-				"dst_port": {ID: 11, NetFlowV9ID: 11, Length: 2, Type: "unsigned16"},
-				"proto":    {ID: 4, NetFlowV9ID: 4, Length: 1, Type: "unsigned8"},
-				"bytes":    {ID: 1, NetFlowV9ID: 1, Length: 8, Type: "unsigned64"},
-				"packets":  {ID: 2, NetFlowV9ID: 2, Length: 8, Type: "unsigned64"},
+				"src_addr":        {ID: 8, NetFlowV9ID: 8, Length: 4, Type: "ipv4Address"},
+				"dst_addr":        {ID: 12, NetFlowV9ID: 12, Length: 4, Type: "ipv4Address"},
+				"src_port":        {ID: 7, NetFlowV9ID: 7, Length: 2, Type: "unsigned16"},
+				"dst_port":        {ID: 11, NetFlowV9ID: 11, Length: 2, Type: "unsigned16"},
+				"proto":           {ID: 4, NetFlowV9ID: 4, Length: 1, Type: "unsigned8"},
+				"bytes":           {ID: 1, NetFlowV9ID: 1, Length: 8, Type: "unsigned64"},
+				"packets":         {ID: 2, NetFlowV9ID: 2, Length: 8, Type: "unsigned64"},
+				"start_time_unix": {ID: 152, Length: 8, Type: "unsigned64"},
+				"end_time_unix":   {ID: 153, Length: 8, Type: "unsigned64"},
 			},
 		},
 	}
