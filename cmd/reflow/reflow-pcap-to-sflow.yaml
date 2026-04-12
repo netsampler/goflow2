@@ -12,6 +12,8 @@ processor:
   builtin:
     drop_message: true
     drop_payload: false
+    disable_packet_mapping: false
+    truncate_packet_bytes: 0
 
 encoder:
   type: sflow

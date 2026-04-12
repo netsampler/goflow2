@@ -120,3 +120,84 @@ func TestBuiltinProcessBytesDecodesPacketTuple(t *testing.T) {
 		t.Fatalf("expected header_data length=%d, got %d", len(packet), len(headerData))
 	}
 }
+
+func TestBuiltinProcessBytesCanDisablePacketMapping(t *testing.T) {
+	proc := NewBuiltin(config.ProcessorConfig{
+		Builtin: config.BuiltinProcessorConfig{
+			DisablePacketMapping: true,
+		},
+	})
+
+	packet := []byte{
+		0x00, 0x11, 0x22, 0x33, 0x44, 0x55,
+		0x66, 0x77, 0x88, 0x99, 0xaa, 0xbb,
+		0x08, 0x00,
+		0x45, 0x00, 0x00, 0x28, 0x00, 0x00, 0x00, 0x00, 0x40, 0x06, 0x00, 0x00,
+		0xc0, 0x00, 0x02, 0x01,
+		0xc6, 0x33, 0x64, 0x02,
+		0x30, 0x39, 0x01, 0xbb,
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x50, 0x02, 0x00, 0x00,
+		0x00, 0x00, 0x00, 0x00,
+	}
+
+	events, err := proc.Process(&event.Event{
+		Source:  event.SourceMetadata{Type: "bytes"},
+		Payload: packet,
+	})
+	if err != nil {
+		t.Fatalf("Process returned error: %v", err)
+	}
+	fields := events[0].Fields
+	if _, ok := fields["src_addr"]; ok {
+		t.Fatalf("expected src_addr to be absent when packet mapping is disabled")
+	}
+	if _, ok := fields["dst_addr"]; ok {
+		t.Fatalf("expected dst_addr to be absent when packet mapping is disabled")
+	}
+}
+
+func TestBuiltinProcessBytesTruncatesRetainedPacketData(t *testing.T) {
+	proc := NewBuiltin(config.ProcessorConfig{
+		Builtin: config.BuiltinProcessorConfig{
+			TruncatePacketBytes: 32,
+		},
+	})
+
+	packet := []byte{
+		0x00, 0x11, 0x22, 0x33, 0x44, 0x55,
+		0x66, 0x77, 0x88, 0x99, 0xaa, 0xbb,
+		0x08, 0x00,
+		0x45, 0x00, 0x00, 0x28, 0x00, 0x00, 0x00, 0x00, 0x40, 0x06, 0x00, 0x00,
+		0xc0, 0x00, 0x02, 0x01,
+		0xc6, 0x33, 0x64, 0x02,
+		0x30, 0x39, 0x01, 0xbb,
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x50, 0x02, 0x00, 0x00,
+		0x00, 0x00, 0x00, 0x00,
+	}
+
+	events, err := proc.Process(&event.Event{
+		Source:  event.SourceMetadata{Type: "bytes"},
+		Payload: packet,
+	})
+	if err != nil {
+		t.Fatalf("Process returned error: %v", err)
+	}
+	fields := events[0].Fields
+	headerData, ok := fields["header_data"].([]byte)
+	if !ok {
+		t.Fatalf("expected header_data to be []byte, got %T", fields["header_data"])
+	}
+	if len(headerData) != 32 {
+		t.Fatalf("expected truncated header_data length=32, got %d", len(headerData))
+	}
+	payload, ok := events[0].Payload.([]byte)
+	if !ok {
+		t.Fatalf("expected payload to remain []byte, got %T", events[0].Payload)
+	}
+	if len(payload) != 32 {
+		t.Fatalf("expected truncated payload length=32, got %d", len(payload))
+	}
+	if got := fields["src_addr"]; got != "192.0.2.1" {
+		t.Fatalf("expected src_addr to be mapped before truncation, got %#v", got)
+	}
+}

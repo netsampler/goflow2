@@ -83,13 +83,16 @@ func (p *Builtin) processBytes(evt *event.Event) ([]*event.Event, error) {
 		evt.SFlow.AgentIP = fieldStringOrZero(fields, "agent_ip")
 	}
 
-	if tuple, err := parsePacketTuple(payload); err == nil {
-		fields["src_addr"] = tuple.SrcAddr.String()
-		fields["dst_addr"] = tuple.DstAddr.String()
-		fields["proto"] = tuple.Proto
-		fields["src_port"] = tuple.SrcPort
-		fields["dst_port"] = tuple.DstPort
+	if !p.cfg.DisablePacketMapping {
+		if tuple, err := parsePacketTuple(payload); err == nil {
+			fields["src_addr"] = tuple.SrcAddr.String()
+			fields["dst_addr"] = tuple.DstAddr.String()
+			fields["proto"] = tuple.Proto
+			fields["src_port"] = tuple.SrcPort
+			fields["dst_port"] = tuple.DstPort
+		}
 	}
+	p.truncatePacketData(evt, fields)
 
 	if p.cfg.DropMessage {
 		evt.Message = nil
@@ -98,6 +101,51 @@ func (p *Builtin) processBytes(evt *event.Event) ([]*event.Event, error) {
 		evt.Payload = nil
 	}
 	return []*event.Event{evt}, nil
+}
+
+func (p *Builtin) truncatePacketData(evt *event.Event, fields map[string]any) {
+	maxBytes := p.cfg.TruncatePacketBytes
+	if maxBytes <= 0 {
+		return
+	}
+	headerData := bytesField(fields, "header_data")
+	if len(headerData) > maxBytes {
+		fields["header_data"] = append([]byte(nil), headerData[:maxBytes]...)
+	}
+	if payload, ok := evt.Payload.([]byte); ok && len(payload) > maxBytes {
+		evt.Payload = append([]byte(nil), payload[:maxBytes]...)
+	}
+}
+
+func bytesField(fields map[string]any, key string) []byte {
+	if fields == nil {
+		return nil
+	}
+	val, ok := fields[key]
+	if !ok {
+		return nil
+	}
+	switch v := val.(type) {
+	case []byte:
+		return v
+	case string:
+		return []byte(v)
+	default:
+		return nil
+	}
+}
+
+func (p *Builtin) mapPacketTuple(fields map[string]any, packet []byte) {
+	if p.cfg.DisablePacketMapping {
+		return
+	}
+	if tuple, err := parsePacketTuple(packet); err == nil {
+		fields["src_addr"] = tuple.SrcAddr.String()
+		fields["dst_addr"] = tuple.DstAddr.String()
+		fields["proto"] = tuple.Proto
+		fields["src_port"] = tuple.SrcPort
+		fields["dst_port"] = tuple.DstPort
+	}
 }
 
 // processFlow treats the built-in processor as the post-decode normalization boundary.
@@ -190,13 +238,8 @@ func (p *Builtin) processJSONRawPacketHeader(evt *event.Event) ([]*event.Event, 
 		Drops:        in.Drops,
 	}
 
-	if tuple, err := parsePacketTuple(headerData); err == nil {
-		fields["src_addr"] = tuple.SrcAddr.String()
-		fields["dst_addr"] = tuple.DstAddr.String()
-		fields["proto"] = tuple.Proto
-		fields["src_port"] = tuple.SrcPort
-		fields["dst_port"] = tuple.DstPort
-	}
+	p.mapPacketTuple(fields, headerData)
+	p.truncatePacketData(evt, fields)
 
 	if p.cfg.DropMessage {
 		evt.Message = nil

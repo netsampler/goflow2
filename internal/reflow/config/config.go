@@ -42,8 +42,10 @@ type ProcessorConfig struct {
 }
 
 type BuiltinProcessorConfig struct {
-	DropMessage bool `yaml:"drop_message"`
-	DropPayload bool `yaml:"drop_payload"`
+	DropMessage          bool `yaml:"drop_message"`
+	DropPayload          bool `yaml:"drop_payload"`
+	DisablePacketMapping bool `yaml:"disable_packet_mapping"`
+	TruncatePacketBytes  int  `yaml:"truncate_packet_bytes"`
 }
 
 type AggregatorConfig struct {
@@ -148,6 +150,9 @@ func (c *Config) setDefaults() error {
 	}
 	if c.Processor.Workers <= 0 {
 		c.Processor.Workers = 1
+	}
+	if c.Processor.Builtin.TruncatePacketBytes < 0 {
+		return fmt.Errorf("processor.builtin.truncate_packet_bytes must be >= 0")
 	}
 	if c.Aggregator.Type == "" {
 		c.Aggregator.Type = "none"
