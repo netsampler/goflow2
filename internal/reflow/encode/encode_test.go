@@ -2,13 +2,62 @@ package encode
 
 import (
 	"bytes"
+	"encoding/json"
 	"net/netip"
 	"testing"
+	"time"
 
+	"github.com/netsampler/goflow2/v3/decoders/netflow"
+	"github.com/netsampler/goflow2/v3/decoders/netflowlegacy"
 	"github.com/netsampler/goflow2/v3/decoders/sflow"
 	"github.com/netsampler/goflow2/v3/internal/reflow/config"
 	"github.com/netsampler/goflow2/v3/internal/reflow/event"
+	"github.com/netsampler/goflow2/v3/utils/store/templates"
 )
+
+func TestJSONEncoderDropsConfiguredFieldsFromCanonicalOutput(t *testing.T) {
+	enc := NewJSONEncoder(config.EncoderConfig{
+		Type: "json",
+		JSON: config.JSONConfig{
+			Flavor:     "canonical",
+			DropFields: []string{"header_data"},
+		},
+	})
+
+	evt := &event.Event{
+		Fields: map[string]any{
+			"header_data": []byte{0, 1, 2, 3},
+			"src_addr":    "192.0.2.10",
+		},
+	}
+
+	payloads, err := enc.Encode(evt)
+	if err != nil {
+		t.Fatalf("Encode returned error: %v", err)
+	}
+	if len(payloads) != 1 {
+		t.Fatalf("expected 1 payload, got %d", len(payloads))
+	}
+
+	var decoded map[string]any
+	if err := json.Unmarshal(payloads[0], &decoded); err != nil {
+		t.Fatalf("unmarshal payload: %v", err)
+	}
+	fields, ok := decoded["fields"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected fields object in payload, got %#v", decoded["fields"])
+	}
+	if _, exists := fields["header_data"]; exists {
+		t.Fatalf("expected header_data to be dropped, got %#v", fields)
+	}
+	if fields["src_addr"] != "192.0.2.10" {
+		t.Fatalf("expected src_addr to be preserved, got %#v", fields["src_addr"])
+	}
+
+	if _, exists := evt.Fields["header_data"]; !exists {
+		t.Fatalf("expected original event fields to remain unchanged")
+	}
+}
 
 func TestSFlowEncoderUsesConfiguredAgentIPOverride(t *testing.T) {
 	enc := NewSFlowEncoder(config.EncoderConfig{
@@ -247,6 +296,142 @@ func TestSFlowEncoderUsesEventSamplingRate(t *testing.T) {
 	}
 }
 
+func TestIPFIXEncoderEmitsTemplateAndDataRecord(t *testing.T) {
+	enc := NewIPFIXEncoder(testTFlowEncoderConfig("ipfix"))
+
+	payloads, err := enc.Encode(testTemplatedFlowEvent())
+	if err != nil {
+		t.Fatalf("Encode returned error: %v", err)
+	}
+	if len(payloads) != 1 {
+		t.Fatalf("expected 1 payload, got %d", len(payloads))
+	}
+
+	store := templates.NewTemplateFlowStore()
+	store.Start()
+	var decoded netflow.IPFIXPacket
+	if err := netflow.DecodeMessageVersion(bytes.NewBuffer(payloads[0]), store, netflow.FlowContext{RouterKey: "test-router"}, nil, &decoded); err != nil {
+		t.Fatalf("decode ipfix payload: %v", err)
+	}
+
+	if decoded.ObservationDomainId != 42 {
+		t.Fatalf("expected observation domain 42, got %d", decoded.ObservationDomainId)
+	}
+	if decoded.SequenceNumber != 1 {
+		t.Fatalf("expected sequence 1, got %d", decoded.SequenceNumber)
+	}
+	if len(decoded.FlowSets) != 2 {
+		t.Fatalf("expected 2 flow sets, got %d", len(decoded.FlowSets))
+	}
+
+	dataSet, ok := decoded.FlowSets[1].(netflow.DataFlowSet)
+	if !ok {
+		t.Fatalf("expected second flow set to be DataFlowSet, got %T", decoded.FlowSets[1])
+	}
+	if got := dataSet.Records[0].Values[0].Value.([]byte); !bytes.Equal(got, []byte{192, 0, 2, 10}) {
+		t.Fatalf("expected src_addr bytes 192.0.2.10, got %v", got)
+	}
+}
+
+func TestNFv9EncoderEmitsTemplateAndDataRecord(t *testing.T) {
+	enc := NewNFv9Encoder(testTFlowEncoderConfig("netflowv9"))
+
+	payloads, err := enc.Encode(testTemplatedFlowEvent())
+	if err != nil {
+		t.Fatalf("Encode returned error: %v", err)
+	}
+	if len(payloads) != 1 {
+		t.Fatalf("expected 1 payload, got %d", len(payloads))
+	}
+
+	store := templates.NewTemplateFlowStore()
+	store.Start()
+	var decoded netflow.NFv9Packet
+	if err := netflow.DecodeMessageVersion(bytes.NewBuffer(payloads[0]), store, netflow.FlowContext{RouterKey: "test-router"}, &decoded, nil); err != nil {
+		t.Fatalf("decode netflow v9 payload: %v", err)
+	}
+
+	if decoded.SourceId != 42 {
+		t.Fatalf("expected source id 42, got %d", decoded.SourceId)
+	}
+	if decoded.SequenceNumber != 1 {
+		t.Fatalf("expected sequence 1, got %d", decoded.SequenceNumber)
+	}
+	if len(decoded.FlowSets) != 2 {
+		t.Fatalf("expected 2 flow sets, got %d", len(decoded.FlowSets))
+	}
+
+	templateSet, ok := decoded.FlowSets[0].(netflow.TemplateFlowSet)
+	if !ok {
+		t.Fatalf("expected first flow set to be TemplateFlowSet, got %T", decoded.FlowSets[0])
+	}
+	if templateSet.Records[0].Fields[0].Type != 8 {
+		t.Fatalf("expected first field type 8 for src_addr, got %d", templateSet.Records[0].Fields[0].Type)
+	}
+}
+
+func TestNFv5EncoderEmitsRecord(t *testing.T) {
+	enc := NewNFv5Encoder(config.EncoderConfig{Type: "netflowv5"})
+
+	payloads, err := enc.Encode(testTemplatedFlowEvent())
+	if err != nil {
+		t.Fatalf("Encode returned error: %v", err)
+	}
+	if len(payloads) != 1 {
+		t.Fatalf("expected 1 payload, got %d", len(payloads))
+	}
+
+	var decoded netflowlegacy.PacketNetFlowV5
+	if err := netflowlegacy.DecodeMessageVersion(bytes.NewBuffer(payloads[0]), &decoded); err != nil {
+		t.Fatalf("decode netflow v5 payload: %v", err)
+	}
+
+	if decoded.FlowSequence != 1 {
+		t.Fatalf("expected flow sequence 1, got %d", decoded.FlowSequence)
+	}
+	if len(decoded.Records) != 1 {
+		t.Fatalf("expected 1 record, got %d", len(decoded.Records))
+	}
+	if decoded.Records[0].SrcPort != 1234 {
+		t.Fatalf("expected src port 1234, got %d", decoded.Records[0].SrcPort)
+	}
+	if decoded.Records[0].DOctets != 321 {
+		t.Fatalf("expected bytes 321, got %d", decoded.Records[0].DOctets)
+	}
+}
+
+func TestNFv9EncoderPassesThroughOptionsTemplate(t *testing.T) {
+	enc := NewNFv9Encoder(config.EncoderConfig{Type: "netflowv9"})
+	evt := &event.Event{
+		Fields: map[string]any{
+			"source_id": uint32(9),
+		},
+		Payload: netflow.NFv9OptionsTemplateRecord{
+			TemplateId:   300,
+			ScopeLength:  4,
+			OptionLength: 4,
+			Scopes:       []netflow.Field{{Type: 1, Length: 4}},
+			Options:      []netflow.Field{{Type: 34, Length: 4}},
+		},
+	}
+
+	payloads, err := enc.Encode(evt)
+	if err != nil {
+		t.Fatalf("Encode returned error: %v", err)
+	}
+
+	store := templates.NewTemplateFlowStore()
+	store.Start()
+	var decoded netflow.NFv9Packet
+	if err := netflow.DecodeMessageVersion(bytes.NewBuffer(payloads[0]), store, netflow.FlowContext{RouterKey: "test-router"}, &decoded, nil); err != nil {
+		t.Fatalf("decode netflow v9 payload: %v", err)
+	}
+
+	if _, ok := decoded.FlowSets[0].(netflow.NFv9OptionsTemplateFlowSet); !ok {
+		t.Fatalf("expected options template flow set, got %T", decoded.FlowSets[0])
+	}
+}
+
 func testSFlowEvent(agentIP string) *event.Event {
 	return &event.Event{
 		Fields: map[string]any{
@@ -269,4 +454,44 @@ func decodeSFlowPacket(t *testing.T, payload []byte) *sflow.Packet {
 		t.Fatalf("decode sflow payload: %v", err)
 	}
 	return packet
+}
+
+func testTFlowEncoderConfig(typ string) config.EncoderConfig {
+	return config.EncoderConfig{
+		Type: typ,
+		TFlowData: config.TFlowDataConfig{
+			Select: []string{"src_addr", "dst_addr", "src_port", "dst_port", "proto", "bytes", "packets"},
+			Catalog: map[string]config.IPFIXFieldDefinition{
+				"src_addr": {ID: 8, NetFlowV9ID: 8, Length: 4, Type: "ipv4Address"},
+				"dst_addr": {ID: 12, NetFlowV9ID: 12, Length: 4, Type: "ipv4Address"},
+				"src_port": {ID: 7, NetFlowV9ID: 7, Length: 2, Type: "unsigned16"},
+				"dst_port": {ID: 11, NetFlowV9ID: 11, Length: 2, Type: "unsigned16"},
+				"proto":    {ID: 4, NetFlowV9ID: 4, Length: 1, Type: "unsigned8"},
+				"bytes":    {ID: 1, NetFlowV9ID: 1, Length: 8, Type: "unsigned64"},
+				"packets":  {ID: 2, NetFlowV9ID: 2, Length: 8, Type: "unsigned64"},
+			},
+		},
+	}
+}
+
+func testTemplatedFlowEvent() *event.Event {
+	return &event.Event{
+		ReceivedAt: testEventTime(),
+		Fields: map[string]any{
+			"source_id":       uint32(42),
+			"src_addr":        "192.0.2.10",
+			"dst_addr":        "192.0.2.20",
+			"src_port":        uint32(1234),
+			"dst_port":        uint32(4321),
+			"proto":           uint32(17),
+			"bytes":           int64(321),
+			"packets":         int64(7),
+			"start_time_unix": int64(1_700_000_000_100),
+			"end_time_unix":   int64(1_700_000_000_900),
+		},
+	}
+}
+
+func testEventTime() time.Time {
+	return time.Unix(1_700_000_001, 0).UTC()
 }

@@ -144,3 +144,43 @@ sink:
 		t.Fatalf("expected aggregation defaults to be populated, got sum=%#v first=%#v current=%#v", cfg.Aggregator.Sum, cfg.Aggregator.First, cfg.Aggregator.Current)
 	}
 }
+
+func TestLoadSupportsJSONDropFields(t *testing.T) {
+	dir := t.TempDir()
+
+	cfgPath := filepath.Join(dir, "reflow.yaml")
+	if err := os.WriteFile(cfgPath, []byte(`
+source:
+  network: udp
+  address: ":18081"
+  type: json
+
+processor:
+  type: builtin
+
+encoder:
+  type: json
+  json:
+    flavor: canonical
+    drop_fields:
+      - header_data
+      - payload
+
+sink:
+  type: stdout
+`), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	cfg, err := Load(cfgPath)
+	if err != nil {
+		t.Fatalf("Load returned error: %v", err)
+	}
+
+	if len(cfg.Encoder.JSON.DropFields) != 2 {
+		t.Fatalf("expected 2 json.drop_fields entries, got %#v", cfg.Encoder.JSON.DropFields)
+	}
+	if cfg.Encoder.JSON.DropFields[0] != "header_data" || cfg.Encoder.JSON.DropFields[1] != "payload" {
+		t.Fatalf("unexpected json.drop_fields contents: %#v", cfg.Encoder.JSON.DropFields)
+	}
+}

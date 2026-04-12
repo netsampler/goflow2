@@ -74,7 +74,8 @@ type EncoderConfig struct {
 }
 
 type JSONConfig struct {
-	Flavor string `yaml:"flavor"`
+	Flavor     string   `yaml:"flavor"`
+	DropFields []string `yaml:"drop_fields"`
 }
 
 type BatchConfig struct {
@@ -216,7 +217,7 @@ func (c *Config) setDefaults(configPath string) error {
 		return fmt.Errorf("encoder.batch.flush_interval_ms must be >= 0")
 	}
 	switch c.Encoder.Type {
-	case "json", "sflow":
+	case "json", "sflow", "ipfix", "netflowv9", "netflowv5":
 	default:
 		return fmt.Errorf("unsupported encoder.type %q", c.Encoder.Type)
 	}

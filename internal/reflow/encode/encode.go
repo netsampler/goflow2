@@ -7,9 +7,12 @@ import (
 	"fmt"
 	"log/slog"
 	"net/netip"
+	"sort"
 	"sync/atomic"
 	"time"
 
+	"github.com/netsampler/goflow2/v3/decoders/netflow"
+	"github.com/netsampler/goflow2/v3/decoders/netflowlegacy"
 	"github.com/netsampler/goflow2/v3/decoders/sflow"
 	"github.com/netsampler/goflow2/v3/decoders/utils"
 	"github.com/netsampler/goflow2/v3/internal/reflow/config"
@@ -43,18 +46,32 @@ func New(cfg config.EncoderConfig) (Encoder, error) {
 		return NewJSONEncoder(cfg), nil
 	case "sflow":
 		return NewSFlowEncoder(cfg), nil
+	case "ipfix":
+		return NewIPFIXEncoder(cfg), nil
+	case "netflowv9":
+		return NewNFv9Encoder(cfg), nil
+	case "netflowv5":
+		return NewNFv5Encoder(cfg), nil
 	default:
 		return nil, fmt.Errorf("unsupported encoder.type %q", cfg.Type)
 	}
 }
 
 type JSONEncoder struct {
-	flavor string
+	flavor     string
+	dropFields map[string]struct{}
 }
 
 // NewJSONEncoder creates the stateless JSON event encoder.
 func NewJSONEncoder(cfg config.EncoderConfig) *JSONEncoder {
-	return &JSONEncoder{flavor: cfg.JSON.Flavor}
+	dropFields := make(map[string]struct{}, len(cfg.JSON.DropFields))
+	for _, field := range cfg.JSON.DropFields {
+		dropFields[field] = struct{}{}
+	}
+	return &JSONEncoder{
+		flavor:     cfg.JSON.Flavor,
+		dropFields: dropFields,
+	}
 }
 
 // Encode serializes one event as a JSON payload in the configured output flavor.
@@ -75,9 +92,9 @@ func (JSONEncoder) Flush() ([][]byte, error) {
 func (e JSONEncoder) formatEvent(evt *event.Event) any {
 	switch e.flavor {
 	case "", "canonical":
-		return evt
+		return e.filterEvent(evt)
 	case "vendor":
-		return map[string]any{
+		return e.filterMap(map[string]any{
 			"src_addr":         stringFieldOrZero(evt.Fields, "src_addr"),
 			"dst_addr":         stringFieldOrZero(evt.Fields, "dst_addr"),
 			"src_port":         uint32Field(evt.Fields, "src_port"),
@@ -93,7 +110,7 @@ func (e JSONEncoder) formatEvent(evt *event.Event) any {
 			"log_status":       stringFieldOrZero(evt.Fields, "log_status"),
 			"reporter":         stringFieldOrZero(evt.Fields, "reporter"),
 			"disposition":      stringFieldOrZero(evt.Fields, "disposition"),
-		}
+		})
 	case "goflow2v2":
 		out := map[string]any{
 			"sampler_address":    encodeIPBytes(stringFieldOrZero(evt.Fields, "agent_ip")),
@@ -111,10 +128,40 @@ func (e JSONEncoder) formatEvent(evt *event.Event) any {
 			"out_if":             uint32Field(evt.Fields, "output_if"),
 			"type":               flowTypeField(evt.Fields),
 		}
-		return out
+		return e.filterMap(out)
 	default:
+		return e.filterEvent(evt)
+	}
+}
+
+func (e JSONEncoder) filterEvent(evt *event.Event) any {
+	if len(e.dropFields) == 0 || len(evt.Fields) == 0 {
 		return evt
 	}
+
+	filteredFields := e.filterMap(evt.Fields)
+	if len(filteredFields) == len(evt.Fields) {
+		return evt
+	}
+
+	filtered := *evt
+	filtered.Fields = filteredFields
+	return &filtered
+}
+
+func (e JSONEncoder) filterMap(fields map[string]any) map[string]any {
+	if len(fields) == 0 || len(e.dropFields) == 0 {
+		return fields
+	}
+
+	filtered := make(map[string]any, len(fields))
+	for key, value := range fields {
+		if _, drop := e.dropFields[key]; drop {
+			continue
+		}
+		filtered[key] = value
+	}
+	return filtered
 }
 
 type SFlowEncoder struct {
@@ -126,6 +173,80 @@ type SFlowEncoder struct {
 	batch            config.BatchConfig
 	cfg              config.SFlowConfig
 	events           []*event.Event
+}
+
+type IPFIXEncoder struct {
+	seq atomic.Uint32
+	cfg config.EncoderConfig
+}
+
+type NFv9Encoder struct {
+	seq atomic.Uint32
+	cfg config.EncoderConfig
+}
+
+type NFv5Encoder struct {
+	seq atomic.Uint32
+}
+
+func NewIPFIXEncoder(cfg config.EncoderConfig) *IPFIXEncoder {
+	return &IPFIXEncoder{cfg: cfg}
+}
+
+func (e *IPFIXEncoder) Encode(evt *event.Event) ([][]byte, error) {
+	packet, err := e.buildPacket(evt)
+	if err != nil {
+		return nil, err
+	}
+	data, err := netflow.EncodeMessage(packet)
+	if err != nil {
+		return nil, fmt.Errorf("encode ipfix packet: %w", err)
+	}
+	return [][]byte{data}, nil
+}
+
+func (e *IPFIXEncoder) Flush() ([][]byte, error) {
+	return nil, nil
+}
+
+func NewNFv9Encoder(cfg config.EncoderConfig) *NFv9Encoder {
+	return &NFv9Encoder{cfg: cfg}
+}
+
+func (e *NFv9Encoder) Encode(evt *event.Event) ([][]byte, error) {
+	packet, err := e.buildPacket(evt)
+	if err != nil {
+		return nil, err
+	}
+	data, err := netflow.EncodeMessage(packet)
+	if err != nil {
+		return nil, fmt.Errorf("encode netflow v9 packet: %w", err)
+	}
+	return [][]byte{data}, nil
+}
+
+func (e *NFv9Encoder) Flush() ([][]byte, error) {
+	return nil, nil
+}
+
+func NewNFv5Encoder(cfg config.EncoderConfig) *NFv5Encoder {
+	return &NFv5Encoder{}
+}
+
+func (e *NFv5Encoder) Encode(evt *event.Event) ([][]byte, error) {
+	packet, err := e.buildPacket(evt)
+	if err != nil {
+		return nil, err
+	}
+	data, err := netflowlegacy.EncodeMessage(packet)
+	if err != nil {
+		return nil, fmt.Errorf("encode netflow v5 packet: %w", err)
+	}
+	return [][]byte{data}, nil
+}
+
+func (e *NFv5Encoder) Flush() ([][]byte, error) {
+	return nil, nil
 }
 
 func NewSFlowEncoder(cfg config.EncoderConfig) *SFlowEncoder {
@@ -679,5 +800,484 @@ func flowTypeField(fields map[string]any) any {
 		return 0
 	default:
 		return val
+	}
+}
+
+func (e *IPFIXEncoder) buildPacket(evt *event.Event) (*netflow.IPFIXPacket, error) {
+	if evt == nil {
+		return nil, fmt.Errorf("nil event")
+	}
+	if evt.Fields == nil {
+		return nil, fmt.Errorf("event fields are empty")
+	}
+
+	templateID := uint16Field(evt.Fields, "template_id")
+	if templateID == 0 {
+		templateID = 256
+	}
+	obsDomainID := uint32Field(evt.Fields, "source_id")
+	exportTime := uint32(evt.ReceivedAt.Unix())
+	if evt.ReceivedAt.IsZero() {
+		exportTime = uint32(time.Now().Unix())
+	}
+
+	switch evt.Payload.(type) {
+	case netflow.TemplateRecord:
+		record := evt.Payload.(netflow.TemplateRecord)
+		packet := &netflow.IPFIXPacket{
+			Version:             10,
+			ExportTime:          exportTime,
+			SequenceNumber:      e.seq.Add(1),
+			ObservationDomainId: obsDomainID,
+			FlowSets: []interface{}{
+				netflow.TemplateFlowSet{
+					FlowSetHeader: netflow.FlowSetHeader{Id: 2},
+					Records:       []netflow.TemplateRecord{record},
+				},
+			},
+		}
+		return packet, nil
+	case *netflow.TemplateRecord:
+		record := *evt.Payload.(*netflow.TemplateRecord)
+		packet := &netflow.IPFIXPacket{
+			Version:             10,
+			ExportTime:          exportTime,
+			SequenceNumber:      e.seq.Add(1),
+			ObservationDomainId: obsDomainID,
+			FlowSets: []interface{}{
+				netflow.TemplateFlowSet{
+					FlowSetHeader: netflow.FlowSetHeader{Id: 2},
+					Records:       []netflow.TemplateRecord{record},
+				},
+			},
+		}
+		return packet, nil
+	case netflow.IPFIXOptionsTemplateRecord:
+		record := evt.Payload.(netflow.IPFIXOptionsTemplateRecord)
+		packet := &netflow.IPFIXPacket{
+			Version:             10,
+			ExportTime:          exportTime,
+			SequenceNumber:      e.seq.Add(1),
+			ObservationDomainId: obsDomainID,
+			FlowSets: []interface{}{
+				netflow.IPFIXOptionsTemplateFlowSet{
+					FlowSetHeader: netflow.FlowSetHeader{Id: 3},
+					Records:       []netflow.IPFIXOptionsTemplateRecord{record},
+				},
+			},
+		}
+		return packet, nil
+	case *netflow.IPFIXOptionsTemplateRecord:
+		record := *evt.Payload.(*netflow.IPFIXOptionsTemplateRecord)
+		packet := &netflow.IPFIXPacket{
+			Version:             10,
+			ExportTime:          exportTime,
+			SequenceNumber:      e.seq.Add(1),
+			ObservationDomainId: obsDomainID,
+			FlowSets: []interface{}{
+				netflow.IPFIXOptionsTemplateFlowSet{
+					FlowSetHeader: netflow.FlowSetHeader{Id: 3},
+					Records:       []netflow.IPFIXOptionsTemplateRecord{record},
+				},
+			},
+		}
+		return packet, nil
+	}
+
+	templateRecord, dataRecord, err := buildTemplatedDataRecord(e.cfg.TFlowData, evt.Fields, templateID, false)
+	if err != nil {
+		return nil, err
+	}
+	packet := &netflow.IPFIXPacket{
+		Version:             10,
+		ExportTime:          exportTime,
+		SequenceNumber:      e.seq.Add(1),
+		ObservationDomainId: obsDomainID,
+		FlowSets: []interface{}{
+			netflow.TemplateFlowSet{
+				FlowSetHeader: netflow.FlowSetHeader{Id: 2},
+				Records:       []netflow.TemplateRecord{templateRecord},
+			},
+			netflow.DataFlowSet{
+				FlowSetHeader: netflow.FlowSetHeader{Id: templateRecord.TemplateId},
+				Records:       []netflow.DataRecord{dataRecord},
+			},
+		},
+	}
+	return packet, nil
+}
+
+func (e *NFv9Encoder) buildPacket(evt *event.Event) (*netflow.NFv9Packet, error) {
+	if evt == nil {
+		return nil, fmt.Errorf("nil event")
+	}
+	if evt.Fields == nil {
+		return nil, fmt.Errorf("event fields are empty")
+	}
+
+	templateID := uint16Field(evt.Fields, "template_id")
+	if templateID == 0 {
+		templateID = 256
+	}
+	sourceID := uint32Field(evt.Fields, "source_id")
+	exportMS := exportUnixMilliseconds(evt.ReceivedAt, evt.Fields)
+	unixSeconds := uint32((exportMS + 999) / 1000)
+	sysUptime, _, _ := uptimeWindow(exportMS, int64Field(evt.Fields, "start_time_unix"), int64Field(evt.Fields, "end_time_unix"))
+
+	switch payload := evt.Payload.(type) {
+	case netflow.TemplateRecord:
+		return &netflow.NFv9Packet{
+			Version:        9,
+			Count:          1,
+			SystemUptime:   sysUptime,
+			UnixSeconds:    unixSeconds,
+			SequenceNumber: e.seq.Add(1),
+			SourceId:       sourceID,
+			FlowSets: []interface{}{
+				netflow.TemplateFlowSet{
+					FlowSetHeader: netflow.FlowSetHeader{Id: 0},
+					Records:       []netflow.TemplateRecord{payload},
+				},
+			},
+		}, nil
+	case *netflow.TemplateRecord:
+		return &netflow.NFv9Packet{
+			Version:        9,
+			Count:          1,
+			SystemUptime:   sysUptime,
+			UnixSeconds:    unixSeconds,
+			SequenceNumber: e.seq.Add(1),
+			SourceId:       sourceID,
+			FlowSets: []interface{}{
+				netflow.TemplateFlowSet{
+					FlowSetHeader: netflow.FlowSetHeader{Id: 0},
+					Records:       []netflow.TemplateRecord{*payload},
+				},
+			},
+		}, nil
+	case netflow.NFv9OptionsTemplateRecord:
+		return &netflow.NFv9Packet{
+			Version:        9,
+			Count:          1,
+			SystemUptime:   sysUptime,
+			UnixSeconds:    unixSeconds,
+			SequenceNumber: e.seq.Add(1),
+			SourceId:       sourceID,
+			FlowSets: []interface{}{
+				netflow.NFv9OptionsTemplateFlowSet{
+					FlowSetHeader: netflow.FlowSetHeader{Id: 1},
+					Records:       []netflow.NFv9OptionsTemplateRecord{payload},
+				},
+			},
+		}, nil
+	case *netflow.NFv9OptionsTemplateRecord:
+		return &netflow.NFv9Packet{
+			Version:        9,
+			Count:          1,
+			SystemUptime:   sysUptime,
+			UnixSeconds:    unixSeconds,
+			SequenceNumber: e.seq.Add(1),
+			SourceId:       sourceID,
+			FlowSets: []interface{}{
+				netflow.NFv9OptionsTemplateFlowSet{
+					FlowSetHeader: netflow.FlowSetHeader{Id: 1},
+					Records:       []netflow.NFv9OptionsTemplateRecord{*payload},
+				},
+			},
+		}, nil
+	}
+
+	templateRecord, dataRecord, err := buildTemplatedDataRecord(e.cfg.TFlowData, evt.Fields, templateID, true)
+	if err != nil {
+		return nil, err
+	}
+	return &netflow.NFv9Packet{
+		Version:        9,
+		Count:          2,
+		SystemUptime:   sysUptime,
+		UnixSeconds:    unixSeconds,
+		SequenceNumber: e.seq.Add(1),
+		SourceId:       sourceID,
+		FlowSets: []interface{}{
+			netflow.TemplateFlowSet{
+				FlowSetHeader: netflow.FlowSetHeader{Id: 0},
+				Records:       []netflow.TemplateRecord{templateRecord},
+			},
+			netflow.DataFlowSet{
+				FlowSetHeader: netflow.FlowSetHeader{Id: templateRecord.TemplateId},
+				Records:       []netflow.DataRecord{dataRecord},
+			},
+		},
+	}, nil
+}
+
+func (e *NFv5Encoder) buildPacket(evt *event.Event) (*netflowlegacy.PacketNetFlowV5, error) {
+	if evt == nil {
+		return nil, fmt.Errorf("nil event")
+	}
+	if evt.Fields == nil {
+		return nil, fmt.Errorf("event fields are empty")
+	}
+
+	exportMS := exportUnixMilliseconds(evt.ReceivedAt, evt.Fields)
+	sysUptime, first, last := uptimeWindow(exportMS, int64Field(evt.Fields, "start_time_unix"), int64Field(evt.Fields, "end_time_unix"))
+	exportTime := time.UnixMilli(exportMS).UTC()
+
+	record := netflowlegacy.RecordsNetFlowV5{
+		SrcAddr:  mustIPv4Address(evt.Fields, "src_addr"),
+		DstAddr:  mustIPv4Address(evt.Fields, "dst_addr"),
+		NextHop:  mustIPv4Address(evt.Fields, "next_hop"),
+		Input:    uint16Field(evt.Fields, "input_if"),
+		Output:   uint16Field(evt.Fields, "output_if"),
+		DPkts:    uint32(uint64FromAny(evt.Fields["packets"])),
+		DOctets:  uint32(uint64FromAny(evt.Fields["bytes"])),
+		First:    first,
+		Last:     last,
+		SrcPort:  uint16Field(evt.Fields, "src_port"),
+		DstPort:  uint16Field(evt.Fields, "dst_port"),
+		TCPFlags: uint8(uint32Field(evt.Fields, "tcp_flags")),
+		Proto:    uint8(uint32Field(evt.Fields, "proto")),
+		Tos:      uint8(uint32Field(evt.Fields, "tos")),
+		SrcAS:    uint16Field(evt.Fields, "src_as"),
+		DstAS:    uint16Field(evt.Fields, "dst_as"),
+		SrcMask:  uint8(uint32Field(evt.Fields, "src_mask")),
+		DstMask:  uint8(uint32Field(evt.Fields, "dst_mask")),
+	}
+
+	return &netflowlegacy.PacketNetFlowV5{
+		Version:          5,
+		Count:            1,
+		SysUptime:        sysUptime,
+		UnixSecs:         uint32(exportTime.Unix()),
+		UnixNSecs:        uint32(exportTime.Nanosecond()),
+		FlowSequence:     e.seq.Add(1),
+		EngineType:       uint8(uint32Field(evt.Fields, "engine_type")),
+		EngineId:         uint8(uint32Field(evt.Fields, "engine_id")),
+		SamplingInterval: uint16Field(evt.Fields, "sampling_rate"),
+		Records:          []netflowlegacy.RecordsNetFlowV5{record},
+	}, nil
+}
+
+func buildTemplatedDataRecord(cfg config.TFlowDataConfig, fieldMap map[string]any, templateID uint16, netflowV9 bool) (netflow.TemplateRecord, netflow.DataRecord, error) {
+	names := selectFlowFields(cfg, fieldMap)
+	templateFields := make([]netflow.Field, 0, len(names))
+	values := make([]netflow.DataField, 0, len(names))
+	for _, name := range names {
+		def, ok := cfg.Catalog[name]
+		if !ok {
+			continue
+		}
+		val, ok := fieldMap[name]
+		if !ok {
+			continue
+		}
+		encoded, err := encodeIPFIXValue(def, val)
+		if err != nil {
+			return netflow.TemplateRecord{}, netflow.DataRecord{}, fmt.Errorf("encode field %q: %w", name, err)
+		}
+		fieldType := def.ID
+		if netflowV9 {
+			fieldType = def.NetFlowV9ID
+			if fieldType == 0 {
+				fieldType = def.ID
+			}
+		}
+		templateFields = append(templateFields, netflow.Field{
+			PenProvided: def.EnterpriseScoped || def.PEN != 0,
+			Type:        fieldType,
+			Length:      ipfixFieldLength(def, encoded),
+			Pen:         def.PEN,
+		})
+		values = append(values, netflow.DataField{
+			PenProvided: def.EnterpriseScoped || def.PEN != 0,
+			Type:        fieldType,
+			Pen:         def.PEN,
+			Value:       encoded,
+		})
+	}
+	if len(templateFields) == 0 {
+		return netflow.TemplateRecord{}, netflow.DataRecord{}, fmt.Errorf("no encodable fields found for ipfix packet")
+	}
+	return netflow.TemplateRecord{
+			TemplateId: templateID,
+			FieldCount: uint16(len(templateFields)),
+			Fields:     templateFields,
+		}, netflow.DataRecord{
+			Values: values,
+		}, nil
+}
+
+func selectFlowFields(cfg config.TFlowDataConfig, fieldMap map[string]any) []string {
+	if len(cfg.Select) > 0 {
+		return append([]string(nil), cfg.Select...)
+	}
+	names := make([]string, 0, len(fieldMap))
+	for name := range fieldMap {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
+}
+
+func encodeIPFIXValue(def config.IPFIXFieldDefinition, val any) ([]byte, error) {
+	switch def.Type {
+	case "ipv4Address", "ipv6Address":
+		s, ok := val.(string)
+		if !ok {
+			return nil, fmt.Errorf("expected string IP, got %T", val)
+		}
+		addr, err := netip.ParseAddr(s)
+		if err != nil {
+			return nil, err
+		}
+		if def.Type == "ipv4Address" {
+			if !addr.Is4() {
+				return nil, fmt.Errorf("expected IPv4 address, got %s", s)
+			}
+			return append([]byte(nil), addr.AsSlice()...), nil
+		}
+		if !addr.Is6() {
+			return nil, fmt.Errorf("expected IPv6 address, got %s", s)
+		}
+		return append([]byte(nil), addr.AsSlice()...), nil
+	case "unsigned8", "unsigned16", "unsigned32", "unsigned64":
+		return encodeUnsigned(def.Type, val)
+	case "signed8", "signed16", "signed32", "signed64":
+		return encodeSigned(def.Type, val)
+	case "string":
+		switch v := val.(type) {
+		case string:
+			return []byte(v), nil
+		case []byte:
+			return append([]byte(nil), v...), nil
+		default:
+			return nil, fmt.Errorf("expected string/[]byte, got %T", val)
+		}
+	default:
+		switch v := val.(type) {
+		case []byte:
+			return append([]byte(nil), v...), nil
+		case string:
+			return []byte(v), nil
+		default:
+			return encodeUnsigned("unsigned64", val)
+		}
+	}
+}
+
+func ipfixFieldLength(def config.IPFIXFieldDefinition, encoded []byte) uint16 {
+	if def.Length != 0 {
+		return def.Length
+	}
+	if len(encoded) > 65535 {
+		return 0xffff
+	}
+	return uint16(len(encoded))
+}
+
+func encodeUnsigned(kind string, val any) ([]byte, error) {
+	v := uint64FromAny(val)
+	switch kind {
+	case "unsigned8":
+		return []byte{byte(v)}, nil
+	case "unsigned16":
+		return []byte{byte(v >> 8), byte(v)}, nil
+	case "unsigned32":
+		return []byte{byte(v >> 24), byte(v >> 16), byte(v >> 8), byte(v)}, nil
+	default:
+		return []byte{
+			byte(v >> 56), byte(v >> 48), byte(v >> 40), byte(v >> 32),
+			byte(v >> 24), byte(v >> 16), byte(v >> 8), byte(v),
+		}, nil
+	}
+}
+
+func encodeSigned(kind string, val any) ([]byte, error) {
+	v := int64Field(map[string]any{"v": val}, "v")
+	switch kind {
+	case "signed8":
+		return []byte{byte(v)}, nil
+	case "signed16":
+		return []byte{byte(v >> 8), byte(v)}, nil
+	case "signed32":
+		return []byte{byte(v >> 24), byte(v >> 16), byte(v >> 8), byte(v)}, nil
+	default:
+		return []byte{
+			byte(v >> 56), byte(v >> 48), byte(v >> 40), byte(v >> 32),
+			byte(v >> 24), byte(v >> 16), byte(v >> 8), byte(v),
+		}, nil
+	}
+}
+
+func uint16Field(fields map[string]any, key string) uint16 {
+	return uint16(uint32Field(fields, key))
+}
+
+func exportUnixMilliseconds(receivedAt time.Time, fields map[string]any) int64 {
+	endMS := int64Field(fields, "end_time_unix")
+	if endMS > 0 {
+		return endMS
+	}
+	startMS := int64Field(fields, "start_time_unix")
+	if startMS > 0 {
+		return startMS
+	}
+	if !receivedAt.IsZero() {
+		return receivedAt.UnixMilli()
+	}
+	return time.Now().UnixMilli()
+}
+
+func uptimeWindow(exportMS, startMS, endMS int64) (sysUptime, first, last uint32) {
+	if startMS <= 0 {
+		startMS = exportMS
+	}
+	if endMS <= 0 {
+		endMS = exportMS
+	}
+	baseMS := exportMS
+	if startMS < baseMS {
+		baseMS = startMS
+	}
+	if endMS < baseMS {
+		baseMS = endMS
+	}
+	if exportMS < baseMS {
+		baseMS = exportMS
+	}
+	return uint32(exportMS - baseMS), uint32(startMS - baseMS), uint32(endMS - baseMS)
+}
+
+func mustIPv4Address(fields map[string]any, key string) netflowlegacy.IPAddress {
+	ip := stringFieldOrZero(fields, key)
+	if ip == "" {
+		return 0
+	}
+	addr, err := netip.ParseAddr(ip)
+	if err != nil || !addr.Is4() {
+		return 0
+	}
+	raw := addr.As4()
+	return netflowlegacy.IPAddress(uint32(raw[0])<<24 | uint32(raw[1])<<16 | uint32(raw[2])<<8 | uint32(raw[3]))
+}
+
+func uint64FromAny(val any) uint64 {
+	switch v := val.(type) {
+	case uint64:
+		return v
+	case uint32:
+		return uint64(v)
+	case uint16:
+		return uint64(v)
+	case uint8:
+		return uint64(v)
+	case int64:
+		return uint64(v)
+	case int:
+		return uint64(v)
+	case float64:
+		return uint64(v)
+	default:
+		return 0
 	}
 }
