@@ -11,6 +11,7 @@ import (
 )
 
 type Source interface {
+	InitEvents() ([]*event.Event, error)
 	Start(context.Context, func(*event.Event) error) error
 	Close() error
 }

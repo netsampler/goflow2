@@ -27,6 +27,10 @@ func New(cfg config.SourceConfig) (*Source, error) {
 	return &Source{cfg: cfg}, nil
 }
 
+func (s *Source) InitEvents() ([]*event.Event, error) {
+	return nil, nil
+}
+
 func (s *Source) Start(ctx context.Context, emit func(*event.Event) error) error {
 	conn, err := net.ListenPacket(s.cfg.Network, s.cfg.Address)
 	if err != nil {

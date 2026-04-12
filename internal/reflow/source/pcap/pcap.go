@@ -50,6 +50,45 @@ func New(cfg config.SourceConfig) (*Source, error) {
 	}, nil
 }
 
+func (s *Source) InitEvents() ([]*event.Event, error) {
+	return []*event.Event{
+		{
+			ReceivedAt: time.Now().UTC(),
+			Kind:       "control",
+			Source: event.SourceMetadata{
+				Network:               s.cfg.Network,
+				Address:               s.cfg.Interface,
+				Type:                  s.cfg.Type,
+				CaptureInterface:      s.cfg.Interface,
+				CaptureInterfaceIndex: s.captureInterfaceIndex,
+			},
+			Control: &event.ControlMetadata{
+				Type:   "source_init",
+				Stream: "options_data",
+			},
+			Fields: map[string]any{
+				"agent_ip":      s.agentIP,
+				"source_id":     uint32(s.captureInterfaceIndex),
+				"sampling_rate": uint32(s.cfg.SampleEvery),
+				"sample_pool":   uint32(0),
+				"drops":         uint32(0),
+				"input_if":      uint32(s.captureInterfaceIndex),
+				"output_if":     uint32(s.captureInterfaceIndex),
+			},
+			Payload: event.SourceInit{
+				Stream:       "options_data",
+				AgentIP:      s.agentIP,
+				SourceID:     uint32(s.captureInterfaceIndex),
+				SamplingRate: uint32(s.cfg.SampleEvery),
+				SamplePool:   0,
+				Drops:        0,
+				InputIf:      uint32(s.captureInterfaceIndex),
+				OutputIf:     uint32(s.captureInterfaceIndex),
+			},
+		},
+	}, nil
+}
+
 func (s *Source) Start(ctx context.Context, emit func(*event.Event) error) error {
 	handle, err := pcap.OpenLive(s.cfg.Interface, int32(s.cfg.SnapLen), true, 500*time.Millisecond)
 	if err != nil {
@@ -65,43 +104,6 @@ func (s *Source) Start(ctx context.Context, emit func(*event.Event) error) error
 			s.handle.Close()
 		}
 	}()
-
-	if err := emit(&event.Event{
-		ReceivedAt: time.Now().UTC(),
-		Kind:       "control",
-		Source: event.SourceMetadata{
-			Network:               s.cfg.Network,
-			Address:               s.cfg.Interface,
-			Type:                  s.cfg.Type,
-			CaptureInterface:      s.cfg.Interface,
-			CaptureInterfaceIndex: s.captureInterfaceIndex,
-		},
-		Control: &event.ControlMetadata{
-			Type:   "source_init",
-			Stream: "options_data",
-		},
-		Fields: map[string]any{
-			"agent_ip":      s.agentIP,
-			"source_id":     uint32(s.captureInterfaceIndex),
-			"sampling_rate": uint32(s.cfg.SampleEvery),
-			"sample_pool":   uint32(0),
-			"drops":         uint32(0),
-			"input_if":      uint32(s.captureInterfaceIndex),
-			"output_if":     uint32(s.captureInterfaceIndex),
-		},
-		Payload: event.SourceInit{
-			Stream:       "options_data",
-			AgentIP:      s.agentIP,
-			SourceID:     uint32(s.captureInterfaceIndex),
-			SamplingRate: uint32(s.cfg.SampleEvery),
-			SamplePool:   0,
-			Drops:        0,
-			InputIf:      uint32(s.captureInterfaceIndex),
-			OutputIf:     uint32(s.captureInterfaceIndex),
-		},
-	}); err != nil {
-		return err
-	}
 
 	for {
 		data, ci, err := s.handle.ReadPacketData()

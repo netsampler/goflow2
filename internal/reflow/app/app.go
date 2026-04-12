@@ -244,6 +244,13 @@ func (a *App) Run(ctx context.Context) error {
 	for _, evt := range initEvents {
 		encodeJobs <- evt
 	}
+	sourceInitEvents, err := a.source.InitEvents()
+	if err != nil {
+		return fmt.Errorf("init source events: %w", err)
+	}
+	for _, evt := range sourceInitEvents {
+		encodeJobs <- evt
+	}
 
 	sourceDone := make(chan error, 1)
 	go func() {
