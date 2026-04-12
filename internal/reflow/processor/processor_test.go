@@ -1,6 +1,7 @@
 package processor
 
 import (
+	"encoding/json"
 	"testing"
 
 	"github.com/netsampler/goflow2/v3/internal/reflow/config"
@@ -199,5 +200,50 @@ func TestBuiltinProcessBytesTruncatesRetainedPacketData(t *testing.T) {
 	}
 	if got := fields["src_addr"]; got != "192.0.2.1" {
 		t.Fatalf("expected src_addr to be mapped before truncation, got %#v", got)
+	}
+}
+
+func TestBuiltinProcessGoFlow2V2BuildsPseudoPacket(t *testing.T) {
+	proc := NewBuiltin(config.ProcessorConfig{
+		Builtin: config.BuiltinProcessorConfig{
+			BuildPseudoPacket: true,
+		},
+	})
+
+	msg, err := json.Marshal(map[string]any{
+		"sampler_address": "192.0.2.10",
+		"src_addr":        "wAACAQ==",
+		"dst_addr":        "xjNkAg==",
+		"src_port":        12345,
+		"dst_port":        53,
+		"proto":           17,
+	})
+	if err != nil {
+		t.Fatalf("Marshal returned error: %v", err)
+	}
+
+	events, err := proc.Process(&event.Event{
+		Source: event.SourceMetadata{
+			Type: "json",
+			JSON: event.JSONMetadata{Flavor: "goflow2v2"},
+		},
+		Message: msg,
+	})
+	if err != nil {
+		t.Fatalf("Process returned error: %v", err)
+	}
+	fields := events[0].Fields
+	headerData, ok := fields["header_data"].([]byte)
+	if !ok {
+		t.Fatalf("expected header_data to be []byte, got %T", fields["header_data"])
+	}
+	if len(headerData) == 0 {
+		t.Fatalf("expected pseudo packet bytes to be present")
+	}
+	if got := fields["protocol"]; got != uint32(1) {
+		t.Fatalf("expected protocol=1 for pseudo Ethernet frame, got %#v", got)
+	}
+	if got := fields["frame_length"]; got != uint32(len(headerData)) {
+		t.Fatalf("expected frame_length=%d, got %#v", len(headerData), got)
 	}
 }

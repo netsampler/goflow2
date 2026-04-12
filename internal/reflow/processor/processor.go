@@ -2,6 +2,7 @@ package processor
 
 import (
 	"encoding/base64"
+	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -92,6 +93,7 @@ func (p *Builtin) processBytes(evt *event.Event) ([]*event.Event, error) {
 			fields["dst_port"] = tuple.DstPort
 		}
 	}
+	p.ensurePseudoPacket(fields)
 	p.truncatePacketData(evt, fields)
 
 	if p.cfg.DropMessage {
@@ -135,6 +137,96 @@ func bytesField(fields map[string]any, key string) []byte {
 	}
 }
 
+func buildPseudoPacket(fields map[string]any) ([]byte, bool) {
+	srcAddrStr := fieldStringOrZero(fields, "src_addr")
+	dstAddrStr := fieldStringOrZero(fields, "dst_addr")
+	if srcAddrStr == "" || dstAddrStr == "" {
+		return nil, false
+	}
+	srcAddr, err := netip.ParseAddr(srcAddrStr)
+	if err != nil {
+		return nil, false
+	}
+	dstAddr, err := netip.ParseAddr(dstAddrStr)
+	if err != nil {
+		return nil, false
+	}
+	proto := fieldUint32(fields, "proto")
+	srcPort := fieldUint32(fields, "src_port")
+	dstPort := fieldUint32(fields, "dst_port")
+	if srcAddr.Is4() && dstAddr.Is4() {
+		return buildPseudoIPv4Packet(srcAddr, dstAddr, proto, srcPort, dstPort), true
+	}
+	if srcAddr.Is6() && dstAddr.Is6() {
+		return buildPseudoIPv6Packet(srcAddr, dstAddr, proto, srcPort, dstPort), true
+	}
+	return nil, false
+}
+
+func buildPseudoIPv4Packet(srcAddr, dstAddr netip.Addr, proto, srcPort, dstPort uint32) []byte {
+	l4Len := pseudoL4HeaderLen(proto)
+	packet := make([]byte, 14+20+l4Len)
+	packet[12], packet[13] = 0x08, 0x00
+	ip := packet[14:]
+	ip[0] = 0x45
+	binary.BigEndian.PutUint16(ip[2:4], uint16(20+l4Len))
+	ip[8] = 64
+	ip[9] = byte(proto)
+	src := srcAddr.As4()
+	dst := dstAddr.As4()
+	copy(ip[12:16], src[:])
+	copy(ip[16:20], dst[:])
+	fillPseudoL4(ip[20:], proto, srcPort, dstPort)
+	return packet
+}
+
+func buildPseudoIPv6Packet(srcAddr, dstAddr netip.Addr, proto, srcPort, dstPort uint32) []byte {
+	l4Len := pseudoL4HeaderLen(proto)
+	packet := make([]byte, 14+40+l4Len)
+	packet[12], packet[13] = 0x86, 0xdd
+	ip := packet[14:]
+	ip[0] = 0x60
+	binary.BigEndian.PutUint16(ip[4:6], uint16(l4Len))
+	ip[6] = byte(proto)
+	ip[7] = 64
+	src := srcAddr.As16()
+	dst := dstAddr.As16()
+	copy(ip[8:24], src[:])
+	copy(ip[24:40], dst[:])
+	fillPseudoL4(ip[40:], proto, srcPort, dstPort)
+	return packet
+}
+
+func pseudoL4HeaderLen(proto uint32) int {
+	switch proto {
+	case 6:
+		return 20
+	case 17:
+		return 8
+	default:
+		return 8
+	}
+}
+
+func fillPseudoL4(buf []byte, proto, srcPort, dstPort uint32) {
+	if len(buf) < 8 {
+		return
+	}
+	binary.BigEndian.PutUint16(buf[0:2], uint16(srcPort))
+	binary.BigEndian.PutUint16(buf[2:4], uint16(dstPort))
+	switch proto {
+	case 6:
+		if len(buf) < 20 {
+			return
+		}
+		buf[12] = 0x50
+	case 17:
+		binary.BigEndian.PutUint16(buf[4:6], uint16(len(buf)))
+	default:
+		binary.BigEndian.PutUint16(buf[4:6], uint16(len(buf)))
+	}
+}
+
 func (p *Builtin) mapPacketTuple(fields map[string]any, packet []byte) {
 	if p.cfg.DisablePacketMapping {
 		return
@@ -145,6 +237,29 @@ func (p *Builtin) mapPacketTuple(fields map[string]any, packet []byte) {
 		fields["proto"] = tuple.Proto
 		fields["src_port"] = tuple.SrcPort
 		fields["dst_port"] = tuple.DstPort
+	}
+}
+
+func (p *Builtin) ensurePseudoPacket(fields map[string]any) {
+	if !p.cfg.BuildPseudoPacket {
+		return
+	}
+	if len(bytesField(fields, "header_data")) > 0 {
+		return
+	}
+	headerData, ok := buildPseudoPacket(fields)
+	if !ok {
+		return
+	}
+	fields["header_data"] = headerData
+	if fieldUint32(fields, "frame_length") == 0 {
+		fields["frame_length"] = uint32(len(headerData))
+	}
+	if fieldUint32(fields, "original_length") == 0 {
+		fields["original_length"] = uint32(len(headerData))
+	}
+	if fieldUint32(fields, "protocol") == 0 {
+		fields["protocol"] = uint32(1)
 	}
 }
 
@@ -239,6 +354,7 @@ func (p *Builtin) processJSONRawPacketHeader(evt *event.Event) ([]*event.Event, 
 	}
 
 	p.mapPacketTuple(fields, headerData)
+	p.ensurePseudoPacket(fields)
 	p.truncatePacketData(evt, fields)
 
 	if p.cfg.DropMessage {
@@ -347,6 +463,7 @@ func (p *Builtin) processGoFlow2V2(evt *event.Event, payload any) ([]*event.Even
 		SamplePool:   fieldUint32(fields, "sample_pool"),
 		Drops:        fieldUint32(fields, "drops"),
 	}
+	p.ensurePseudoPacket(fields)
 
 	if p.cfg.DropMessage {
 		evt.Message = nil
