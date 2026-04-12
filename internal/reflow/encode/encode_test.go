@@ -13,7 +13,10 @@ import (
 	"github.com/netsampler/goflow2/v3/internal/reflow/aggregate"
 	"github.com/netsampler/goflow2/v3/internal/reflow/config"
 	"github.com/netsampler/goflow2/v3/internal/reflow/event"
+	flowpb "github.com/netsampler/goflow2/v3/pb"
 	"github.com/netsampler/goflow2/v3/utils/store/templates"
+	"google.golang.org/protobuf/encoding/protowire"
+	"google.golang.org/protobuf/proto"
 )
 
 func TestJSONEncoderDropsConfiguredFieldsFromCanonicalOutput(t *testing.T) {
@@ -57,6 +60,94 @@ func TestJSONEncoderDropsConfiguredFieldsFromCanonicalOutput(t *testing.T) {
 
 	if _, exists := evt.Fields["header_data"]; !exists {
 		t.Fatalf("expected original event fields to remain unchanged")
+	}
+}
+
+func TestProtobufEncoderEncodesCanonicalFlowMessage(t *testing.T) {
+	enc, err := New(config.EncoderConfig{
+		Type: "protobuf",
+		Protobuf: config.ProtobufConfig{
+			Flavor: "canonical",
+		},
+	})
+	if err != nil {
+		t.Fatalf("New returned error: %v", err)
+	}
+
+	payloads, err := enc.Encode(&event.Event{
+		ReceivedAt: time.Unix(1, 200).UTC(),
+		Fields: map[string]any{
+			"flow_type":       "sflow",
+			"agent_ip":        "192.0.2.1",
+			"sampling_rate":   uint32(100),
+			"start_time_unix": int64(1700000000100),
+			"end_time_unix":   int64(1700000000900),
+			"bytes":           int64(321),
+			"packets":         int64(7),
+			"src_addr":        "192.0.2.10",
+			"dst_addr":        "192.0.2.20",
+			"proto":           uint32(17),
+			"src_port":        uint32(1234),
+			"dst_port":        uint32(4321),
+			"input_if":        uint32(9),
+			"output_if":       uint32(10),
+		},
+	})
+	if err != nil {
+		t.Fatalf("Encode returned error: %v", err)
+	}
+	if len(payloads) != 1 {
+		t.Fatalf("expected 1 payload, got %d", len(payloads))
+	}
+
+	msg := decodeFlowMessage(t, payloads[0])
+	if msg.Type != flowpb.FlowMessage_SFLOW_5 {
+		t.Fatalf("expected type SFLOW_5, got %v", msg.Type)
+	}
+	if msg.SamplingRate != 100 {
+		t.Fatalf("expected sampling_rate 100, got %d", msg.SamplingRate)
+	}
+	if !bytes.Equal(msg.SamplerAddress, []byte{192, 0, 2, 1}) {
+		t.Fatalf("expected sampler_address 192.0.2.1, got %v", msg.SamplerAddress)
+	}
+	if msg.Bytes != 321 || msg.Packets != 7 {
+		t.Fatalf("expected bytes=321 packets=7, got bytes=%d packets=%d", msg.Bytes, msg.Packets)
+	}
+	if msg.SrcPort != 1234 || msg.DstPort != 4321 {
+		t.Fatalf("expected ports 1234/4321, got %d/%d", msg.SrcPort, msg.DstPort)
+	}
+}
+
+func TestProtobufEncoderSupportsGoFlow2V2Flavor(t *testing.T) {
+	enc, err := New(config.EncoderConfig{
+		Type: "protobuf",
+		Protobuf: config.ProtobufConfig{
+			Flavor: "goflow2v2",
+			LengthPrefixed: true,
+		},
+	})
+	if err != nil {
+		t.Fatalf("New returned error: %v", err)
+	}
+
+	payloads, err := enc.Encode(&event.Event{
+		Fields: map[string]any{
+			"flow_type": "netflowv9",
+			"src_addr":  "192.0.2.10",
+			"dst_addr":  "192.0.2.20",
+			"bytes":     int64(321),
+		},
+	})
+	if err != nil {
+		t.Fatalf("Encode returned error: %v", err)
+	}
+
+	msg := decodeDelimitedFlowMessage(t, payloads[0])
+	if msg.Type != flowpb.FlowMessage_NETFLOW_V9 {
+		t.Fatalf("expected type NETFLOW_V9, got %v", msg.Type)
+	}
+	if msg.Bytes != 321 {
+		t.Fatalf("expected bytes=321, got %d", msg.Bytes)
 	}
 }
 
@@ -772,6 +863,28 @@ func decodeSFlowPacket(t *testing.T, payload []byte) *sflow.Packet {
 		t.Fatalf("decode sflow payload: %v", err)
 	}
 	return packet
+}
+
+func decodeDelimitedFlowMessage(t *testing.T, payload []byte) *flowpb.FlowMessage {
+	t.Helper()
+	size, n := protowire.ConsumeVarint(payload)
+	if n < 0 {
+		t.Fatalf("failed to decode protobuf length prefix")
+	}
+	msg := &flowpb.FlowMessage{}
+	if err := proto.Unmarshal(payload[n:n+int(size)], msg); err != nil {
+		t.Fatalf("unmarshal flow message: %v", err)
+	}
+	return msg
+}
+
+func decodeFlowMessage(t *testing.T, payload []byte) *flowpb.FlowMessage {
+	t.Helper()
+	msg := &flowpb.FlowMessage{}
+	if err := proto.Unmarshal(payload, msg); err != nil {
+		t.Fatalf("unmarshal flow message: %v", err)
+	}
+	return msg
 }
 
 func testTFlowEncoderConfig(typ string) config.EncoderConfig {

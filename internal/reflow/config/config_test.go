@@ -324,6 +324,44 @@ sink:
 	}
 }
 
+func TestLoadSupportsProtobufFlavor(t *testing.T) {
+	dir := t.TempDir()
+
+	cfgPath := filepath.Join(dir, "reflow.yaml")
+	if err := os.WriteFile(cfgPath, []byte(`
+sources:
+  - network: udp
+    address: ":18081"
+    type: json
+
+processor:
+  type: builtin
+
+encoder:
+  type: protobuf
+  protobuf:
+    flavor: goflow2v2
+    length_prefixed: true
+
+sink:
+  type: stdout
+`), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	cfg, err := Load(cfgPath)
+	if err != nil {
+		t.Fatalf("Load returned error: %v", err)
+	}
+
+	if cfg.Encoder.Protobuf.Flavor != "goflow2v2" {
+		t.Fatalf("expected protobuf.flavor=goflow2v2, got %#v", cfg.Encoder.Protobuf.Flavor)
+	}
+	if !cfg.Encoder.Protobuf.LengthPrefixed {
+		t.Fatalf("expected protobuf.length_prefixed=true")
+	}
+}
+
 func TestLoadRejectsMissingSources(t *testing.T) {
 	dir := t.TempDir()
 

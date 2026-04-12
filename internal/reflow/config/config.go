@@ -100,12 +100,18 @@ type EncoderConfig struct {
 	Batch                 BatchConfig     `yaml:"batch"`
 	TFlowData             TFlowDataConfig `yaml:"tflow_data"`
 	JSON                  JSONConfig      `yaml:"json"`
+	Protobuf              ProtobufConfig  `yaml:"protobuf"`
 	SFlow                 SFlowConfig     `yaml:"sflow"`
 }
 
 type JSONConfig struct {
 	Flavor     string   `yaml:"flavor"`
 	DropFields []string `yaml:"drop_fields"`
+}
+
+type ProtobufConfig struct {
+	Flavor         string `yaml:"flavor"`
+	LengthPrefixed bool   `yaml:"length_prefixed"`
 }
 
 type BatchConfig struct {
@@ -245,6 +251,13 @@ func (c *Config) setDefaults(configPath string) error {
 	default:
 		return fmt.Errorf("unsupported encoder.sflow.counter_format %q", c.Encoder.SFlow.CounterFormat)
 	}
+	switch c.Encoder.Protobuf.Flavor {
+	case "", "canonical":
+		c.Encoder.Protobuf.Flavor = "canonical"
+	case "goflow2v2":
+	default:
+		return fmt.Errorf("unsupported encoder.protobuf.flavor %q", c.Encoder.Protobuf.Flavor)
+	}
 	if c.Encoder.Batch.MaxRecords < 0 {
 		return fmt.Errorf("encoder.batch.max_records must be >= 0")
 	}
@@ -255,7 +268,7 @@ func (c *Config) setDefaults(configPath string) error {
 		return fmt.Errorf("encoder.batch.flush_interval_ms must be >= 0")
 	}
 	switch c.Encoder.Type {
-	case "json", "sflow", "ipfix", "netflowv9", "netflowv5":
+	case "json", "protobuf", "sflow", "ipfix", "netflowv9", "netflowv5":
 	default:
 		return fmt.Errorf("unsupported encoder.type %q", c.Encoder.Type)
 	}
