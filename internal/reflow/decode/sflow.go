@@ -62,7 +62,10 @@ func (d *builtIn) eventFromSFlowSample(base *event.Event, packet *sflow.Packet, 
 			fields["frame_length"] = data.FrameLength
 			fields["stripped"] = data.Stripped
 			fields["original_length"] = data.OriginalLength
-			fields["header_data"] = data.HeaderData
+			fields["record_kind"] = "packet"
+			// Keep the raw sampled header as bytes so downstream packet handling can
+			// treat sFlow packet samples and source.type=bytes events consistently.
+			fields["header_data"] = append([]byte(nil), data.HeaderData...)
 			fields["bytes"] = int64(data.OriginalLength)
 			if tuple, err := parsePacketTuple(data.HeaderData); err == nil {
 				fields["src_addr"] = tuple.SrcAddr.String()
@@ -113,7 +116,8 @@ func (d *builtIn) eventFromExpandedSFlowSample(base *event.Event, packet *sflow.
 			fields["frame_length"] = data.FrameLength
 			fields["stripped"] = data.Stripped
 			fields["original_length"] = data.OriginalLength
-			fields["header_data"] = data.HeaderData
+			fields["record_kind"] = "packet"
+			fields["header_data"] = append([]byte(nil), data.HeaderData...)
 			fields["bytes"] = int64(data.OriginalLength)
 			if tuple, err := parsePacketTuple(data.HeaderData); err == nil {
 				fields["src_addr"] = tuple.SrcAddr.String()

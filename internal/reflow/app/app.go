@@ -14,13 +14,13 @@ import (
 	"github.com/netsampler/goflow2/v3/internal/reflow/event"
 	"github.com/netsampler/goflow2/v3/internal/reflow/processor"
 	"github.com/netsampler/goflow2/v3/internal/reflow/sink"
-	"github.com/netsampler/goflow2/v3/internal/reflow/source/socket"
+	"github.com/netsampler/goflow2/v3/internal/reflow/source"
 	"github.com/netsampler/goflow2/v3/pkg/goflow2/logging"
 )
 
 type App struct {
 	logger           *slog.Logger
-	source           *socket.Source
+	source           source.Source
 	decoder          decode.Decoder
 	processor        processor.Processor
 	processorWorkers int
@@ -38,7 +38,7 @@ func New(cfg *config.Config) (*App, error) {
 	}
 	slog.SetDefault(logger)
 
-	src, err := socket.New(cfg.Source)
+	src, err := source.New(cfg.Source)
 	if err != nil {
 		return nil, fmt.Errorf("init source: %w", err)
 	}

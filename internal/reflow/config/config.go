@@ -25,10 +25,14 @@ type Config struct {
 }
 
 type SourceConfig struct {
-	Network string     `yaml:"network"`
-	Address string     `yaml:"address"`
-	Type    string     `yaml:"type"`
-	JSON    JSONConfig `yaml:"json"`
+	Network      string     `yaml:"network"`
+	Address      string     `yaml:"address"`
+	Interface    string     `yaml:"interface"`
+	SnapLen      int        `yaml:"snaplen"`
+	SampleEvery  int        `yaml:"sample_every"`
+	SampleOffset int        `yaml:"sample_offset"`
+	Type         string     `yaml:"type"`
+	JSON         JSONConfig `yaml:"json"`
 }
 
 type ProcessorConfig struct {
@@ -101,8 +105,28 @@ func (c *Config) setDefaults() error {
 	if c.Source.Network == "" {
 		c.Source.Network = "udp"
 	}
-	if c.Source.Address == "" {
+	if c.Source.Network != "pcap_live" && c.Source.Address == "" {
 		c.Source.Address = ":18080"
+	}
+	if c.Source.Network == "pcap_live" {
+		if c.Source.Interface == "" {
+			return fmt.Errorf("source.interface is required when source.network=pcap_live")
+		}
+		if c.Source.SnapLen <= 0 {
+			c.Source.SnapLen = 65535
+		}
+		if c.Source.SampleEvery <= 0 {
+			c.Source.SampleEvery = 1
+		}
+		if c.Source.SampleOffset < 0 || c.Source.SampleOffset >= c.Source.SampleEvery {
+			return fmt.Errorf("source.sample_offset must be >= 0 and < source.sample_every")
+		}
+		if c.Source.Address == "" {
+			c.Source.Address = c.Source.Interface
+		}
+		if c.Source.Type == "" {
+			c.Source.Type = "bytes"
+		}
 	}
 	if c.Processor.Type == "" {
 		c.Processor.Type = "builtin"

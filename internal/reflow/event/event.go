@@ -14,11 +14,13 @@ type Event struct {
 }
 
 type SourceMetadata struct {
-	Network string       `json:"network"`
-	Address string       `json:"address"`
-	Remote  string       `json:"remote,omitempty"`
-	Type    string       `json:"type,omitempty"`
-	JSON    JSONMetadata `json:"json,omitempty"`
+	Network               string       `json:"network"`
+	Address               string       `json:"address"`
+	Remote                string       `json:"remote,omitempty"`
+	Type                  string       `json:"type,omitempty"`
+	CaptureInterface      string       `json:"capture_interface,omitempty"`
+	CaptureInterfaceIndex int          `json:"capture_interface_index,omitempty"`
+	JSON                  JSONMetadata `json:"json,omitempty"`
 }
 
 type JSONMetadata struct {

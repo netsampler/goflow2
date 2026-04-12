@@ -1,0 +1,23 @@
+source:
+  network: pcap_live
+  interface: en0
+  snaplen: 65535
+  sample_every: 1
+  sample_offset: 0
+  type: bytes
+
+processor:
+  type: builtin
+  workers: 2
+  builtin:
+    drop_message: true
+    drop_payload: false
+
+encoder:
+  type: json
+  workers: 1
+  json:
+    flavor: canonical
+
+sink:
+  type: stdout

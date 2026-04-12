@@ -44,7 +44,7 @@ func NewBuiltin(cfg config.ProcessorConfig) *Builtin {
 func (p *Builtin) Process(evt *event.Event) ([]*event.Event, error) {
 	switch evt.Source.Type {
 	case "bytes":
-		return nil, fmt.Errorf("builtin processor does not support source.type=bytes; use a custom WASM processor")
+		return p.processBytes(evt)
 	case "json":
 		return p.processJSONFlavor(evt)
 	case "flow":
@@ -52,6 +52,46 @@ func (p *Builtin) Process(evt *event.Event) ([]*event.Event, error) {
 	default:
 		return []*event.Event{evt}, nil
 	}
+}
+
+// processBytes treats the payload as raw packet bytes and extracts the canonical
+// L3/L4 tuple while preserving the raw bytes for later encoding if needed.
+func (p *Builtin) processBytes(evt *event.Event) ([]*event.Event, error) {
+	payload, ok := evt.Payload.([]byte)
+	if !ok || len(payload) == 0 {
+		return nil, fmt.Errorf("decode bytes packet: missing payload bytes")
+	}
+
+	fields := ensureFields(evt, 16)
+	fields["message_type"] = "bytes"
+	fields["record_kind"] = "packet"
+	fields["frame_length"] = uint32(len(payload))
+	fields["original_length"] = uint32(len(payload))
+	fields["header_data"] = append([]byte(nil), payload...)
+	fields["bytes"] = int64(len(payload))
+	fields["packets"] = int64(1)
+
+	// sFlow raw packet headers expect protocol metadata in addition to the bytes.
+	// ReFlow currently assumes Ethernet-framed capture for live pcap input.
+	if _, ok := fields["protocol"]; !ok {
+		fields["protocol"] = uint32(1)
+	}
+
+	if tuple, err := parsePacketTuple(payload); err == nil {
+		fields["src_addr"] = tuple.SrcAddr.String()
+		fields["dst_addr"] = tuple.DstAddr.String()
+		fields["proto"] = tuple.Proto
+		fields["src_port"] = tuple.SrcPort
+		fields["dst_port"] = tuple.DstPort
+	}
+
+	if p.cfg.DropMessage {
+		evt.Message = nil
+	}
+	if p.cfg.DropPayload {
+		evt.Payload = nil
+	}
+	return []*event.Event{evt}, nil
 }
 
 // processFlow treats the built-in processor as the post-decode normalization boundary.
