@@ -106,6 +106,14 @@ func decodeIPString(val any) string {
 	return addr.String()
 }
 
+func ipSliceString(raw []byte) string {
+	addr, ok := netip.AddrFromSlice(raw)
+	if !ok {
+		return ""
+	}
+	return addr.String()
+}
+
 func flowTimeFromV5(unixSecs, unixNSecs, sysUptime, switched uint32) int64 {
 	exportMs := int64(unixSecs)*1000 + int64(unixNSecs)/1_000_000
 	uptimeMs := int64(sysUptime)
