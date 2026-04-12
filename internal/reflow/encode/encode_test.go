@@ -334,6 +334,51 @@ func TestIPFIXEncoderEmitsTemplateAndDataRecord(t *testing.T) {
 	}
 }
 
+func TestIPFIXEncoderUsesEventObservationDomainID(t *testing.T) {
+	enc := NewIPFIXEncoder(testTFlowEncoderConfig("ipfix"))
+	evt := testTemplatedFlowEvent()
+	evt.Fields["observation_domain_id"] = uint32(777)
+
+	payloads, err := enc.Encode(evt)
+	if err != nil {
+		t.Fatalf("Encode returned error: %v", err)
+	}
+
+	store := templates.NewTemplateFlowStore()
+	store.Start()
+	var decoded netflow.IPFIXPacket
+	if err := netflow.DecodeMessageVersion(bytes.NewBuffer(payloads[0]), store, netflow.FlowContext{RouterKey: "test-router"}, nil, &decoded); err != nil {
+		t.Fatalf("decode ipfix payload: %v", err)
+	}
+	if decoded.ObservationDomainId != 777 {
+		t.Fatalf("expected observation domain 777, got %d", decoded.ObservationDomainId)
+	}
+}
+
+func TestIPFIXEncoderConfigObservationDomainIDOverridesEvent(t *testing.T) {
+	cfg := testTFlowEncoderConfig("ipfix")
+	cfg.ObservationDomainID = 888
+	enc := NewIPFIXEncoder(cfg)
+	evt := testTemplatedFlowEvent()
+	evt.Fields["observation_domain_id"] = uint32(777)
+	evt.Fields["source_id"] = uint32(42)
+
+	payloads, err := enc.Encode(evt)
+	if err != nil {
+		t.Fatalf("Encode returned error: %v", err)
+	}
+
+	store := templates.NewTemplateFlowStore()
+	store.Start()
+	var decoded netflow.IPFIXPacket
+	if err := netflow.DecodeMessageVersion(bytes.NewBuffer(payloads[0]), store, netflow.FlowContext{RouterKey: "test-router"}, nil, &decoded); err != nil {
+		t.Fatalf("decode ipfix payload: %v", err)
+	}
+	if decoded.ObservationDomainId != 888 {
+		t.Fatalf("expected observation domain 888, got %d", decoded.ObservationDomainId)
+	}
+}
+
 func TestNFv9EncoderEmitsTemplateAndDataRecord(t *testing.T) {
 	enc := NewNFv9Encoder(testTFlowEncoderConfig("netflowv9"))
 

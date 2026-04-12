@@ -33,14 +33,15 @@ type AggregationSchema struct {
 }
 
 type SourceInit struct {
-	Stream       string `json:"stream,omitempty"`
-	AgentIP      string `json:"agent_ip,omitempty"`
-	SourceID     uint32 `json:"source_id,omitempty"`
-	SamplingRate uint32 `json:"sampling_rate,omitempty"`
-	SamplePool   uint32 `json:"sample_pool,omitempty"`
-	Drops        uint32 `json:"drops,omitempty"`
-	InputIf      uint32 `json:"input_if,omitempty"`
-	OutputIf     uint32 `json:"output_if,omitempty"`
+	Stream              string `json:"stream,omitempty"`
+	AgentIP             string `json:"agent_ip,omitempty"`
+	SourceID            uint32 `json:"source_id,omitempty"`
+	ObservationDomainID uint32 `json:"observation_domain_id,omitempty"`
+	SamplingRate        uint32 `json:"sampling_rate,omitempty"`
+	SamplePool          uint32 `json:"sample_pool,omitempty"`
+	Drops               uint32 `json:"drops,omitempty"`
+	InputIf             uint32 `json:"input_if,omitempty"`
+	OutputIf            uint32 `json:"output_if,omitempty"`
 }
 
 type SourceMetadata struct {

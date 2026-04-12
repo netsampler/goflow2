@@ -207,15 +207,16 @@ type templatedSchemaState struct {
 }
 
 type sourceOptionsState struct {
-	stream       string
-	agentIP      string
-	sourceID     uint32
-	samplingRate uint32
-	samplePool   uint32
-	drops        uint32
-	inputIf      uint32
-	outputIf     uint32
-	templateID   uint16
+	stream              string
+	agentIP             string
+	sourceID            uint32
+	observationDomainID uint32
+	samplingRate        uint32
+	samplePool          uint32
+	drops               uint32
+	inputIf             uint32
+	outputIf            uint32
+	templateID          uint16
 }
 
 func NewIPFIXEncoder(cfg config.EncoderConfig) *IPFIXEncoder {
@@ -858,7 +859,7 @@ func (e *IPFIXEncoder) buildPacket(evt *event.Event) (*netflow.IPFIXPacket, erro
 	if templateID == 0 {
 		templateID = 256
 	}
-	obsDomainID := uint32Field(evt.Fields, "source_id")
+	obsDomainID := e.observationDomainID(evt.Fields)
 	exportTime := uint32(evt.ReceivedAt.Unix())
 	if evt.ReceivedAt.IsZero() {
 		exportTime = uint32(time.Now().Unix())
@@ -986,7 +987,7 @@ func (e *NFv9Encoder) buildPacket(evt *event.Event) (*netflow.NFv9Packet, error)
 	if templateID == 0 {
 		templateID = 256
 	}
-	sourceID := uint32Field(evt.Fields, "source_id")
+	sourceID := e.observationDomainID(evt.Fields)
 	exportMS := exportUnixMilliseconds(evt.ReceivedAt, evt.Fields)
 	unixSeconds := uint32((exportMS + 999) / 1000)
 	sysUptime, _, _ := uptimeWindow(exportMS, int64Field(evt.Fields, "start_time_unix"), int64Field(evt.Fields, "end_time_unix"))
@@ -1152,6 +1153,26 @@ func (e *NFv5Encoder) buildPacket(evt *event.Event) (*netflowlegacy.PacketNetFlo
 	}, nil
 }
 
+func (e *IPFIXEncoder) observationDomainID(fields map[string]any) uint32 {
+	if e.cfg.ObservationDomainID != 0 {
+		return e.cfg.ObservationDomainID
+	}
+	if id := uint32Field(fields, "observation_domain_id"); id != 0 {
+		return id
+	}
+	return uint32Field(fields, "source_id")
+}
+
+func (e *NFv9Encoder) observationDomainID(fields map[string]any) uint32 {
+	if e.cfg.ObservationDomainID != 0 {
+		return e.cfg.ObservationDomainID
+	}
+	if id := uint32Field(fields, "observation_domain_id"); id != 0 {
+		return id
+	}
+	return uint32Field(fields, "source_id")
+}
+
 func (e *IPFIXEncoder) handleControl(evt *event.Event) ([][]byte, error) {
 	switch controlType(evt) {
 	case "schema":
@@ -1216,6 +1237,9 @@ func (e *IPFIXEncoder) registerSourceInit(evt *event.Event) ([][]byte, error) {
 	if state.templateID == 0 {
 		state.templateID = 1024
 	}
+	if e.cfg.ObservationDomainID != 0 {
+		state.observationDomainID = e.cfg.ObservationDomainID
+	}
 	e.sourceOptions[state.stream] = state
 	return e.encodeSourceOptions(state)
 }
@@ -1227,6 +1251,9 @@ func (e *NFv9Encoder) registerSourceInit(evt *event.Event) ([][]byte, error) {
 	}
 	if state.templateID == 0 {
 		state.templateID = 1024
+	}
+	if e.cfg.ObservationDomainID != 0 {
+		state.observationDomainID = e.cfg.ObservationDomainID
 	}
 	e.sourceOptions[state.stream] = state
 	return e.encodeSourceOptions(state)
@@ -1290,7 +1317,7 @@ func (e *IPFIXEncoder) encodeSchemaTemplates(state templatedSchemaState) ([][]by
 			Version:             10,
 			ExportTime:          now,
 			SequenceNumber:      e.seq.Load(),
-			ObservationDomainId: 0,
+			ObservationDomainId: e.cfg.ObservationDomainID,
 			FlowSets: []interface{}{
 				netflow.TemplateFlowSet{
 					FlowSetHeader: netflow.FlowSetHeader{Id: 2},
@@ -1318,7 +1345,7 @@ func (e *NFv9Encoder) encodeSchemaTemplates(state templatedSchemaState) ([][]byt
 			SystemUptime:   0,
 			UnixSeconds:    nowSec,
 			SequenceNumber: e.seq.Load(),
-			SourceId:       0,
+			SourceId:       e.cfg.ObservationDomainID,
 			FlowSets: []interface{}{
 				netflow.TemplateFlowSet{
 					FlowSetHeader: netflow.FlowSetHeader{Id: 0},
@@ -1340,7 +1367,7 @@ func (e *IPFIXEncoder) encodeSourceOptions(state sourceOptionsState) ([][]byte, 
 		Version:             10,
 		ExportTime:          uint32(time.Now().Unix()),
 		SequenceNumber:      e.seq.Load(),
-		ObservationDomainId: state.sourceID,
+		ObservationDomainId: state.observationDomainID,
 		FlowSets: []interface{}{
 			netflow.IPFIXOptionsTemplateFlowSet{
 				FlowSetHeader: netflow.FlowSetHeader{Id: 3},
@@ -1387,7 +1414,7 @@ func (e *NFv9Encoder) encodeSourceOptions(state sourceOptionsState) ([][]byte, e
 		SystemUptime:   0,
 		UnixSeconds:    uint32(time.Now().Unix()),
 		SequenceNumber: e.seq.Load(),
-		SourceId:       state.sourceID,
+		SourceId:       state.observationDomainID,
 		FlowSets: []interface{}{
 			netflow.NFv9OptionsTemplateFlowSet{
 				FlowSetHeader: netflow.FlowSetHeader{Id: 1},
@@ -1473,14 +1500,15 @@ func (s templatedSchemaState) templates() []netflow.TemplateRecord {
 
 func sourceOptionsFromEvent(evt *event.Event) sourceOptionsState {
 	state := sourceOptionsState{
-		stream:       eventStream(evt, "options_data"),
-		agentIP:      stringFieldOrZero(evt.Fields, "agent_ip"),
-		sourceID:     uint32Field(evt.Fields, "source_id"),
-		samplingRate: uint32Field(evt.Fields, "sampling_rate"),
-		samplePool:   uint32Field(evt.Fields, "sample_pool"),
-		drops:        uint32Field(evt.Fields, "drops"),
-		inputIf:      uint32Field(evt.Fields, "input_if"),
-		outputIf:     uint32Field(evt.Fields, "output_if"),
+		stream:              eventStream(evt, "options_data"),
+		agentIP:             stringFieldOrZero(evt.Fields, "agent_ip"),
+		sourceID:            uint32Field(evt.Fields, "source_id"),
+		observationDomainID: uint32Field(evt.Fields, "observation_domain_id"),
+		samplingRate:        uint32Field(evt.Fields, "sampling_rate"),
+		samplePool:          uint32Field(evt.Fields, "sample_pool"),
+		drops:               uint32Field(evt.Fields, "drops"),
+		inputIf:             uint32Field(evt.Fields, "input_if"),
+		outputIf:            uint32Field(evt.Fields, "output_if"),
 	}
 	if payload, ok := evt.Payload.(event.SourceInit); ok {
 		if payload.Stream != "" {
@@ -1491,6 +1519,9 @@ func sourceOptionsFromEvent(evt *event.Event) sourceOptionsState {
 		}
 		if payload.SourceID != 0 {
 			state.sourceID = payload.SourceID
+		}
+		if payload.ObservationDomainID != 0 {
+			state.observationDomainID = payload.ObservationDomainID
 		}
 		if payload.SamplingRate != 0 {
 			state.samplingRate = payload.SamplingRate
@@ -1507,6 +1538,9 @@ func sourceOptionsFromEvent(evt *event.Event) sourceOptionsState {
 		if payload.OutputIf != 0 {
 			state.outputIf = payload.OutputIf
 		}
+	}
+	if state.observationDomainID == 0 {
+		state.observationDomainID = state.sourceID
 	}
 	return state
 }

@@ -63,16 +63,17 @@ type AggregatorConfig struct {
 }
 
 type EncoderConfig struct {
-	Type             string          `yaml:"type"`
-	Workers          int             `yaml:"workers"`
-	MaxDatagramBytes int             `yaml:"max_datagram_bytes"`
-	AllowTruncate    bool            `yaml:"allow_truncate"`
-	TemplateRefresh  int             `yaml:"template_refresh_ms"`
-	OptionsRefresh   int             `yaml:"options_refresh_ms"`
-	Batch            BatchConfig     `yaml:"batch"`
-	TFlowData        TFlowDataConfig `yaml:"tflow_data"`
-	JSON             JSONConfig      `yaml:"json"`
-	SFlow            SFlowConfig     `yaml:"sflow"`
+	Type                string          `yaml:"type"`
+	Workers             int             `yaml:"workers"`
+	ObservationDomainID uint32          `yaml:"observation_domain_id"`
+	MaxDatagramBytes    int             `yaml:"max_datagram_bytes"`
+	AllowTruncate       bool            `yaml:"allow_truncate"`
+	TemplateRefresh     int             `yaml:"template_refresh_ms"`
+	OptionsRefresh      int             `yaml:"options_refresh_ms"`
+	Batch               BatchConfig     `yaml:"batch"`
+	TFlowData           TFlowDataConfig `yaml:"tflow_data"`
+	JSON                JSONConfig      `yaml:"json"`
+	SFlow               SFlowConfig     `yaml:"sflow"`
 }
 
 type JSONConfig struct {
