@@ -302,11 +302,6 @@ func defaultAggregateFields(cfg *AggregatorConfig) {
 			"agent_ip",
 			"sub_agent_id",
 			"source_id",
-			"src_addr",
-			"dst_addr",
-			"proto",
-			"src_port",
-			"dst_port",
 			"flow_start_ns",
 		}
 	}

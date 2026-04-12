@@ -902,8 +902,11 @@ aggregator:
   type: window
   flush_interval: 10s
   key_fields: [src_addr, dst_addr, proto, src_port, dst_port]
+  # sum: add numeric counters into the active bucket
   sum: [bytes, packets]
-  first: [agent_ip, src_addr, dst_addr, proto, src_port, dst_port, flow_start_ns]
+  # first: keep the first value seen when the bucket is created
+  first: [agent_ip, flow_start_ns]
+  # current: replace with the latest value seen for the bucket
   current: [agent_ip, input_if, output_if, sampling_rate, sample_pool, drops, flow_end_ns]
 
 ipfix:

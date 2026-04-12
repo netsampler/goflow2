@@ -21,25 +21,18 @@ aggregator:
     - proto
     - src_port
     - dst_port
+  # `sum` adds numeric values into the bucket on every matching event.
   sum:
     - bytes
     - packets
+  # `first` keeps the first observed value for the lifetime of the bucket.
   first:
     - agent_ip
     - flow_start_ns
-    - src_addr
-    - dst_addr
-    - proto
-    - src_port
-    - dst_port
+  # `current` replaces the stored value on every bucket update.
   current:
     - agent_ip
     - flow_end_ns
-    - src_addr
-    - dst_addr
-    - proto
-    - src_port
-    - dst_port
     - sampling_rate
 
 ipfix:
