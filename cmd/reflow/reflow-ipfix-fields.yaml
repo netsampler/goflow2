@@ -61,3 +61,13 @@ fields:
     length: 4
     type: unsigned32
     netflow_v9_id: 34
+  start_time_unix:
+    name: flowStartMilliseconds
+    id: 152
+    length: 8
+    type: unsigned64
+  end_time_unix:
+    name: flowEndMilliseconds
+    id: 153
+    length: 8
+    type: unsigned64

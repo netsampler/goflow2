@@ -34,11 +34,11 @@ aggregator:
   # `first` keeps the first observed value for the lifetime of the bucket.
   first:
     - agent_ip
-    - flow_start_ns
+    - start_time_unix
   # `current` replaces the stored value on every bucket update.
   current:
     - agent_ip
-    - flow_end_ns
+    - end_time_unix
     - sampling_rate
 
 encoder:
