@@ -318,8 +318,8 @@ func TestIPFIXEncoderEmitsTemplateAndDataRecord(t *testing.T) {
 	if decoded.ObservationDomainId != 42 {
 		t.Fatalf("expected observation domain 42, got %d", decoded.ObservationDomainId)
 	}
-	if decoded.SequenceNumber != 1 {
-		t.Fatalf("expected sequence 1, got %d", decoded.SequenceNumber)
+	if decoded.SequenceNumber != 0 {
+		t.Fatalf("expected sequence 0, got %d", decoded.SequenceNumber)
 	}
 	if len(decoded.FlowSets) != 2 {
 		t.Fatalf("expected 2 flow sets, got %d", len(decoded.FlowSets))
@@ -355,8 +355,8 @@ func TestNFv9EncoderEmitsTemplateAndDataRecord(t *testing.T) {
 	if decoded.SourceId != 42 {
 		t.Fatalf("expected source id 42, got %d", decoded.SourceId)
 	}
-	if decoded.SequenceNumber != 1 {
-		t.Fatalf("expected sequence 1, got %d", decoded.SequenceNumber)
+	if decoded.SequenceNumber != 0 {
+		t.Fatalf("expected sequence 0, got %d", decoded.SequenceNumber)
 	}
 	if len(decoded.FlowSets) != 2 {
 		t.Fatalf("expected 2 flow sets, got %d", len(decoded.FlowSets))
@@ -430,6 +430,47 @@ func TestNFv9EncoderPassesThroughOptionsTemplate(t *testing.T) {
 
 	if _, ok := decoded.FlowSets[0].(netflow.NFv9OptionsTemplateFlowSet); !ok {
 		t.Fatalf("expected options template flow set, got %T", decoded.FlowSets[0])
+	}
+}
+
+func TestIPFIXTemplatePacketDoesNotAdvanceSequence(t *testing.T) {
+	enc := NewIPFIXEncoder(testTFlowEncoderConfig("ipfix"))
+
+	templatePayloads, err := enc.Encode(&event.Event{
+		Fields: map[string]any{
+			"source_id": uint32(42),
+		},
+		Payload: netflow.TemplateRecord{
+			TemplateId: 256,
+			FieldCount: 1,
+			Fields:     []netflow.Field{{Type: netflow.IPFIX_FIELD_octetDeltaCount, Length: 8}},
+		},
+	})
+	if err != nil {
+		t.Fatalf("template Encode returned error: %v", err)
+	}
+
+	store := templates.NewTemplateFlowStore()
+	store.Start()
+	var templateDecoded netflow.IPFIXPacket
+	if err := netflow.DecodeMessageVersion(bytes.NewBuffer(templatePayloads[0]), store, netflow.FlowContext{RouterKey: "test-router"}, nil, &templateDecoded); err != nil {
+		t.Fatalf("decode ipfix template payload: %v", err)
+	}
+	if templateDecoded.SequenceNumber != 0 {
+		t.Fatalf("expected template sequence 0, got %d", templateDecoded.SequenceNumber)
+	}
+
+	dataPayloads, err := enc.Encode(testTemplatedFlowEvent())
+	if err != nil {
+		t.Fatalf("data Encode returned error: %v", err)
+	}
+
+	var dataDecoded netflow.IPFIXPacket
+	if err := netflow.DecodeMessageVersion(bytes.NewBuffer(dataPayloads[0]), store, netflow.FlowContext{RouterKey: "test-router"}, nil, &dataDecoded); err != nil {
+		t.Fatalf("decode ipfix data payload: %v", err)
+	}
+	if dataDecoded.SequenceNumber != 0 {
+		t.Fatalf("expected first data packet sequence 0, got %d", dataDecoded.SequenceNumber)
 	}
 }
 

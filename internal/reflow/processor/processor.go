@@ -90,10 +90,12 @@ func (p *Builtin) processBytes(evt *event.Event) ([]*event.Event, error) {
 			fields["src_addr"] = tuple.SrcAddr.String()
 			fields["dst_addr"] = tuple.DstAddr.String()
 			fields["proto"] = tuple.Proto
+			fields["proto_name"] = ipProtocolName(tuple.Proto)
 			fields["src_port"] = tuple.SrcPort
 			fields["dst_port"] = tuple.DstPort
 		}
 	}
+	fields["header_protocol_name"] = sampledHeaderProtocolName(fieldUint32(fields, "protocol"))
 	p.ensurePseudoPacket(fields)
 	p.truncatePacketData(evt, fields)
 
@@ -248,6 +250,7 @@ func (p *Builtin) mapPacketTuple(fields map[string]any, packet []byte) {
 		fields["src_addr"] = tuple.SrcAddr.String()
 		fields["dst_addr"] = tuple.DstAddr.String()
 		fields["proto"] = tuple.Proto
+		fields["proto_name"] = ipProtocolName(tuple.Proto)
 		fields["src_port"] = tuple.SrcPort
 		fields["dst_port"] = tuple.DstPort
 	}
@@ -350,6 +353,7 @@ func (p *Builtin) processJSONRawPacketHeader(evt *event.Event) ([]*event.Event, 
 	fields["input_if"] = in.InputIf
 	fields["output_if"] = in.OutputIf
 	fields["protocol"] = in.Protocol
+	fields["header_protocol_name"] = sampledHeaderProtocolName(in.Protocol)
 	fields["frame_length"] = in.FrameLength
 	fields["stripped"] = in.Stripped
 	fields["original_length"] = in.OriginalLength
@@ -444,6 +448,9 @@ func (p *Builtin) processGoFlow2V2(evt *event.Event, payload any) ([]*event.Even
 	setUint32Alias(fields, record, "src_port", "src_port")
 	setUint32Alias(fields, record, "dst_port", "dst_port")
 	setUint32Alias(fields, record, "proto", "proto")
+	if proto := fieldUint32(fields, "proto"); proto != 0 {
+		fields["proto_name"] = ipProtocolName(proto)
+	}
 	setUint32Alias(fields, record, "sampling_rate", "sampling_rate")
 	setUint32Alias(fields, record, "input_if", "in_if")
 	setUint32Alias(fields, record, "output_if", "out_if")
@@ -718,4 +725,44 @@ func decodeMaybeBase64IP(val string) string {
 		return ""
 	}
 	return addr.String()
+}
+
+func ipProtocolName(proto uint32) string {
+	switch proto {
+	case 1:
+		return "icmp"
+	case 2:
+		return "igmp"
+	case 6:
+		return "tcp"
+	case 17:
+		return "udp"
+	case 41:
+		return "ipv6"
+	case 47:
+		return "gre"
+	case 50:
+		return "esp"
+	case 51:
+		return "ah"
+	case 58:
+		return "icmpv6"
+	case 132:
+		return "sctp"
+	default:
+		return ""
+	}
+}
+
+func sampledHeaderProtocolName(proto uint32) string {
+	switch proto {
+	case 1:
+		return "ethernet"
+	case 11:
+		return "ipv4"
+	case 12:
+		return "ipv6"
+	default:
+		return ""
+	}
 }

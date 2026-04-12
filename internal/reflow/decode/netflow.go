@@ -27,6 +27,7 @@ func (d *builtIn) decodeNetFlowV5(evt *event.Event, payload []byte) ([]*event.Ev
 		fields["src_port"] = uint32(record.SrcPort)
 		fields["dst_port"] = uint32(record.DstPort)
 		fields["proto"] = uint32(record.Proto)
+		fields["proto_name"] = ipProtocolName(uint32(record.Proto))
 		fields["bytes"] = int64(record.DOctets)
 		fields["packets"] = int64(record.DPkts)
 		fields["input_if"] = uint32(record.Input)
@@ -292,6 +293,7 @@ func mapDataFields(fields map[string]any, values []netflow.DataField, sysUptime,
 		switch field.Type {
 		case 4:
 			fields["proto"] = decodeUint32(field.Value)
+			fields["proto_name"] = ipProtocolName(decodeUint32(field.Value))
 		case 7:
 			fields["src_port"] = decodeUint32(field.Value)
 		case 11:

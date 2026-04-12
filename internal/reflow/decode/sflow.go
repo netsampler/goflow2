@@ -70,6 +70,7 @@ func (d *builtIn) eventFromSFlowSample(base *event.Event, packet *sflow.Packet, 
 		switch data := record.Data.(type) {
 		case sflow.SampledHeader:
 			fields["protocol"] = data.Protocol
+			fields["header_protocol_name"] = sampledHeaderProtocolName(uint32(data.Protocol))
 			fields["frame_length"] = data.FrameLength
 			fields["stripped"] = data.Stripped
 			fields["original_length"] = data.OriginalLength
@@ -82,6 +83,7 @@ func (d *builtIn) eventFromSFlowSample(base *event.Event, packet *sflow.Packet, 
 				fields["src_addr"] = tuple.SrcAddr.String()
 				fields["dst_addr"] = tuple.DstAddr.String()
 				fields["proto"] = tuple.Proto
+				fields["proto_name"] = ipProtocolName(tuple.Proto)
 				fields["src_port"] = tuple.SrcPort
 				fields["dst_port"] = tuple.DstPort
 			}
@@ -91,6 +93,7 @@ func (d *builtIn) eventFromSFlowSample(base *event.Event, packet *sflow.Packet, 
 			fields["src_port"] = data.SrcPort
 			fields["dst_port"] = data.DstPort
 			fields["proto"] = data.Protocol
+			fields["proto_name"] = ipProtocolName(uint32(data.Protocol))
 			fields["bytes"] = int64(data.Length)
 		case sflow.SampledIPv6:
 			fields["src_addr"] = fmt.Sprint(data.SrcIP)
@@ -98,6 +101,7 @@ func (d *builtIn) eventFromSFlowSample(base *event.Event, packet *sflow.Packet, 
 			fields["src_port"] = data.SrcPort
 			fields["dst_port"] = data.DstPort
 			fields["proto"] = data.Protocol
+			fields["proto_name"] = ipProtocolName(uint32(data.Protocol))
 			fields["bytes"] = int64(data.Length)
 		}
 	}
@@ -135,6 +139,7 @@ func (d *builtIn) eventFromExpandedSFlowSample(base *event.Event, packet *sflow.
 	for _, record := range sample.Records {
 		if data, ok := record.Data.(sflow.SampledHeader); ok {
 			fields["protocol"] = data.Protocol
+			fields["header_protocol_name"] = sampledHeaderProtocolName(uint32(data.Protocol))
 			fields["frame_length"] = data.FrameLength
 			fields["stripped"] = data.Stripped
 			fields["original_length"] = data.OriginalLength
@@ -145,6 +150,7 @@ func (d *builtIn) eventFromExpandedSFlowSample(base *event.Event, packet *sflow.
 				fields["src_addr"] = tuple.SrcAddr.String()
 				fields["dst_addr"] = tuple.DstAddr.String()
 				fields["proto"] = tuple.Proto
+				fields["proto_name"] = ipProtocolName(tuple.Proto)
 				fields["src_port"] = tuple.SrcPort
 				fields["dst_port"] = tuple.DstPort
 			}

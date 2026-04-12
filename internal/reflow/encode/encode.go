@@ -827,7 +827,7 @@ func (e *IPFIXEncoder) buildPacket(evt *event.Event) (*netflow.IPFIXPacket, erro
 		packet := &netflow.IPFIXPacket{
 			Version:             10,
 			ExportTime:          exportTime,
-			SequenceNumber:      e.seq.Add(1),
+			SequenceNumber:      e.seq.Load(),
 			ObservationDomainId: obsDomainID,
 			FlowSets: []interface{}{
 				netflow.TemplateFlowSet{
@@ -842,7 +842,7 @@ func (e *IPFIXEncoder) buildPacket(evt *event.Event) (*netflow.IPFIXPacket, erro
 		packet := &netflow.IPFIXPacket{
 			Version:             10,
 			ExportTime:          exportTime,
-			SequenceNumber:      e.seq.Add(1),
+			SequenceNumber:      e.seq.Load(),
 			ObservationDomainId: obsDomainID,
 			FlowSets: []interface{}{
 				netflow.TemplateFlowSet{
@@ -857,7 +857,7 @@ func (e *IPFIXEncoder) buildPacket(evt *event.Event) (*netflow.IPFIXPacket, erro
 		packet := &netflow.IPFIXPacket{
 			Version:             10,
 			ExportTime:          exportTime,
-			SequenceNumber:      e.seq.Add(1),
+			SequenceNumber:      e.seq.Load(),
 			ObservationDomainId: obsDomainID,
 			FlowSets: []interface{}{
 				netflow.IPFIXOptionsTemplateFlowSet{
@@ -872,7 +872,7 @@ func (e *IPFIXEncoder) buildPacket(evt *event.Event) (*netflow.IPFIXPacket, erro
 		packet := &netflow.IPFIXPacket{
 			Version:             10,
 			ExportTime:          exportTime,
-			SequenceNumber:      e.seq.Add(1),
+			SequenceNumber:      e.seq.Load(),
 			ObservationDomainId: obsDomainID,
 			FlowSets: []interface{}{
 				netflow.IPFIXOptionsTemplateFlowSet{
@@ -891,7 +891,7 @@ func (e *IPFIXEncoder) buildPacket(evt *event.Event) (*netflow.IPFIXPacket, erro
 	packet := &netflow.IPFIXPacket{
 		Version:             10,
 		ExportTime:          exportTime,
-		SequenceNumber:      e.seq.Add(1),
+		SequenceNumber:      e.seq.Load(),
 		ObservationDomainId: obsDomainID,
 		FlowSets: []interface{}{
 			netflow.TemplateFlowSet{
@@ -904,6 +904,7 @@ func (e *IPFIXEncoder) buildPacket(evt *event.Event) (*netflow.IPFIXPacket, erro
 			},
 		},
 	}
+	e.seq.Add(1)
 	return packet, nil
 }
 
@@ -931,7 +932,7 @@ func (e *NFv9Encoder) buildPacket(evt *event.Event) (*netflow.NFv9Packet, error)
 			Count:          1,
 			SystemUptime:   sysUptime,
 			UnixSeconds:    unixSeconds,
-			SequenceNumber: e.seq.Add(1),
+			SequenceNumber: e.seq.Load(),
 			SourceId:       sourceID,
 			FlowSets: []interface{}{
 				netflow.TemplateFlowSet{
@@ -946,7 +947,7 @@ func (e *NFv9Encoder) buildPacket(evt *event.Event) (*netflow.NFv9Packet, error)
 			Count:          1,
 			SystemUptime:   sysUptime,
 			UnixSeconds:    unixSeconds,
-			SequenceNumber: e.seq.Add(1),
+			SequenceNumber: e.seq.Load(),
 			SourceId:       sourceID,
 			FlowSets: []interface{}{
 				netflow.TemplateFlowSet{
@@ -961,7 +962,7 @@ func (e *NFv9Encoder) buildPacket(evt *event.Event) (*netflow.NFv9Packet, error)
 			Count:          1,
 			SystemUptime:   sysUptime,
 			UnixSeconds:    unixSeconds,
-			SequenceNumber: e.seq.Add(1),
+			SequenceNumber: e.seq.Load(),
 			SourceId:       sourceID,
 			FlowSets: []interface{}{
 				netflow.NFv9OptionsTemplateFlowSet{
@@ -976,7 +977,7 @@ func (e *NFv9Encoder) buildPacket(evt *event.Event) (*netflow.NFv9Packet, error)
 			Count:          1,
 			SystemUptime:   sysUptime,
 			UnixSeconds:    unixSeconds,
-			SequenceNumber: e.seq.Add(1),
+			SequenceNumber: e.seq.Load(),
 			SourceId:       sourceID,
 			FlowSets: []interface{}{
 				netflow.NFv9OptionsTemplateFlowSet{
@@ -991,12 +992,12 @@ func (e *NFv9Encoder) buildPacket(evt *event.Event) (*netflow.NFv9Packet, error)
 	if err != nil {
 		return nil, err
 	}
-	return &netflow.NFv9Packet{
+	packet := &netflow.NFv9Packet{
 		Version:        9,
 		Count:          2,
 		SystemUptime:   sysUptime,
 		UnixSeconds:    unixSeconds,
-		SequenceNumber: e.seq.Add(1),
+		SequenceNumber: e.seq.Load(),
 		SourceId:       sourceID,
 		FlowSets: []interface{}{
 			netflow.TemplateFlowSet{
@@ -1008,7 +1009,9 @@ func (e *NFv9Encoder) buildPacket(evt *event.Event) (*netflow.NFv9Packet, error)
 				Records:       []netflow.DataRecord{dataRecord},
 			},
 		},
-	}, nil
+	}
+	e.seq.Add(1)
+	return packet, nil
 }
 
 func (e *NFv5Encoder) buildPacket(evt *event.Event) (*netflowlegacy.PacketNetFlowV5, error) {
