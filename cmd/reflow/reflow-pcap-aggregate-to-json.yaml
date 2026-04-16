@@ -1,0 +1,50 @@
+# Capture packets, roll them up into 5-tuple buckets, and print aggregate JSON snapshots.
+
+sources:
+  - network: pcap_live
+    interface: en0
+    snaplen: 65535
+    sample_every: 1
+    sample_offset: 0
+    type: bytes
+
+processor:
+  type: builtin
+  workers: 2
+  builtin:
+    drop_message: true
+    drop_payload: false
+    disable_packet_mapping: false
+
+aggregators:
+  - enabled: true
+    stream: flow_data
+    # Export a bucket after 10s of inactivity, plus a periodic snapshot every minute.
+    window:
+      idle_flush_after_ms: 10000
+    periodic:
+      every_ms: 60000
+    key_fields:
+      - src_addr
+      - dst_addr
+      - proto
+      - src_port
+      - dst_port
+    template_id: 256
+    sum:
+      - bytes
+      - packets
+    current:
+      # Keep the latest interface and end-time values while counters are summed.
+      - input_if
+      - output_if
+      - end_time_unix
+
+encoder:
+  type: json
+  workers: 1
+  json:
+    flavor: canonical
+
+sink:
+  type: stdout

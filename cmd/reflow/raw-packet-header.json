@@ -1,0 +1,15 @@
+{
+  "agent_ip": "127.0.0.1",
+  "sub_agent_id": 1,
+  "source_id": 1,
+  "sampling_rate": 100,
+  "sample_pool": 1000,
+  "drops": 0,
+  "input_if": 10,
+  "output_if": 20,
+  "protocol": 1,
+  "frame_length": 74,
+  "stripped": 0,
+  "original_length": 54,
+  "header_hex": "00112233445566778899aabb0800450000281234400040060000c0000201c6336401303901bb00000001000000005002200000000000"
+}

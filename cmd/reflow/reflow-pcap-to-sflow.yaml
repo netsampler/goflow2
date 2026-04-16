@@ -1,0 +1,46 @@
+# Capture packets from a live interface and re-encode them as sFlow.
+
+sources:
+  - network: pcap_live
+    interface: en0
+    snaplen: 65535
+    sample_every: 1
+    sample_offset: 0
+    type: bytes
+
+processor:
+  type: builtin
+  workers: 2
+  builtin:
+    drop_message: true
+    # Keep packet bytes so the sFlow encoder can emit raw-header samples.
+    drop_payload: false
+    disable_packet_mapping: false
+    truncate_packet_bytes: 0
+
+encoder:
+  type: sflow
+  workers: 1
+  max_datagram_bytes: 1400
+  # If an encoded sFlow datagram exceeds max_datagram_bytes, ReFlow truncates
+  # the last sample payload just enough to fit. Small packets are not truncated
+  # unless they are the sample that pushes a datagram over the size limit.
+  allow_truncate: true
+  sflow:
+    # These toggles control when events are allowed to share one outgoing datagram.
+    batch_over:
+      agent_ip: true
+      sub_agent_id: true
+      sequence_number: true
+      uptime: true
+  batch:
+    enabled: true
+    max_records: 8
+    max_bytes: 1200
+    flush_interval_ms: 1000
+
+sink:
+  type: udp
+  address: "127.0.0.1:6343"
+  # If set, this overrides the outgoing sFlow agent address.
+  # agent_ip: "192.0.2.10"

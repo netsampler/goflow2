@@ -1,0 +1,27 @@
+# Capture packets from a live interface and print the normalized packet/flow view as JSON.
+
+sources:
+  - network: pcap_live
+    interface: en0
+    snaplen: 65535
+    # Set sample_every > 1 to subsample the live capture stream deterministically.
+    sample_every: 1
+    sample_offset: 0
+    type: bytes
+
+processor:
+  type: builtin
+  workers: 2
+  builtin:
+    drop_message: true
+    drop_payload: false
+
+encoder:
+  # Canonical JSON shows the internal event shape after packet parsing.
+  type: json
+  workers: 1
+  json:
+    flavor: canonical
+
+sink:
+  type: stdout

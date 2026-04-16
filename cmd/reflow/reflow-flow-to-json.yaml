@@ -1,0 +1,97 @@
+# Listen for UDP flow protocols, decode them, aggregate packet samples and counters,
+# and print the resulting JSON events.
+
+sources:
+  - network: udp
+    address: ":6343"
+    type: flow
+
+processor:
+  type: builtin
+  workers: 2
+  builtin:
+    drop_message: true
+    drop_payload: true
+
+aggregators:
+  - enabled: true
+    stream: agg_samples
+    match:
+      # Only aggregate sampled packet records in this stream.
+      record_kind: packet
+    window:
+      idle_flush_after_ms: 10000
+    periodic:
+      every_ms: 60000
+    key_fields:
+      - src_addr
+      - dst_addr
+      - proto
+      - src_port
+      - dst_port
+    sum:
+      - bytes
+      - packets
+    first:
+      - agent_ip
+      - sub_agent_id
+      - source_id
+      - start_time_unix
+    current:
+      - agent_ip
+      - sub_agent_id
+      - source_id
+      - input_if
+      - output_if
+      - sampling_rate
+      - sample_pool
+      - drops
+      - end_time_unix
+
+  - enabled: true
+    stream: agg_counters
+    match:
+      # Counter samples are routed into a separate aggregate stream.
+      record_kind: interface_counter
+    periodic:
+      every_ms: 10000
+    key_fields:
+      - agent_ip
+      - source_id
+      - if_index
+    first:
+      - agent_ip
+      - sub_agent_id
+      - source_id
+      - if_index
+    current:
+      - if_type
+      - if_speed
+      - if_direction
+      - if_status
+      - if_in_octets
+      - if_in_ucast_pkts
+      - if_in_multicast_pkts
+      - if_in_broadcast_pkts
+      - if_in_discards
+      - if_in_errors
+      - if_in_unknown_protos
+      - if_out_octets
+      - if_out_ucast_pkts
+      - if_out_multicast_pkts
+      - if_out_broadcast_pkts
+      - if_out_discards
+      - if_out_errors
+      - if_promiscuous_mode
+
+encoder:
+  type: json
+  workers: 1
+  json:
+    flavor: canonical
+    drop_fields:
+      # Avoid dumping raw packet bytes in the console output.
+      - header_data
+
+sink:
+  type: stdout

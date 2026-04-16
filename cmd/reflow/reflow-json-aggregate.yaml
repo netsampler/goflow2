@@ -1,0 +1,65 @@
+# Accept ReFlow-native JSON over UDP, aggregate it, and print the rolled-up result.
+
+sources:
+  - network: udp
+    address: ":18082"
+    type: json
+    json:
+      flavor: reflow
+
+processor:
+  type: builtin
+  workers: 2
+  builtin:
+    drop_message: true
+    drop_payload: false
+
+aggregators:
+  - enabled: true
+    stream: flow_data
+    # Window flush exports a bucket when it has been idle for the configured time.
+    window:
+      idle_flush_after_ms: 10000
+    # Periodic snapshots export the current state even if a bucket stays open.
+    periodic:
+      every_ms: 60000
+    key_fields:
+      - src_addr
+      - dst_addr
+      - proto
+      - src_port
+      - dst_port
+    template_id: 256
+    static_fields:
+      exporter_name: reflow-example
+    # `sum` adds numeric values into the bucket on every matching event.
+    sum:
+      - bytes
+      - packets
+    # `first` keeps the first observed value for the lifetime of the bucket.
+    first:
+      - agent_ip
+      - start_time_unix
+    # `current` replaces the stored value on every bucket update.
+    current:
+      - agent_ip
+      - end_time_unix
+      - sampling_rate
+
+encoder:
+  type: json
+  workers: 1
+  tflow_data:
+    # This section still matters for schema-aware encoders even though this example emits JSON.
+    # If omitted or empty, all fields produced by aggregation are eligible for export.
+    fields_path: reflow-ipfix-fields.yaml
+    overrides:
+      src_addr:
+        name: sourceIPv4Address
+        id: 8
+        length: 4
+        type: ipv4Address
+        netflow_v9_id: 8
+
+sink:
+  type: stdout

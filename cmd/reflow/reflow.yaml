@@ -1,0 +1,37 @@
+# Minimal example:
+# accept ReFlow-native JSON over UDP and emit sFlow to another UDP socket.
+
+sources:
+  - network: udp
+    address: ":18081"
+    type: json
+    json:
+      flavor: reflow
+
+processor:
+  type: builtin
+  workers: 4
+  builtin:
+    # Keep the original JSON body for debugging, but drop the synthetic payload copy.
+    drop_message: false
+    drop_payload: true
+
+encoder:
+  type: sflow
+  # Batching is per encoder worker. Keep this at 1 when you want stronger
+  # packing and more multi-sample sFlow datagrams.
+  workers: 2
+  max_datagram_bytes: 1400
+  batch:
+    enabled: true
+    # Flush after 8 records, ~1200 bytes, or 1s, whichever happens first.
+    max_records: 8
+    max_bytes: 1200
+    flush_interval_ms: 1000
+  tflow_data:
+    fields_path: reflow-ipfix-fields.yaml
+
+sink:
+  # Send encoded sFlow datagrams to a local collector.
+  type: udp
+  address: "127.0.0.1:6343"

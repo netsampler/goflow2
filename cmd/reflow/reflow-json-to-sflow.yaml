@@ -1,0 +1,34 @@
+# Accept legacy goflow2 JSON on UDP, normalize it, then emit sFlow.
+
+sources:
+  - network: udp
+    address: ":18081"
+    type: json
+    json:
+      flavor: goflow2v2
+
+processor:
+  type: builtin
+  workers: 4
+  builtin:
+    drop_message: false
+    drop_payload: false
+    # Build a synthetic packet header when the input only contains flow fields.
+    build_pseudo_packet: true
+
+encoder:
+  type: sflow
+  # Batching is per encoder worker. Keep this at 1 when you want stronger
+  # packing and more multi-sample sFlow datagrams.
+  workers: 1
+  max_datagram_bytes: 1400
+  allow_truncate: true
+  batch:
+    enabled: true
+    max_records: 8
+    max_bytes: 1200
+    flush_interval_ms: 4000
+
+sink:
+  type: udp
+  address: "127.0.0.1:6343"

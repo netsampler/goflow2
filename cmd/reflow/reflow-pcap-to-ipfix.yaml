@@ -1,0 +1,66 @@
+# Forward-looking example.
+# This is the intended config shape for packet capture to IPFIX once
+# encoder.type=ipfix is implemented. It does not run today because ReFlow
+# currently only supports encoder.type=json and encoder.type=sflow.
+
+sources:
+  - network: pcap_live
+    interface: en0
+    snaplen: 65535
+    sample_every: 1
+    sample_offset: 0
+    type: bytes
+
+processor:
+  type: builtin
+  workers: 2
+  builtin:
+    drop_message: true
+    drop_payload: false
+    disable_packet_mapping: false
+    truncate_packet_bytes: 0
+
+aggregators:
+  - enabled: true
+    stream: flow_data
+    # Aggregate packets into flow-like records before exporting as templated IPFIX.
+    window:
+      idle_flush_after_ms: 10000
+    periodic:
+      every_ms: 60000
+    key_fields:
+      - src_addr
+      - dst_addr
+      - proto
+      - src_port
+      - dst_port
+    template_id: 256
+    # `sum` adds numeric counters into the bucket on every matching event.
+    sum:
+      - bytes
+      - packets
+    # `first` keeps the first observed value for the lifetime of the bucket.
+    first:
+      - agent_ip
+      - start_time_unix
+    # `current` replaces the stored value on every bucket update.
+    current:
+      - agent_ip
+      - input_if
+      - output_if
+      - sampling_rate
+      - sample_pool
+      - drops
+      - end_time_unix
+
+encoder:
+  type: ipfix
+  workers: 1
+  tflow_data:
+    # Field definitions drive both schema templates and data record encoding.
+    # If omitted or empty, all fields produced by aggregation are eligible for export.
+    fields_path: reflow-ipfix-fields.yaml
+
+sink:
+  type: udp
+  address: "127.0.0.1:4739"
