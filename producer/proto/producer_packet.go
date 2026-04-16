@@ -458,9 +458,10 @@ func ParsePacket(flowMessage ProtoProducerMessageIf, data []byte, config PacketL
 			parseConfig.Encapsulated = true
 		}
 
-		nextParser = res.NextParser
 		calls[nextParser.ParserIndex] += 1
 		callsLayer[nextParser.LayerIndex] += 1
+
+		nextParser = res.NextParser
 
 		offset += res.Size
 	}
