@@ -152,7 +152,7 @@ By default, compression is disabled when sending data to Kafka.
 To change the kafka compression type of the producer side configure the following option:
 
 ```
--transport.kafka.compression.type=gzip
+-transport.kafka.compression=gzip
 ```
 The list of codecs is available in the [Sarama documentation](https://pkg.go.dev/github.com/Shopify/sarama#CompressionCodec).
 
