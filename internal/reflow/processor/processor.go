@@ -74,7 +74,6 @@ func (p *Builtin) processBytes(evt *event.Event) ([]*event.Event, error) {
 	fields["record_kind"] = "packet"
 	fields["frame_length"] = frameLength
 	fields["original_length"] = uint32(len(payload))
-	fields["header_data"] = append([]byte(nil), payload...)
 	fields["bytes"] = int64(frameLength)
 	fields["packets"] = int64(1)
 	if evt.ReceivedAt.IsZero() {
