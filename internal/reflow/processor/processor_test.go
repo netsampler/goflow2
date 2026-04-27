@@ -755,4 +755,39 @@ func TestBuiltinProcessRawPacketHeaderRequiresExplicitFlavor(t *testing.T) {
 	if _, ok := events[0].Fields["header_data"]; !ok {
 		t.Fatalf("expected raw_packet_header flavor to decode header_data")
 	}
+	if got := events[0].Fields["bytes"]; got != int64(74) {
+		t.Fatalf("expected bytes to use frame_length=74, got %#v", got)
+	}
+}
+
+func TestBuiltinProcessFlowDoesNotTreatGenericProtocolAsSFlowHeaderProtocol(t *testing.T) {
+	proc := NewBuiltin(config.ProcessorConfig{})
+	header := []byte{
+		0x45, 0x00, 0x00, 0x28, 0x12, 0x34, 0x40, 0x00, 0x40, 0x06, 0x00, 0x00,
+		0xc0, 0x00, 0x02, 0x01,
+		0xc6, 0x33, 0x64, 0x01,
+		0x30, 0x39, 0x01, 0xbb,
+		0x00, 0x00, 0x00, 0x01,
+		0x00, 0x00, 0x00, 0x00,
+		0x50, 0x02, 0x20, 0x00,
+		0x00, 0x00, 0x00, 0x00,
+	}
+
+	events, err := proc.Process(&event.Event{
+		Source: event.SourceMetadata{Type: "flow"},
+		Fields: map[string]any{
+			"flow_type":       "ipfix",
+			"record_kind":     "packet",
+			"protocol":        uint32(11),
+			"frame_length":    uint32(74),
+			"original_length": uint32(len(header)),
+			"header_data":     header,
+		},
+	})
+	if err != nil {
+		t.Fatalf("Process returned error: %v", err)
+	}
+	if got := events[0].Fields["src_addr"]; got != nil {
+		t.Fatalf("did not expect generic protocol field to drive packet parsing, got src_addr=%#v", got)
+	}
 }

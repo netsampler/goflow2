@@ -83,7 +83,7 @@ func (d *builtIn) eventFromSFlowSample(base *event.Event, packet *sflow.Packet, 
 			// Keep the raw sampled header as bytes so downstream packet handling can
 			// treat sFlow packet samples and source.type=bytes events consistently.
 			fields["header_data"] = append([]byte(nil), data.HeaderData...)
-			fields["bytes"] = int64(data.OriginalLength)
+			fields["bytes"] = int64(data.FrameLength)
 		case sflow.SampledIPv4:
 			fields["src_addr"] = fmt.Sprint(data.SrcIP)
 			fields["dst_addr"] = fmt.Sprint(data.DstIP)
@@ -143,7 +143,7 @@ func (d *builtIn) eventFromExpandedSFlowSample(base *event.Event, packet *sflow.
 			fields["original_length"] = data.OriginalLength
 			fields["record_kind"] = "packet"
 			fields["header_data"] = append([]byte(nil), data.HeaderData...)
-			fields["bytes"] = int64(data.OriginalLength)
+			fields["bytes"] = int64(data.FrameLength)
 		}
 	}
 

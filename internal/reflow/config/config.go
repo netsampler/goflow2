@@ -122,9 +122,10 @@ type BatchConfig struct {
 }
 
 type SFlowConfig struct {
-	AgentIP       string               `yaml:"agent_ip"`
-	CounterFormat string               `yaml:"counter_format"`
-	BatchOver     SFlowBatchOverConfig `yaml:"batch_over"`
+	AgentIP                   string               `yaml:"agent_ip"`
+	CounterFormat             string               `yaml:"counter_format"`
+	UseMetadataSequenceNumber bool                 `yaml:"use_metadata_sequence_number"`
+	BatchOver                 SFlowBatchOverConfig `yaml:"batch_over"`
 }
 
 type SFlowBatchOverConfig struct {

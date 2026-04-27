@@ -27,6 +27,10 @@ encoder:
   # unless they are the sample that pushes a datagram over the size limit.
   allow_truncate: true
   sflow:
+    # By default ReFlow uses encoder-owned sequence numbers for outgoing
+    # datagrams. Set this true only when replaying source packet sequence
+    # metadata verbatim is desired.
+    use_metadata_sequence_number: false
     # These toggles control when events are allowed to share one outgoing datagram.
     batch_over:
       agent_ip: true

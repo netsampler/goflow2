@@ -868,10 +868,12 @@ type sflowPacketTopLevel struct {
 // across every sample batched into one packet.
 func (e *SFlowEncoder) packetTopLevel(evt *event.Event) (sflowPacketTopLevel, error) {
 	top := sflowPacketTopLevel{
-		AgentIP:        e.sflowAgentIP(evt),
-		SubAgentID:     sflowSubAgentID(evt.SFlow, evt.Fields),
-		SequenceNumber: sflowSequenceNumber(evt.SFlow),
-		Uptime:         sflowUptime(evt.SFlow),
+		AgentIP:    e.sflowAgentIP(evt),
+		SubAgentID: sflowSubAgentID(evt.SFlow, evt.Fields),
+		Uptime:     sflowUptime(evt.SFlow),
+	}
+	if e.cfg.UseMetadataSequenceNumber {
+		top.SequenceNumber = sflowSequenceNumber(evt.SFlow)
 	}
 	if top.AgentIP == "" {
 		return sflowPacketTopLevel{}, fmt.Errorf("missing field \"agent_ip\"")

@@ -122,7 +122,7 @@ func TestProtobufEncoderSupportsGoFlow2V2Flavor(t *testing.T) {
 	enc, err := New(config.EncoderConfig{
 		Type: "protobuf",
 		Protobuf: config.ProtobufConfig{
-			Flavor: "goflow2v2",
+			Flavor:         "goflow2v2",
 			LengthPrefixed: true,
 		},
 	})
@@ -359,6 +359,55 @@ func TestSFlowEncoderPacketSequenceAdvancesPerDatagram(t *testing.T) {
 	}
 }
 
+func TestSFlowEncoderDefaultsToOwnedPacketSequence(t *testing.T) {
+	enc := NewSFlowEncoder(config.EncoderConfig{Type: "sflow"})
+
+	first := testSFlowEvent("198.51.100.10")
+	first.SFlow.SequenceNumber = 900
+	second := testSFlowEvent("198.51.100.10")
+	second.SFlow.SequenceNumber = 900
+
+	firstPayloads, err := enc.Encode(first)
+	if err != nil {
+		t.Fatalf("Encode(first) returned error: %v", err)
+	}
+	secondPayloads, err := enc.Encode(second)
+	if err != nil {
+		t.Fatalf("Encode(second) returned error: %v", err)
+	}
+
+	firstPacket := decodeSFlowPacket(t, firstPayloads[0])
+	secondPacket := decodeSFlowPacket(t, secondPayloads[0])
+	if firstPacket.SequenceNumber != 1 {
+		t.Fatalf("expected first packet sequence 1, got %d", firstPacket.SequenceNumber)
+	}
+	if secondPacket.SequenceNumber != 2 {
+		t.Fatalf("expected second packet sequence 2, got %d", secondPacket.SequenceNumber)
+	}
+}
+
+func TestSFlowEncoderCanUseMetadataPacketSequence(t *testing.T) {
+	enc := NewSFlowEncoder(config.EncoderConfig{
+		Type: "sflow",
+		SFlow: config.SFlowConfig{
+			UseMetadataSequenceNumber: true,
+		},
+	})
+
+	evt := testSFlowEvent("198.51.100.10")
+	evt.SFlow.SequenceNumber = 900
+
+	payloads, err := enc.Encode(evt)
+	if err != nil {
+		t.Fatalf("Encode returned error: %v", err)
+	}
+
+	packet := decodeSFlowPacket(t, payloads[0])
+	if packet.SequenceNumber != 900 {
+		t.Fatalf("expected packet sequence from metadata 900, got %d", packet.SequenceNumber)
+	}
+}
+
 func TestSFlowEncoderUsesEventSamplingRate(t *testing.T) {
 	enc := NewSFlowEncoder(config.EncoderConfig{
 		Type: "sflow",
@@ -395,20 +444,20 @@ func TestSFlowEncoderEmitsInterfaceCounterSample(t *testing.T) {
 
 	payloads, err := enc.Encode(&event.Event{
 		Fields: map[string]any{
-			"message_type":       "counter",
-			"record_kind":        "interface_counter",
-			"agent_ip":           "192.0.2.1",
-			"sub_agent_id":       uint32(7),
-			"source_id":          uint32(8),
-			"if_index":           uint32(9),
-			"if_type":            uint32(6),
-			"if_speed":           uint64(1000),
-			"if_direction":       uint32(1),
-			"if_status":          uint32(3),
-			"if_in_octets":       uint64(100),
-			"if_out_octets":      uint64(200),
-			"if_in_errors":       uint32(2),
-			"if_out_errors":      uint32(4),
+			"message_type":        "counter",
+			"record_kind":         "interface_counter",
+			"agent_ip":            "192.0.2.1",
+			"sub_agent_id":        uint32(7),
+			"source_id":           uint32(8),
+			"if_index":            uint32(9),
+			"if_type":             uint32(6),
+			"if_speed":            uint64(1000),
+			"if_direction":        uint32(1),
+			"if_status":           uint32(3),
+			"if_in_octets":        uint64(100),
+			"if_out_octets":       uint64(200),
+			"if_in_errors":        uint32(2),
+			"if_out_errors":       uint32(4),
 			"if_promiscuous_mode": uint32(1),
 		},
 		SFlow: &event.SFlowMetadata{
@@ -457,12 +506,12 @@ func TestSFlowEncoderUsesConfiguredExpandedCounterFormat(t *testing.T) {
 
 	payloads, err := enc.Encode(&event.Event{
 		Fields: map[string]any{
-			"message_type": "counter",
-			"record_kind":  "interface_counter",
-			"agent_ip":     "192.0.2.1",
-			"source_id":    uint32(8),
+			"message_type":   "counter",
+			"record_kind":    "interface_counter",
+			"agent_ip":       "192.0.2.1",
+			"source_id":      uint32(8),
 			"source_id_type": uint32(2),
-			"if_index":     uint32(9),
+			"if_index":       uint32(9),
 		},
 	})
 	if err != nil {
@@ -489,13 +538,13 @@ func TestSFlowCounterEventOverridesConfiguredFormat(t *testing.T) {
 
 	payloads, err := enc.Encode(&event.Event{
 		Fields: map[string]any{
-			"message_type":  "counter",
-			"record_kind":   "interface_counter",
+			"message_type":   "counter",
+			"record_kind":    "interface_counter",
 			"counter_format": "expanded",
-			"agent_ip":      "192.0.2.1",
-			"source_id":     uint32(8),
+			"agent_ip":       "192.0.2.1",
+			"source_id":      uint32(8),
 			"source_id_type": uint32(3),
-			"if_index":      uint32(9),
+			"if_index":       uint32(9),
 		},
 	})
 	if err != nil {

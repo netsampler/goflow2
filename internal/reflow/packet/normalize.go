@@ -16,6 +16,7 @@ type NormalizeOptions struct {
 	TruncatePacketBytes  int
 	UsePayloadAsPacket   bool
 	TruncatePayload      bool
+	HeaderProtocol       uint32
 	Extractors           []FeatureExtractor
 }
 
@@ -63,7 +64,7 @@ func NormalizeEvent(evt *event.Event, opts NormalizeOptions) error {
 		fields["original_length"] = uint32(len(headerData))
 	}
 	if _, ok := fields["bytes"]; !ok {
-		fields["bytes"] = int64(fieldUint32(fields, "original_length"))
+		fields["bytes"] = int64(fieldUint32(fields, "frame_length"))
 	}
 	if _, ok := fields["packets"]; !ok {
 		fields["packets"] = int64(1)
@@ -74,18 +75,20 @@ func NormalizeEvent(evt *event.Event, opts NormalizeOptions) error {
 	if _, ok := fields["end_time_unix"]; !ok {
 		fields["end_time_unix"] = evt.ReceivedAt.UnixMilli()
 	}
-	if fieldUint32(fields, "protocol") == 0 {
-		fields["protocol"] = uint32(1)
+	if opts.HeaderProtocol != 0 && fieldUint32(fields, "protocol") == 0 {
+		fields["protocol"] = opts.HeaderProtocol
 	}
-	if _, ok := fields["header_protocol_name"]; !ok {
-		fields["header_protocol_name"] = sampledHeaderProtocolName(fieldUint32(fields, "protocol"))
+	if opts.HeaderProtocol != 0 {
+		if _, ok := fields["header_protocol_name"]; !ok {
+			fields["header_protocol_name"] = sampledHeaderProtocolName(opts.HeaderProtocol)
+		}
 	}
 	if evt.SFlow != nil && evt.SFlow.AgentIP == "" {
 		evt.SFlow.AgentIP = fieldStringOrZero(fields, "agent_ip")
 	}
 	setDefaultInterfaces(evt, fields)
 
-	if view, err := parsePacketView(headerData); err == nil {
+	if view, err := parsePacketViewWithProtocol(headerData, opts.HeaderProtocol); err == nil {
 		evt.Packet = view.Model
 		for _, extractor := range opts.Extractors {
 			if extractor == nil || evt.Packet == nil {
@@ -839,6 +842,10 @@ func parsePacketTuple(data []byte) (packetTuple, error) {
 }
 
 func parsePacketView(data []byte) (packetView, error) {
+	return parsePacketViewWithProtocol(data, 0)
+}
+
+func parsePacketViewWithProtocol(data []byte, protocol uint32) (packetView, error) {
 	if len(data) == 0 {
 		return packetView{}, fmt.Errorf("empty packet header")
 	}
@@ -849,13 +856,26 @@ func parsePacketView(data []byte) (packetView, error) {
 	}
 	offset := 0
 	etherType := uint16(0)
-	if len(data) >= 14 {
+	switch protocol {
+	case 1:
 		var err error
 		offset, etherType, err = parseEthernet(data, &view, true)
 		if err != nil {
 			return packetView{}, err
 		}
-	} else {
+	case 11:
+		etherType = 0x0800
+	case 12:
+		etherType = 0x86dd
+	default:
+		if len(data) >= 14 {
+			var err error
+			offset, etherType, err = parseEthernet(data, &view, true)
+			if err != nil {
+				return packetView{}, err
+			}
+			break
+		}
 		switch data[0] >> 4 {
 		case 4, 6:
 		default:

@@ -67,12 +67,16 @@ func (p *Builtin) processBytes(evt *event.Event) ([]*event.Event, error) {
 	}
 
 	fields := ensureFields(evt, 16)
+	frameLength := uint32(len(payload))
+	if wireLength := fieldUint32(fields, "wire_length"); wireLength != 0 {
+		frameLength = wireLength
+	}
 	fields["message_type"] = "bytes"
 	fields["record_kind"] = "packet"
-	fields["frame_length"] = uint32(len(payload))
+	fields["frame_length"] = frameLength
 	fields["original_length"] = uint32(len(payload))
 	fields["header_data"] = append([]byte(nil), payload...)
-	fields["bytes"] = int64(len(payload))
+	fields["bytes"] = int64(frameLength)
 	fields["packets"] = int64(1)
 	if evt.ReceivedAt.IsZero() {
 		evt.ReceivedAt = time.Now().UTC()
@@ -142,6 +146,7 @@ func (p *Builtin) processFlow(evt *event.Event) ([]*event.Event, error) {
 			DisablePacketMapping: p.cfg.DisablePacketMapping,
 			BuildPseudoPacket:    p.cfg.BuildPseudoPacket,
 			TruncatePacketBytes:  p.cfg.TruncatePacketBytes,
+			HeaderProtocol:       packetHeaderProtocol(fields),
 		}); err != nil {
 			return nil, err
 		}
@@ -167,6 +172,13 @@ func hasPacketTuple(fields map[string]any) bool {
 		return false
 	}
 	return fieldUint32(fields, "proto") != 0
+}
+
+func packetHeaderProtocol(fields map[string]any) uint32 {
+	if fieldStringOrZero(fields, "flow_type") != "sflow" || fieldStringOrZero(fields, "record_kind") != "packet" {
+		return 0
+	}
+	return fieldUint32(fields, "protocol")
 }
 
 type rawPacketHeaderInput struct {
@@ -224,7 +236,7 @@ func (p *Builtin) processJSONRawPacketHeader(evt *event.Event) ([]*event.Event, 
 	fields["original_length"] = in.OriginalLength
 	fields["header_data"] = headerData
 	fields["message_type"] = evt.Source.Type
-	fields["bytes"] = int64(in.OriginalLength)
+	fields["bytes"] = int64(in.FrameLength)
 	fields["packets"] = int64(1)
 	evt.SFlow = &event.SFlowMetadata{
 		AgentIP:      in.AgentIP,
@@ -239,6 +251,7 @@ func (p *Builtin) processJSONRawPacketHeader(evt *event.Event) ([]*event.Event, 
 		DisablePacketMapping: p.cfg.DisablePacketMapping,
 		BuildPseudoPacket:    p.cfg.BuildPseudoPacket,
 		TruncatePacketBytes:  p.cfg.TruncatePacketBytes,
+		HeaderProtocol:       in.Protocol,
 	}); err != nil {
 		return nil, err
 	}

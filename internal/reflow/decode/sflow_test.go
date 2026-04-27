@@ -89,3 +89,55 @@ func TestDecodeSFlowCounterSampleEmitsInterfaceCounterEvent(t *testing.T) {
 		t.Fatalf("DecodeMessageVersion sanity check failed: %v", err)
 	}
 }
+
+func TestDecodeSFlowSampledHeaderBytesUseFrameLength(t *testing.T) {
+	packet := &sflow.Packet{
+		Version:        5,
+		AgentIP:        utils.IPAddress{198, 51, 100, 1},
+		SubAgentId:     7,
+		SequenceNumber: 8,
+		Uptime:         9,
+		Samples: []interface{}{
+			sflow.FlowSample{
+				Header: sflow.SampleHeader{
+					Format:               sflow.SAMPLE_FORMAT_FLOW,
+					SampleSequenceNumber: 10,
+					SourceIdType:         0,
+					SourceIdValue:        11,
+				},
+				SamplingRate:     100,
+				SamplePool:       1000,
+				FlowRecordsCount: 1,
+				Records: []sflow.FlowRecord{
+					{
+						Data: sflow.SampledHeader{
+							Protocol:       1,
+							FrameLength:    74,
+							OriginalLength: 54,
+							HeaderData:     bytes.Repeat([]byte{0xaa}, 54),
+						},
+					},
+				},
+			},
+		},
+	}
+
+	encoded, err := sflow.EncodeMessage(packet)
+	if err != nil {
+		t.Fatalf("EncodeMessage returned error: %v", err)
+	}
+
+	decoded, err := (&builtIn{}).decodeSFlow(&event.Event{
+		Source:  event.SourceMetadata{Type: "flow"},
+		Payload: append([]byte(nil), encoded...),
+	}, encoded, 5)
+	if err != nil {
+		t.Fatalf("decodeSFlow returned error: %v", err)
+	}
+	if len(decoded) != 1 {
+		t.Fatalf("expected 1 decoded event, got %d", len(decoded))
+	}
+	if got := decoded[0].Fields["bytes"]; got != int64(74) {
+		t.Fatalf("expected bytes to use frame_length=74, got %#v", got)
+	}
+}

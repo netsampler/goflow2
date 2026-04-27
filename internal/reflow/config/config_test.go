@@ -307,6 +307,7 @@ encoder:
   type: sflow
   sflow:
     counter_format: expanded
+    use_metadata_sequence_number: true
 
 sink:
   type: stdout
@@ -321,6 +322,9 @@ sink:
 
 	if cfg.Encoder.SFlow.CounterFormat != "expanded" {
 		t.Fatalf("expected sflow.counter_format=expanded, got %#v", cfg.Encoder.SFlow.CounterFormat)
+	}
+	if !cfg.Encoder.SFlow.UseMetadataSequenceNumber {
+		t.Fatalf("expected sflow.use_metadata_sequence_number=true")
 	}
 }
 
