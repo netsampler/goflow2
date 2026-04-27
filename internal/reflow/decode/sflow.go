@@ -35,7 +35,6 @@ func (d *builtIn) decodeSFlow(evt *event.Event, payload []byte, version uint32) 
 	if len(out) == 0 {
 		base := cloneEvent(evt)
 		base.Fields = ensureFields(base, 3)
-		base.Fields["message_type"] = "flow"
 		base.Fields["flow_type"] = "sflow"
 		base.Fields["flow_version"] = version
 		return []*event.Event{base}, nil
@@ -59,7 +58,6 @@ func (d *builtIn) eventFromSFlowSample(base *event.Event, packet *sflow.Packet, 
 		SamplePool:     sample.SamplePool,
 		Drops:          sample.Drops,
 	}
-	fields["message_type"] = "flow"
 	fields["flow_type"] = "sflow"
 	fields["flow_version"] = packet.Version
 	fields["agent_ip"] = agentIP
@@ -122,7 +120,6 @@ func (d *builtIn) eventFromExpandedSFlowSample(base *event.Event, packet *sflow.
 		SamplePool:     sample.SamplePool,
 		Drops:          sample.Drops,
 	}
-	fields["message_type"] = "flow"
 	fields["flow_type"] = "sflow"
 	fields["flow_version"] = packet.Version
 	fields["agent_ip"] = agentIP
@@ -169,7 +166,6 @@ func (d *builtIn) eventsFromSFlowCounterSample(base *event.Event, packet *sflow.
 			Uptime:         packet.Uptime,
 			SourceID:       sample.Header.SourceIdValue,
 		}
-		fields["message_type"] = "counter"
 		fields["counter_type"] = "sflow"
 		fields["record_kind"] = "interface_counter"
 		fields["sflow_version"] = packet.Version

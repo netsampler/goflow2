@@ -19,7 +19,6 @@ func (d *builtIn) decodeNetFlowV5(evt *event.Event, payload []byte) ([]*event.Ev
 	for _, record := range packet.Records {
 		item := cloneEvent(evt)
 		fields := ensureFields(item, 16)
-		fields["message_type"] = "flow"
 		fields["flow_type"] = "netflowv5"
 		fields["flow_version"] = packet.Version
 		fields["src_addr"] = fmt.Sprint(record.SrcAddr)
@@ -71,7 +70,6 @@ func (d *builtIn) decodeNetFlowV9(evt *event.Event, payload []byte) ([]*event.Ev
 		for _, record := range dataSet.Records {
 			item := cloneEvent(evt)
 			fields := ensureFields(item, 16)
-			fields["message_type"] = "flow"
 			fields["flow_type"] = "netflowv9"
 			fields["flow_version"] = packet.Version
 			mapDataFields(fields, record.Values, packet.SystemUptime, packet.UnixSeconds)
@@ -116,7 +114,6 @@ func (d *builtIn) decodeIPFIX(evt *event.Event, payload []byte) ([]*event.Event,
 		for _, record := range dataSet.Records {
 			item := cloneEvent(evt)
 			fields := ensureFields(item, 16)
-			fields["message_type"] = "flow"
 			fields["flow_type"] = "ipfix"
 			fields["flow_version"] = packet.Version
 			mapDataFields(fields, record.Values, 0, 0)
@@ -206,7 +203,6 @@ func (d *builtIn) templateEventsFromV9(base *event.Event, packet *netflow.NFv9Pa
 		for _, record := range set.Records {
 			item := cloneEvent(base)
 			fields := ensureFields(item, 8)
-			fields["message_type"] = "flow"
 			fields["flow_type"] = "netflowv9_template"
 			fields["flow_version"] = packet.Version
 			fields["record_kind"] = "template"
@@ -220,7 +216,6 @@ func (d *builtIn) templateEventsFromV9(base *event.Event, packet *netflow.NFv9Pa
 		for _, record := range set.Records {
 			item := cloneEvent(base)
 			fields := ensureFields(item, 8)
-			fields["message_type"] = "flow"
 			fields["flow_type"] = "netflowv9_options_template"
 			fields["flow_version"] = packet.Version
 			fields["record_kind"] = "options_template"
@@ -241,7 +236,6 @@ func (d *builtIn) templateEventsFromIPFIX(base *event.Event, packet *netflow.IPF
 		for _, record := range set.Records {
 			item := cloneEvent(base)
 			fields := ensureFields(item, 8)
-			fields["message_type"] = "flow"
 			fields["flow_type"] = "ipfix_template"
 			fields["flow_version"] = packet.Version
 			fields["record_kind"] = "template"
@@ -255,7 +249,6 @@ func (d *builtIn) templateEventsFromIPFIX(base *event.Event, packet *netflow.IPF
 		for _, record := range set.Records {
 			item := cloneEvent(base)
 			fields := ensureFields(item, 8)
-			fields["message_type"] = "flow"
 			fields["flow_type"] = "ipfix_options_template"
 			fields["flow_version"] = packet.Version
 			fields["record_kind"] = "options_template"
@@ -286,7 +279,6 @@ func (d *builtIn) optionsEvents(base *event.Event, flowType string, version uint
 		for _, record := range set.Records {
 			item := cloneEvent(base)
 			fields := ensureFields(item, 8)
-			fields["message_type"] = "flow"
 			fields["flow_type"] = flowType
 			fields["flow_version"] = version
 			fields["record_kind"] = "options_data"

@@ -54,6 +54,5 @@ func decodeBytes(evt *event.Event) ([]*event.Event, error) {
 	if evt.Fields == nil {
 		evt.Fields = make(map[string]any, 1)
 	}
-	evt.Fields["message_type"] = "bytes"
 	return []*event.Event{evt}, nil
 }

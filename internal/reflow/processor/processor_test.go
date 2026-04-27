@@ -32,9 +32,6 @@ func TestBuiltinProcessFlowDropsPayload(t *testing.T) {
 	if len(events) != 1 {
 		t.Fatalf("expected 1 event, got %d", len(events))
 	}
-	if got := events[0].Fields["message_type"]; got != "flow" {
-		t.Fatalf("expected message_type=flow, got %#v", got)
-	}
 	if events[0].Message != nil {
 		t.Fatalf("expected message to be dropped")
 	}
@@ -157,9 +154,6 @@ func TestBuiltinProcessBytesDecodesPacketTuple(t *testing.T) {
 	}
 
 	fields := events[0].Fields
-	if got := fields["message_type"]; got != "bytes" {
-		t.Fatalf("expected message_type=bytes, got %#v", got)
-	}
 	if got := fields["record_kind"]; got != "packet" {
 		t.Fatalf("expected record_kind=packet, got %#v", got)
 	}
@@ -658,7 +652,6 @@ func TestBuiltinProcessReFlowJSONPreservesCounterFields(t *testing.T) {
 	proc := NewBuiltin(config.ProcessorConfig{})
 
 	msg, err := json.Marshal(map[string]any{
-		"message_type":        "counter",
 		"record_kind":         "interface_counter",
 		"agent_ip":            "192.0.2.10",
 		"sub_agent_id":        3,
@@ -690,8 +683,8 @@ func TestBuiltinProcessReFlowJSONPreservesCounterFields(t *testing.T) {
 	}
 
 	fields := events[0].Fields
-	if got := fields["message_type"]; got != "counter" {
-		t.Fatalf("expected message_type=counter, got %#v", got)
+	if got := fields["record_kind"]; got != "interface_counter" {
+		t.Fatalf("expected record_kind=interface_counter, got %#v", got)
 	}
 	if got := fields["if_index"]; got != float64(5) {
 		t.Fatalf("expected if_index=5, got %#v", got)

@@ -71,7 +71,6 @@ func (p *Builtin) processBytes(evt *event.Event) ([]*event.Event, error) {
 	if wireLength := fieldUint32(fields, "wire_length"); wireLength != 0 {
 		frameLength = wireLength
 	}
-	fields["message_type"] = "bytes"
 	fields["record_kind"] = "packet"
 	fields["frame_length"] = frameLength
 	fields["original_length"] = uint32(len(payload))
@@ -135,9 +134,6 @@ func bytesField(fields map[string]any, key string) []byte {
 // processor mainly validates the shape and optionally drops the raw datagram payload.
 func (p *Builtin) processFlow(evt *event.Event) ([]*event.Event, error) {
 	fields := ensureFields(evt, 2)
-	if _, ok := fields["message_type"]; !ok {
-		fields["message_type"] = "flow"
-	}
 	if _, ok := fields["flow_type"]; !ok {
 		return nil, fmt.Errorf("decoded flow event is missing flow_type")
 	}
@@ -235,7 +231,6 @@ func (p *Builtin) processJSONRawPacketHeader(evt *event.Event) ([]*event.Event, 
 	fields["stripped"] = in.Stripped
 	fields["original_length"] = in.OriginalLength
 	fields["header_data"] = headerData
-	fields["message_type"] = evt.Source.Type
 	fields["bytes"] = int64(in.FrameLength)
 	fields["packets"] = int64(1)
 	evt.SFlow = &event.SFlowMetadata{
@@ -302,7 +297,6 @@ func (p *Builtin) processVendor(evt *event.Event, payload any) ([]*event.Event, 
 	}
 
 	fields := ensureFields(evt, 2)
-	fields["message_type"] = "vendor"
 	fields["json_flavor"] = evt.Source.JSON.Flavor
 	if p.cfg.DropMessage {
 		evt.Message = nil
@@ -370,7 +364,6 @@ func (p *Builtin) processGoFlow2V2(evt *event.Event, payload any) ([]*event.Even
 	setInt64Alias(fields, record, "packets", "packets")
 	setTimeNSAlias(fields, record, "start_time_unix", "time_flow_start_ns")
 	setTimeNSAlias(fields, record, "end_time_unix", "time_flow_end_ns")
-	fields["message_type"] = "goflow2v2"
 	fields["json_flavor"] = evt.Source.JSON.Flavor
 
 	if typeVal, ok := record["type"]; ok {

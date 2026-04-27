@@ -931,7 +931,7 @@ func isSFlowCounterEvent(evt *event.Event) bool {
 	if evt == nil || evt.Fields == nil {
 		return false
 	}
-	return stringFieldOrZero(evt.Fields, "message_type") == "counter" || stringFieldOrZero(evt.Fields, "record_kind") == "interface_counter"
+	return stringFieldOrZero(evt.Fields, "record_kind") == "interface_counter"
 }
 
 // truncateLastSampleToFit rewrites only the newest sample when that is enough to

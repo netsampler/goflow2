@@ -61,9 +61,6 @@ func TestDecodeSFlowCounterSampleEmitsInterfaceCounterEvent(t *testing.T) {
 	}
 
 	fields := decoded[0].Fields
-	if got := fields["message_type"]; got != "counter" {
-		t.Fatalf("expected message_type=counter, got %#v", got)
-	}
 	if got := fields["record_kind"]; got != "interface_counter" {
 		t.Fatalf("expected record_kind=interface_counter, got %#v", got)
 	}

@@ -37,15 +37,18 @@ flowchart LR
 
   SFlowDec -->|"packet/sample metadata"| SFlowMeta
   SFlowDec -->|"flow_type=sflow, agent_ip,\nsource_id, sampling_rate,\nsample_pool, drops,\ninput_if, output_if"| Fields
-  SFlowDec -->|"sampled header:\nprotocol, frame_length,\nheader_data"| Fields
+  SFlowDec -->|"sampled header:\nrecord_kind=packet,\nprotocol, frame_length,\nheader_data"| Fields
+  SFlowDec -->|"interface counters:\nrecord_kind=interface_counter,\ncounter_type=sflow, if_* fields"| Fields
 
   NF5Dec -->|"flow_type=netflowv5,\ntuple, counters, ifs, times"| Fields
   NF9Dec -->|"flow_type=netflowv9,\ntuple, counters, ifs,\nsampling_rate, times"| Fields
   IPFIXDec -->|"flow_type=ipfix,\ntuple, counters, ifs,\nsampling_rate, times"| Fields
+  NF9Dec -->|"record_kind=template,\noptions_template, options_data"| Fields
+  IPFIXDec -->|"record_kind=template,\noptions_template, options_data"| Fields
   NF9Dec -->|"template/options events"| Control
   IPFIXDec -->|"template/options events"| Control
 
-  BytesDec -->|"message_type=bytes"| Fields
+  BytesDec -->|"record_kind=packet"| Fields
 
   subgraph Processor
     Normalize["packet.NormalizeEvent"]
@@ -75,7 +78,8 @@ flowchart LR
   Fields -->|"tuple, counters, ifs,\nobs domain/point"| ProtoEnc
 
   SFlowMeta -->|"agent_ip, sub_agent_id,\nsequence_number, uptime,\nsource_id, sampling_rate,\nsample_pool, drops"| SFlowEnc
-  Fields -->|"input_if, output_if,\nprotocol, frame_length,\nstripped, original_length,\nheader_data, counters"| SFlowEnc
+  Fields -->|"record_kind=packet:\ninput_if, output_if,\nprotocol, frame_length,\nstripped, original_length,\nheader_data"| SFlowEnc
+  Fields -->|"record_kind=interface_counter:\nif_* counter fields"| SFlowEnc
 
   Fields -->|"template_id,\nobservation_domain_id,\nflow fields selected by catalog"| IPFIXEnc
   Control -->|"schema/source_init creates\ntemplates/options records"| IPFIXEnc
@@ -92,6 +96,16 @@ ReFlow has a dedicated top-level `sflow` metadata block. It is populated by
 sFlow decoding and by `pcap_live` packet capture, and sFlow/protobuf encoders
 prefer it for sFlow-specific values when present.
 
+`record_kind` is the generic record-shape marker. `packet` means the event
+carries packet/header bytes in `header_data`; `interface_counter` means the
+event carries interface counters; `template`, `options_template`, and
+`options_data` represent NetFlow v9/IPFIX template state.
+
+The low-level sFlow decoder understands expanded flow/counter samples and
+several sFlow extended records. ReFlow currently projects sampled headers and
+interface counters into canonical fields. Other sFlow extended records can be
+decoded by the protocol package, but are not yet mapped into ReFlow fields.
+
 IPFIX and NetFlow do not currently have dedicated top-level metadata structs.
 Their protocol information is represented through canonical `fields`, control
 events, and encoder state. For example, IPFIX output reads
@@ -102,4 +116,3 @@ template and options output.
 Canonical JSON output preserves the event envelope, including `source`,
 `sflow`, `fields`, and `packet`. Vendor and GoFlow2-compatible JSON flavors
 flatten or select fields and do not preserve the full metadata envelope.
-

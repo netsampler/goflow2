@@ -444,7 +444,6 @@ func TestSFlowEncoderEmitsInterfaceCounterSample(t *testing.T) {
 
 	payloads, err := enc.Encode(&event.Event{
 		Fields: map[string]any{
-			"message_type":        "counter",
 			"record_kind":         "interface_counter",
 			"agent_ip":            "192.0.2.1",
 			"sub_agent_id":        uint32(7),
@@ -506,7 +505,6 @@ func TestSFlowEncoderUsesConfiguredExpandedCounterFormat(t *testing.T) {
 
 	payloads, err := enc.Encode(&event.Event{
 		Fields: map[string]any{
-			"message_type":   "counter",
 			"record_kind":    "interface_counter",
 			"agent_ip":       "192.0.2.1",
 			"source_id":      uint32(8),
@@ -538,7 +536,6 @@ func TestSFlowCounterEventOverridesConfiguredFormat(t *testing.T) {
 
 	payloads, err := enc.Encode(&event.Event{
 		Fields: map[string]any{
-			"message_type":   "counter",
 			"record_kind":    "interface_counter",
 			"counter_format": "expanded",
 			"agent_ip":       "192.0.2.1",
