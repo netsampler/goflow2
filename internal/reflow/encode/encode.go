@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/netip"
 	"sort"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -412,6 +413,7 @@ type IPFIXEncoder struct {
 	seq             atomic.Uint32
 	cfg             config.EncoderConfig
 	dataSchemas     map[string]templatedSchemaState
+	fallbackPlans   map[string]fallbackTemplatePlan
 	sourceOptions   map[string]sourceOptionsState
 	lastTemplateRun time.Time
 	lastOptionsRun  time.Time
@@ -421,6 +423,7 @@ type NFv9Encoder struct {
 	seq             atomic.Uint32
 	cfg             config.EncoderConfig
 	dataSchemas     map[string]templatedSchemaState
+	fallbackPlans   map[string]fallbackTemplatePlan
 	sourceOptions   map[string]sourceOptionsState
 	lastTemplateRun time.Time
 	lastOptionsRun  time.Time
@@ -452,10 +455,17 @@ type sourceOptionsState struct {
 	templateID          uint16
 }
 
+type fallbackTemplatePlan struct {
+	template netflow.TemplateRecord
+	names    []string
+	defs     []config.IPFIXFieldDefinition
+}
+
 func NewIPFIXEncoder(cfg config.EncoderConfig) *IPFIXEncoder {
 	return &IPFIXEncoder{
 		cfg:           cfg,
 		dataSchemas:   make(map[string]templatedSchemaState),
+		fallbackPlans: make(map[string]fallbackTemplatePlan),
 		sourceOptions: make(map[string]sourceOptionsState),
 	}
 }
@@ -483,6 +493,7 @@ func NewNFv9Encoder(cfg config.EncoderConfig) *NFv9Encoder {
 	return &NFv9Encoder{
 		cfg:           cfg,
 		dataSchemas:   make(map[string]templatedSchemaState),
+		fallbackPlans: make(map[string]fallbackTemplatePlan),
 		sourceOptions: make(map[string]sourceOptionsState),
 	}
 }
@@ -1306,7 +1317,7 @@ func (e *IPFIXEncoder) buildPacket(evt *event.Event) (*netflow.IPFIXPacket, erro
 		return packet, nil
 	}
 
-	templateRecord, dataRecord, err := buildTemplatedDataRecord(e.cfg.TFlowData, evt.Fields, templateID, false)
+	plan, dataRecord, err := e.fallbackDataRecord(evt.Fields, templateID)
 	if err != nil {
 		return nil, err
 	}
@@ -1318,10 +1329,10 @@ func (e *IPFIXEncoder) buildPacket(evt *event.Event) (*netflow.IPFIXPacket, erro
 		FlowSets: []interface{}{
 			netflow.TemplateFlowSet{
 				FlowSetHeader: netflow.FlowSetHeader{Id: 2},
-				Records:       []netflow.TemplateRecord{templateRecord},
+				Records:       []netflow.TemplateRecord{plan.template},
 			},
 			netflow.DataFlowSet{
-				FlowSetHeader: netflow.FlowSetHeader{Id: templateRecord.TemplateId},
+				FlowSetHeader: netflow.FlowSetHeader{Id: plan.template.TemplateId},
 				Records:       []netflow.DataRecord{dataRecord},
 			},
 		},
@@ -1436,7 +1447,7 @@ func (e *NFv9Encoder) buildPacket(evt *event.Event) (*netflow.NFv9Packet, error)
 		return packet, nil
 	}
 
-	templateRecord, dataRecord, err := buildTemplatedDataRecord(e.cfg.TFlowData, evt.Fields, templateID, true)
+	plan, dataRecord, err := e.fallbackDataRecord(evt.Fields, templateID)
 	if err != nil {
 		return nil, err
 	}
@@ -1450,10 +1461,10 @@ func (e *NFv9Encoder) buildPacket(evt *event.Event) (*netflow.NFv9Packet, error)
 		FlowSets: []interface{}{
 			netflow.TemplateFlowSet{
 				FlowSetHeader: netflow.FlowSetHeader{Id: 0},
-				Records:       []netflow.TemplateRecord{templateRecord},
+				Records:       []netflow.TemplateRecord{plan.template},
 			},
 			netflow.DataFlowSet{
-				FlowSetHeader: netflow.FlowSetHeader{Id: templateRecord.TemplateId},
+				FlowSetHeader: netflow.FlowSetHeader{Id: plan.template.TemplateId},
 				Records:       []netflow.DataRecord{dataRecord},
 			},
 		},
@@ -1971,6 +1982,155 @@ func sourceOptionsFromEvent(evt *event.Event) sourceOptionsState {
 		}
 	}
 	return state
+}
+
+func (e *IPFIXEncoder) fallbackDataRecord(fieldMap map[string]any, templateID uint16) (fallbackTemplatePlan, netflow.DataRecord, error) {
+	key := fallbackPlanKey(e.cfg.TFlowData, fieldMap, templateID, false)
+	plan, ok := e.fallbackPlans[key]
+	if !ok {
+		var err error
+		plan, err = buildFallbackPlan(e.cfg.TFlowData, fieldMap, templateID, false)
+		if err != nil {
+			return fallbackTemplatePlan{}, netflow.DataRecord{}, err
+		}
+		e.fallbackPlans[key] = plan
+	}
+	record, err := buildFallbackValues(plan, fieldMap)
+	if err != nil {
+		return fallbackTemplatePlan{}, netflow.DataRecord{}, err
+	}
+	return plan, record, nil
+}
+
+func (e *NFv9Encoder) fallbackDataRecord(fieldMap map[string]any, templateID uint16) (fallbackTemplatePlan, netflow.DataRecord, error) {
+	key := fallbackPlanKey(e.cfg.TFlowData, fieldMap, templateID, true)
+	plan, ok := e.fallbackPlans[key]
+	if !ok {
+		var err error
+		plan, err = buildFallbackPlan(e.cfg.TFlowData, fieldMap, templateID, true)
+		if err != nil {
+			return fallbackTemplatePlan{}, netflow.DataRecord{}, err
+		}
+		e.fallbackPlans[key] = plan
+	}
+	record, err := buildFallbackValues(plan, fieldMap)
+	if err != nil {
+		return fallbackTemplatePlan{}, netflow.DataRecord{}, err
+	}
+	return plan, record, nil
+}
+
+func fallbackPlanKey(cfg config.TFlowDataConfig, fieldMap map[string]any, templateID uint16, netflowV9 bool) string {
+	names := selectPresentFlowFields(cfg, fieldMap)
+	var b strings.Builder
+	fmt.Fprintf(&b, "%t|%d", netflowV9, templateID)
+	for _, name := range names {
+		def := resolvedFieldDefinition(name, cfg.Catalog[name], fieldMap[name])
+		fieldType := def.ID
+		if netflowV9 {
+			fieldType = def.NetFlowV9ID
+			if fieldType == 0 {
+				fieldType = def.ID
+			}
+		}
+		length := def.Length
+		if length == 0 || length == 0xffff {
+			if encoded, err := encodeIPFIXValue(def, fieldMap[name]); err == nil {
+				length = ipfixFieldLength(def, encoded)
+			}
+		}
+		fmt.Fprintf(&b, "|%s:%d:%d:%d:%d:%t", name, fieldType, length, def.Length, def.PEN, def.EnterpriseScoped)
+	}
+	return b.String()
+}
+
+func buildFallbackPlan(cfg config.TFlowDataConfig, fieldMap map[string]any, templateID uint16, netflowV9 bool) (fallbackTemplatePlan, error) {
+	names := selectPresentFlowFields(cfg, fieldMap)
+	fields := make([]netflow.Field, 0, len(names))
+	defs := make([]config.IPFIXFieldDefinition, 0, len(names))
+	keptNames := make([]string, 0, len(names))
+	for _, name := range names {
+		def := resolvedFieldDefinition(name, cfg.Catalog[name], fieldMap[name])
+		fieldType := def.ID
+		if netflowV9 {
+			fieldType = def.NetFlowV9ID
+			if fieldType == 0 {
+				fieldType = def.ID
+			}
+		}
+		encoded, err := encodeIPFIXValue(def, fieldMap[name])
+		if err != nil {
+			return fallbackTemplatePlan{}, fmt.Errorf("encode field %q: %w", name, err)
+		}
+		fields = append(fields, netflow.Field{
+			PenProvided: def.EnterpriseScoped || def.PEN != 0,
+			Type:        fieldType,
+			Length:      ipfixFieldLength(def, encoded),
+			Pen:         def.PEN,
+		})
+		defs = append(defs, def)
+		keptNames = append(keptNames, name)
+	}
+	if len(fields) == 0 {
+		return fallbackTemplatePlan{}, fmt.Errorf("no encodable fields found for ipfix packet")
+	}
+	return fallbackTemplatePlan{
+		template: netflow.TemplateRecord{
+			TemplateId: templateID,
+			FieldCount: uint16(len(fields)),
+			Fields:     fields,
+		},
+		names: keptNames,
+		defs:  defs,
+	}, nil
+}
+
+func buildFallbackValues(plan fallbackTemplatePlan, fieldMap map[string]any) (netflow.DataRecord, error) {
+	values := make([]netflow.DataField, 0, len(plan.names))
+	for i, name := range plan.names {
+		val, ok := fieldMap[name]
+		if !ok {
+			continue
+		}
+		def := plan.defs[i]
+		encoded, err := encodeIPFIXValue(def, val)
+		if err != nil {
+			return netflow.DataRecord{}, fmt.Errorf("encode field %q: %w", name, err)
+		}
+		values = append(values, netflow.DataField{
+			PenProvided: def.EnterpriseScoped || def.PEN != 0,
+			Type:        plan.template.Fields[i].Type,
+			Pen:         def.PEN,
+			Value:       encoded,
+		})
+	}
+	if len(values) == 0 {
+		return netflow.DataRecord{}, fmt.Errorf("no encodable values found for templated packet")
+	}
+	return netflow.DataRecord{Values: values}, nil
+}
+
+func selectPresentFlowFields(cfg config.TFlowDataConfig, fieldMap map[string]any) []string {
+	if len(cfg.Select) > 0 {
+		names := make([]string, 0, len(cfg.Select))
+		for _, name := range cfg.Select {
+			if _, ok := cfg.Catalog[name]; !ok {
+				continue
+			}
+			if _, ok := fieldMap[name]; ok {
+				names = append(names, name)
+			}
+		}
+		return names
+	}
+	names := make([]string, 0, len(fieldMap))
+	for name := range fieldMap {
+		if _, ok := cfg.Catalog[name]; ok {
+			names = append(names, name)
+		}
+	}
+	sort.Strings(names)
+	return names
 }
 
 // buildTemplatedDataRecord picks fields from a runtime event and builds both the
