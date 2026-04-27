@@ -58,7 +58,6 @@ flowchart LR
   SFlowMeta --> Normalize
   Normalize -->|"fills defaults:\nrecord_kind, frame_length,\nbytes, packets, times,\nprotocol"| Fields
   Normalize -->|"parses header_data"| Packet
-  Normalize -->|"fills missing sflow.agent_ip\nfrom fields.agent_ip"| SFlowMeta
 
   subgraph Encoders
     JSONEnc["JSON encoder"]
@@ -95,6 +94,12 @@ flowchart LR
 ReFlow has a dedicated top-level `sflow` metadata block. It is populated by
 sFlow decoding and by `pcap_live` packet capture, and sFlow/protobuf encoders
 prefer it for sFlow-specific values when present.
+
+Packet normalization is not responsible for hydrating sFlow metadata. It
+normalizes packet/header fields such as `record_kind`, `frame_length`,
+`header_data`, `bytes`, `packets`, and packet-derived tuple fields. The sFlow
+encoder resolves sFlow-specific values from encoder config, `event.SFlow`, and
+generic `fields` in that order, depending on the value.
 
 `record_kind` is the generic record-shape marker. `packet` means the event
 carries packet/header bytes in `header_data`; `interface_counter` means the

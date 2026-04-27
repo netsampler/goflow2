@@ -83,9 +83,6 @@ func NormalizeEvent(evt *event.Event, opts NormalizeOptions) error {
 			fields["header_protocol_name"] = sampledHeaderProtocolName(opts.HeaderProtocol)
 		}
 	}
-	if evt.SFlow != nil && evt.SFlow.AgentIP == "" {
-		evt.SFlow.AgentIP = fieldStringOrZero(fields, "agent_ip")
-	}
 	setDefaultInterfaces(evt, fields)
 
 	if view, err := parsePacketViewWithProtocol(headerData, opts.HeaderProtocol); err == nil {
