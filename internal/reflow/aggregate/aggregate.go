@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -87,7 +88,8 @@ func (r *aggregateRecord) Add(delta aggregateRecord, existed bool) error {
 // Keeping those timers together here makes the behavior explicit and easier to
 // reason about than mixing TTL expiration with separate periodic logic.
 type Stateful struct {
-	cfg config.AggregatorConfig
+	cfg            config.AggregatorConfig
+	recordCapacity int
 
 	mu              sync.Mutex
 	state           map[string]aggregateRecord
@@ -97,9 +99,10 @@ type Stateful struct {
 
 func NewStateful(cfg config.AggregatorConfig) *Stateful {
 	return &Stateful{
-		cfg:       cfg,
-		state:     make(map[string]aggregateRecord),
-		startedAt: time.Now(),
+		cfg:            cfg,
+		recordCapacity: aggregateRecordCapacity(cfg),
+		state:          make(map[string]aggregateRecord),
+		startedAt:      time.Now(),
 	}
 }
 
@@ -142,7 +145,7 @@ func (a *Stateful) Process(evt *event.Event) ([]*event.Event, error) {
 	if evt != nil && evt.Kind == "control" {
 		return []*event.Event{evt}, nil
 	}
-	key, record, err := aggregateFromEvent(a.cfg, evt)
+	key, record, err := aggregateFromEvent(a.cfg, a.recordCapacity, evt)
 	if err != nil {
 		var missingKeyErr *missingAggregationKeyError
 		if errors.As(err, &missingKeyErr) {
@@ -338,7 +341,7 @@ func (a *Stateful) periodicDue(now time.Time) bool {
 
 // aggregateFromEvent converts one processed event into the stored aggregation
 // representation used inside a bucket.
-func aggregateFromEvent(cfg config.AggregatorConfig, evt *event.Event) (string, aggregateRecord, error) {
+func aggregateFromEvent(cfg config.AggregatorConfig, recordCapacity int, evt *event.Event) (string, aggregateRecord, error) {
 	fields := evt.Fields
 	if fields == nil {
 		return "", aggregateRecord{}, fmt.Errorf("event fields are empty")
@@ -357,7 +360,7 @@ func aggregateFromEvent(cfg config.AggregatorConfig, evt *event.Event) (string, 
 	// end_time_unix; the bucket lifecycle timers should follow wall-clock time.
 	now := time.Now()
 
-	recordFields := make(map[string]any)
+	recordFields := make(map[string]any, recordCapacity)
 	for key, val := range cfg.StaticFields {
 		recordFields[key] = val
 	}
@@ -388,6 +391,10 @@ func aggregateFromEvent(cfg config.AggregatorConfig, evt *event.Event) (string, 
 	}, nil
 }
 
+func aggregateRecordCapacity(cfg config.AggregatorConfig) int {
+	return len(cfg.StaticFields) + len(cfg.KeyFields) + len(cfg.Sum) + len(cfg.First) + len(cfg.Current) + 2
+}
+
 // seedTimestamps ensures aggregates always have start/end fields even when the
 // input record omitted explicit flow timing.
 func seedTimestamps(dst, src map[string]any, now time.Time) {
@@ -402,15 +409,44 @@ func buildKey(fields map[string]any, keyFields []string) (string, error) {
 	if len(keyFields) == 0 {
 		return "__global__", nil
 	}
-	parts := make([]string, 0, len(keyFields))
-	for _, key := range keyFields {
+	var b strings.Builder
+	b.Grow(len(keyFields) * 16)
+	for i, key := range keyFields {
 		val, ok := fields[key]
 		if !ok {
 			return "", &missingAggregationKeyError{Key: key}
 		}
-		parts = append(parts, fmt.Sprint(val))
+		if i > 0 {
+			b.WriteByte('|')
+		}
+		writeKeyValue(&b, val)
 	}
-	return strings.Join(parts, "|"), nil
+	return b.String(), nil
+}
+
+func writeKeyValue(b *strings.Builder, val any) {
+	switch v := val.(type) {
+	case string:
+		b.WriteString(v)
+	case uint64:
+		b.WriteString(strconv.FormatUint(v, 10))
+	case uint32:
+		b.WriteString(strconv.FormatUint(uint64(v), 10))
+	case uint16:
+		b.WriteString(strconv.FormatUint(uint64(v), 10))
+	case uint8:
+		b.WriteString(strconv.FormatUint(uint64(v), 10))
+	case int64:
+		b.WriteString(strconv.FormatInt(v, 10))
+	case int:
+		b.WriteString(strconv.Itoa(v))
+	case float64:
+		b.WriteString(strconv.FormatFloat(v, 'g', -1, 64))
+	case bool:
+		b.WriteString(strconv.FormatBool(v))
+	default:
+		b.WriteString(fmt.Sprint(v))
+	}
 }
 
 // buildAggregatedEvent materializes one bucket into a regular runtime event.
