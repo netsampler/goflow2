@@ -18,6 +18,7 @@ import (
 	"github.com/netsampler/goflow2/v3/decoders/utils"
 	"github.com/netsampler/goflow2/v3/internal/reflow/config"
 	"github.com/netsampler/goflow2/v3/internal/reflow/event"
+	"github.com/netsampler/goflow2/v3/internal/reflow/packet"
 	flowpb "github.com/netsampler/goflow2/v3/pb"
 	"google.golang.org/protobuf/encoding/protowire"
 )
@@ -777,6 +778,7 @@ func (e *SFlowEncoder) buildFlowSample(evt *event.Event) (sflow.FlowSample, erro
 		return sflow.FlowSample{}, fmt.Errorf("event fields are empty")
 	}
 	sf := evt.SFlow
+	headerData, protocol, frameLength, originalLength := e.sampledHeaderFields(evt, fields)
 
 	return sflow.FlowSample{
 		Header: sflow.SampleHeader{
@@ -793,15 +795,37 @@ func (e *SFlowEncoder) buildFlowSample(evt *event.Event) (sflow.FlowSample, erro
 		Records: []sflow.FlowRecord{
 			{
 				Data: sflow.SampledHeader{
-					Protocol:       uint32Field(fields, "protocol"),
-					FrameLength:    uint32Field(fields, "frame_length"),
+					Protocol:       protocol,
+					FrameLength:    frameLength,
 					Stripped:       uint32Field(fields, "stripped"),
-					OriginalLength: uint32Field(fields, "original_length"),
-					HeaderData:     bytesField(fields, "header_data"),
+					OriginalLength: originalLength,
+					HeaderData:     headerData,
 				},
 			},
 		},
 	}, nil
+}
+
+func (e *SFlowEncoder) sampledHeaderFields(evt *event.Event, fields map[string]any) ([]byte, uint32, uint32, uint32) {
+	headerData := bytesField(fields, "header_data")
+	protocol := uint32Field(fields, "protocol")
+	frameLength := uint32Field(fields, "frame_length")
+	originalLength := uint32Field(fields, "original_length")
+	if len(headerData) == 0 {
+		if pseudoHeader, ok := packet.BuildPseudoHeader(evt, fields); ok {
+			headerData = pseudoHeader
+			if protocol == 0 {
+				protocol = 1
+			}
+			if frameLength == 0 {
+				frameLength = uint32(len(headerData))
+			}
+			if originalLength == 0 {
+				originalLength = uint32(len(headerData))
+			}
+		}
+	}
+	return headerData, protocol, frameLength, originalLength
 }
 
 func (e *SFlowEncoder) buildCounterSample(evt *event.Event) (sflow.CounterSample, error) {

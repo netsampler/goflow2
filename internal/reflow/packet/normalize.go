@@ -12,7 +12,6 @@ import (
 
 type NormalizeOptions struct {
 	DisablePacketMapping bool
-	BuildPseudoPacket    bool
 	TruncatePacketBytes  int
 	UsePayloadAsPacket   bool
 	TruncatePayload      bool
@@ -43,10 +42,6 @@ func NormalizeEvent(evt *event.Event, opts NormalizeOptions) error {
 	}
 
 	headerData := bytesField(fields, "header_data")
-	if len(headerData) == 0 {
-		ensurePseudoPacket(evt, fields, opts.BuildPseudoPacket)
-		headerData = bytesField(fields, "header_data")
-	}
 	if len(headerData) == 0 {
 		return nil
 	}
@@ -99,7 +94,6 @@ func NormalizeEvent(evt *event.Event, opts NormalizeOptions) error {
 			applyPacketViewFields(fields, view)
 		}
 	}
-	ensurePseudoPacket(evt, fields, opts.BuildPseudoPacket)
 	truncatePacketData(evt, fields, opts.TruncatePacketBytes, opts.TruncatePayload)
 	return nil
 }
@@ -150,31 +144,14 @@ func bytesField(fields map[string]any, key string) []byte {
 	}
 }
 
-func ensurePseudoPacket(evt *event.Event, fields map[string]any, enabled bool) {
-	if !enabled {
-		return
+// BuildPseudoHeader synthesizes minimal packet bytes from a packet model or
+// canonical tuple fields. It is intended for encoders that require packet bytes
+// even when the input event only carries flow fields.
+func BuildPseudoHeader(evt *event.Event, fields map[string]any) ([]byte, bool) {
+	var model *event.PacketModel
+	if evt != nil {
+		model = evt.Packet
 	}
-	if len(bytesField(fields, "header_data")) > 0 {
-		return
-	}
-	headerData, ok := buildPseudoPacket(evt, fields)
-	if !ok {
-		return
-	}
-	fields["header_data"] = headerData
-	if fieldUint32(fields, "frame_length") == 0 {
-		fields["frame_length"] = uint32(len(headerData))
-	}
-	if fieldUint32(fields, "original_length") == 0 {
-		fields["original_length"] = uint32(len(headerData))
-	}
-	if fieldUint32(fields, "protocol") == 0 {
-		fields["protocol"] = uint32(1)
-	}
-}
-
-func buildPseudoPacket(evt *event.Event, fields map[string]any) ([]byte, bool) {
-	model := evt.Packet
 	if model == nil || len(model.Layers) == 0 {
 		model = pseudoPacketModelFromFields(fields)
 	}

@@ -47,7 +47,6 @@ type BuiltinProcessorConfig struct {
 	DropPayload          bool `yaml:"drop_payload"`
 	DisablePacketMapping bool `yaml:"disable_packet_mapping"`
 	TruncatePacketBytes  int  `yaml:"truncate_packet_bytes"`
-	BuildPseudoPacket    bool `yaml:"build_pseudo_packet"`
 }
 
 type AggregatorConfig struct {

@@ -92,7 +92,6 @@ func (p *Builtin) processBytes(evt *event.Event) ([]*event.Event, error) {
 	}
 	if err := packet.NormalizeEvent(evt, packet.NormalizeOptions{
 		DisablePacketMapping: p.cfg.DisablePacketMapping,
-		BuildPseudoPacket:    p.cfg.BuildPseudoPacket,
 		TruncatePacketBytes:  p.cfg.TruncatePacketBytes,
 		UsePayloadAsPacket:   true,
 		TruncatePayload:      true,
@@ -136,10 +135,9 @@ func (p *Builtin) processFlow(evt *event.Event) ([]*event.Event, error) {
 	if _, ok := fields["flow_type"]; !ok {
 		return nil, fmt.Errorf("decoded flow event is missing flow_type")
 	}
-	if len(bytesField(fields, "header_data")) > 0 || fieldStringOrZero(fields, "record_kind") == "packet" || (p.cfg.BuildPseudoPacket && hasPacketTuple(fields)) {
+	if len(bytesField(fields, "header_data")) > 0 || fieldStringOrZero(fields, "record_kind") == "packet" {
 		if err := packet.NormalizeEvent(evt, packet.NormalizeOptions{
 			DisablePacketMapping: p.cfg.DisablePacketMapping,
-			BuildPseudoPacket:    p.cfg.BuildPseudoPacket,
 			TruncatePacketBytes:  p.cfg.TruncatePacketBytes,
 			HeaderProtocol:       packetHeaderProtocol(fields),
 		}); err != nil {
@@ -160,13 +158,6 @@ func (p *Builtin) processFlow(evt *event.Event) ([]*event.Event, error) {
 		evt.Payload = nil
 	}
 	return []*event.Event{evt}, nil
-}
-
-func hasPacketTuple(fields map[string]any) bool {
-	if fieldStringOrZero(fields, "src_addr") == "" || fieldStringOrZero(fields, "dst_addr") == "" {
-		return false
-	}
-	return fieldUint32(fields, "proto") != 0
 }
 
 func packetHeaderProtocol(fields map[string]any) uint32 {
@@ -243,7 +234,6 @@ func (p *Builtin) processJSONRawPacketHeader(evt *event.Event) ([]*event.Event, 
 
 	if err := packet.NormalizeEvent(evt, packet.NormalizeOptions{
 		DisablePacketMapping: p.cfg.DisablePacketMapping,
-		BuildPseudoPacket:    p.cfg.BuildPseudoPacket,
 		TruncatePacketBytes:  p.cfg.TruncatePacketBytes,
 		HeaderProtocol:       in.Protocol,
 	}); err != nil {
@@ -387,16 +377,6 @@ func (p *Builtin) processGoFlow2V2(evt *event.Event, payload any) ([]*event.Even
 		SamplePool:   fieldUint32(fields, "sample_pool"),
 		Drops:        fieldUint32(fields, "drops"),
 	}
-	if p.cfg.BuildPseudoPacket && hasPacketTuple(fields) {
-		if err := packet.NormalizeEvent(evt, packet.NormalizeOptions{
-			DisablePacketMapping: p.cfg.DisablePacketMapping,
-			BuildPseudoPacket:    p.cfg.BuildPseudoPacket,
-			TruncatePacketBytes:  p.cfg.TruncatePacketBytes,
-		}); err != nil {
-			return nil, err
-		}
-	}
-
 	if p.cfg.DropMessage {
 		evt.Message = nil
 	}

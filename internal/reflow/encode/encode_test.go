@@ -437,6 +437,82 @@ func TestSFlowEncoderUsesEventSamplingRate(t *testing.T) {
 	}
 }
 
+func TestSFlowEncoderBuildsPseudoHeaderFromTuple(t *testing.T) {
+	enc := NewSFlowEncoder(config.EncoderConfig{Type: "sflow"})
+
+	evt := &event.Event{
+		Fields: map[string]any{
+			"agent_ip":  "192.0.2.10",
+			"src_addr":  "192.0.2.1",
+			"dst_addr":  "198.51.100.2",
+			"src_port":  uint32(12345),
+			"dst_port":  uint32(443),
+			"proto":     uint32(6),
+			"input_if":  uint32(10),
+			"output_if": uint32(20),
+		},
+	}
+
+	payloads, err := enc.Encode(evt)
+	if err != nil {
+		t.Fatalf("Encode returned error: %v", err)
+	}
+
+	packet := decodeSFlowPacket(t, payloads[0])
+	sample := packet.Samples[0].(sflow.FlowSample)
+	header := sample.Records[0].Data.(sflow.SampledHeader)
+	if len(header.HeaderData) == 0 {
+		t.Fatalf("expected pseudo header data")
+	}
+	if header.Protocol != 1 {
+		t.Fatalf("expected sampled header protocol=1, got %d", header.Protocol)
+	}
+	if header.FrameLength != uint32(len(header.HeaderData)) {
+		t.Fatalf("expected frame length %d, got %d", len(header.HeaderData), header.FrameLength)
+	}
+	if evt.Packet == nil || len(evt.Packet.Layers) == 0 {
+		t.Fatalf("expected pseudo packet model to be attached")
+	}
+}
+
+func TestSFlowEncoderBuildsEncapsulatedPseudoHeader(t *testing.T) {
+	enc := NewSFlowEncoder(config.EncoderConfig{Type: "sflow"})
+
+	evt := &event.Event{
+		Fields: map[string]any{
+			"agent_ip":        "192.0.2.10",
+			"outer_src_addr":  "203.0.113.1",
+			"outer_dst_addr":  "203.0.113.2",
+			"outer_proto":     uint32(47),
+			"src_addr":        "192.0.2.1",
+			"dst_addr":        "198.51.100.2",
+			"src_port":        uint32(12345),
+			"dst_port":        uint32(443),
+			"proto":           uint32(6),
+			"tunnel_type":     "gre",
+			"original_length": uint32(96),
+		},
+	}
+
+	payloads, err := enc.Encode(evt)
+	if err != nil {
+		t.Fatalf("Encode returned error: %v", err)
+	}
+
+	packet := decodeSFlowPacket(t, payloads[0])
+	sample := packet.Samples[0].(sflow.FlowSample)
+	header := sample.Records[0].Data.(sflow.SampledHeader)
+	if len(header.HeaderData) == 0 {
+		t.Fatalf("expected encapsulated pseudo header data")
+	}
+	if header.Protocol != 1 {
+		t.Fatalf("expected sampled header protocol=1, got %d", header.Protocol)
+	}
+	if header.OriginalLength != 96 {
+		t.Fatalf("expected original_length=96, got %d", header.OriginalLength)
+	}
+}
+
 func TestSFlowEncoderEmitsInterfaceCounterSample(t *testing.T) {
 	enc := NewSFlowEncoder(config.EncoderConfig{
 		Type: "sflow",

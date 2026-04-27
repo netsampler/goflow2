@@ -101,6 +101,11 @@ normalizes packet/header fields such as `record_kind`, `frame_length`,
 encoder resolves sFlow-specific values from encoder config, `event.SFlow`, and
 generic `fields` in that order, depending on the value.
 
+When sFlow output needs sampled-header bytes and the event only has tuple or
+packet-model data, the sFlow encoder builds a synthetic sampled header locally.
+That keeps pseudo-packet construction tied to the only output format that
+requires it.
+
 `record_kind` is the generic record-shape marker. `packet` means the event
 carries packet/header bytes in `header_data`; `interface_counter` means the
 event carries interface counters; `template`, `options_template`, and

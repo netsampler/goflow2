@@ -13,11 +13,11 @@ processor:
   builtin:
     drop_message: false
     drop_payload: false
-    # Build a synthetic packet header when the input only contains flow fields.
-    build_pseudo_packet: true
 
 encoder:
   type: sflow
+  # The sFlow encoder builds a synthetic sampled-header packet when the input
+  # only contains flow fields.
   # Batching is per encoder worker. Keep this at 1 when you want stronger
   # packing and more multi-sample sFlow datagrams.
   workers: 1
