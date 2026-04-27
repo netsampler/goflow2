@@ -405,6 +405,7 @@ type SFlowEncoder struct {
 	batch            config.BatchConfig
 	cfg              config.SFlowConfig
 	events           []*event.Event
+	estimatedBytes   int
 }
 
 type IPFIXEncoder struct {
@@ -558,7 +559,7 @@ func (e *SFlowEncoder) Encode(evt *event.Event) ([][]byte, error) {
 		if err != nil {
 			return nil, err
 		}
-		e.events = append(e.events, evt)
+		e.appendEvent(evt)
 		if e.shouldFlush() {
 			flushed, err := e.Flush()
 			if err != nil {
@@ -569,7 +570,7 @@ func (e *SFlowEncoder) Encode(evt *event.Event) ([][]byte, error) {
 		return payloads, nil
 	}
 
-	e.events = append(e.events, evt)
+	e.appendEvent(evt)
 	if e.shouldFlush() {
 		return e.Flush()
 	}
@@ -585,6 +586,7 @@ func (e *SFlowEncoder) Flush() ([][]byte, error) {
 	var payloads [][]byte
 	pending := e.events
 	e.events = nil
+	e.estimatedBytes = 0
 
 	for len(pending) > 0 {
 		packet, accepted, err := e.buildPacketWithLimit(pending)
@@ -615,19 +617,15 @@ func (e *SFlowEncoder) shouldFlush() bool {
 	if e.batch.MaxRecords > 0 && len(e.events) >= e.batch.MaxRecords {
 		return true
 	}
-	if e.batch.MaxBytes > 0 && e.estimatedBatchBytes() >= e.batch.MaxBytes {
+	if e.batch.MaxBytes > 0 && e.estimatedBytes >= e.batch.MaxBytes {
 		return true
 	}
 	return false
 }
 
-// estimatedBatchBytes provides a cheap threshold check before building an actual packet.
-func (e *SFlowEncoder) estimatedBatchBytes() int {
-	total := 0
-	for _, evt := range e.events {
-		total += estimatedEventSize(evt)
-	}
-	return total
+func (e *SFlowEncoder) appendEvent(evt *event.Event) {
+	e.events = append(e.events, evt)
+	e.estimatedBytes += estimatedEventSize(evt)
 }
 
 func estimatedEventSize(evt *event.Event) int {
