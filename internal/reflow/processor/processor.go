@@ -2,7 +2,6 @@ package processor
 
 import (
 	"encoding/base64"
-	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -108,34 +107,6 @@ func (p *Builtin) processBytes(evt *event.Event) ([]*event.Event, error) {
 	return []*event.Event{evt}, nil
 }
 
-func (p *Builtin) setDefaultInterfaces(evt *event.Event, fields map[string]any) {
-	if fieldUint32(fields, "input_if") != 0 || fieldUint32(fields, "output_if") != 0 {
-		return
-	}
-	if evt.Source.CaptureInterfaceIndex <= 0 {
-		return
-	}
-	ifIndex := uint32(evt.Source.CaptureInterfaceIndex)
-	fields["input_if"] = ifIndex
-	fields["output_if"] = ifIndex
-}
-
-// truncatePacketData limits large raw packet blobs while keeping derived tuple
-// fields untouched.
-func (p *Builtin) truncatePacketData(evt *event.Event, fields map[string]any) {
-	maxBytes := p.cfg.TruncatePacketBytes
-	if maxBytes <= 0 {
-		return
-	}
-	headerData := bytesField(fields, "header_data")
-	if len(headerData) > maxBytes {
-		fields["header_data"] = append([]byte(nil), headerData[:maxBytes]...)
-	}
-	if payload, ok := evt.Payload.([]byte); ok && len(payload) > maxBytes {
-		evt.Payload = append([]byte(nil), payload[:maxBytes]...)
-	}
-}
-
 // bytesField reads either []byte or string data from the generic field map.
 func bytesField(fields map[string]any, key string) []byte {
 	if fields == nil {
@@ -152,143 +123,6 @@ func bytesField(fields map[string]any, key string) []byte {
 		return []byte(v)
 	default:
 		return nil
-	}
-}
-
-// buildPseudoPacket synthesizes a minimal Ethernet+IP+L4 header from canonical
-// flow fields so byte-oriented encoders still have packet material to work with.
-func buildPseudoPacket(fields map[string]any) ([]byte, bool) {
-	srcAddrStr := fieldStringOrZero(fields, "src_addr")
-	dstAddrStr := fieldStringOrZero(fields, "dst_addr")
-	if srcAddrStr == "" || dstAddrStr == "" {
-		return nil, false
-	}
-	srcAddr, err := netip.ParseAddr(srcAddrStr)
-	if err != nil {
-		return nil, false
-	}
-	dstAddr, err := netip.ParseAddr(dstAddrStr)
-	if err != nil {
-		return nil, false
-	}
-	proto := fieldUint32(fields, "proto")
-	srcPort := fieldUint32(fields, "src_port")
-	dstPort := fieldUint32(fields, "dst_port")
-	if srcAddr.Is4() && dstAddr.Is4() {
-		return buildPseudoIPv4Packet(srcAddr, dstAddr, proto, srcPort, dstPort), true
-	}
-	if srcAddr.Is6() && dstAddr.Is6() {
-		return buildPseudoIPv6Packet(srcAddr, dstAddr, proto, srcPort, dstPort), true
-	}
-	return nil, false
-}
-
-// buildPseudoIPv4Packet creates a minimal Ethernet/IPv4 packet with a stub TCP/UDP header.
-func buildPseudoIPv4Packet(srcAddr, dstAddr netip.Addr, proto, srcPort, dstPort uint32) []byte {
-	l4Len := pseudoL4HeaderLen(proto)
-	packet := make([]byte, 14+20+l4Len)
-	packet[12], packet[13] = 0x08, 0x00
-	ip := packet[14:]
-	ip[0] = 0x45
-	binary.BigEndian.PutUint16(ip[2:4], uint16(20+l4Len))
-	ip[8] = 64
-	ip[9] = byte(proto)
-	src := srcAddr.As4()
-	dst := dstAddr.As4()
-	copy(ip[12:16], src[:])
-	copy(ip[16:20], dst[:])
-	fillPseudoL4(ip[20:], proto, srcPort, dstPort)
-	return packet
-}
-
-// buildPseudoIPv6Packet creates a minimal Ethernet/IPv6 packet with a stub TCP/UDP header.
-func buildPseudoIPv6Packet(srcAddr, dstAddr netip.Addr, proto, srcPort, dstPort uint32) []byte {
-	l4Len := pseudoL4HeaderLen(proto)
-	packet := make([]byte, 14+40+l4Len)
-	packet[12], packet[13] = 0x86, 0xdd
-	ip := packet[14:]
-	ip[0] = 0x60
-	binary.BigEndian.PutUint16(ip[4:6], uint16(l4Len))
-	ip[6] = byte(proto)
-	ip[7] = 64
-	src := srcAddr.As16()
-	dst := dstAddr.As16()
-	copy(ip[8:24], src[:])
-	copy(ip[24:40], dst[:])
-	fillPseudoL4(ip[40:], proto, srcPort, dstPort)
-	return packet
-}
-
-// pseudoL4HeaderLen returns the minimal header size needed for the selected protocol.
-func pseudoL4HeaderLen(proto uint32) int {
-	switch proto {
-	case 6:
-		return 20
-	case 17:
-		return 8
-	default:
-		return 8
-	}
-}
-
-// fillPseudoL4 writes just enough transport-header structure for tuple-aware downstream use.
-func fillPseudoL4(buf []byte, proto, srcPort, dstPort uint32) {
-	if len(buf) < 8 {
-		return
-	}
-	binary.BigEndian.PutUint16(buf[0:2], uint16(srcPort))
-	binary.BigEndian.PutUint16(buf[2:4], uint16(dstPort))
-	switch proto {
-	case 6:
-		if len(buf) < 20 {
-			return
-		}
-		buf[12] = 0x50
-	case 17:
-		binary.BigEndian.PutUint16(buf[4:6], uint16(len(buf)))
-	default:
-		binary.BigEndian.PutUint16(buf[4:6], uint16(len(buf)))
-	}
-}
-
-// mapPacketTuple parses header bytes back into canonical tuple fields when packet
-// mapping is enabled.
-func (p *Builtin) mapPacketTuple(fields map[string]any, packet []byte) {
-	if p.cfg.DisablePacketMapping {
-		return
-	}
-	if tuple, err := parsePacketTuple(packet); err == nil {
-		fields["src_addr"] = tuple.SrcAddr.String()
-		fields["dst_addr"] = tuple.DstAddr.String()
-		fields["proto"] = tuple.Proto
-		fields["proto_name"] = ipProtocolName(tuple.Proto)
-		fields["src_port"] = tuple.SrcPort
-		fields["dst_port"] = tuple.DstPort
-	}
-}
-
-// ensurePseudoPacket backfills header_data when the event has flow fields but no
-// raw packet bytes.
-func (p *Builtin) ensurePseudoPacket(fields map[string]any) {
-	if !p.cfg.BuildPseudoPacket {
-		return
-	}
-	if len(bytesField(fields, "header_data")) > 0 {
-		return
-	}
-	headerData, ok := buildPseudoPacket(fields)
-	if !ok {
-		return
-	}
-	fields["header_data"] = headerData
-	if fieldUint32(fields, "frame_length") == 0 {
-		fields["frame_length"] = uint32(len(headerData))
-	}
-	if fieldUint32(fields, "original_length") == 0 {
-		fields["original_length"] = uint32(len(headerData))
-	}
-	if fieldUint32(fields, "protocol") == 0 {
-		fields["protocol"] = uint32(1)
 	}
 }
 
@@ -548,140 +382,20 @@ func (p *Builtin) processGoFlow2V2(evt *event.Event, payload any) ([]*event.Even
 		SamplePool:   fieldUint32(fields, "sample_pool"),
 		Drops:        fieldUint32(fields, "drops"),
 	}
-	p.ensurePseudoPacket(fields)
+	if p.cfg.BuildPseudoPacket && hasPacketTuple(fields) {
+		if err := packet.NormalizeEvent(evt, packet.NormalizeOptions{
+			DisablePacketMapping: p.cfg.DisablePacketMapping,
+			BuildPseudoPacket:    p.cfg.BuildPseudoPacket,
+			TruncatePacketBytes:  p.cfg.TruncatePacketBytes,
+		}); err != nil {
+			return nil, err
+		}
+	}
 
 	if p.cfg.DropMessage {
 		evt.Message = nil
 	}
 	return []*event.Event{evt}, nil
-}
-
-type packetTuple struct {
-	SrcAddr netip.Addr
-	DstAddr netip.Addr
-	Proto   uint32
-	SrcPort uint32
-	DstPort uint32
-}
-
-// parsePacketTuple extracts a minimal L3/L4 tuple from a sampled raw packet header.
-func parsePacketTuple(data []byte) (packetTuple, error) {
-	if len(data) == 0 {
-		return packetTuple{}, fmt.Errorf("empty packet header")
-	}
-	offset := 0
-	if len(data) >= 14 {
-		etherType := uint16(data[12])<<8 | uint16(data[13])
-		if etherType == 0x0800 || etherType == 0x86dd {
-			offset = 14
-		}
-	}
-	if len(data) <= offset {
-		return packetTuple{}, fmt.Errorf("truncated packet header")
-	}
-	switch data[offset] >> 4 {
-	case 4:
-		return parseIPv4Tuple(data[offset:])
-	case 6:
-		return parseIPv6Tuple(data[offset:])
-	default:
-		return packetTuple{}, fmt.Errorf("unsupported ip version")
-	}
-}
-
-func parseIPv4Tuple(data []byte) (packetTuple, error) {
-	if len(data) < 20 {
-		return packetTuple{}, fmt.Errorf("truncated ipv4 header")
-	}
-	ihl := int(data[0]&0x0f) * 4
-	if ihl < 20 || len(data) < ihl {
-		return packetTuple{}, fmt.Errorf("invalid ipv4 header length")
-	}
-	src, ok := netip.AddrFromSlice(data[12:16])
-	if !ok {
-		return packetTuple{}, fmt.Errorf("invalid ipv4 source address")
-	}
-	dst, ok := netip.AddrFromSlice(data[16:20])
-	if !ok {
-		return packetTuple{}, fmt.Errorf("invalid ipv4 destination address")
-	}
-	tuple := packetTuple{
-		SrcAddr: src,
-		DstAddr: dst,
-		Proto:   uint32(data[9]),
-	}
-	if len(data) >= ihl+4 && (tuple.Proto == 6 || tuple.Proto == 17) {
-		tuple.SrcPort = uint32(uint16(data[ihl])<<8 | uint16(data[ihl+1]))
-		tuple.DstPort = uint32(uint16(data[ihl+2])<<8 | uint16(data[ihl+3]))
-	}
-	return tuple, nil
-}
-
-// parseIPv6Tuple walks past common extension headers before reading transport ports.
-func parseIPv6Tuple(data []byte) (packetTuple, error) {
-	if len(data) < 40 {
-		return packetTuple{}, fmt.Errorf("truncated ipv6 header")
-	}
-	src, ok := netip.AddrFromSlice(data[8:24])
-	if !ok {
-		return packetTuple{}, fmt.Errorf("invalid ipv6 source address")
-	}
-	dst, ok := netip.AddrFromSlice(data[24:40])
-	if !ok {
-		return packetTuple{}, fmt.Errorf("invalid ipv6 destination address")
-	}
-	nextHeader := data[6]
-	offset := 40
-	for {
-		if !isIPv6ExtensionHeader(nextHeader) {
-			break
-		}
-		if len(data) < offset+2 {
-			return packetTuple{}, fmt.Errorf("truncated ipv6 extension header")
-		}
-		switch nextHeader {
-		case 44:
-			if len(data) < offset+8 {
-				return packetTuple{}, fmt.Errorf("truncated ipv6 fragment header")
-			}
-			nextHeader = data[offset]
-			offset += 8
-		case 51:
-			hdrLen := (int(data[offset+1]) + 2) * 4
-			if len(data) < offset+hdrLen {
-				return packetTuple{}, fmt.Errorf("truncated ipv6 authentication header")
-			}
-			nextHeader = data[offset]
-			offset += hdrLen
-		default:
-			hdrLen := (int(data[offset+1]) + 1) * 8
-			if len(data) < offset+hdrLen {
-				return packetTuple{}, fmt.Errorf("truncated ipv6 extension header")
-			}
-			nextHeader = data[offset]
-			offset += hdrLen
-		}
-	}
-	tuple := packetTuple{
-		SrcAddr: src,
-		DstAddr: dst,
-		Proto:   uint32(nextHeader),
-	}
-	if len(data) >= offset+4 && (tuple.Proto == 6 || tuple.Proto == 17) {
-		tuple.SrcPort = uint32(uint16(data[offset])<<8 | uint16(data[offset+1]))
-		tuple.DstPort = uint32(uint16(data[offset+2])<<8 | uint16(data[offset+3]))
-	}
-	return tuple, nil
-}
-
-// isIPv6ExtensionHeader lists the IPv6 next-header values that need header walking.
-func isIPv6ExtensionHeader(nextHeader byte) bool {
-	switch nextHeader {
-	case 0, 43, 44, 50, 51, 60, 135, 139, 140:
-		return true
-	default:
-		return false
-	}
 }
 
 // ensureFields lazily allocates the processor field map.
