@@ -68,6 +68,71 @@ func TestStatefulFlushSumsPacketCounters(t *testing.T) {
 	}
 }
 
+func TestStatefulAggregatesNestedPacketLayerFields(t *testing.T) {
+	agg, err := New(config.AggregatorConfig{
+		Enabled: true,
+		KeyFields: []string{
+			"ip_layers.0.src_addr",
+			"ip_layers.1.src_addr",
+			"ip_layers.1.dst_addr",
+			"ip_layers.1.proto",
+			"ip_layers.1.src_port",
+			"ip_layers.1.dst_port",
+		},
+		Sum: []string{"bytes", "packets"},
+		Current: []string{
+			"ip_layers.0.dst_addr",
+		},
+	})
+	if err != nil {
+		t.Fatalf("New returned error: %v", err)
+	}
+
+	fields := map[string]any{
+		"ip_layers": []map[string]any{
+			{
+				"role":     "outer",
+				"src_addr": "203.0.113.1",
+				"dst_addr": "203.0.113.2",
+				"proto":    uint32(47),
+			},
+			{
+				"role":     "inner",
+				"src_addr": "192.0.2.1",
+				"dst_addr": "198.51.100.2",
+				"proto":    uint32(6),
+				"src_port": uint32(12345),
+				"dst_port": uint32(443),
+			},
+		},
+		"bytes":   int64(60),
+		"packets": int64(1),
+	}
+	if _, err := agg.Process(&event.Event{Fields: fields}); err != nil {
+		t.Fatalf("Process returned error: %v", err)
+	}
+
+	out, err := agg.Close()
+	if err != nil {
+		t.Fatalf("Close returned error: %v", err)
+	}
+	if len(out) != 1 {
+		t.Fatalf("expected 1 aggregated event, got %d", len(out))
+	}
+	if got := out[0].Fields["ip_layers.0.src_addr"]; got != "203.0.113.1" {
+		t.Fatalf("expected outer source key to be preserved, got %#v", got)
+	}
+	if got := out[0].Fields["ip_layers.1.src_addr"]; got != "192.0.2.1" {
+		t.Fatalf("expected inner source key to be preserved, got %#v", got)
+	}
+	if got := out[0].Fields["ip_layers.0.dst_addr"]; got != "203.0.113.2" {
+		t.Fatalf("expected current nested field to be preserved, got %#v", got)
+	}
+	if got := out[0].Fields["bytes"]; got != int64(60) {
+		t.Fatalf("expected bytes=60, got %#v", got)
+	}
+}
+
 func TestStatefulInitEventsCarryConfiguredStreamAndTemplateBaseID(t *testing.T) {
 	agg, err := New(config.AggregatorConfig{
 		Enabled: true,

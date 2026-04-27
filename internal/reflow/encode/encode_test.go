@@ -480,15 +480,23 @@ func TestSFlowEncoderBuildsEncapsulatedPseudoHeader(t *testing.T) {
 
 	evt := &event.Event{
 		Fields: map[string]any{
-			"agent_ip":        "192.0.2.10",
-			"outer_src_addr":  "203.0.113.1",
-			"outer_dst_addr":  "203.0.113.2",
-			"outer_proto":     uint32(47),
-			"src_addr":        "192.0.2.1",
-			"dst_addr":        "198.51.100.2",
-			"src_port":        uint32(12345),
-			"dst_port":        uint32(443),
-			"proto":           uint32(6),
+			"agent_ip": "192.0.2.10",
+			"ip_layers": []map[string]any{
+				{
+					"role":     "outer",
+					"src_addr": "203.0.113.1",
+					"dst_addr": "203.0.113.2",
+					"proto":    uint32(47),
+				},
+				{
+					"role":     "inner",
+					"src_addr": "192.0.2.1",
+					"dst_addr": "198.51.100.2",
+					"proto":    uint32(6),
+					"src_port": uint32(12345),
+					"dst_port": uint32(443),
+				},
+			},
 			"tunnel_type":     "gre",
 			"original_length": uint32(96),
 		},
@@ -510,6 +518,9 @@ func TestSFlowEncoderBuildsEncapsulatedPseudoHeader(t *testing.T) {
 	}
 	if header.OriginalLength != 96 {
 		t.Fatalf("expected original_length=96, got %d", header.OriginalLength)
+	}
+	if evt.Packet == nil || len(evt.Packet.Layers) < 4 {
+		t.Fatalf("expected nested ip_layers to build an encapsulated packet model, got %#v", evt.Packet)
 	}
 }
 

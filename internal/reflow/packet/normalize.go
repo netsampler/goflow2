@@ -169,17 +169,18 @@ func BuildPseudoHeader(evt *event.Event, fields map[string]any) ([]byte, bool) {
 }
 
 func pseudoPacketModelFromFields(fields map[string]any) *event.PacketModel {
-	srcAddrStr := fieldStringOrZero(fields, "src_addr")
-	dstAddrStr := fieldStringOrZero(fields, "dst_addr")
-	if srcAddrStr == "" || dstAddrStr == "" {
-		return nil
+	layers := ipLayersFromFields(fields)
+	inner := pseudoIPLayerFromFields(fields, "src_addr", "dst_addr", "proto", "src_port", "dst_port")
+	outer := pseudoIPLayer{}
+	if len(layers) > 0 {
+		inner = layers[len(layers)-1]
+		if len(layers) > 1 {
+			outer = layers[0]
+		}
+	} else {
+		outer = pseudoIPLayerFromFields(fields, "outer_src_addr", "outer_dst_addr", "outer_proto", "outer_src_port", "outer_dst_port")
 	}
-	srcAddr, err := netip.ParseAddr(srcAddrStr)
-	if err != nil {
-		return nil
-	}
-	dstAddr, err := netip.ParseAddr(dstAddrStr)
-	if err != nil {
+	if !inner.Valid() {
 		return nil
 	}
 
@@ -208,20 +209,104 @@ func pseudoPacketModelFromFields(fields map[string]any) *event.PacketModel {
 	appendPPPoELayer(model, fields)
 
 	tunnelType := fieldStringOrZero(fields, "tunnel_type")
-	if outerSrc := fieldStringOrZero(fields, "outer_src_addr"); outerSrc != "" {
-		outerDst := fieldStringOrZero(fields, "outer_dst_addr")
-		outerProto := fieldUint32(fields, "outer_proto")
-		appendPseudoIPLayer(model, mustParseAddr(outerSrc), mustParseAddr(outerDst), outerProto)
-		appendPseudoTunnelLayers(model, tunnelType, fieldUint32(fields, "outer_src_port"), fieldUint32(fields, "outer_dst_port"), srcAddr, dstAddr)
+	if outer.Valid() {
+		appendPseudoIPLayer(model, outer.SrcAddr, outer.DstAddr, outer.Proto)
+		appendPseudoTunnelLayers(model, tunnelType, outer.SrcPort, outer.DstPort, inner.SrcAddr, inner.DstAddr)
 	}
 
-	appendPseudoIPLayer(model, srcAddr, dstAddr, fieldUint32(fields, "proto"))
-	appendPseudoTransportLayer(model, fieldUint32(fields, "proto"), fieldUint32(fields, "src_port"), fieldUint32(fields, "dst_port"))
+	appendPseudoIPLayer(model, inner.SrcAddr, inner.DstAddr, inner.Proto)
+	appendPseudoTransportLayer(model, inner.Proto, inner.SrcPort, inner.DstPort)
 
 	if frameLen := fieldUint32(fields, "original_length"); frameLen != 0 {
 		model.Features["target_wire_length"] = event.FeatureUint64(uint64(frameLen))
 	}
 	return model
+}
+
+type pseudoIPLayer struct {
+	SrcAddr netip.Addr
+	DstAddr netip.Addr
+	Proto   uint32
+	SrcPort uint32
+	DstPort uint32
+}
+
+func (l pseudoIPLayer) Valid() bool {
+	return l.SrcAddr.IsValid() && l.DstAddr.IsValid()
+}
+
+func pseudoIPLayerFromFields(fields map[string]any, srcKey, dstKey, protoKey, srcPortKey, dstPortKey string) pseudoIPLayer {
+	srcAddr, err := netip.ParseAddr(fieldStringOrZero(fields, srcKey))
+	if err != nil {
+		return pseudoIPLayer{}
+	}
+	dstAddr, err := netip.ParseAddr(fieldStringOrZero(fields, dstKey))
+	if err != nil {
+		return pseudoIPLayer{}
+	}
+	return pseudoIPLayer{
+		SrcAddr: srcAddr,
+		DstAddr: dstAddr,
+		Proto:   fieldUint32(fields, protoKey),
+		SrcPort: fieldUint32(fields, srcPortKey),
+		DstPort: fieldUint32(fields, dstPortKey),
+	}
+}
+
+func ipLayersFromFields(fields map[string]any) []pseudoIPLayer {
+	if fields == nil {
+		return nil
+	}
+	raw, ok := fields["ip_layers"]
+	if !ok {
+		return nil
+	}
+	switch typed := raw.(type) {
+	case []map[string]any:
+		return ipLayersFromMaps(typed)
+	case []any:
+		maps := make([]map[string]any, 0, len(typed))
+		for _, item := range typed {
+			layer, ok := item.(map[string]any)
+			if !ok {
+				return nil
+			}
+			maps = append(maps, layer)
+		}
+		return ipLayersFromMaps(maps)
+	default:
+		return nil
+	}
+}
+
+func ipLayersFromMaps(raw []map[string]any) []pseudoIPLayer {
+	layers := make([]pseudoIPLayer, 0, len(raw))
+	for _, fields := range raw {
+		layer := pseudoIPLayerFromLayerFields(fields)
+		if !layer.Valid() {
+			return nil
+		}
+		layers = append(layers, layer)
+	}
+	return layers
+}
+
+func pseudoIPLayerFromLayerFields(fields map[string]any) pseudoIPLayer {
+	srcAddr, err := netip.ParseAddr(stringFromAny(fields["src_addr"]))
+	if err != nil {
+		return pseudoIPLayer{}
+	}
+	dstAddr, err := netip.ParseAddr(stringFromAny(fields["dst_addr"]))
+	if err != nil {
+		return pseudoIPLayer{}
+	}
+	return pseudoIPLayer{
+		SrcAddr: srcAddr,
+		DstAddr: dstAddr,
+		Proto:   uint32FromAny(fields["proto"]),
+		SrcPort: uint32FromAny(fields["src_port"]),
+		DstPort: uint32FromAny(fields["dst_port"]),
+	}
 }
 
 func appendVLANLayers(model *event.PacketModel, fields map[string]any) {
@@ -746,6 +831,8 @@ func applyPacketViewFields(fields map[string]any, view packetView) {
 		fields["vlan_id"] = view.VLANIDs[0]
 	}
 	if len(view.Tuples) > 0 {
+		fields["ip_layers"] = packetTupleLayers(view.Tuples)
+		fields["ip_layer_count"] = uint32(len(view.Tuples))
 		tuple := view.Tuples[len(view.Tuples)-1]
 		fields["src_addr"] = tuple.SrcAddr.String()
 		fields["dst_addr"] = tuple.DstAddr.String()
@@ -767,6 +854,36 @@ func applyPacketViewFields(fields map[string]any, view packetView) {
 	if view.TunnelType != "" {
 		fields["tunnel_type"] = view.TunnelType
 	}
+}
+
+func packetTupleLayers(tuples []packetTuple) []map[string]any {
+	layers := make([]map[string]any, 0, len(tuples))
+	for i, tuple := range tuples {
+		layers = append(layers, map[string]any{
+			"index":      uint32(i),
+			"role":       packetLayerRole(i, len(tuples)),
+			"src_addr":   tuple.SrcAddr.String(),
+			"dst_addr":   tuple.DstAddr.String(),
+			"proto":      tuple.Proto,
+			"proto_name": ipProtocolName(tuple.Proto),
+			"src_port":   tuple.SrcPort,
+			"dst_port":   tuple.DstPort,
+		})
+	}
+	return layers
+}
+
+func packetLayerRole(index, total int) string {
+	if total <= 1 {
+		return "single"
+	}
+	if index == 0 {
+		return "outer"
+	}
+	if index == total-1 {
+		return "inner"
+	}
+	return "intermediate"
 }
 
 func packetIPDepth(model *event.PacketModel) int {
@@ -1339,6 +1456,17 @@ func fieldStringOrZero(fields map[string]any, key string) string {
 	switch v := val.(type) {
 	case string:
 		return v
+	default:
+		return fmt.Sprint(v)
+	}
+}
+
+func stringFromAny(val any) string {
+	switch v := val.(type) {
+	case string:
+		return v
+	case nil:
+		return ""
 	default:
 		return fmt.Sprint(v)
 	}

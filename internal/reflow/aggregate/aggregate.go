@@ -365,7 +365,7 @@ func aggregateFromEvent(cfg config.AggregatorConfig, recordCapacity int, evt *ev
 		recordFields[key] = val
 	}
 	for _, keyField := range cfg.KeyFields {
-		if val, ok := fields[keyField]; ok {
+		if val, ok := fieldValue(fields, keyField); ok {
 			recordFields[keyField] = val
 		}
 	}
@@ -373,12 +373,12 @@ func aggregateFromEvent(cfg config.AggregatorConfig, recordCapacity int, evt *ev
 		recordFields[sumField] = sumValue{Value: int64Field(fields, sumField)}
 	}
 	for _, firstField := range cfg.First {
-		if val, ok := fields[firstField]; ok {
+		if val, ok := fieldValue(fields, firstField); ok {
 			recordFields[firstField] = firstValue{Value: val}
 		}
 	}
 	for _, currentField := range cfg.Current {
-		if val, ok := fields[currentField]; ok {
+		if val, ok := fieldValue(fields, currentField); ok {
 			recordFields[currentField] = currentValue{Value: val}
 		}
 	}
@@ -412,7 +412,7 @@ func buildKey(fields map[string]any, keyFields []string) (string, error) {
 	var b strings.Builder
 	b.Grow(len(keyFields) * 16)
 	for i, key := range keyFields {
-		val, ok := fields[key]
+		val, ok := fieldValue(fields, key)
 		if !ok {
 			return "", &missingAggregationKeyError{Key: key}
 		}
@@ -565,11 +565,66 @@ func maxTimestamp(a, b int64) int64 {
 
 // int64Field reads one numeric field from the generic field map.
 func int64Field(fields map[string]any, key string) int64 {
-	val, ok := fields[key]
+	val, ok := fieldValue(fields, key)
 	if !ok {
 		return 0
 	}
 	return int64FromAny(val)
+}
+
+// fieldValue reads flat field names first, then dotted paths through nested
+// maps and slices. This lets aggregate configs key on packet layers such as
+// "ip_layers.0.src_addr" without forcing the event field map itself to be flat.
+func fieldValue(fields map[string]any, key string) (any, bool) {
+	if fields == nil {
+		return nil, false
+	}
+	if val, ok := fields[key]; ok {
+		return val, true
+	}
+	if !strings.Contains(key, ".") {
+		return nil, false
+	}
+	parts := strings.Split(key, ".")
+	var current any = fields
+	for _, part := range parts {
+		val, ok := nestedFieldValue(current, part)
+		if !ok {
+			return nil, false
+		}
+		current = val
+	}
+	return current, true
+}
+
+func nestedFieldValue(current any, part string) (any, bool) {
+	switch typed := current.(type) {
+	case map[string]any:
+		val, ok := typed[part]
+		return val, ok
+	case []map[string]any:
+		index, ok := pathIndex(part, len(typed))
+		if !ok {
+			return nil, false
+		}
+		return typed[index], true
+	case []any:
+		index, ok := pathIndex(part, len(typed))
+		if !ok {
+			return nil, false
+		}
+		return typed[index], true
+	default:
+		return nil, false
+	}
+}
+
+func pathIndex(part string, length int) (int, bool) {
+	index, err := strconv.Atoi(part)
+	if err != nil || index < 0 || index >= length {
+		return 0, false
+	}
+	return index, true
 }
 
 // uint32FromAny normalizes the small set of number shapes aggregation expects.

@@ -373,6 +373,8 @@ func TestBuiltinProcessBytesExtractsEncapsulatedLayers(t *testing.T) {
 	if got := fields["outer_proto"]; got != uint32(47) {
 		t.Fatalf("expected outer_proto=47, got %#v", got)
 	}
+	expectIPLayer(t, fields, 0, "outer", "203.0.113.1", "203.0.113.2", 47, 0, 0)
+	expectIPLayer(t, fields, 1, "inner", "192.0.2.1", "198.51.100.2", 6, 12345, 443)
 	if got := fields["tunnel_type"]; got != "gre" {
 		t.Fatalf("expected tunnel_type=gre, got %#v", got)
 	}
@@ -444,6 +446,8 @@ func TestBuiltinProcessBytesExtractsVXLANInnerPacket(t *testing.T) {
 	if got := fields["outer_dst_addr"]; got != "203.0.113.2" {
 		t.Fatalf("expected outer_dst_addr=203.0.113.2, got %#v", got)
 	}
+	expectIPLayer(t, fields, 0, "outer", "203.0.113.1", "203.0.113.2", 17, 4660, 4789)
+	expectIPLayer(t, fields, 1, "inner", "192.0.2.1", "198.51.100.2", 6, 12345, 443)
 	if got := fields["src_addr"]; got != "192.0.2.1" {
 		t.Fatalf("expected inner src_addr=192.0.2.1, got %#v", got)
 	}
@@ -493,6 +497,7 @@ func TestBuiltinProcessBytesExtractsMPLSInnerPacket(t *testing.T) {
 	if got := fields["tunnel_type"]; got != "mpls" {
 		t.Fatalf("expected tunnel_type=mpls, got %#v", got)
 	}
+	expectIPLayer(t, fields, 0, "single", "192.0.2.1", "198.51.100.2", 6, 12345, 443)
 	if got := fields["src_addr"]; got != "192.0.2.1" {
 		t.Fatalf("expected src_addr=192.0.2.1, got %#v", got)
 	}
@@ -635,5 +640,38 @@ func TestBuiltinProcessFlowDoesNotTreatGenericProtocolAsSFlowHeaderProtocol(t *t
 	}
 	if got := events[0].Fields["src_addr"]; got != nil {
 		t.Fatalf("did not expect generic protocol field to drive packet parsing, got src_addr=%#v", got)
+	}
+}
+
+func expectIPLayer(t *testing.T, fields map[string]any, index int, role, srcAddr, dstAddr string, proto, srcPort, dstPort uint32) {
+	t.Helper()
+	layers, ok := fields["ip_layers"].([]map[string]any)
+	if !ok {
+		t.Fatalf("expected ip_layers to be []map[string]any, got %T", fields["ip_layers"])
+	}
+	if count := fields["ip_layer_count"]; count != uint32(len(layers)) {
+		t.Fatalf("expected ip_layer_count=%d, got %#v", len(layers), count)
+	}
+	if index < 0 || index >= len(layers) {
+		t.Fatalf("expected ip_layers[%d], got %#v", index, layers)
+	}
+	layer := layers[index]
+	if got := layer["role"]; got != role {
+		t.Fatalf("expected ip_layers[%d].role=%q, got %#v", index, role, got)
+	}
+	if got := layer["src_addr"]; got != srcAddr {
+		t.Fatalf("expected ip_layers[%d].src_addr=%q, got %#v", index, srcAddr, got)
+	}
+	if got := layer["dst_addr"]; got != dstAddr {
+		t.Fatalf("expected ip_layers[%d].dst_addr=%q, got %#v", index, dstAddr, got)
+	}
+	if got := layer["proto"]; got != proto {
+		t.Fatalf("expected ip_layers[%d].proto=%d, got %#v", index, proto, got)
+	}
+	if got := layer["src_port"]; got != srcPort {
+		t.Fatalf("expected ip_layers[%d].src_port=%d, got %#v", index, srcPort, got)
+	}
+	if got := layer["dst_port"]; got != dstPort {
+		t.Fatalf("expected ip_layers[%d].dst_port=%d, got %#v", index, dstPort, got)
 	}
 }
