@@ -87,6 +87,7 @@ func New(cfg *config.Config) (*App, error) {
 func (a *App) Run(ctx context.Context) error {
 	a.logger.Info("starting ReFlow")
 	defer a.sink.Close()
+	defer a.decoder.Close()
 
 	sourceCtx, stopSource := context.WithCancel(ctx)
 	defer stopSource()

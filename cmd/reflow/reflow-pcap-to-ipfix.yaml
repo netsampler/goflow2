@@ -1,7 +1,4 @@
-# Forward-looking example.
-# This is the intended config shape for packet capture to IPFIX once
-# encoder.type=ipfix is implemented. It does not run today because ReFlow
-# currently only supports encoder.type=json and encoder.type=sflow.
+# Capture packets, aggregate them into flow records, and export IPFIX over UDP.
 
 sources:
   - network: pcap_live
