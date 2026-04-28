@@ -1,6 +1,7 @@
 package processor
 
 import (
+	"encoding/binary"
 	"encoding/json"
 	"testing"
 
@@ -536,6 +537,142 @@ func TestBuiltinProcessBytesDecodesCustomVXLANPort(t *testing.T) {
 	}
 }
 
+func TestBuiltinProcessBytesExtractsIPInIP(t *testing.T) {
+	proc := NewBuiltin(config.ProcessorConfig{})
+	inner := ipv4Packet(6, [4]byte{192, 0, 2, 1}, [4]byte{198, 51, 100, 2}, tcpHeader(12345, 443))
+	outer := ipv4Packet(4, [4]byte{203, 0, 113, 1}, [4]byte{203, 0, 113, 2}, inner)
+
+	events, err := proc.Process(&event.Event{
+		Source:  event.SourceMetadata{Type: "bytes"},
+		Payload: ethernetPayload(0x0800, outer),
+	})
+	if err != nil {
+		t.Fatalf("Process returned error: %v", err)
+	}
+	fields := events[0].Fields
+	expectIPLayer(t, fields, 0, "outer", "203.0.113.1", "203.0.113.2", 4, 0, 0)
+	expectIPLayer(t, fields, 1, "inner", "192.0.2.1", "198.51.100.2", 6, 12345, 443)
+	if got := fields["src_addr"]; got != "192.0.2.1" {
+		t.Fatalf("expected inner src_addr=192.0.2.1, got %#v", got)
+	}
+}
+
+func TestBuiltinProcessBytesExtractsIPv6InIPWithRoutingHeader(t *testing.T) {
+	proc := NewBuiltin(config.ProcessorConfig{})
+	inner := ipv6RoutingPacket(tcpHeader(12345, 443))
+	outer := ipv4Packet(41, [4]byte{203, 0, 113, 1}, [4]byte{203, 0, 113, 2}, inner)
+
+	events, err := proc.Process(&event.Event{
+		Source:  event.SourceMetadata{Type: "bytes"},
+		Payload: ethernetPayload(0x0800, outer),
+	})
+	if err != nil {
+		t.Fatalf("Process returned error: %v", err)
+	}
+	fields := events[0].Fields
+	layers, ok := fields["packet_layers"].([]string)
+	if !ok {
+		t.Fatalf("expected packet_layers to be []string, got %T", fields["packet_layers"])
+	}
+	expectedLayers := []string{"ethernet", "ipv4", "ipv6", "ipv6_routing", "tcp"}
+	if len(layers) != len(expectedLayers) {
+		t.Fatalf("expected %d packet layers, got %#v", len(expectedLayers), layers)
+	}
+	for i, want := range expectedLayers {
+		if layers[i] != want {
+			t.Fatalf("expected packet_layers[%d]=%q, got %#v", i, want, layers[i])
+		}
+	}
+	expectIPLayer(t, fields, 0, "outer", "203.0.113.1", "203.0.113.2", 41, 0, 0)
+	expectIPLayer(t, fields, 1, "inner", "2001:db8::1", "2001:db8::2", 6, 12345, 443)
+}
+
+func TestBuiltinProcessBytesExtractsL2TPAndGTPUInnerPackets(t *testing.T) {
+	tests := []struct {
+		name       string
+		payload    []byte
+		wantLayer  string
+		wantOuter  packetLayerExpectation
+		wantInner  packetLayerExpectation
+		wantLayers []string
+	}{
+		{
+			name:      "l2tp",
+			payload:   ethernetPayload(0x0800, ipv4Packet(17, [4]byte{203, 0, 113, 1}, [4]byte{203, 0, 113, 2}, udpPacket(49152, 1701, l2tpPayload(ipv4Packet(6, [4]byte{192, 0, 2, 1}, [4]byte{198, 51, 100, 2}, tcpHeader(12345, 443)))))),
+			wantLayer: "l2tp",
+			wantOuter: packetLayerExpectation{"outer", "203.0.113.1", "203.0.113.2", 17, 49152, 1701},
+			wantInner: packetLayerExpectation{"inner", "192.0.2.1", "198.51.100.2", 6, 12345, 443},
+		},
+		{
+			name:      "gtpu",
+			payload:   ethernetPayload(0x0800, ipv4Packet(17, [4]byte{203, 0, 113, 1}, [4]byte{203, 0, 113, 2}, udpPacket(49152, 2152, gtpuPayload(ipv4Packet(6, [4]byte{192, 0, 2, 1}, [4]byte{198, 51, 100, 2}, tcpHeader(12345, 443)))))),
+			wantLayer: "gtpu",
+			wantOuter: packetLayerExpectation{"outer", "203.0.113.1", "203.0.113.2", 17, 49152, 2152},
+			wantInner: packetLayerExpectation{"inner", "192.0.2.1", "198.51.100.2", 6, 12345, 443},
+		},
+	}
+
+	proc := NewBuiltin(config.ProcessorConfig{})
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			events, err := proc.Process(&event.Event{
+				Source:  event.SourceMetadata{Type: "bytes"},
+				Payload: tt.payload,
+			})
+			if err != nil {
+				t.Fatalf("Process returned error: %v", err)
+			}
+			fields := events[0].Fields
+			layers, ok := fields["packet_layers"].([]string)
+			if !ok {
+				t.Fatalf("expected packet_layers to be []string, got %T", fields["packet_layers"])
+			}
+			if !containsLayer(layers, tt.wantLayer) {
+				t.Fatalf("expected packet_layers to contain %q, got %#v", tt.wantLayer, layers)
+			}
+			expectIPLayer(t, fields, 0, tt.wantOuter.role, tt.wantOuter.srcAddr, tt.wantOuter.dstAddr, tt.wantOuter.proto, tt.wantOuter.srcPort, tt.wantOuter.dstPort)
+			expectIPLayer(t, fields, 1, tt.wantInner.role, tt.wantInner.srcAddr, tt.wantInner.dstAddr, tt.wantInner.proto, tt.wantInner.srcPort, tt.wantInner.dstPort)
+		})
+	}
+}
+
+func TestBuiltinProcessBytesExtractsStackedEncapsulations(t *testing.T) {
+	proc := NewBuiltin(config.ProcessorConfig{})
+	inner := ipv4Packet(6, [4]byte{192, 0, 2, 1}, [4]byte{198, 51, 100, 2}, tcpHeader(12345, 443))
+	gre := grePayload(0x0800, inner)
+	outer := ipv4Packet(47, [4]byte{203, 0, 113, 1}, [4]byte{203, 0, 113, 2}, gre)
+	mpls := mplsPayload(17, true, outer)
+	pppoe := pppoePayload(0x0281, mpls)
+	packet := ethernetPayload(0x8100, dot1qPayload(100, 0x8864, pppoe))
+
+	events, err := proc.Process(&event.Event{
+		Source:  event.SourceMetadata{Type: "bytes"},
+		Payload: packet,
+	})
+	if err != nil {
+		t.Fatalf("Process returned error: %v", err)
+	}
+	fields := events[0].Fields
+	layers, ok := fields["packet_layers"].([]string)
+	if !ok {
+		t.Fatalf("expected packet_layers to be []string, got %T", fields["packet_layers"])
+	}
+	expectedLayers := []string{"ethernet", "dot1q", "pppoe", "mpls", "ipv4", "gre", "ipv4", "tcp"}
+	if len(layers) != len(expectedLayers) {
+		t.Fatalf("expected %d packet layers, got %#v", len(expectedLayers), layers)
+	}
+	for i, want := range expectedLayers {
+		if layers[i] != want {
+			t.Fatalf("expected packet_layers[%d]=%q, got %#v", i, want, layers[i])
+		}
+	}
+	if got := fields["vlan_id"]; got != uint32(100) {
+		t.Fatalf("expected vlan_id=100, got %#v", got)
+	}
+	expectIPLayer(t, fields, 0, "outer", "203.0.113.1", "203.0.113.2", 47, 0, 0)
+	expectIPLayer(t, fields, 1, "inner", "192.0.2.1", "198.51.100.2", 6, 12345, 443)
+}
+
 func TestBuiltinProcessBytesExtractsMPLSInnerPacket(t *testing.T) {
 	proc := NewBuiltin(config.ProcessorConfig{})
 
@@ -753,6 +890,24 @@ func expectIPLayer(t *testing.T, fields map[string]any, index int, role, srcAddr
 	}
 }
 
+type packetLayerExpectation struct {
+	role    string
+	srcAddr string
+	dstAddr string
+	proto   uint32
+	srcPort uint32
+	dstPort uint32
+}
+
+func containsLayer(layers []string, want string) bool {
+	for _, layer := range layers {
+		if layer == want {
+			return true
+		}
+	}
+	return false
+}
+
 func vxlanTestPacket(dstPort uint16) []byte {
 	packet := []byte{
 		0x00, 0x11, 0x22, 0x33, 0x44, 0x55,
@@ -776,4 +931,116 @@ func vxlanTestPacket(dstPort uint16) []byte {
 	packet[36] = byte(dstPort >> 8)
 	packet[37] = byte(dstPort)
 	return packet
+}
+
+func ethernetPayload(etherType uint16, payload []byte) []byte {
+	out := make([]byte, 14+len(payload))
+	copy(out[0:6], []byte{0x00, 0x11, 0x22, 0x33, 0x44, 0x55})
+	copy(out[6:12], []byte{0x66, 0x77, 0x88, 0x99, 0xaa, 0xbb})
+	binary.BigEndian.PutUint16(out[12:14], etherType)
+	copy(out[14:], payload)
+	return out
+}
+
+func dot1qPayload(vlanID uint16, etherType uint16, payload []byte) []byte {
+	out := make([]byte, 4+len(payload))
+	binary.BigEndian.PutUint16(out[0:2], vlanID&0x0fff)
+	binary.BigEndian.PutUint16(out[2:4], etherType)
+	copy(out[4:], payload)
+	return out
+}
+
+func ipv4Packet(proto byte, src, dst [4]byte, payload []byte) []byte {
+	out := make([]byte, 20+len(payload))
+	out[0] = 0x45
+	binary.BigEndian.PutUint16(out[2:4], uint16(len(out)))
+	out[8] = 64
+	out[9] = proto
+	copy(out[12:16], src[:])
+	copy(out[16:20], dst[:])
+	copy(out[20:], payload)
+	return out
+}
+
+func ipv6RoutingPacket(payload []byte) []byte {
+	out := make([]byte, 48+len(payload))
+	out[0] = 0x60
+	binary.BigEndian.PutUint16(out[4:6], uint16(8+len(payload)))
+	out[6] = 43
+	out[7] = 64
+	copy(out[8:24], []byte{0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1})
+	copy(out[24:40], []byte{0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2})
+	out[40] = 6
+	out[41] = 0
+	copy(out[48:], payload)
+	return out
+}
+
+func tcpHeader(srcPort, dstPort uint16) []byte {
+	out := make([]byte, 20)
+	binary.BigEndian.PutUint16(out[0:2], srcPort)
+	binary.BigEndian.PutUint16(out[2:4], dstPort)
+	out[12] = 0x50
+	out[13] = 0x02
+	return out
+}
+
+func udpPacket(srcPort, dstPort uint16, payload []byte) []byte {
+	out := make([]byte, 8+len(payload))
+	binary.BigEndian.PutUint16(out[0:2], srcPort)
+	binary.BigEndian.PutUint16(out[2:4], dstPort)
+	binary.BigEndian.PutUint16(out[4:6], uint16(len(out)))
+	copy(out[8:], payload)
+	return out
+}
+
+func l2tpPayload(inner []byte) []byte {
+	out := make([]byte, 10+len(inner))
+	binary.BigEndian.PutUint16(out[0:2], 0x0002)
+	binary.BigEndian.PutUint16(out[2:4], 1)
+	binary.BigEndian.PutUint16(out[4:6], 2)
+	out[6] = 0xff
+	out[7] = 0x03
+	binary.BigEndian.PutUint16(out[8:10], 0x0021)
+	copy(out[10:], inner)
+	return out
+}
+
+func gtpuPayload(inner []byte) []byte {
+	out := make([]byte, 8+len(inner))
+	out[0] = 0x30
+	out[1] = 0xff
+	binary.BigEndian.PutUint16(out[2:4], uint16(len(inner)))
+	binary.BigEndian.PutUint32(out[4:8], 0x01020304)
+	copy(out[8:], inner)
+	return out
+}
+
+func grePayload(proto uint16, inner []byte) []byte {
+	out := make([]byte, 4+len(inner))
+	binary.BigEndian.PutUint16(out[2:4], proto)
+	copy(out[4:], inner)
+	return out
+}
+
+func mplsPayload(label uint32, bos bool, inner []byte) []byte {
+	out := make([]byte, 4+len(inner))
+	raw := (label & 0xfffff) << 12
+	if bos {
+		raw |= 1 << 8
+	}
+	raw |= 64
+	binary.BigEndian.PutUint32(out[0:4], raw)
+	copy(out[4:], inner)
+	return out
+}
+
+func pppoePayload(proto uint16, inner []byte) []byte {
+	out := make([]byte, 8+len(inner))
+	out[0] = 0x11
+	binary.BigEndian.PutUint16(out[2:4], 1)
+	binary.BigEndian.PutUint16(out[4:6], uint16(len(inner)+2))
+	binary.BigEndian.PutUint16(out[6:8], proto)
+	copy(out[8:], inner)
+	return out
 }

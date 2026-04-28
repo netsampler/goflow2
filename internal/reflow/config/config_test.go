@@ -47,12 +47,24 @@ processor:
         gre:
           enabled: true
           protocols: [47]
+        ipip:
+          enabled: true
+          protocols: [4]
+        ip6ip:
+          enabled: true
+          protocols: [41]
         vxlan:
           enabled: false
           ports: [4789, 4790]
         geneve:
           enabled: true
           ports: [6081]
+        l2tp:
+          enabled: true
+          ports: [1701]
+        gtpu:
+          enabled: true
+          ports: [2152]
         pppoe:
           enabled: false
 
@@ -104,11 +116,23 @@ sink:
 	if len(decoder.Encapsulations.GRE.Protocols) != 1 || decoder.Encapsulations.GRE.Protocols[0] != 47 {
 		t.Fatalf("expected GRE protocols [47], got %#v", decoder.Encapsulations.GRE.Protocols)
 	}
+	if len(decoder.Encapsulations.IPIP.Protocols) != 1 || decoder.Encapsulations.IPIP.Protocols[0] != 4 {
+		t.Fatalf("expected IPIP protocols [4], got %#v", decoder.Encapsulations.IPIP.Protocols)
+	}
+	if len(decoder.Encapsulations.IP6IP.Protocols) != 1 || decoder.Encapsulations.IP6IP.Protocols[0] != 41 {
+		t.Fatalf("expected IP6IP protocols [41], got %#v", decoder.Encapsulations.IP6IP.Protocols)
+	}
 	if decoder.Encapsulations.VXLAN.Enabled == nil || *decoder.Encapsulations.VXLAN.Enabled {
 		t.Fatalf("expected VXLAN encapsulation enabled=false, got %#v", decoder.Encapsulations.VXLAN.Enabled)
 	}
 	if len(decoder.Encapsulations.VXLAN.Ports) != 2 || decoder.Encapsulations.VXLAN.Ports[1] != 4790 {
 		t.Fatalf("expected VXLAN ports [4789 4790], got %#v", decoder.Encapsulations.VXLAN.Ports)
+	}
+	if len(decoder.Encapsulations.L2TP.Ports) != 1 || decoder.Encapsulations.L2TP.Ports[0] != 1701 {
+		t.Fatalf("expected L2TP ports [1701], got %#v", decoder.Encapsulations.L2TP.Ports)
+	}
+	if len(decoder.Encapsulations.GTPU.Ports) != 1 || decoder.Encapsulations.GTPU.Ports[0] != 2152 {
+		t.Fatalf("expected GTP-U ports [2152], got %#v", decoder.Encapsulations.GTPU.Ports)
 	}
 	if len(cfg.Aggregators) != 1 {
 		t.Fatalf("expected 1 aggregator, got %d", len(cfg.Aggregators))

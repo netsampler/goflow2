@@ -24,12 +24,24 @@ processor:
           enabled: true
           # GRE is IP protocol 47, not a UDP/TCP port.
           protocols: [47]
+        ipip:
+          enabled: true
+          protocols: [4]
+        ip6ip:
+          enabled: true
+          protocols: [41]
         vxlan:
           enabled: true
           ports: [4789]
         geneve:
           enabled: true
           ports: [6081]
+        l2tp:
+          enabled: true
+          ports: [1701]
+        gtpu:
+          enabled: true
+          ports: [2152]
         pppoe:
           enabled: true
 

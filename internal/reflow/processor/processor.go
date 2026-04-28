@@ -334,8 +334,12 @@ func packetDecodeOptions(cfg config.PacketDecoderConfig) packet.DecodeOptions {
 		Configured:     true,
 		DecodeBeyondL4: true,
 		DecodeGRE:      true,
+		DecodeIPIP:     true,
+		DecodeIP6IP:    true,
 		DecodeVXLAN:    true,
 		DecodeGeneve:   true,
+		DecodeL2TP:     true,
+		DecodeGTPU:     true,
 		DecodePPPoE:    true,
 	}
 	if cfg.DecodeBeyondL4 != nil {
@@ -348,6 +352,18 @@ func packetDecodeOptions(cfg config.PacketDecoderConfig) packet.DecodeOptions {
 	if len(encaps.GRE.Protocols) > 0 {
 		opts.GREProtocols = append([]uint32(nil), encaps.GRE.Protocols...)
 	}
+	if encaps.IPIP.Enabled != nil {
+		opts.DecodeIPIP = *encaps.IPIP.Enabled
+	}
+	if len(encaps.IPIP.Protocols) > 0 {
+		opts.IPIPProtocols = append([]uint32(nil), encaps.IPIP.Protocols...)
+	}
+	if encaps.IP6IP.Enabled != nil {
+		opts.DecodeIP6IP = *encaps.IP6IP.Enabled
+	}
+	if len(encaps.IP6IP.Protocols) > 0 {
+		opts.IP6IPProtocols = append([]uint32(nil), encaps.IP6IP.Protocols...)
+	}
 	if encaps.VXLAN.Enabled != nil {
 		opts.DecodeVXLAN = *encaps.VXLAN.Enabled
 	}
@@ -359,6 +375,18 @@ func packetDecodeOptions(cfg config.PacketDecoderConfig) packet.DecodeOptions {
 	}
 	if len(encaps.Geneve.Ports) > 0 {
 		opts.GenevePorts = append([]uint32(nil), encaps.Geneve.Ports...)
+	}
+	if encaps.L2TP.Enabled != nil {
+		opts.DecodeL2TP = *encaps.L2TP.Enabled
+	}
+	if len(encaps.L2TP.Ports) > 0 {
+		opts.L2TPPorts = append([]uint32(nil), encaps.L2TP.Ports...)
+	}
+	if encaps.GTPU.Enabled != nil {
+		opts.DecodeGTPU = *encaps.GTPU.Enabled
+	}
+	if len(encaps.GTPU.Ports) > 0 {
+		opts.GTPUPorts = append([]uint32(nil), encaps.GTPU.Ports...)
 	}
 	if encaps.PPPoE.Enabled != nil {
 		opts.DecodePPPoE = *encaps.PPPoE.Enabled

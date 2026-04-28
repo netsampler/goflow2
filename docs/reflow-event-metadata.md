@@ -122,10 +122,11 @@ Packet decoding policy lives under `processor.builtin.packet_decoder`.
 `decode_beyond_l4` controls whether the parser may continue past TCP/UDP/ICMP
 or the first encapsulation header. Encapsulation-specific settings live under
 `packet_decoder.encapsulations`, where operators can enable/disable GRE,
-VXLAN, Geneve, and PPPoE handling and add non-standard VXLAN/Geneve UDP ports.
-MPLS labels are always parsed when present; `decode_beyond_l4` controls whether
-the parser continues into the MPLS payload. GRE is matched by IP protocol
-number, normally `47`, not by port.
+IP-in-IP, IPv6-in-IP, VXLAN, Geneve, L2TP, GTP-U, and PPPoE handling. UDP-based
+encapsulations can use non-standard port lists. MPLS labels and IPv6 extension
+headers are always parsed when present; `decode_beyond_l4` controls whether the
+parser continues into encapsulated payloads. GRE, IP-in-IP, and IPv6-in-IP are
+matched by IP protocol number, normally `47`, `4`, and `41`, not by port.
 
 `record_kind` is the generic record-shape marker. `packet` means the event
 carries packet/header bytes in `header_data`; `interface_counter` means the

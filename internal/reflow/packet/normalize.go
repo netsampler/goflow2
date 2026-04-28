@@ -25,10 +25,18 @@ type DecodeOptions struct {
 	DecodeBeyondL4 bool
 	DecodeGRE      bool
 	GREProtocols   []uint32
+	DecodeIPIP     bool
+	IPIPProtocols  []uint32
+	DecodeIP6IP    bool
+	IP6IPProtocols []uint32
 	DecodeVXLAN    bool
 	VXLANPorts     []uint32
 	DecodeGeneve   bool
 	GenevePorts    []uint32
+	DecodeL2TP     bool
+	L2TPPorts      []uint32
+	DecodeGTPU     bool
+	GTPUPorts      []uint32
 	DecodePPPoE    bool
 }
 
@@ -36,16 +44,24 @@ var defaultDecodeOptions = DecodeOptions{
 	Configured:     true,
 	DecodeBeyondL4: true,
 	DecodeGRE:      true,
+	DecodeIPIP:     true,
+	DecodeIP6IP:    true,
 	DecodeVXLAN:    true,
 	DecodeGeneve:   true,
+	DecodeL2TP:     true,
+	DecodeGTPU:     true,
 	DecodePPPoE:    true,
 }
 
 func DefaultDecodeOptions() DecodeOptions {
 	opts := defaultDecodeOptions
 	opts.GREProtocols = []uint32{47}
+	opts.IPIPProtocols = []uint32{4}
+	opts.IP6IPProtocols = []uint32{41}
 	opts.VXLANPorts = []uint32{4789}
 	opts.GenevePorts = []uint32{6081}
+	opts.L2TPPorts = []uint32{1701}
+	opts.GTPUPorts = []uint32{2152}
 	return opts
 }
 
@@ -951,11 +967,11 @@ func finalizePacketView(view packetView) packetView {
 	if view.Model.Features == nil {
 		view.Model.Features = make(map[string]event.FeatureValue)
 	}
-	layerFeatures := make([]event.FeatureValue, 0, len(view.Layers))
-	for _, layer := range view.Layers {
-		layerFeatures = append(layerFeatures, event.FeatureString(layer))
+	layerFeatures := make([]event.FeatureValue, len(view.Layers))
+	for i, layer := range view.Layers {
+		layerFeatures[i] = event.FeatureString(layer)
 	}
-	view.Model.Features["layer_kinds"] = event.FeatureList(layerFeatures...)
+	view.Model.Features["layer_kinds"] = event.FeatureValue{List: layerFeatures}
 	view.Model.Features["ip_depth"] = event.FeatureUint64(uint64(packetIPDepth(view.Model)))
 	if len(view.Tuples) > 1 {
 		view.Model.Features["encap_depth"] = event.FeatureUint64(uint64(len(view.Tuples) - 1))
@@ -987,8 +1003,11 @@ func parsePacketViewWithOptions(data []byte, protocol uint32, opts DecodeOptions
 		return packetView{}, fmt.Errorf("empty packet header")
 	}
 	view := packetView{
+		Layers: make([]string, 0, 6),
+		Tuples: make([]packetTuple, 0, 2),
 		Model: &event.PacketModel{
-			Features: make(map[string]event.FeatureValue),
+			Layers:   make([]event.LayerSpec, 0, 8),
+			Features: make(map[string]event.FeatureValue, 2),
 		},
 	}
 	offset := 0
@@ -1044,6 +1063,16 @@ func parsePacketViewWithOptions(data []byte, protocol uint32, opts DecodeOptions
 				},
 			})
 			view.Tuples = append(view.Tuples, tuple)
+			if opts.DecodeBeyondL4 && opts.DecodeIPIP && protocolMatches(nextProto, opts.IPIPProtocols, 4) {
+				offset += nextOffset
+				etherType = 0x0800
+				continue
+			}
+			if opts.DecodeBeyondL4 && opts.DecodeIP6IP && protocolMatches(nextProto, opts.IP6IPProtocols, 41) {
+				offset += nextOffset
+				etherType = 0x86dd
+				continue
+			}
 			if opts.DecodeGRE && protocolMatches(nextProto, opts.GREProtocols, 47) {
 				innerOffset, innerProto, err := parseGRE(data[offset+nextOffset:], &view)
 				if err != nil {
@@ -1054,7 +1083,7 @@ func parsePacketViewWithOptions(data []byte, protocol uint32, opts DecodeOptions
 				}
 				offset += nextOffset + innerOffset
 				etherType = innerProto
-				if etherType == 0x6558 {
+				if shouldParseEthernetPayload(etherType) {
 					nextOffset, nextEtherType, err := parseEthernet(data[offset:], &view, false)
 					if err != nil {
 						return view, nil
@@ -1063,14 +1092,14 @@ func parsePacketViewWithOptions(data []byte, protocol uint32, opts DecodeOptions
 					etherType = nextEtherType
 					continue
 				}
-				if etherType == 0x0800 || etherType == 0x86dd || etherType == 0x8847 || etherType == 0x8848 || etherType == 0x8864 {
+				if canContinueEtherType(etherType) {
 					continue
 				}
 			}
 			if opts.DecodeBeyondL4 && tuple.Proto == 17 {
 				if innerOffset, innerEtherType, err := parseUDPTunnel(data[offset+nextOffset:], tuple, &view, opts); err == nil {
 					offset += nextOffset + innerOffset
-					if innerEtherType == 0x6558 {
+					if shouldParseEthernetPayload(innerEtherType) {
 						nextOffset, nextEtherType, err := parseEthernet(data[offset:], &view, false)
 						if err != nil {
 							return view, nil
@@ -1080,7 +1109,7 @@ func parsePacketViewWithOptions(data []byte, protocol uint32, opts DecodeOptions
 						continue
 					}
 					etherType = innerEtherType
-					if etherType == 0x0800 || etherType == 0x86dd || etherType == 0x8847 || etherType == 0x8848 || etherType == 0x8864 {
+					if canContinueEtherType(etherType) {
 						continue
 					}
 				}
@@ -1088,7 +1117,7 @@ func parsePacketViewWithOptions(data []byte, protocol uint32, opts DecodeOptions
 			appendTransportLayer(&view, tuple.Proto)
 			return finalizePacketView(view), nil
 		case etherType == 0x86dd || data[offset]>>4 == 6:
-			nextOffset, tuple, nextProto, err := parseIPv6Tuple(data[offset:])
+			nextOffset, tuple, nextProto, extensionLayers, err := parseIPv6Tuple(data[offset:])
 			if err != nil {
 				return packetView{}, err
 			}
@@ -1103,7 +1132,20 @@ func parsePacketViewWithOptions(data []byte, protocol uint32, opts DecodeOptions
 					FlowLabel:    uint32(data[offset+1]&0x0f)<<16 | uint32(data[offset+2])<<8 | uint32(data[offset+3]),
 				},
 			})
+			for _, layer := range extensionLayers {
+				view.appendLayer(layer)
+			}
 			view.Tuples = append(view.Tuples, tuple)
+			if opts.DecodeBeyondL4 && opts.DecodeIPIP && protocolMatches(nextProto, opts.IPIPProtocols, 4) {
+				offset += nextOffset
+				etherType = 0x0800
+				continue
+			}
+			if opts.DecodeBeyondL4 && opts.DecodeIP6IP && protocolMatches(nextProto, opts.IP6IPProtocols, 41) {
+				offset += nextOffset
+				etherType = 0x86dd
+				continue
+			}
 			if opts.DecodeGRE && protocolMatches(nextProto, opts.GREProtocols, 47) {
 				innerOffset, innerProto, err := parseGRE(data[offset+nextOffset:], &view)
 				if err != nil {
@@ -1114,7 +1156,7 @@ func parsePacketViewWithOptions(data []byte, protocol uint32, opts DecodeOptions
 				}
 				offset += nextOffset + innerOffset
 				etherType = innerProto
-				if etherType == 0x6558 {
+				if shouldParseEthernetPayload(etherType) {
 					nextOffset, nextEtherType, err := parseEthernet(data[offset:], &view, false)
 					if err != nil {
 						return view, nil
@@ -1123,14 +1165,14 @@ func parsePacketViewWithOptions(data []byte, protocol uint32, opts DecodeOptions
 					etherType = nextEtherType
 					continue
 				}
-				if etherType == 0x0800 || etherType == 0x86dd || etherType == 0x8847 || etherType == 0x8848 || etherType == 0x8864 {
+				if canContinueEtherType(etherType) {
 					continue
 				}
 			}
 			if opts.DecodeBeyondL4 && tuple.Proto == 17 {
 				if innerOffset, innerEtherType, err := parseUDPTunnel(data[offset+nextOffset:], tuple, &view, opts); err == nil {
 					offset += nextOffset + innerOffset
-					if innerEtherType == 0x6558 {
+					if shouldParseEthernetPayload(innerEtherType) {
 						nextOffset, nextEtherType, err := parseEthernet(data[offset:], &view, false)
 						if err != nil {
 							return view, nil
@@ -1140,7 +1182,7 @@ func parsePacketViewWithOptions(data []byte, protocol uint32, opts DecodeOptions
 						continue
 					}
 					etherType = innerEtherType
-					if etherType == 0x0800 || etherType == 0x86dd || etherType == 0x8847 || etherType == 0x8848 || etherType == 0x8864 {
+					if canContinueEtherType(etherType) {
 						continue
 					}
 				}
@@ -1220,6 +1262,19 @@ func parseEthernet(data []byte, view *packetView, captureMAC bool) (int, uint16,
 	return offset, etherType, nil
 }
 
+func shouldParseEthernetPayload(etherType uint16) bool {
+	return etherType == 0x6558
+}
+
+func canContinueEtherType(etherType uint16) bool {
+	switch etherType {
+	case 0x0800, 0x86dd, 0x8847, 0x8848, 0x8864:
+		return true
+	default:
+		return false
+	}
+}
+
 func parseIPv4Tuple(data []byte) (int, packetTuple, uint32, error) {
 	if len(data) < 20 {
 		return 0, packetTuple{}, 0, fmt.Errorf("truncated ipv4 header")
@@ -1248,45 +1303,75 @@ func parseIPv4Tuple(data []byte) (int, packetTuple, uint32, error) {
 	return ihl, tuple, tuple.Proto, nil
 }
 
-func parseIPv6Tuple(data []byte) (int, packetTuple, uint32, error) {
+func parseIPv6Tuple(data []byte) (int, packetTuple, uint32, []event.LayerSpec, error) {
 	if len(data) < 40 {
-		return 0, packetTuple{}, 0, fmt.Errorf("truncated ipv6 header")
+		return 0, packetTuple{}, 0, nil, fmt.Errorf("truncated ipv6 header")
 	}
 	src, ok := netip.AddrFromSlice(data[8:24])
 	if !ok {
-		return 0, packetTuple{}, 0, fmt.Errorf("invalid ipv6 source address")
+		return 0, packetTuple{}, 0, nil, fmt.Errorf("invalid ipv6 source address")
 	}
 	dst, ok := netip.AddrFromSlice(data[24:40])
 	if !ok {
-		return 0, packetTuple{}, 0, fmt.Errorf("invalid ipv6 destination address")
+		return 0, packetTuple{}, 0, nil, fmt.Errorf("invalid ipv6 destination address")
 	}
 	nextHeader := data[6]
 	offset := 40
+	var extensionLayers []event.LayerSpec
 	for {
 		if !isIPv6ExtensionHeader(nextHeader) {
 			break
 		}
 		if len(data) < offset+2 {
-			return 0, packetTuple{}, 0, fmt.Errorf("truncated ipv6 extension header")
+			return 0, packetTuple{}, 0, nil, fmt.Errorf("truncated ipv6 extension header")
 		}
 		switch nextHeader {
 		case 44:
 			if len(data) < offset+8 {
-				return 0, packetTuple{}, 0, fmt.Errorf("truncated ipv6 fragment header")
+				return 0, packetTuple{}, 0, nil, fmt.Errorf("truncated ipv6 fragment header")
 			}
+			extensionLayers = append(extensionLayers, event.LayerSpec{
+				Kind: "ipv6_fragment",
+				Features: map[string]event.FeatureValue{
+					"next_header": event.FeatureUint64(uint64(data[offset])),
+				},
+			})
 			nextHeader = data[offset]
 			offset += 8
 		case 51:
 			hdrLen := (int(data[offset+1]) + 2) * 4
 			if len(data) < offset+hdrLen {
-				return 0, packetTuple{}, 0, fmt.Errorf("truncated ipv6 authentication header")
+				return 0, packetTuple{}, 0, nil, fmt.Errorf("truncated ipv6 authentication header")
 			}
+			extensionLayers = append(extensionLayers, event.LayerSpec{
+				Kind: "ipv6_authentication",
+				Features: map[string]event.FeatureValue{
+					"next_header": event.FeatureUint64(uint64(data[offset])),
+				},
+			})
 			nextHeader = data[offset]
 			offset += hdrLen
 		default:
 			hdrLen := (int(data[offset+1]) + 1) * 8
 			if len(data) < offset+hdrLen {
-				return 0, packetTuple{}, 0, fmt.Errorf("truncated ipv6 extension header")
+				return 0, packetTuple{}, 0, nil, fmt.Errorf("truncated ipv6 extension header")
+			}
+			if nextHeader == 43 {
+				extensionLayers = append(extensionLayers, event.LayerSpec{
+					Kind: "ipv6_routing",
+					Features: map[string]event.FeatureValue{
+						"next_header":  event.FeatureUint64(uint64(data[offset])),
+						"routing_type": event.FeatureUint64(uint64(data[offset+2])),
+					},
+				})
+			} else {
+				extensionLayers = append(extensionLayers, event.LayerSpec{
+					Kind: "ipv6_extension",
+					Features: map[string]event.FeatureValue{
+						"header":      event.FeatureUint64(uint64(nextHeader)),
+						"next_header": event.FeatureUint64(uint64(data[offset])),
+					},
+				})
 			}
 			nextHeader = data[offset]
 			offset += hdrLen
@@ -1301,7 +1386,7 @@ func parseIPv6Tuple(data []byte) (int, packetTuple, uint32, error) {
 		tuple.SrcPort = uint32(uint16(data[offset])<<8 | uint16(data[offset+1]))
 		tuple.DstPort = uint32(uint16(data[offset+2])<<8 | uint16(data[offset+3]))
 	}
-	return offset, tuple, tuple.Proto, nil
+	return offset, tuple, tuple.Proto, extensionLayers, nil
 }
 
 func parseGRE(data []byte, view *packetView) (int, uint16, error) {
@@ -1369,8 +1454,122 @@ func parseUDPTunnel(data []byte, tuple packetTuple, view *packetView, opts Decod
 			},
 		})
 		return offset, proto, nil
+	case opts.DecodeL2TP && portMatches(tuple, opts.L2TPPorts, 1701):
+		return parseL2TP(data, view)
+	case opts.DecodeGTPU && portMatches(tuple, opts.GTPUPorts, 2152):
+		return parseGTPU(data, view)
 	default:
 		return 0, 0, fmt.Errorf("not a supported udp tunnel")
+	}
+}
+
+func parseL2TP(data []byte, view *packetView) (int, uint16, error) {
+	if len(data) < 14 {
+		return 0, 0, fmt.Errorf("truncated l2tp header")
+	}
+	flags := binary.BigEndian.Uint16(data[8:10])
+	version := flags & 0x000f
+	if version != 2 {
+		return 0, 0, fmt.Errorf("unsupported l2tp version")
+	}
+	offset := 10
+	if flags&0x4000 != 0 {
+		if len(data) < offset+2 {
+			return 0, 0, fmt.Errorf("truncated l2tp length")
+		}
+		offset += 2
+	}
+	if len(data) < offset+4 {
+		return 0, 0, fmt.Errorf("truncated l2tp session")
+	}
+	tunnelID := binary.BigEndian.Uint16(data[offset : offset+2])
+	sessionID := binary.BigEndian.Uint16(data[offset+2 : offset+4])
+	offset += 4
+	if flags&0x0800 != 0 {
+		if len(data) < offset+4 {
+			return 0, 0, fmt.Errorf("truncated l2tp sequence")
+		}
+		offset += 4
+	}
+	if flags&0x0200 != 0 {
+		if len(data) < offset+2 {
+			return 0, 0, fmt.Errorf("truncated l2tp offset size")
+		}
+		offsetSize := int(binary.BigEndian.Uint16(data[offset : offset+2]))
+		offset += 2 + offsetSize
+	}
+	if len(data) < offset+2 {
+		return 0, 0, fmt.Errorf("truncated l2tp payload")
+	}
+	if len(data) >= offset+4 && data[offset] == 0xff && data[offset+1] == 0x03 {
+		offset += 2
+	}
+	proto := binary.BigEndian.Uint16(data[offset : offset+2])
+	offset += 2
+	view.appendLayer(event.LayerSpec{
+		Kind: "l2tp",
+		Features: map[string]event.FeatureValue{
+			"tunnel_id":  event.FeatureUint64(uint64(tunnelID)),
+			"session_id": event.FeatureUint64(uint64(sessionID)),
+			"version":    event.FeatureUint64(uint64(version)),
+		},
+	})
+	switch proto {
+	case 0x0021:
+		return offset, 0x0800, nil
+	case 0x0057:
+		return offset, 0x86dd, nil
+	default:
+		return 0, 0, fmt.Errorf("unsupported l2tp ppp payload")
+	}
+}
+
+func parseGTPU(data []byte, view *packetView) (int, uint16, error) {
+	if len(data) < 16 {
+		return 0, 0, fmt.Errorf("truncated gtpu header")
+	}
+	flags := data[8]
+	messageType := data[9]
+	if flags>>5 != 1 || messageType != 0xff {
+		return 0, 0, fmt.Errorf("unsupported gtpu message")
+	}
+	teid := binary.BigEndian.Uint32(data[12:16])
+	offset := 16
+	if flags&0x07 != 0 {
+		if len(data) < offset+4 {
+			return 0, 0, fmt.Errorf("truncated gtpu optional fields")
+		}
+		nextExt := data[offset+3]
+		offset += 4
+		for nextExt != 0 {
+			if len(data) < offset+2 {
+				return 0, 0, fmt.Errorf("truncated gtpu extension")
+			}
+			extLen := int(data[offset+1]) * 4
+			if extLen == 0 || len(data) < offset+2+extLen {
+				return 0, 0, fmt.Errorf("truncated gtpu extension payload")
+			}
+			nextExt = data[offset+1+extLen]
+			offset += 2 + extLen
+		}
+	}
+	if len(data) <= offset {
+		return 0, 0, fmt.Errorf("missing gtpu payload")
+	}
+	view.appendLayer(event.LayerSpec{
+		Kind: "gtpu",
+		Features: map[string]event.FeatureValue{
+			"teid":         event.FeatureUint64(uint64(teid)),
+			"message_type": event.FeatureUint64(uint64(messageType)),
+		},
+	})
+	switch data[offset] >> 4 {
+	case 4:
+		return offset, 0x0800, nil
+	case 6:
+		return offset, 0x86dd, nil
+	default:
+		return 0, 0, fmt.Errorf("unsupported gtpu payload")
 	}
 }
 
@@ -1454,6 +1653,8 @@ func parsePPPoE(data []byte, view *packetView) (int, uint16, error) {
 		return 8, 0x0800, nil
 	case 0x0057:
 		return 8, 0x86dd, nil
+	case 0x0281, 0x0283:
+		return 8, 0x8847, nil
 	default:
 		return 0, 0, fmt.Errorf("unsupported ppp payload")
 	}
@@ -1505,7 +1706,19 @@ func formatMAC(data []byte) string {
 	if len(data) != 6 {
 		return ""
 	}
-	return fmt.Sprintf("%02x:%02x:%02x:%02x:%02x:%02x", data[0], data[1], data[2], data[3], data[4], data[5])
+	const hex = "0123456789abcdef"
+	var out [17]byte
+	j := 0
+	for i := 0; i < 6; i++ {
+		if i > 0 {
+			out[j] = ':'
+			j++
+		}
+		out[j] = hex[data[i]>>4]
+		out[j+1] = hex[data[i]&0x0f]
+		j += 2
+	}
+	return string(out[:])
 }
 
 func isIPv6ExtensionHeader(nextHeader byte) bool {

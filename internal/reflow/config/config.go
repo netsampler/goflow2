@@ -56,13 +56,17 @@ type PacketDecoderConfig struct {
 }
 
 type PacketEncapsulationConfig struct {
-	GRE    GREEncapsulationConfig    `yaml:"gre"`
-	VXLAN  PortEncapsulationConfig   `yaml:"vxlan"`
-	Geneve PortEncapsulationConfig   `yaml:"geneve"`
-	PPPoE  ToggleEncapsulationConfig `yaml:"pppoe"`
+	GRE    ProtocolEncapsulationConfig `yaml:"gre"`
+	IPIP   ProtocolEncapsulationConfig `yaml:"ipip"`
+	IP6IP  ProtocolEncapsulationConfig `yaml:"ip6ip"`
+	VXLAN  PortEncapsulationConfig     `yaml:"vxlan"`
+	Geneve PortEncapsulationConfig     `yaml:"geneve"`
+	L2TP   PortEncapsulationConfig     `yaml:"l2tp"`
+	GTPU   PortEncapsulationConfig     `yaml:"gtpu"`
+	PPPoE  ToggleEncapsulationConfig   `yaml:"pppoe"`
 }
 
-type GREEncapsulationConfig struct {
+type ProtocolEncapsulationConfig struct {
 	Enabled   *bool    `yaml:"enabled"`
 	Protocols []uint32 `yaml:"protocols"`
 }
@@ -324,19 +328,43 @@ func (c *Config) setDefaults(configPath string) error {
 }
 
 func validatePacketDecoderConfig(cfg PacketDecoderConfig) error {
-	for _, protocol := range cfg.Encapsulations.GRE.Protocols {
+	if err := validateIPProtocols("encapsulations.gre.protocols", cfg.Encapsulations.GRE.Protocols); err != nil {
+		return err
+	}
+	if err := validateIPProtocols("encapsulations.ipip.protocols", cfg.Encapsulations.IPIP.Protocols); err != nil {
+		return err
+	}
+	if err := validateIPProtocols("encapsulations.ip6ip.protocols", cfg.Encapsulations.IP6IP.Protocols); err != nil {
+		return err
+	}
+	if err := validateUDPPorts("encapsulations.vxlan.ports", cfg.Encapsulations.VXLAN.Ports); err != nil {
+		return err
+	}
+	if err := validateUDPPorts("encapsulations.geneve.ports", cfg.Encapsulations.Geneve.Ports); err != nil {
+		return err
+	}
+	if err := validateUDPPorts("encapsulations.l2tp.ports", cfg.Encapsulations.L2TP.Ports); err != nil {
+		return err
+	}
+	if err := validateUDPPorts("encapsulations.gtpu.ports", cfg.Encapsulations.GTPU.Ports); err != nil {
+		return err
+	}
+	return nil
+}
+
+func validateIPProtocols(name string, protocols []uint32) error {
+	for _, protocol := range protocols {
 		if protocol > 255 {
-			return fmt.Errorf("encapsulations.gre.protocols contains invalid IP protocol %d", protocol)
+			return fmt.Errorf("%s contains invalid IP protocol %d", name, protocol)
 		}
 	}
-	for _, port := range cfg.Encapsulations.VXLAN.Ports {
+	return nil
+}
+
+func validateUDPPorts(name string, ports []uint32) error {
+	for _, port := range ports {
 		if port > 65535 {
-			return fmt.Errorf("encapsulations.vxlan.ports contains invalid UDP port %d", port)
-		}
-	}
-	for _, port := range cfg.Encapsulations.Geneve.Ports {
-		if port > 65535 {
-			return fmt.Errorf("encapsulations.geneve.ports contains invalid UDP port %d", port)
+			return fmt.Errorf("%s contains invalid UDP port %d", name, port)
 		}
 	}
 	return nil
