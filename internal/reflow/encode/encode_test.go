@@ -63,6 +63,49 @@ func TestJSONEncoderDropsConfiguredFieldsFromCanonicalOutput(t *testing.T) {
 	}
 }
 
+func TestJSONEncoderGoFlow2V2PrefersNanosecondTimeFields(t *testing.T) {
+	enc := NewJSONEncoder(config.EncoderConfig{
+		Type: "json",
+		JSON: config.JSONConfig{
+			Flavor: "goflow2v2",
+		},
+	})
+
+	payloads, err := enc.Encode(&event.Event{
+		Fields: map[string]any{
+			"flow_type":          "sflow",
+			"start_time_unix":    int64(1_700_000_000_100),
+			"end_time_unix":      int64(1_700_000_000_900),
+			"time_flow_start_ns": int64(1_700_000_000_100_123_456),
+			"time_flow_end_ns":   int64(1_700_000_000_900_123_456),
+		},
+	})
+	if err != nil {
+		t.Fatalf("Encode returned error: %v", err)
+	}
+
+	dec := json.NewDecoder(bytes.NewReader(payloads[0]))
+	dec.UseNumber()
+	var decoded map[string]any
+	if err := dec.Decode(&decoded); err != nil {
+		t.Fatalf("unmarshal payload: %v", err)
+	}
+	startNS, err := decoded["time_flow_start_ns"].(json.Number).Int64()
+	if err != nil {
+		t.Fatalf("parse time_flow_start_ns: %v", err)
+	}
+	if startNS != 1_700_000_000_100_123_456 {
+		t.Fatalf("expected nanosecond start time, got %d", startNS)
+	}
+	endNS, err := decoded["time_flow_end_ns"].(json.Number).Int64()
+	if err != nil {
+		t.Fatalf("parse time_flow_end_ns: %v", err)
+	}
+	if endNS != 1_700_000_000_900_123_456 {
+		t.Fatalf("expected nanosecond end time, got %d", endNS)
+	}
+}
+
 func TestProtobufEncoderEncodesCanonicalFlowMessage(t *testing.T) {
 	enc, err := New(config.EncoderConfig{
 		Type: "protobuf",
@@ -77,20 +120,22 @@ func TestProtobufEncoderEncodesCanonicalFlowMessage(t *testing.T) {
 	payloads, err := enc.Encode(&event.Event{
 		ReceivedAt: time.Unix(1, 200).UTC(),
 		Fields: map[string]any{
-			"flow_type":       "sflow",
-			"agent_ip":        "192.0.2.1",
-			"sampling_rate":   uint32(100),
-			"start_time_unix": int64(1700000000100),
-			"end_time_unix":   int64(1700000000900),
-			"bytes":           int64(321),
-			"packets":         int64(7),
-			"src_addr":        "192.0.2.10",
-			"dst_addr":        "192.0.2.20",
-			"proto":           uint32(17),
-			"src_port":        uint32(1234),
-			"dst_port":        uint32(4321),
-			"input_if":        uint32(9),
-			"output_if":       uint32(10),
+			"flow_type":          "sflow",
+			"agent_ip":           "192.0.2.1",
+			"sampling_rate":      uint32(100),
+			"start_time_unix":    int64(1700000000100),
+			"end_time_unix":      int64(1700000000900),
+			"time_flow_start_ns": int64(1_700_000_000_100_123_456),
+			"time_flow_end_ns":   int64(1_700_000_000_900_123_456),
+			"bytes":              int64(321),
+			"packets":            int64(7),
+			"src_addr":           "192.0.2.10",
+			"dst_addr":           "192.0.2.20",
+			"proto":              uint32(17),
+			"src_port":           uint32(1234),
+			"dst_port":           uint32(4321),
+			"input_if":           uint32(9),
+			"output_if":          uint32(10),
 		},
 	})
 	if err != nil {
@@ -112,6 +157,9 @@ func TestProtobufEncoderEncodesCanonicalFlowMessage(t *testing.T) {
 	}
 	if msg.Bytes != 321 || msg.Packets != 7 {
 		t.Fatalf("expected bytes=321 packets=7, got bytes=%d packets=%d", msg.Bytes, msg.Packets)
+	}
+	if msg.TimeFlowStartNs != 1_700_000_000_100_123_456 || msg.TimeFlowEndNs != 1_700_000_000_900_123_456 {
+		t.Fatalf("expected nanosecond flow window, got start=%d end=%d", msg.TimeFlowStartNs, msg.TimeFlowEndNs)
 	}
 	if msg.SrcPort != 1234 || msg.DstPort != 4321 {
 		t.Fatalf("expected ports 1234/4321, got %d/%d", msg.SrcPort, msg.DstPort)

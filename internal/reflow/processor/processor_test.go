@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"testing"
+	"time"
 
 	"github.com/netsampler/goflow2/v3/internal/reflow/config"
 	"github.com/netsampler/goflow2/v3/internal/reflow/event"
@@ -188,6 +189,84 @@ func TestBuiltinProcessBytesDecodesPacketTuple(t *testing.T) {
 	}
 	if len(events[0].Packet.Layers) != 3 {
 		t.Fatalf("expected 3 packet layers, got %d", len(events[0].Packet.Layers))
+	}
+}
+
+func TestBuiltinProcessBytesSetsNanosecondPacketWindowFromInterfaceSpeed(t *testing.T) {
+	proc := NewBuiltin(config.ProcessorConfig{})
+	receivedAt := time.Unix(1_700_000_000, 123_000_000).UTC()
+	packet := []byte{
+		0x00, 0x11, 0x22, 0x33, 0x44, 0x55,
+		0x66, 0x77, 0x88, 0x99, 0xaa, 0xbb,
+		0x08, 0x00,
+		0x45, 0x00, 0x00, 0x28, 0x00, 0x00, 0x00, 0x00, 0x40, 0x06, 0x00, 0x00,
+		0xc0, 0x00, 0x02, 0x01,
+		0xc6, 0x33, 0x64, 0x02,
+		0x30, 0x39, 0x01, 0xbb,
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x50, 0x02, 0x00, 0x00,
+		0x00, 0x00, 0x00, 0x00,
+	}
+
+	events, err := proc.Process(&event.Event{
+		ReceivedAt: receivedAt,
+		Source:     event.SourceMetadata{Type: "bytes"},
+		Payload:    packet,
+		Fields: map[string]any{
+			"wire_length": uint32(250_000),
+			"if_speed":    uint64(1_000_000_000),
+		},
+	})
+	if err != nil {
+		t.Fatalf("Process returned error: %v", err)
+	}
+
+	fields := events[0].Fields
+	startNS := receivedAt.UnixNano()
+	endNS := startNS + int64(2*time.Millisecond)
+	if got := fields["time_flow_start_ns"]; got != startNS {
+		t.Fatalf("expected time_flow_start_ns=%d, got %#v", startNS, got)
+	}
+	if got := fields["time_flow_end_ns"]; got != endNS {
+		t.Fatalf("expected time_flow_end_ns=%d, got %#v", endNS, got)
+	}
+	if got := fields["start_time_unix"]; got != receivedAt.UnixMilli() {
+		t.Fatalf("expected start_time_unix=%d, got %#v", receivedAt.UnixMilli(), got)
+	}
+	if got := fields["end_time_unix"]; got != receivedAt.Add(2*time.Millisecond).UnixMilli() {
+		t.Fatalf("expected end_time_unix=%d, got %#v", receivedAt.Add(2*time.Millisecond).UnixMilli(), got)
+	}
+}
+
+func TestBuiltinProcessGoFlow2V2PreservesNanosecondTimeAliases(t *testing.T) {
+	proc := NewBuiltin(config.ProcessorConfig{})
+
+	events, err := proc.Process(&event.Event{
+		Source: event.SourceMetadata{
+			Type: "json",
+			JSON: event.JSONMetadata{Flavor: "goflow2v2"},
+		},
+		Message: []byte(`{
+			"type": 1,
+			"time_flow_start_ns": 1700000000100123456,
+			"time_flow_end_ns": 1700000000900123456
+		}`),
+	})
+	if err != nil {
+		t.Fatalf("Process returned error: %v", err)
+	}
+
+	fields := events[0].Fields
+	if got := fields["time_flow_start_ns"]; got != int64(1_700_000_000_100_123_456) {
+		t.Fatalf("expected time_flow_start_ns to preserve nanoseconds, got %#v", got)
+	}
+	if got := fields["time_flow_end_ns"]; got != int64(1_700_000_000_900_123_456) {
+		t.Fatalf("expected time_flow_end_ns to preserve nanoseconds, got %#v", got)
+	}
+	if got := fields["start_time_unix"]; got != int64(1_700_000_000_100) {
+		t.Fatalf("expected start_time_unix milliseconds, got %#v", got)
+	}
+	if got := fields["end_time_unix"]; got != int64(1_700_000_000_900) {
+		t.Fatalf("expected end_time_unix milliseconds, got %#v", got)
 	}
 }
 

@@ -1,6 +1,7 @@
 package processor
 
 import (
+	"bytes"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
@@ -83,8 +84,13 @@ func (p *Builtin) processBytes(evt *event.Event) ([]*event.Event, error) {
 	if evt.ReceivedAt.IsZero() {
 		evt.ReceivedAt = time.Now().UTC()
 	}
-	fields["start_time_unix"] = evt.ReceivedAt.UnixMilli()
-	fields["end_time_unix"] = evt.ReceivedAt.UnixMilli()
+	startNS, endNS := packetTimeWindowNS(evt.ReceivedAt, frameLength, fieldUint64(fields, "if_speed"))
+	fields["time_flow_start_ns"] = startNS
+	fields["time_flow_end_ns"] = endNS
+	// Aggregators use the existing millisecond fields for bucket windows and
+	// min/max merging; nanosecond aliases above preserve packet timing precision.
+	fields["start_time_unix"] = startNS / int64(time.Millisecond)
+	fields["end_time_unix"] = endNS / int64(time.Millisecond)
 
 	// sFlow raw packet headers expect protocol metadata in addition to the bytes.
 	// ReFlow currently assumes Ethernet-framed capture for live pcap input.
@@ -257,7 +263,9 @@ func (p *Builtin) processJSONRawPacketHeader(evt *event.Event) ([]*event.Event, 
 // processJSONFlavor maps generic JSON messages into canonical fields based on source metadata.
 func (p *Builtin) processJSONFlavor(evt *event.Event) ([]*event.Event, error) {
 	var payload any
-	if err := json.Unmarshal(evt.Message, &payload); err != nil {
+	decoder := json.NewDecoder(bytes.NewReader(evt.Message))
+	decoder.UseNumber()
+	if err := decoder.Decode(&payload); err != nil {
 		return nil, fmt.Errorf("decode json flavor %q: %w", evt.Source.JSON.Flavor, err)
 	}
 
@@ -314,7 +322,7 @@ func (p *Builtin) processReFlowJSON(evt *event.Event, payload any) ([]*event.Eve
 func (p *Builtin) processReFlowFields(evt *event.Event, record map[string]any) []*event.Event {
 	fields := ensureFields(evt, len(record))
 	for key, value := range record {
-		fields[key] = value
+		fields[key] = normalizeReFlowJSONValue(key, value)
 	}
 	if evt.SFlow == nil && (fieldStringOrZero(fields, "agent_ip") != "" || fieldUint32(fields, "sub_agent_id") != 0 || fieldUint32(fields, "source_id") != 0) {
 		evt.SFlow = &event.SFlowMetadata{
@@ -327,6 +335,24 @@ func (p *Builtin) processReFlowFields(evt *event.Event, record map[string]any) [
 		evt.Message = nil
 	}
 	return []*event.Event{evt}
+}
+
+func normalizeReFlowJSONValue(key string, value any) any {
+	number, ok := value.(json.Number)
+	if !ok {
+		return value
+	}
+	switch key {
+	case "time_flow_start_ns", "time_flow_end_ns":
+		if n, err := number.Int64(); err == nil {
+			return n
+		}
+	}
+	f, err := number.Float64()
+	if err != nil {
+		return value
+	}
+	return f
 }
 
 func packetDecodeOptions(cfg config.PacketDecoderConfig) packet.DecodeOptions {
@@ -492,6 +518,51 @@ func fieldUint32(fields map[string]any, key string) uint32 {
 	return uint32FromAny(val)
 }
 
+// fieldUint64 reads one field from the generic field map and normalizes it to u64.
+func fieldUint64(fields map[string]any, key string) uint64 {
+	if fields == nil {
+		return 0
+	}
+	val, ok := fields[key]
+	if !ok {
+		return 0
+	}
+	return uint64FromAny(val)
+}
+
+// packetTimeWindowNS preserves nanosecond timing for raw packet events. When an
+// interface speed is available, the end time includes the estimated wire time;
+// otherwise a sampled packet is treated as an instant.
+func packetTimeWindowNS(start time.Time, frameLength uint32, ifSpeed uint64) (int64, int64) {
+	startNS := start.UnixNano()
+	durationNS := packetTransmissionDurationNS(frameLength, ifSpeed)
+	const maxInt64 = int64(1<<63 - 1)
+	if durationNS > 0 && startNS > maxInt64-durationNS {
+		return startNS, maxInt64
+	}
+	return startNS, startNS + durationNS
+}
+
+func packetTransmissionDurationNS(frameLength uint32, ifSpeed uint64) int64 {
+	if frameLength == 0 || ifSpeed == 0 {
+		return 0
+	}
+	const maxInt64 = uint64(1<<63 - 1)
+	bits := uint64(frameLength) * 8
+	if bits > maxInt64/uint64(time.Second) {
+		return int64(maxInt64)
+	}
+	bitNanos := bits * uint64(time.Second)
+	durationNS := bitNanos / ifSpeed
+	if bitNanos%ifSpeed != 0 {
+		durationNS++
+	}
+	if durationNS > maxInt64 {
+		return int64(maxInt64)
+	}
+	return int64(durationNS)
+}
+
 // stringAlias returns the first present source key as a string.
 func stringAlias(m map[string]any, keys ...string) string {
 	for _, key := range keys {
@@ -547,6 +618,12 @@ func setTimeNSAlias(dst map[string]any, src map[string]any, dstKey string, srcKe
 				return
 			}
 			dst[dstKey] = ns / int64(time.Millisecond)
+			switch dstKey {
+			case "start_time_unix":
+				dst["time_flow_start_ns"] = ns
+			case "end_time_unix":
+				dst["time_flow_end_ns"] = ns
+			}
 			return
 		}
 	}
@@ -560,13 +637,71 @@ func uint32FromAny(val any) uint32 {
 	case uint64:
 		return uint32(v)
 	case int:
+		if v < 0 {
+			return 0
+		}
 		return uint32(v)
 	case int64:
+		if v < 0 {
+			return 0
+		}
 		return uint32(v)
 	case float64:
+		if v < 0 {
+			return 0
+		}
 		return uint32(v)
+	case json.Number:
+		n, _ := v.Int64()
+		if n < 0 {
+			return 0
+		}
+		return uint32(n)
 	case string:
-		return uint32(int64FromString(v))
+		n := int64FromString(v)
+		if n < 0 {
+			return 0
+		}
+		return uint32(n)
+	default:
+		return 0
+	}
+}
+
+// uint64FromAny normalizes the common JSON and generic-map number representations.
+func uint64FromAny(val any) uint64 {
+	switch v := val.(type) {
+	case uint64:
+		return v
+	case uint32:
+		return uint64(v)
+	case int:
+		if v < 0 {
+			return 0
+		}
+		return uint64(v)
+	case int64:
+		if v < 0 {
+			return 0
+		}
+		return uint64(v)
+	case float64:
+		if v < 0 {
+			return 0
+		}
+		return uint64(v)
+	case json.Number:
+		n, _ := v.Int64()
+		if n < 0 {
+			return 0
+		}
+		return uint64(n)
+	case string:
+		n := int64FromString(v)
+		if n < 0 {
+			return 0
+		}
+		return uint64(n)
 	default:
 		return 0
 	}
@@ -585,6 +720,9 @@ func int64FromAny(val any) int64 {
 		return int64(v)
 	case float64:
 		return int64(v)
+	case json.Number:
+		n, _ := v.Int64()
+		return n
 	case string:
 		return int64FromString(v)
 	default:

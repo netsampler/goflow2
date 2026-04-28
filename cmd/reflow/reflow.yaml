@@ -18,9 +18,9 @@ processor:
 
 encoder:
   type: sflow
-  # Batching is per encoder worker. Keep this at 1 when you want stronger
-  # packing and more multi-sample sFlow datagrams.
-  workers: 2
+  # Ordered exporters (sflow, ipfix, netflowv9, netflowv5) use one encoder
+  # worker so packet sequence numbers and template refreshes stay ordered.
+  workers: 1
   max_datagram_bytes: 1400
   batch:
     enabled: true

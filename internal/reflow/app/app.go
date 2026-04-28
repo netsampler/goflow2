@@ -61,6 +61,13 @@ func New(cfg *config.Config) (*App, error) {
 		encoderCfg.SFlow.AgentIP = cfg.Sink.AgentIP
 	}
 	encoderWorkers := cfg.Encoder.Workers
+	// Ordered exporters own protocol sequence numbers and template refresh state.
+	// The effective config is:
+	//
+	//   encoder:
+	//     type: sflow # also ipfix, netflowv9, or netflowv5
+	//     workers: 1
+	//
 	if requiresOrderedExporter(encoderCfg.Type) && encoderWorkers > 1 {
 		logger.Warn(
 			"forcing encoder workers to 1 for ordered exporter",
@@ -138,7 +145,7 @@ func (a *App) Run(ctx context.Context) error {
 				ticker = time.NewTicker(interval)
 				defer ticker.Stop()
 			}
-			forward := func(events []*event.Event) {
+			sendToEncoder := func(events []*event.Event) {
 				for _, evt := range events {
 					encodeJobs <- evt
 				}
@@ -159,7 +166,9 @@ func (a *App) Run(ctx context.Context) error {
 					a.logger.Error("aggregate flush error", slog.String("stream", worker.cfg.Stream), slog.String("error", err.Error()))
 					return
 				}
-				forward(events)
+				// Aggregator Flush/Close returns bucket events that are ready
+				// to leave the aggregation stage, so pass them to the encoder.
+				sendToEncoder(events)
 			}
 			for {
 				select {
@@ -175,7 +184,7 @@ func (a *App) Run(ctx context.Context) error {
 						a.logger.Error("aggregate error", slog.String("stream", worker.cfg.Stream), slog.String("error", err.Error()))
 						continue
 					}
-					forward(events)
+					sendToEncoder(events)
 				}
 			}
 		}(worker)
