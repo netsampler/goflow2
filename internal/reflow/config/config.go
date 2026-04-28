@@ -43,10 +43,37 @@ type ProcessorConfig struct {
 }
 
 type BuiltinProcessorConfig struct {
-	DropMessage          bool `yaml:"drop_message"`
-	DropPayload          bool `yaml:"drop_payload"`
-	DisablePacketMapping bool `yaml:"disable_packet_mapping"`
-	TruncatePacketBytes  int  `yaml:"truncate_packet_bytes"`
+	DropMessage          bool                `yaml:"drop_message"`
+	DropPayload          bool                `yaml:"drop_payload"`
+	DisablePacketMapping bool                `yaml:"disable_packet_mapping"`
+	TruncatePacketBytes  int                 `yaml:"truncate_packet_bytes"`
+	PacketDecoder        PacketDecoderConfig `yaml:"packet_decoder"`
+}
+
+type PacketDecoderConfig struct {
+	DecodeBeyondL4 *bool                     `yaml:"decode_beyond_l4"`
+	Encapsulations PacketEncapsulationConfig `yaml:"encapsulations"`
+}
+
+type PacketEncapsulationConfig struct {
+	GRE    GREEncapsulationConfig    `yaml:"gre"`
+	VXLAN  PortEncapsulationConfig   `yaml:"vxlan"`
+	Geneve PortEncapsulationConfig   `yaml:"geneve"`
+	PPPoE  ToggleEncapsulationConfig `yaml:"pppoe"`
+}
+
+type GREEncapsulationConfig struct {
+	Enabled   *bool    `yaml:"enabled"`
+	Protocols []uint32 `yaml:"protocols"`
+}
+
+type PortEncapsulationConfig struct {
+	Enabled *bool    `yaml:"enabled"`
+	Ports   []uint32 `yaml:"ports"`
+}
+
+type ToggleEncapsulationConfig struct {
+	Enabled *bool `yaml:"enabled"`
 }
 
 type AggregatorConfig struct {
@@ -205,6 +232,9 @@ func (c *Config) setDefaults(configPath string) error {
 	if c.Processor.Builtin.TruncatePacketBytes < 0 {
 		return fmt.Errorf("processor.builtin.truncate_packet_bytes must be >= 0")
 	}
+	if err := validatePacketDecoderConfig(c.Processor.Builtin.PacketDecoder); err != nil {
+		return fmt.Errorf("processor.builtin.packet_decoder: %w", err)
+	}
 	if len(c.Aggregators) > 0 {
 		for i := range c.Aggregators {
 			applyAggregatorCompatibility(&c.Aggregators[i])
@@ -289,6 +319,25 @@ func (c *Config) setDefaults(configPath string) error {
 	}
 	if (c.Sink.Type == "udp" || c.Sink.Type == "unixgram") && c.Sink.Address == "" {
 		return fmt.Errorf("sink.address is required when sink.type=%s", c.Sink.Type)
+	}
+	return nil
+}
+
+func validatePacketDecoderConfig(cfg PacketDecoderConfig) error {
+	for _, protocol := range cfg.Encapsulations.GRE.Protocols {
+		if protocol > 255 {
+			return fmt.Errorf("encapsulations.gre.protocols contains invalid IP protocol %d", protocol)
+		}
+	}
+	for _, port := range cfg.Encapsulations.VXLAN.Ports {
+		if port > 65535 {
+			return fmt.Errorf("encapsulations.vxlan.ports contains invalid UDP port %d", port)
+		}
+	}
+	for _, port := range cfg.Encapsulations.Geneve.Ports {
+		if port > 65535 {
+			return fmt.Errorf("encapsulations.geneve.ports contains invalid UDP port %d", port)
+		}
 	}
 	return nil
 }

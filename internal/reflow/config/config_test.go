@@ -40,6 +40,21 @@ sources:
 
 processor:
   type: builtin
+  builtin:
+    packet_decoder:
+      decode_beyond_l4: false
+      encapsulations:
+        gre:
+          enabled: true
+          protocols: [47]
+        vxlan:
+          enabled: false
+          ports: [4789, 4790]
+        geneve:
+          enabled: true
+          ports: [6081]
+        pppoe:
+          enabled: false
 
 aggregators:
   - enabled: true
@@ -78,6 +93,22 @@ sink:
 	}
 	if cfg.Sources[0].Address != ":18081" {
 		t.Fatalf("expected sources[0].address=:18081, got %q", cfg.Sources[0].Address)
+	}
+	decoder := cfg.Processor.Builtin.PacketDecoder
+	if decoder.DecodeBeyondL4 == nil || *decoder.DecodeBeyondL4 {
+		t.Fatalf("expected processor packet decoder decode_beyond_l4=false, got %#v", decoder.DecodeBeyondL4)
+	}
+	if decoder.Encapsulations.GRE.Enabled == nil || !*decoder.Encapsulations.GRE.Enabled {
+		t.Fatalf("expected GRE encapsulation enabled=true, got %#v", decoder.Encapsulations.GRE.Enabled)
+	}
+	if len(decoder.Encapsulations.GRE.Protocols) != 1 || decoder.Encapsulations.GRE.Protocols[0] != 47 {
+		t.Fatalf("expected GRE protocols [47], got %#v", decoder.Encapsulations.GRE.Protocols)
+	}
+	if decoder.Encapsulations.VXLAN.Enabled == nil || *decoder.Encapsulations.VXLAN.Enabled {
+		t.Fatalf("expected VXLAN encapsulation enabled=false, got %#v", decoder.Encapsulations.VXLAN.Enabled)
+	}
+	if len(decoder.Encapsulations.VXLAN.Ports) != 2 || decoder.Encapsulations.VXLAN.Ports[1] != 4790 {
+		t.Fatalf("expected VXLAN ports [4789 4790], got %#v", decoder.Encapsulations.VXLAN.Ports)
 	}
 	if len(cfg.Aggregators) != 1 {
 		t.Fatalf("expected 1 aggregator, got %d", len(cfg.Aggregators))

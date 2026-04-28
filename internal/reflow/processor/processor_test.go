@@ -375,9 +375,6 @@ func TestBuiltinProcessBytesExtractsEncapsulatedLayers(t *testing.T) {
 	}
 	expectIPLayer(t, fields, 0, "outer", "203.0.113.1", "203.0.113.2", 47, 0, 0)
 	expectIPLayer(t, fields, 1, "inner", "192.0.2.1", "198.51.100.2", 6, 12345, 443)
-	if got := fields["tunnel_type"]; got != "gre" {
-		t.Fatalf("expected tunnel_type=gre, got %#v", got)
-	}
 	if got := fields["src_addr"]; got != "192.0.2.1" {
 		t.Fatalf("expected inner src_addr=192.0.2.1, got %#v", got)
 	}
@@ -395,25 +392,7 @@ func TestBuiltinProcessBytesExtractsEncapsulatedLayers(t *testing.T) {
 func TestBuiltinProcessBytesExtractsVXLANInnerPacket(t *testing.T) {
 	proc := NewBuiltin(config.ProcessorConfig{})
 
-	packet := []byte{
-		0x00, 0x11, 0x22, 0x33, 0x44, 0x55,
-		0x66, 0x77, 0x88, 0x99, 0xaa, 0xbb,
-		0x08, 0x00,
-		0x45, 0x00, 0x00, 0x5c, 0x00, 0x01, 0x00, 0x00, 0x40, 0x11, 0x00, 0x00,
-		0xcb, 0x00, 0x71, 0x01,
-		0xcb, 0x00, 0x71, 0x02,
-		0x12, 0x34, 0x12, 0xb5, 0x00, 0x48, 0x00, 0x00,
-		0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x64, 0x00,
-		0xde, 0xad, 0xbe, 0xef, 0x00, 0x01,
-		0xde, 0xad, 0xbe, 0xef, 0x00, 0x02,
-		0x08, 0x00,
-		0x45, 0x00, 0x00, 0x28, 0x00, 0x02, 0x00, 0x00, 0x40, 0x06, 0x00, 0x00,
-		0xc0, 0x00, 0x02, 0x01,
-		0xc6, 0x33, 0x64, 0x02,
-		0x30, 0x39, 0x01, 0xbb,
-		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x50, 0x02, 0x00, 0x00,
-		0x00, 0x00, 0x00, 0x00,
-	}
+	packet := vxlanTestPacket(4789)
 
 	events, err := proc.Process(&event.Event{
 		Source:  event.SourceMetadata{Type: "bytes"},
@@ -437,9 +416,6 @@ func TestBuiltinProcessBytesExtractsVXLANInnerPacket(t *testing.T) {
 			t.Fatalf("expected packet_layers[%d]=%q, got %#v", i, want, layers[i])
 		}
 	}
-	if got := fields["tunnel_type"]; got != "vxlan" {
-		t.Fatalf("expected tunnel_type=vxlan, got %#v", got)
-	}
 	if got := fields["outer_src_addr"]; got != "203.0.113.1" {
 		t.Fatalf("expected outer_src_addr=203.0.113.1, got %#v", got)
 	}
@@ -453,6 +429,110 @@ func TestBuiltinProcessBytesExtractsVXLANInnerPacket(t *testing.T) {
 	}
 	if got := fields["dst_addr"]; got != "198.51.100.2" {
 		t.Fatalf("expected inner dst_addr=198.51.100.2, got %#v", got)
+	}
+}
+
+func TestBuiltinProcessBytesCanDisableUDPTunnelDecoding(t *testing.T) {
+	disabled := false
+	proc := NewBuiltin(config.ProcessorConfig{
+		Builtin: config.BuiltinProcessorConfig{
+			PacketDecoder: config.PacketDecoderConfig{
+				DecodeBeyondL4: &disabled,
+			},
+		},
+	})
+
+	events, err := proc.Process(&event.Event{
+		Source:  event.SourceMetadata{Type: "bytes"},
+		Payload: vxlanTestPacket(4789),
+	})
+	if err != nil {
+		t.Fatalf("Process returned error: %v", err)
+	}
+	fields := events[0].Fields
+	layers, ok := fields["packet_layers"].([]string)
+	if !ok {
+		t.Fatalf("expected packet_layers to be []string, got %T", fields["packet_layers"])
+	}
+	expectedLayers := []string{"ethernet", "ipv4", "udp"}
+	if len(layers) != len(expectedLayers) {
+		t.Fatalf("expected %d packet layers, got %#v", len(expectedLayers), layers)
+	}
+	for i, want := range expectedLayers {
+		if layers[i] != want {
+			t.Fatalf("expected packet_layers[%d]=%q, got %#v", i, want, layers[i])
+		}
+	}
+	if got := fields["src_addr"]; got != "203.0.113.1" {
+		t.Fatalf("expected outer src_addr=203.0.113.1, got %#v", got)
+	}
+	if _, ok := fields["outer_src_addr"]; ok {
+		t.Fatalf("did not expect outer_src_addr when UDP tunnel decoding is disabled")
+	}
+}
+
+func TestBuiltinProcessBytesCanDisableVXLANEncapsulation(t *testing.T) {
+	disabled := false
+	proc := NewBuiltin(config.ProcessorConfig{
+		Builtin: config.BuiltinProcessorConfig{
+			PacketDecoder: config.PacketDecoderConfig{
+				Encapsulations: config.PacketEncapsulationConfig{
+					VXLAN: config.PortEncapsulationConfig{
+						Enabled: &disabled,
+					},
+				},
+			},
+		},
+	})
+
+	events, err := proc.Process(&event.Event{
+		Source:  event.SourceMetadata{Type: "bytes"},
+		Payload: vxlanTestPacket(4789),
+	})
+	if err != nil {
+		t.Fatalf("Process returned error: %v", err)
+	}
+	fields := events[0].Fields
+	layers, ok := fields["packet_layers"].([]string)
+	if !ok {
+		t.Fatalf("expected packet_layers to be []string, got %T", fields["packet_layers"])
+	}
+	expectedLayers := []string{"ethernet", "ipv4", "udp"}
+	if len(layers) != len(expectedLayers) {
+		t.Fatalf("expected %d packet layers, got %#v", len(expectedLayers), layers)
+	}
+	for i, want := range expectedLayers {
+		if layers[i] != want {
+			t.Fatalf("expected packet_layers[%d]=%q, got %#v", i, want, layers[i])
+		}
+	}
+}
+
+func TestBuiltinProcessBytesDecodesCustomVXLANPort(t *testing.T) {
+	proc := NewBuiltin(config.ProcessorConfig{
+		Builtin: config.BuiltinProcessorConfig{
+			PacketDecoder: config.PacketDecoderConfig{
+				Encapsulations: config.PacketEncapsulationConfig{
+					VXLAN: config.PortEncapsulationConfig{
+						Ports: []uint32{4790},
+					},
+				},
+			},
+		},
+	})
+
+	events, err := proc.Process(&event.Event{
+		Source:  event.SourceMetadata{Type: "bytes"},
+		Payload: vxlanTestPacket(4790),
+	})
+	if err != nil {
+		t.Fatalf("Process returned error: %v", err)
+	}
+	fields := events[0].Fields
+	expectIPLayer(t, fields, 0, "outer", "203.0.113.1", "203.0.113.2", 17, 4660, 4790)
+	expectIPLayer(t, fields, 1, "inner", "192.0.2.1", "198.51.100.2", 6, 12345, 443)
+	if got := fields["src_addr"]; got != "192.0.2.1" {
+		t.Fatalf("expected inner src_addr=192.0.2.1, got %#v", got)
 	}
 }
 
@@ -493,9 +573,6 @@ func TestBuiltinProcessBytesExtractsMPLSInnerPacket(t *testing.T) {
 		if layers[i] != want {
 			t.Fatalf("expected packet_layers[%d]=%q, got %#v", i, want, layers[i])
 		}
-	}
-	if got := fields["tunnel_type"]; got != "mpls" {
-		t.Fatalf("expected tunnel_type=mpls, got %#v", got)
 	}
 	expectIPLayer(t, fields, 0, "single", "192.0.2.1", "198.51.100.2", 6, 12345, 443)
 	if got := fields["src_addr"]; got != "192.0.2.1" {
@@ -674,4 +751,29 @@ func expectIPLayer(t *testing.T, fields map[string]any, index int, role, srcAddr
 	if got := layer["dst_port"]; got != dstPort {
 		t.Fatalf("expected ip_layers[%d].dst_port=%d, got %#v", index, dstPort, got)
 	}
+}
+
+func vxlanTestPacket(dstPort uint16) []byte {
+	packet := []byte{
+		0x00, 0x11, 0x22, 0x33, 0x44, 0x55,
+		0x66, 0x77, 0x88, 0x99, 0xaa, 0xbb,
+		0x08, 0x00,
+		0x45, 0x00, 0x00, 0x5c, 0x00, 0x01, 0x00, 0x00, 0x40, 0x11, 0x00, 0x00,
+		0xcb, 0x00, 0x71, 0x01,
+		0xcb, 0x00, 0x71, 0x02,
+		0x12, 0x34, 0x12, 0xb5, 0x00, 0x48, 0x00, 0x00,
+		0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x64, 0x00,
+		0xde, 0xad, 0xbe, 0xef, 0x00, 0x01,
+		0xde, 0xad, 0xbe, 0xef, 0x00, 0x02,
+		0x08, 0x00,
+		0x45, 0x00, 0x00, 0x28, 0x00, 0x02, 0x00, 0x00, 0x40, 0x06, 0x00, 0x00,
+		0xc0, 0x00, 0x02, 0x01,
+		0xc6, 0x33, 0x64, 0x02,
+		0x30, 0x39, 0x01, 0xbb,
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x50, 0x02, 0x00, 0x00,
+		0x00, 0x00, 0x00, 0x00,
+	}
+	packet[36] = byte(dstPort >> 8)
+	packet[37] = byte(dstPort)
+	return packet
 }

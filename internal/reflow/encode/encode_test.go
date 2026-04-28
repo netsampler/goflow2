@@ -497,7 +497,6 @@ func TestSFlowEncoderBuildsEncapsulatedPseudoHeader(t *testing.T) {
 					"dst_port": uint32(443),
 				},
 			},
-			"tunnel_type":     "gre",
 			"original_length": uint32(96),
 		},
 	}
@@ -521,6 +520,51 @@ func TestSFlowEncoderBuildsEncapsulatedPseudoHeader(t *testing.T) {
 	}
 	if evt.Packet == nil || len(evt.Packet.Layers) < 4 {
 		t.Fatalf("expected nested ip_layers to build an encapsulated packet model, got %#v", evt.Packet)
+	}
+}
+
+func TestSFlowEncoderBuildsVXLANPseudoHeaderFromPorts(t *testing.T) {
+	enc := NewSFlowEncoder(config.EncoderConfig{Type: "sflow"})
+
+	evt := &event.Event{
+		Fields: map[string]any{
+			"agent_ip": "192.0.2.10",
+			"ip_layers": []map[string]any{
+				{
+					"role":     "outer",
+					"src_addr": "203.0.113.1",
+					"dst_addr": "203.0.113.2",
+					"proto":    uint32(17),
+					"src_port": uint32(49152),
+					"dst_port": uint32(4789),
+				},
+				{
+					"role":     "inner",
+					"src_addr": "192.0.2.1",
+					"dst_addr": "198.51.100.2",
+					"proto":    uint32(6),
+					"src_port": uint32(12345),
+					"dst_port": uint32(443),
+				},
+			},
+		},
+	}
+
+	payloads, err := enc.Encode(evt)
+	if err != nil {
+		t.Fatalf("Encode returned error: %v", err)
+	}
+	packet := decodeSFlowPacket(t, payloads[0])
+	sample := packet.Samples[0].(sflow.FlowSample)
+	header := sample.Records[0].Data.(sflow.SampledHeader)
+	if len(header.HeaderData) == 0 {
+		t.Fatalf("expected vxlan pseudo header data")
+	}
+	if evt.Packet == nil || len(evt.Packet.Layers) < 6 {
+		t.Fatalf("expected vxlan pseudo packet model, got %#v", evt.Packet)
+	}
+	if evt.Packet.Layers[2].Kind != "udp" || evt.Packet.Layers[3].Kind != "vxlan" {
+		t.Fatalf("expected outer UDP and VXLAN layers, got %#v", evt.Packet.Layers)
 	}
 }
 

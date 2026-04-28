@@ -1,11 +1,14 @@
 package aggregate
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/netsampler/goflow2/v3/internal/reflow/config"
 	"github.com/netsampler/goflow2/v3/internal/reflow/event"
+	"github.com/netsampler/goflow2/v3/internal/reflow/processor"
 )
 
 func TestStatefulFlushSumsPacketCounters(t *testing.T) {
@@ -130,6 +133,142 @@ func TestStatefulAggregatesNestedPacketLayerFields(t *testing.T) {
 	}
 	if got := out[0].Fields["bytes"]; got != int64(60) {
 		t.Fatalf("expected bytes=60, got %#v", got)
+	}
+}
+
+func TestNestedIPLayersSampleConfigsAndJSON(t *testing.T) {
+	root := filepath.Join("..", "..", "..")
+	cfg, err := config.Load(filepath.Join(root, "cmd", "reflow", "reflow-json-nested-aggregate.yaml"))
+	if err != nil {
+		t.Fatalf("Load sample config returned error: %v", err)
+	}
+	if len(cfg.Sources) != 1 {
+		t.Fatalf("expected 1 sample source, got %d", len(cfg.Sources))
+	}
+	if len(cfg.Aggregators) != 1 {
+		t.Fatalf("expected 1 sample aggregator, got %d", len(cfg.Aggregators))
+	}
+
+	proc, err := processor.New(cfg.Processor)
+	if err != nil {
+		t.Fatalf("processor.New returned error: %v", err)
+	}
+
+	tests := []struct {
+		name        string
+		file        string
+		wantBytes   int64
+		wantLayers  []string
+		wantVLANID  any
+		wantMPLS    any
+		wantEther   any
+		wantAggKey  string
+		wantAggVal  any
+		wantAggKey2 string
+		wantAggVal2 any
+	}{
+		{
+			name:        "nested ip layers",
+			file:        "nested-ip-layers.json",
+			wantBytes:   96,
+			wantAggKey:  "ip_layers.0.src_addr",
+			wantAggVal:  "203.0.113.1",
+			wantAggKey2: "ip_layers.1.src_addr",
+			wantAggVal2: "192.0.2.1",
+		},
+		{
+			name:       "dot1q mpls gre",
+			file:       "nested-dot1q-mpls-gre.json",
+			wantBytes:  128,
+			wantLayers: []string{"ethernet", "dot1q", "mpls", "ipv4", "gre", "ipv4", "tcp"},
+			wantVLANID: float64(100),
+			wantMPLS:   float64(17),
+			wantEther:  float64(34887),
+			wantAggKey: "ip_layers.0.dst_addr",
+			wantAggVal: "203.0.113.2",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			raw, err := os.ReadFile(filepath.Join(root, "cmd", "reflow", tt.file))
+			if err != nil {
+				t.Fatalf("read sample JSON: %v", err)
+			}
+			events, err := proc.Process(&event.Event{
+				Source: event.SourceMetadata{
+					Type: cfg.Sources[0].Type,
+					JSON: event.JSONMetadata{
+						Flavor: cfg.Sources[0].JSON.Flavor,
+					},
+				},
+				Message: raw,
+			})
+			if err != nil {
+				t.Fatalf("Process sample JSON returned error: %v", err)
+			}
+			if len(events) != 1 {
+				t.Fatalf("expected 1 processed event, got %d", len(events))
+			}
+			if len(tt.wantLayers) > 0 {
+				layers, ok := events[0].Fields["packet_layers"].([]any)
+				if !ok {
+					t.Fatalf("expected packet_layers to be []any, got %T", events[0].Fields["packet_layers"])
+				}
+				if len(layers) != len(tt.wantLayers) {
+					t.Fatalf("expected packet_layers length %d, got %#v", len(tt.wantLayers), layers)
+				}
+				for i, want := range tt.wantLayers {
+					if layers[i] != want {
+						t.Fatalf("expected packet_layers[%d]=%q, got %#v", i, want, layers[i])
+					}
+				}
+			}
+			if tt.wantVLANID != nil {
+				if got := events[0].Fields["vlan_id"]; got != tt.wantVLANID {
+					t.Fatalf("expected vlan_id=%#v, got %#v", tt.wantVLANID, got)
+				}
+			}
+			if tt.wantMPLS != nil {
+				if got := events[0].Fields["mpls_label"]; got != tt.wantMPLS {
+					t.Fatalf("expected mpls_label=%#v, got %#v", tt.wantMPLS, got)
+				}
+			}
+			if tt.wantEther != nil {
+				if got := events[0].Fields["ether_type"]; got != tt.wantEther {
+					t.Fatalf("expected ether_type=%#v, got %#v", tt.wantEther, got)
+				}
+			}
+
+			agg, err := New(cfg.Aggregators[0])
+			if err != nil {
+				t.Fatalf("New returned error: %v", err)
+			}
+			if _, err := agg.Process(events[0]); err != nil {
+				t.Fatalf("Aggregate sample event returned error: %v", err)
+			}
+			out, err := agg.Close()
+			if err != nil {
+				t.Fatalf("Close returned error: %v", err)
+			}
+			if len(out) != 1 {
+				t.Fatalf("expected 1 aggregate output, got %d", len(out))
+			}
+			if out[0].Stream != "nested_flow_data" {
+				t.Fatalf("expected nested_flow_data stream, got %q", out[0].Stream)
+			}
+			if got := out[0].Fields[tt.wantAggKey]; got != tt.wantAggVal {
+				t.Fatalf("expected %s=%#v, got %#v", tt.wantAggKey, tt.wantAggVal, got)
+			}
+			if tt.wantAggKey2 != "" {
+				if got := out[0].Fields[tt.wantAggKey2]; got != tt.wantAggVal2 {
+					t.Fatalf("expected %s=%#v, got %#v", tt.wantAggKey2, tt.wantAggVal2, got)
+				}
+			}
+			if got := out[0].Fields["bytes"]; got != tt.wantBytes {
+				t.Fatalf("expected bytes=%d, got %#v", tt.wantBytes, got)
+			}
+		})
 	}
 }
 

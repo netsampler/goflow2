@@ -33,12 +33,16 @@ func New(cfg config.ProcessorConfig) (Processor, error) {
 }
 
 type Builtin struct {
-	cfg config.BuiltinProcessorConfig
+	cfg    config.BuiltinProcessorConfig
+	decode packet.DecodeOptions
 }
 
 // NewBuiltin constructs the default in-code processor used when WASM is disabled.
 func NewBuiltin(cfg config.ProcessorConfig) *Builtin {
-	return &Builtin{cfg: cfg.Builtin}
+	return &Builtin{
+		cfg:    cfg.Builtin,
+		decode: packetDecodeOptions(cfg.Builtin.PacketDecoder),
+	}
 }
 
 // Process dispatches to the built-in mapper for the incoming source message type.
@@ -95,6 +99,7 @@ func (p *Builtin) processBytes(evt *event.Event) ([]*event.Event, error) {
 		TruncatePacketBytes:  p.cfg.TruncatePacketBytes,
 		UsePayloadAsPacket:   true,
 		TruncatePayload:      true,
+		Decode:               p.decode,
 	}); err != nil {
 		return nil, err
 	}
@@ -140,6 +145,7 @@ func (p *Builtin) processFlow(evt *event.Event) ([]*event.Event, error) {
 			DisablePacketMapping: p.cfg.DisablePacketMapping,
 			TruncatePacketBytes:  p.cfg.TruncatePacketBytes,
 			HeaderProtocol:       packetHeaderProtocol(fields),
+			Decode:               p.decode,
 		}); err != nil {
 			return nil, err
 		}
@@ -236,6 +242,7 @@ func (p *Builtin) processJSONRawPacketHeader(evt *event.Event) ([]*event.Event, 
 		DisablePacketMapping: p.cfg.DisablePacketMapping,
 		TruncatePacketBytes:  p.cfg.TruncatePacketBytes,
 		HeaderProtocol:       in.Protocol,
+		Decode:               p.decode,
 	}); err != nil {
 		return nil, err
 	}
@@ -320,6 +327,43 @@ func (p *Builtin) processReFlowFields(evt *event.Event, record map[string]any) [
 		evt.Message = nil
 	}
 	return []*event.Event{evt}
+}
+
+func packetDecodeOptions(cfg config.PacketDecoderConfig) packet.DecodeOptions {
+	opts := packet.DecodeOptions{
+		Configured:     true,
+		DecodeBeyondL4: true,
+		DecodeGRE:      true,
+		DecodeVXLAN:    true,
+		DecodeGeneve:   true,
+		DecodePPPoE:    true,
+	}
+	if cfg.DecodeBeyondL4 != nil {
+		opts.DecodeBeyondL4 = *cfg.DecodeBeyondL4
+	}
+	encaps := cfg.Encapsulations
+	if encaps.GRE.Enabled != nil {
+		opts.DecodeGRE = *encaps.GRE.Enabled
+	}
+	if len(encaps.GRE.Protocols) > 0 {
+		opts.GREProtocols = append([]uint32(nil), encaps.GRE.Protocols...)
+	}
+	if encaps.VXLAN.Enabled != nil {
+		opts.DecodeVXLAN = *encaps.VXLAN.Enabled
+	}
+	if len(encaps.VXLAN.Ports) > 0 {
+		opts.VXLANPorts = append([]uint32(nil), encaps.VXLAN.Ports...)
+	}
+	if encaps.Geneve.Enabled != nil {
+		opts.DecodeGeneve = *encaps.Geneve.Enabled
+	}
+	if len(encaps.Geneve.Ports) > 0 {
+		opts.GenevePorts = append([]uint32(nil), encaps.Geneve.Ports...)
+	}
+	if encaps.PPPoE.Enabled != nil {
+		opts.DecodePPPoE = *encaps.PPPoE.Enabled
+	}
+	return opts
 }
 
 // processGoFlow2V2 translates the existing goflow2 JSON schema into ReFlow's

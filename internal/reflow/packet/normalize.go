@@ -16,7 +16,44 @@ type NormalizeOptions struct {
 	UsePayloadAsPacket   bool
 	TruncatePayload      bool
 	HeaderProtocol       uint32
+	Decode               DecodeOptions
 	Extractors           []FeatureExtractor
+}
+
+type DecodeOptions struct {
+	Configured     bool
+	DecodeBeyondL4 bool
+	DecodeGRE      bool
+	GREProtocols   []uint32
+	DecodeVXLAN    bool
+	VXLANPorts     []uint32
+	DecodeGeneve   bool
+	GenevePorts    []uint32
+	DecodePPPoE    bool
+}
+
+var defaultDecodeOptions = DecodeOptions{
+	Configured:     true,
+	DecodeBeyondL4: true,
+	DecodeGRE:      true,
+	DecodeVXLAN:    true,
+	DecodeGeneve:   true,
+	DecodePPPoE:    true,
+}
+
+func DefaultDecodeOptions() DecodeOptions {
+	opts := defaultDecodeOptions
+	opts.GREProtocols = []uint32{47}
+	opts.VXLANPorts = []uint32{4789}
+	opts.GenevePorts = []uint32{6081}
+	return opts
+}
+
+func (opts DecodeOptions) withDefaults() DecodeOptions {
+	if !opts.Configured {
+		return defaultDecodeOptions
+	}
+	return opts
 }
 
 type FeatureExtractor interface {
@@ -80,7 +117,7 @@ func NormalizeEvent(evt *event.Event, opts NormalizeOptions) error {
 	}
 	setDefaultInterfaces(evt, fields)
 
-	if view, err := parsePacketViewWithProtocol(headerData, opts.HeaderProtocol); err == nil {
+	if view, err := parsePacketViewWithOptions(headerData, opts.HeaderProtocol, opts.Decode.withDefaults()); err == nil {
 		evt.Packet = view.Model
 		for _, extractor := range opts.Extractors {
 			if extractor == nil || evt.Packet == nil {
@@ -208,10 +245,9 @@ func pseudoPacketModelFromFields(fields map[string]any) *event.PacketModel {
 	appendMPLSLayers(model, fields)
 	appendPPPoELayer(model, fields)
 
-	tunnelType := fieldStringOrZero(fields, "tunnel_type")
 	if outer.Valid() {
 		appendPseudoIPLayer(model, outer.SrcAddr, outer.DstAddr, outer.Proto)
-		appendPseudoTunnelLayers(model, tunnelType, outer.SrcPort, outer.DstPort, inner.SrcAddr, inner.DstAddr)
+		appendPseudoTunnelLayers(model, outer, inner)
 	}
 
 	appendPseudoIPLayer(model, inner.SrcAddr, inner.DstAddr, inner.Proto)
@@ -369,28 +405,41 @@ func appendPPPoELayer(model *event.PacketModel, fields map[string]any) {
 	})
 }
 
-func appendPseudoTunnelLayers(model *event.PacketModel, tunnelType string, srcPort, dstPort uint32, innerSrc, innerDst netip.Addr) {
+func appendPseudoTunnelLayers(model *event.PacketModel, outer, inner pseudoIPLayer) {
 	if model == nil {
 		return
 	}
-	switch tunnelType {
+	switch pseudoTunnelKind(outer) {
 	case "gre":
 		model.Layers = append(model.Layers, event.LayerSpec{
 			Kind: "gre",
-			GRE:  &event.GRELayer{Protocol: pseudoInnerEtherType(innerSrc, innerDst)},
+			GRE:  &event.GRELayer{Protocol: pseudoInnerEtherType(inner.SrcAddr, inner.DstAddr)},
 		})
 	case "vxlan":
 		model.Layers = append(model.Layers,
-			event.LayerSpec{Kind: "udp", UDP: &event.UDPLayer{SrcPort: uint16(srcPort), DstPort: 4789}},
+			event.LayerSpec{Kind: "udp", UDP: &event.UDPLayer{SrcPort: uint16(outer.SrcPort), DstPort: uint16(outer.DstPort)}},
 			event.LayerSpec{Kind: "vxlan", VXLAN: &event.VXLANLayer{}},
 			event.LayerSpec{Kind: "ethernet", Ethernet: &event.EthernetLayer{SrcMAC: "00:00:00:00:00:00", DstMAC: "00:00:00:00:00:00"}},
 		)
 	case "geneve":
 		model.Layers = append(model.Layers,
-			event.LayerSpec{Kind: "udp", UDP: &event.UDPLayer{SrcPort: uint16(srcPort), DstPort: 6081}},
-			event.LayerSpec{Kind: "geneve", Geneve: &event.GeneveLayer{Protocol: pseudoInnerEtherType(innerSrc, innerDst)}},
+			event.LayerSpec{Kind: "udp", UDP: &event.UDPLayer{SrcPort: uint16(outer.SrcPort), DstPort: uint16(outer.DstPort)}},
+			event.LayerSpec{Kind: "geneve", Geneve: &event.GeneveLayer{Protocol: pseudoInnerEtherType(inner.SrcAddr, inner.DstAddr)}},
 			event.LayerSpec{Kind: "ethernet", Ethernet: &event.EthernetLayer{SrcMAC: "00:00:00:00:00:00", DstMAC: "00:00:00:00:00:00"}},
 		)
+	}
+}
+
+func pseudoTunnelKind(outer pseudoIPLayer) string {
+	switch {
+	case outer.Proto == 47:
+		return "gre"
+	case outer.Proto == 17 && (outer.SrcPort == 4789 || outer.DstPort == 4789):
+		return "vxlan"
+	case outer.Proto == 17 && (outer.SrcPort == 6081 || outer.DstPort == 6081):
+		return "geneve"
+	default:
+		return ""
 	}
 }
 
@@ -792,14 +841,13 @@ type packetTuple struct {
 }
 
 type packetView struct {
-	Layers     []string
-	SrcMAC     string
-	DstMAC     string
-	EtherType  uint32
-	VLANIDs    []uint32
-	TunnelType string
-	Tuples     []packetTuple
-	Model      *event.PacketModel
+	Layers    []string
+	SrcMAC    string
+	DstMAC    string
+	EtherType uint32
+	VLANIDs   []uint32
+	Tuples    []packetTuple
+	Model     *event.PacketModel
 }
 
 func (v *packetView) appendLayer(layer event.LayerSpec) {
@@ -850,9 +898,6 @@ func applyPacketViewFields(fields map[string]any, view packetView) {
 		fields["outer_src_port"] = outer.SrcPort
 		fields["outer_dst_port"] = outer.DstPort
 		fields["encap_depth"] = uint32(len(view.Tuples) - 1)
-	}
-	if view.TunnelType != "" {
-		fields["tunnel_type"] = view.TunnelType
 	}
 }
 
@@ -915,9 +960,6 @@ func finalizePacketView(view packetView) packetView {
 	if len(view.Tuples) > 1 {
 		view.Model.Features["encap_depth"] = event.FeatureUint64(uint64(len(view.Tuples) - 1))
 	}
-	if view.TunnelType != "" {
-		view.Model.Features["tunnel_type"] = event.FeatureString(view.TunnelType)
-	}
 	return view
 }
 
@@ -933,10 +975,14 @@ func parsePacketTuple(data []byte) (packetTuple, error) {
 }
 
 func parsePacketView(data []byte) (packetView, error) {
-	return parsePacketViewWithProtocol(data, 0)
+	return parsePacketViewWithOptions(data, 0, defaultDecodeOptions)
 }
 
 func parsePacketViewWithProtocol(data []byte, protocol uint32) (packetView, error) {
+	return parsePacketViewWithOptions(data, protocol, defaultDecodeOptions)
+}
+
+func parsePacketViewWithOptions(data []byte, protocol uint32, opts DecodeOptions) (packetView, error) {
 	if len(data) == 0 {
 		return packetView{}, fmt.Errorf("empty packet header")
 	}
@@ -998,11 +1044,13 @@ func parsePacketViewWithProtocol(data []byte, protocol uint32) (packetView, erro
 				},
 			})
 			view.Tuples = append(view.Tuples, tuple)
-			if nextProto == 47 {
-				view.TunnelType = "gre"
+			if opts.DecodeGRE && protocolMatches(nextProto, opts.GREProtocols, 47) {
 				innerOffset, innerProto, err := parseGRE(data[offset+nextOffset:], &view)
 				if err != nil {
 					return view, nil
+				}
+				if !opts.DecodeBeyondL4 {
+					return finalizePacketView(view), nil
 				}
 				offset += nextOffset + innerOffset
 				etherType = innerProto
@@ -1019,9 +1067,8 @@ func parsePacketViewWithProtocol(data []byte, protocol uint32) (packetView, erro
 					continue
 				}
 			}
-			if tuple.Proto == 17 {
-				if tunnel, innerOffset, innerEtherType, err := parseUDPTunnel(data[offset+nextOffset:], tuple, &view); err == nil {
-					view.TunnelType = tunnel
+			if opts.DecodeBeyondL4 && tuple.Proto == 17 {
+				if innerOffset, innerEtherType, err := parseUDPTunnel(data[offset+nextOffset:], tuple, &view, opts); err == nil {
 					offset += nextOffset + innerOffset
 					if innerEtherType == 0x6558 {
 						nextOffset, nextEtherType, err := parseEthernet(data[offset:], &view, false)
@@ -1057,11 +1104,13 @@ func parsePacketViewWithProtocol(data []byte, protocol uint32) (packetView, erro
 				},
 			})
 			view.Tuples = append(view.Tuples, tuple)
-			if nextProto == 47 {
-				view.TunnelType = "gre"
+			if opts.DecodeGRE && protocolMatches(nextProto, opts.GREProtocols, 47) {
 				innerOffset, innerProto, err := parseGRE(data[offset+nextOffset:], &view)
 				if err != nil {
 					return view, nil
+				}
+				if !opts.DecodeBeyondL4 {
+					return finalizePacketView(view), nil
 				}
 				offset += nextOffset + innerOffset
 				etherType = innerProto
@@ -1078,9 +1127,8 @@ func parsePacketViewWithProtocol(data []byte, protocol uint32) (packetView, erro
 					continue
 				}
 			}
-			if tuple.Proto == 17 {
-				if tunnel, innerOffset, innerEtherType, err := parseUDPTunnel(data[offset+nextOffset:], tuple, &view); err == nil {
-					view.TunnelType = tunnel
+			if opts.DecodeBeyondL4 && tuple.Proto == 17 {
+				if innerOffset, innerEtherType, err := parseUDPTunnel(data[offset+nextOffset:], tuple, &view, opts); err == nil {
 					offset += nextOffset + innerOffset
 					if innerEtherType == 0x6558 {
 						nextOffset, nextEtherType, err := parseEthernet(data[offset:], &view, false)
@@ -1100,19 +1148,26 @@ func parsePacketViewWithProtocol(data []byte, protocol uint32) (packetView, erro
 			appendTransportLayer(&view, tuple.Proto)
 			return finalizePacketView(view), nil
 		case etherType == 0x8847 || etherType == 0x8848:
-			view.TunnelType = "mpls"
 			innerOffset, innerProto, err := parseMPLS(data[offset:], &view)
 			if err != nil {
 				return view, nil
+			}
+			if !opts.DecodeBeyondL4 {
+				return finalizePacketView(view), nil
 			}
 			offset += innerOffset
 			etherType = innerProto
 			continue
 		case etherType == 0x8864:
-			view.TunnelType = "pppoe"
+			if !opts.DecodePPPoE {
+				return finalizePacketView(view), nil
+			}
 			innerOffset, innerProto, err := parsePPPoE(data[offset:], &view)
 			if err != nil {
 				return view, nil
+			}
+			if !opts.DecodeBeyondL4 {
+				return finalizePacketView(view), nil
 			}
 			offset += innerOffset
 			etherType = innerProto
@@ -1280,14 +1335,14 @@ func parseGRE(data []byte, view *packetView) (int, uint16, error) {
 	return offset, proto, nil
 }
 
-func parseUDPTunnel(data []byte, tuple packetTuple, view *packetView) (string, int, uint16, error) {
+func parseUDPTunnel(data []byte, tuple packetTuple, view *packetView, opts DecodeOptions) (int, uint16, error) {
 	if len(data) < 8 {
-		return "", 0, 0, fmt.Errorf("truncated udp header")
+		return 0, 0, fmt.Errorf("truncated udp header")
 	}
 	switch {
-	case tuple.DstPort == 4789 || tuple.SrcPort == 4789:
+	case opts.DecodeVXLAN && portMatches(tuple, opts.VXLANPorts, 4789):
 		if len(data) < 16 {
-			return "", 0, 0, fmt.Errorf("truncated vxlan header")
+			return 0, 0, fmt.Errorf("truncated vxlan header")
 		}
 		view.appendLayer(event.LayerSpec{
 			Kind: "vxlan",
@@ -1295,16 +1350,16 @@ func parseUDPTunnel(data []byte, tuple packetTuple, view *packetView) (string, i
 				VNI: uint32(data[12])<<16 | uint32(data[13])<<8 | uint32(data[14]),
 			},
 		})
-		return "vxlan", 16, 0x6558, nil
-	case tuple.DstPort == 6081 || tuple.SrcPort == 6081:
+		return 16, 0x6558, nil
+	case opts.DecodeGeneve && portMatches(tuple, opts.GenevePorts, 6081):
 		if len(data) < 16 {
-			return "", 0, 0, fmt.Errorf("truncated geneve header")
+			return 0, 0, fmt.Errorf("truncated geneve header")
 		}
 		optLen := int((data[8] & 0x3f) * 4)
 		proto := binary.BigEndian.Uint16(data[10:12])
 		offset := 8 + 8 + optLen
 		if len(data) < offset {
-			return "", 0, 0, fmt.Errorf("truncated geneve options")
+			return 0, 0, fmt.Errorf("truncated geneve options")
 		}
 		view.appendLayer(event.LayerSpec{
 			Kind: "geneve",
@@ -1313,10 +1368,34 @@ func parseUDPTunnel(data []byte, tuple packetTuple, view *packetView) (string, i
 				Protocol: proto,
 			},
 		})
-		return "geneve", offset, proto, nil
+		return offset, proto, nil
 	default:
-		return "", 0, 0, fmt.Errorf("not a supported udp tunnel")
+		return 0, 0, fmt.Errorf("not a supported udp tunnel")
 	}
+}
+
+func portMatches(tuple packetTuple, ports []uint32, defaultPort uint32) bool {
+	if len(ports) == 0 {
+		return tuple.DstPort == defaultPort || tuple.SrcPort == defaultPort
+	}
+	for _, port := range ports {
+		if port != 0 && (tuple.DstPort == port || tuple.SrcPort == port) {
+			return true
+		}
+	}
+	return false
+}
+
+func protocolMatches(protocol uint32, protocols []uint32, defaultProtocol uint32) bool {
+	if len(protocols) == 0 {
+		return protocol == defaultProtocol
+	}
+	for _, candidate := range protocols {
+		if candidate == protocol {
+			return true
+		}
+	}
+	return false
 }
 
 func parseMPLS(data []byte, view *packetView) (int, uint16, error) {

@@ -106,8 +106,9 @@ When sFlow output needs sampled-header bytes and the event only has tuple or
 packet-model data, the sFlow encoder builds a synthetic sampled header locally.
 That keeps pseudo-packet construction tied to the only output format that
 requires it. For encapsulated flows, the encoder prefers `ip_layers` when
-present, using the first layer as outer and the last layer as inner, then falls
-back to the flat tuple fields.
+present, using the first layer as outer and the last layer as inner. It derives
+GRE from outer protocol `47`, and UDP tunnels from known ports such as VXLAN
+`4789` and Geneve `6081`, then falls back to the flat tuple fields.
 
 Packet-derived tuple fields are deliberately available in two shapes. The flat
 fields (`src_addr`, `dst_addr`, `proto`, `src_port`, `dst_port`) describe the
@@ -116,6 +117,15 @@ first encapsulating IP tuple. The structured `ip_layers` field carries the full
 ordered list of parsed IP tuples with `role`, `src_addr`, `dst_addr`, `proto`,
 `src_port`, and `dst_port`. Aggregation configs can address nested values with
 dotted paths such as `ip_layers.0.src_addr` or `ip_layers.1.dst_addr`.
+
+Packet decoding policy lives under `processor.builtin.packet_decoder`.
+`decode_beyond_l4` controls whether the parser may continue past TCP/UDP/ICMP
+or the first encapsulation header. Encapsulation-specific settings live under
+`packet_decoder.encapsulations`, where operators can enable/disable GRE,
+VXLAN, Geneve, and PPPoE handling and add non-standard VXLAN/Geneve UDP ports.
+MPLS labels are always parsed when present; `decode_beyond_l4` controls whether
+the parser continues into the MPLS payload. GRE is matched by IP protocol
+number, normally `47`, not by port.
 
 `record_kind` is the generic record-shape marker. `packet` means the event
 carries packet/header bytes in `header_data`; `interface_counter` means the
