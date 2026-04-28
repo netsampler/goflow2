@@ -83,6 +83,9 @@ func TestJSONEncoderGoFlow2V2PrefersNanosecondTimeFields(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Encode returned error: %v", err)
 	}
+	if len(payloads) != 1 {
+		t.Fatalf("expected 1 payload, got %d", len(payloads))
+	}
 
 	dec := json.NewDecoder(bytes.NewReader(payloads[0]))
 	dec.UseNumber()
@@ -90,17 +93,24 @@ func TestJSONEncoderGoFlow2V2PrefersNanosecondTimeFields(t *testing.T) {
 	if err := dec.Decode(&decoded); err != nil {
 		t.Fatalf("unmarshal payload: %v", err)
 	}
-	startNS, err := decoded["time_flow_start_ns"].(json.Number).Int64()
-	if err != nil {
-		t.Fatalf("parse time_flow_start_ns: %v", err)
+	numberField := func(key string) int64 {
+		t.Helper()
+		number, ok := decoded[key].(json.Number)
+		if !ok {
+			t.Fatalf("expected %s to be json.Number, got %T", key, decoded[key])
+		}
+		value, err := number.Int64()
+		if err != nil {
+			t.Fatalf("parse %s: %v", key, err)
+		}
+		return value
 	}
+
+	startNS := numberField("time_flow_start_ns")
 	if startNS != 1_700_000_000_100_123_456 {
 		t.Fatalf("expected nanosecond start time, got %d", startNS)
 	}
-	endNS, err := decoded["time_flow_end_ns"].(json.Number).Int64()
-	if err != nil {
-		t.Fatalf("parse time_flow_end_ns: %v", err)
-	}
+	endNS := numberField("time_flow_end_ns")
 	if endNS != 1_700_000_000_900_123_456 {
 		t.Fatalf("expected nanosecond end time, got %d", endNS)
 	}
