@@ -480,7 +480,11 @@ func TestSFlowEncoderBuildsEncapsulatedPseudoHeader(t *testing.T) {
 
 	evt := &event.Event{
 		Fields: map[string]any{
-			"agent_ip": "192.0.2.10",
+			"agent_ip":   "192.0.2.10",
+			"src_mac":    "66:77:88:99:aa:bb",
+			"dst_mac":    "00:11:22:33:44:55",
+			"vlan_id":    uint32(100),
+			"mpls_label": uint32(17),
 			"ip_layers": []map[string]any{
 				{
 					"role":     "outer",
@@ -497,7 +501,7 @@ func TestSFlowEncoderBuildsEncapsulatedPseudoHeader(t *testing.T) {
 					"dst_port": uint32(443),
 				},
 			},
-			"original_length": uint32(96),
+			"original_length": uint32(86),
 		},
 	}
 
@@ -515,8 +519,23 @@ func TestSFlowEncoderBuildsEncapsulatedPseudoHeader(t *testing.T) {
 	if header.Protocol != 1 {
 		t.Fatalf("expected sampled header protocol=1, got %d", header.Protocol)
 	}
-	if header.OriginalLength != 96 {
-		t.Fatalf("expected original_length=96, got %d", header.OriginalLength)
+	if header.OriginalLength != 86 {
+		t.Fatalf("expected original_length=86, got %d", header.OriginalLength)
+	}
+	if len(header.HeaderData) < 46 {
+		t.Fatalf("expected enough header data for ethernet/vlan/mpls/gre, got %d", len(header.HeaderData))
+	}
+	if header.HeaderData[12] != 0x81 || header.HeaderData[13] != 0x00 {
+		t.Fatalf("expected ethernet type 0x8100 for dot1q, got %02x%02x", header.HeaderData[12], header.HeaderData[13])
+	}
+	if header.HeaderData[16] != 0x88 || header.HeaderData[17] != 0x47 {
+		t.Fatalf("expected vlan inner type 0x8847 for mpls, got %02x%02x", header.HeaderData[16], header.HeaderData[17])
+	}
+	if header.HeaderData[31] != 47 {
+		t.Fatalf("expected outer IPv4 protocol GRE, got %d", header.HeaderData[31])
+	}
+	if header.HeaderData[44] != 0x08 || header.HeaderData[45] != 0x00 {
+		t.Fatalf("expected GRE inner protocol 0x0800, got %02x%02x", header.HeaderData[44], header.HeaderData[45])
 	}
 	if evt.Packet == nil || len(evt.Packet.Layers) < 4 {
 		t.Fatalf("expected nested ip_layers to build an encapsulated packet model, got %#v", evt.Packet)

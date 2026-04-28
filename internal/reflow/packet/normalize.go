@@ -527,8 +527,12 @@ func encodePacketModel(model *event.PacketModel) ([]byte, error) {
 	payload := []byte(nil)
 	for i := len(model.Layers) - 1; i >= 0; i-- {
 		layer := model.Layers[i]
+		var next event.LayerSpec
+		if i+1 < len(model.Layers) {
+			next = model.Layers[i+1]
+		}
 		var err error
-		payload, err = prependLayer(layer, payload)
+		payload, err = prependLayer(layer, payload, next)
 		if err != nil {
 			return nil, err
 		}
@@ -536,12 +540,12 @@ func encodePacketModel(model *event.PacketModel) ([]byte, error) {
 	return payload, nil
 }
 
-func prependLayer(layer event.LayerSpec, payload []byte) ([]byte, error) {
+func prependLayer(layer event.LayerSpec, payload []byte, next event.LayerSpec) ([]byte, error) {
 	switch layer.Kind {
 	case "ethernet":
-		return prependEthernet(layer.Ethernet, payload)
+		return prependEthernet(layer.Ethernet, payload, next)
 	case "dot1q":
-		return prependVLAN(layer.VLAN, payload)
+		return prependVLAN(layer.VLAN, payload, next)
 	case "mpls":
 		return prependMPLS(layer.MPLS, payload)
 	case "pppoe":
@@ -569,20 +573,20 @@ func prependLayer(layer event.LayerSpec, payload []byte) ([]byte, error) {
 	}
 }
 
-func prependEthernet(layer *event.EthernetLayer, payload []byte) ([]byte, error) {
+func prependEthernet(layer *event.EthernetLayer, payload []byte, next event.LayerSpec) ([]byte, error) {
 	if layer == nil {
 		layer = &event.EthernetLayer{}
 	}
 	out := make([]byte, 14+len(payload))
 	copy(out[0:6], parseMACOrZero(layer.DstMAC))
 	copy(out[6:12], parseMACOrZero(layer.SrcMAC))
-	etherType := inferEtherType(layer.EtherType, payload)
+	etherType := inferLayerEtherType(layer.EtherType, next, payload)
 	binary.BigEndian.PutUint16(out[12:14], uint16(etherType))
 	copy(out[14:], payload)
 	return out, nil
 }
 
-func prependVLAN(layer *event.VLANLayer, payload []byte) ([]byte, error) {
+func prependVLAN(layer *event.VLANLayer, payload []byte, next event.LayerSpec) ([]byte, error) {
 	if layer == nil {
 		layer = &event.VLANLayer{TPID: 0x8100}
 	}
@@ -592,7 +596,7 @@ func prependVLAN(layer *event.VLANLayer, payload []byte) ([]byte, error) {
 		tci |= 1 << 12
 	}
 	binary.BigEndian.PutUint16(out[0:2], tci)
-	binary.BigEndian.PutUint16(out[2:4], uint16(inferEtherType(0, payload)))
+	binary.BigEndian.PutUint16(out[2:4], uint16(inferLayerEtherType(0, next, payload)))
 	copy(out[4:], payload)
 	return out, nil
 }
@@ -797,6 +801,31 @@ func inferEtherType(explicit uint32, payload []byte) uint32 {
 		return 0x86dd
 	default:
 		return 0x6558
+	}
+}
+
+func inferLayerEtherType(explicit uint32, next event.LayerSpec, payload []byte) uint32 {
+	if explicit != 0 {
+		return explicit
+	}
+	switch next.Kind {
+	case "dot1q":
+		if next.VLAN != nil && next.VLAN.TPID != 0 {
+			return uint32(next.VLAN.TPID)
+		}
+		return 0x8100
+	case "mpls":
+		return 0x8847
+	case "pppoe":
+		return 0x8864
+	case "ipv4":
+		return 0x0800
+	case "ipv6":
+		return 0x86dd
+	case "arp":
+		return 0x0806
+	default:
+		return inferEtherType(0, payload)
 	}
 }
 
