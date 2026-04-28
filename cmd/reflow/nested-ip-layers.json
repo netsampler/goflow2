@@ -4,7 +4,6 @@
   "sampling_rate": 100,
   "input_if": 10,
   "output_if": 20,
-  "ip_layer_count": 2,
   "ip_layers": [
     {
       "index": 0,

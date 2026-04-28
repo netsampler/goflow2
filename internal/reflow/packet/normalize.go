@@ -241,25 +241,27 @@ func pseudoPacketModelFromFields(fields map[string]any) *event.PacketModel {
 		Features: make(map[string]event.FeatureValue),
 	}
 
-	dstMAC := fieldStringOrZero(fields, "dst_mac")
-	if dstMAC == "" {
-		dstMAC = "00:00:00:00:00:00"
-	}
-	srcMAC := fieldStringOrZero(fields, "src_mac")
-	if srcMAC == "" {
-		srcMAC = "00:00:00:00:00:00"
-	}
-	model.Layers = append(model.Layers, event.LayerSpec{
-		Kind: "ethernet",
-		Ethernet: &event.EthernetLayer{
-			SrcMAC: srcMAC,
-			DstMAC: dstMAC,
-		},
-	})
+	if pseudoPacketHasLinkLayer(fields) {
+		dstMAC := fieldStringOrZero(fields, "dst_mac")
+		if dstMAC == "" {
+			dstMAC = "00:00:00:00:00:00"
+		}
+		srcMAC := fieldStringOrZero(fields, "src_mac")
+		if srcMAC == "" {
+			srcMAC = "00:00:00:00:00:00"
+		}
+		model.Layers = append(model.Layers, event.LayerSpec{
+			Kind: "ethernet",
+			Ethernet: &event.EthernetLayer{
+				SrcMAC: srcMAC,
+				DstMAC: dstMAC,
+			},
+		})
 
-	appendVLANLayers(model, fields)
-	appendMPLSLayers(model, fields)
-	appendPPPoELayer(model, fields)
+		appendVLANLayers(model, fields)
+		appendMPLSLayers(model, fields)
+		appendPPPoELayer(model, fields)
+	}
 
 	if outer.Valid() {
 		appendPseudoIPLayer(model, outer.SrcAddr, outer.DstAddr, outer.Proto)
@@ -273,6 +275,22 @@ func pseudoPacketModelFromFields(fields map[string]any) *event.PacketModel {
 		model.Features["target_wire_length"] = event.FeatureUint64(uint64(frameLen))
 	}
 	return model
+}
+
+func pseudoPacketHasLinkLayer(fields map[string]any) bool {
+	if fieldStringOrZero(fields, "src_mac") != "" || fieldStringOrZero(fields, "dst_mac") != "" {
+		return true
+	}
+	if fieldUint32(fields, "ether_type") != 0 ||
+		fieldUint32(fields, "vlan_id") != 0 ||
+		fieldUint32(fields, "mpls_label") != 0 ||
+		fieldUint32(fields, "pppoe_session_id") != 0 {
+		return true
+	}
+	if vals, ok := fields["vlan_ids"].([]uint32); ok && len(vals) > 0 {
+		return true
+	}
+	return false
 }
 
 type pseudoIPLayer struct {

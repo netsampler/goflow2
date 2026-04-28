@@ -319,7 +319,7 @@ func (e *SFlowEncoder) sampledHeaderFields(evt *event.Event, fields map[string]a
 		if pseudoHeader, ok := packet.BuildPseudoHeader(evt, fields); ok {
 			headerData = pseudoHeader
 			if protocol == 0 {
-				protocol = 1
+				protocol = sampledHeaderProtocolForPacket(evt, headerData)
 			}
 			if frameLength == 0 {
 				frameLength = uint32(len(headerData))
@@ -330,6 +330,28 @@ func (e *SFlowEncoder) sampledHeaderFields(evt *event.Event, fields map[string]a
 		}
 	}
 	return headerData, protocol, frameLength, originalLength
+}
+
+func sampledHeaderProtocolForPacket(evt *event.Event, headerData []byte) uint32 {
+	if evt != nil && evt.Packet != nil && len(evt.Packet.Layers) > 0 {
+		switch evt.Packet.Layers[0].Kind {
+		case "ipv4":
+			return 11
+		case "ipv6":
+			return 12
+		default:
+			return 1
+		}
+	}
+	if len(headerData) > 0 {
+		switch headerData[0] >> 4 {
+		case 4:
+			return 11
+		case 6:
+			return 12
+		}
+	}
+	return 1
 }
 
 func (e *SFlowEncoder) buildCounterSample(evt *event.Event) (sflow.CounterSample, error) {

@@ -522,14 +522,67 @@ func TestSFlowEncoderBuildsPseudoHeaderFromTuple(t *testing.T) {
 	if len(header.HeaderData) == 0 {
 		t.Fatalf("expected pseudo header data")
 	}
-	if header.Protocol != 1 {
-		t.Fatalf("expected sampled header protocol=1, got %d", header.Protocol)
+	if header.Protocol != 11 {
+		t.Fatalf("expected sampled header protocol=11, got %d", header.Protocol)
 	}
 	if header.FrameLength != uint32(len(header.HeaderData)) {
 		t.Fatalf("expected frame length %d, got %d", len(header.HeaderData), header.FrameLength)
 	}
-	if evt.Packet == nil || len(evt.Packet.Layers) == 0 {
+	if header.HeaderData[0]>>4 != 4 {
+		t.Fatalf("expected direct IPv4 pseudo header, got first byte 0x%02x", header.HeaderData[0])
+	}
+	if evt.Packet == nil || len(evt.Packet.Layers) == 0 || evt.Packet.Layers[0].Kind != "ipv4" {
 		t.Fatalf("expected pseudo packet model to be attached")
+	}
+}
+
+func TestSFlowEncoderBuildsDirectIPEncapsulatedPseudoHeader(t *testing.T) {
+	enc := NewSFlowEncoder(config.EncoderConfig{Type: "sflow"})
+
+	evt := &event.Event{
+		Fields: map[string]any{
+			"agent_ip": "192.0.2.10",
+			"ip_layers": []map[string]any{
+				{
+					"role":     "outer",
+					"src_addr": "203.0.113.1",
+					"dst_addr": "203.0.113.2",
+					"proto":    uint32(47),
+				},
+				{
+					"role":     "inner",
+					"src_addr": "192.0.2.1",
+					"dst_addr": "198.51.100.2",
+					"proto":    uint32(6),
+					"src_port": uint32(12345),
+					"dst_port": uint32(443),
+				},
+			},
+		},
+	}
+
+	payloads, err := enc.Encode(evt)
+	if err != nil {
+		t.Fatalf("Encode returned error: %v", err)
+	}
+
+	packet := decodeSFlowPacket(t, payloads[0])
+	sample := packet.Samples[0].(sflow.FlowSample)
+	header := sample.Records[0].Data.(sflow.SampledHeader)
+	if header.Protocol != 11 {
+		t.Fatalf("expected sampled header protocol=11, got %d", header.Protocol)
+	}
+	if header.HeaderData[0]>>4 != 4 {
+		t.Fatalf("expected direct IPv4 pseudo header, got first byte 0x%02x", header.HeaderData[0])
+	}
+	if header.HeaderData[9] != 47 {
+		t.Fatalf("expected outer IPv4 protocol GRE, got %d", header.HeaderData[9])
+	}
+	if header.HeaderData[22] != 0x08 || header.HeaderData[23] != 0x00 {
+		t.Fatalf("expected GRE inner protocol 0x0800, got %02x%02x", header.HeaderData[22], header.HeaderData[23])
+	}
+	if evt.Packet == nil || len(evt.Packet.Layers) < 4 || evt.Packet.Layers[0].Kind != "ipv4" {
+		t.Fatalf("expected direct nested packet model, got %#v", evt.Packet)
 	}
 }
 
@@ -637,10 +690,13 @@ func TestSFlowEncoderBuildsVXLANPseudoHeaderFromPorts(t *testing.T) {
 	if len(header.HeaderData) == 0 {
 		t.Fatalf("expected vxlan pseudo header data")
 	}
+	if header.Protocol != 11 {
+		t.Fatalf("expected sampled header protocol=11, got %d", header.Protocol)
+	}
 	if evt.Packet == nil || len(evt.Packet.Layers) < 6 {
 		t.Fatalf("expected vxlan pseudo packet model, got %#v", evt.Packet)
 	}
-	if evt.Packet.Layers[2].Kind != "udp" || evt.Packet.Layers[3].Kind != "vxlan" {
+	if evt.Packet.Layers[1].Kind != "udp" || evt.Packet.Layers[2].Kind != "vxlan" {
 		t.Fatalf("expected outer UDP and VXLAN layers, got %#v", evt.Packet.Layers)
 	}
 }
