@@ -352,11 +352,8 @@ func canonicalEventFields(record map[string]any) (map[string]any, bool) {
 func normalizeReFlowJSONValue(key string, value any) any {
 	switch typed := value.(type) {
 	case json.Number:
-		switch key {
-		case "time_flow_start_ns", "time_flow_end_ns":
-			if n, err := typed.Int64(); err == nil {
-				return n
-			}
+		if n, err := typed.Int64(); err == nil {
+			return n
 		}
 		f, err := typed.Float64()
 		if err != nil {

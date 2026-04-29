@@ -751,7 +751,7 @@ func TestBuiltinProcessReFlowJSONPreservesCounterFieldsWithoutSFlowMetadata(t *t
 	if got := fields["record_kind"]; got != "interface_counter" {
 		t.Fatalf("expected record_kind=interface_counter, got %#v", got)
 	}
-	if got := fields["if_index"]; got != float64(5) {
+	if got := fields["if_index"]; got != int64(5) {
 		t.Fatalf("expected if_index=5, got %#v", got)
 	}
 	if events[0].SFlow != nil {
@@ -817,8 +817,41 @@ func TestBuiltinProcessReFlowJSONUsesCanonicalEventFieldsWithoutEnvelopeMetadata
 	if got := processed.Fields["agent_ip"]; got != "192.0.2.10" {
 		t.Fatalf("expected agent_ip field to be preserved, got %#v", got)
 	}
-	if got := processed.Fields["bytes"]; got != float64(1234) {
+	if got := processed.Fields["bytes"]; got != int64(1234) {
 		t.Fatalf("expected bytes field to be preserved, got %#v", got)
+	}
+}
+
+func TestBuiltinProcessReFlowJSONPreservesLargeIntegerCounters(t *testing.T) {
+	proc := NewBuiltin(config.ProcessorConfig{})
+
+	const largeCounter int64 = 9_007_199_254_740_993
+	msg := []byte(`{
+		"bytes": 9007199254740993,
+		"packets": 9007199254740993,
+		"sample_pool": 9007199254740993,
+		"if_in_octets": 9007199254740993,
+		"end_time_unix": 9007199254740993
+	}`)
+
+	events, err := proc.Process(&event.Event{
+		Source: event.SourceMetadata{
+			Type: "json",
+			JSON: event.JSONMetadata{Flavor: "reflow"},
+		},
+		Message: msg,
+	})
+	if err != nil {
+		t.Fatalf("Process returned error: %v", err)
+	}
+	if len(events) != 1 {
+		t.Fatalf("expected 1 event, got %d", len(events))
+	}
+
+	for _, key := range []string{"bytes", "packets", "sample_pool", "if_in_octets", "end_time_unix"} {
+		if got := events[0].Fields[key]; got != largeCounter {
+			t.Fatalf("expected %s=%d, got %#v", key, largeCounter, got)
+		}
 	}
 }
 
