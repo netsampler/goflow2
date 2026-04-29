@@ -53,6 +53,30 @@ func TestSourceReadsPcapStream(t *testing.T) {
 	}
 }
 
+func TestSourceInitEventsExposeStreamInterfaceName(t *testing.T) {
+	src, err := New(config.SourceConfig{
+		Network: "stream",
+		Address: "/tmp/capture.pipe",
+		Type:    "pcap",
+	})
+	if err != nil {
+		t.Fatalf("New returned error: %v", err)
+	}
+	events, err := src.InitEvents()
+	if err != nil {
+		t.Fatalf("InitEvents returned error: %v", err)
+	}
+	if len(events) != 1 {
+		t.Fatalf("expected one init event, got %d", len(events))
+	}
+	if events[0].Control == nil || events[0].Control.Type != "source_init" {
+		t.Fatalf("expected source_init control event, got %#v", events[0].Control)
+	}
+	if events[0].Source.CaptureInterface != "capture.pipe" {
+		t.Fatalf("expected capture interface capture.pipe, got %q", events[0].Source.CaptureInterface)
+	}
+}
+
 func TestSourceReadsPcapngStream(t *testing.T) {
 	path := writePcapFile(t, true)
 

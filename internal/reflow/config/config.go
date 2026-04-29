@@ -335,15 +335,15 @@ func (c *Config) setDefaults(configPath string) error {
 		c.Encoder.Pcap.SnapLen = 65535
 	}
 	switch c.Encoder.Type {
-	case "json", "protobuf", "sflow", "ipfix", "netflowv9", "netflowv5", "pcap":
+	case "json", "protobuf", "sflow", "ipfix", "netflowv9", "netflowv5", "pcap", "pcapng":
 	default:
 		return fmt.Errorf("unsupported encoder.type %q", c.Encoder.Type)
 	}
 	if c.Sink.Type == "" {
 		c.Sink.Type = "stdout"
 	}
-	if c.Encoder.Type == "pcap" && (c.Sink.Type == "udp" || c.Sink.Type == "unixgram") {
-		return fmt.Errorf("encoder.type=pcap requires a stream sink, got sink.type=%s", c.Sink.Type)
+	if (c.Encoder.Type == "pcap" || c.Encoder.Type == "pcapng") && (c.Sink.Type == "udp" || c.Sink.Type == "unixgram") {
+		return fmt.Errorf("encoder.type=%s requires a stream sink, got sink.type=%s", c.Encoder.Type, c.Sink.Type)
 	}
 	switch c.Sink.Type {
 	case "stdout", "file", "udp", "unixgram":
@@ -351,7 +351,7 @@ func (c *Config) setDefaults(configPath string) error {
 		return fmt.Errorf("unsupported sink.type %q", c.Sink.Type)
 	}
 	if c.Sink.Framing == "" {
-		if c.Encoder.Type == "pcap" {
+		if c.Encoder.Type == "pcap" || c.Encoder.Type == "pcapng" {
 			c.Sink.Framing = "none"
 		} else {
 			c.Sink.Framing = "line"
@@ -363,7 +363,7 @@ func (c *Config) setDefaults(configPath string) error {
 		return fmt.Errorf("unsupported sink.framing %q", c.Sink.Framing)
 	}
 	if c.Sink.Mode == "" {
-		if c.Encoder.Type == "pcap" && c.Sink.Type == "file" {
+		if (c.Encoder.Type == "pcap" || c.Encoder.Type == "pcapng") && c.Sink.Type == "file" {
 			c.Sink.Mode = "truncate"
 		} else {
 			c.Sink.Mode = "append"

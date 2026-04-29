@@ -288,6 +288,70 @@ sink:
 	}
 }
 
+func TestLoadRejectsPcapNGEncoderWithDatagramSink(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "reflow.yaml")
+	if err := os.WriteFile(cfgPath, []byte(`
+sources:
+  - network: stream
+    address: "-"
+    type: pcapng
+
+processor:
+  type: builtin
+
+encoder:
+  type: pcapng
+
+sink:
+  type: udp
+  address: "127.0.0.1:9000"
+`), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	if _, err := Load(cfgPath); err == nil {
+		t.Fatalf("expected pcapng encoder with UDP sink to be rejected")
+	}
+}
+
+func TestLoadSupportsPcapNGEncoderDefaults(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "reflow.yaml")
+	if err := os.WriteFile(cfgPath, []byte(`
+sources:
+  - network: stream
+    address: "-"
+    type: pcapng
+
+processor:
+  type: builtin
+
+encoder:
+  type: pcapng
+
+sink:
+  type: file
+  path: out.pcapng
+`), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	cfg, err := Load(cfgPath)
+	if err != nil {
+		t.Fatalf("Load returned error: %v", err)
+	}
+	if cfg.Encoder.Pcap.LinkType != "ethernet" {
+		t.Fatalf("expected default pcapng link_type ethernet, got %q", cfg.Encoder.Pcap.LinkType)
+	}
+	if cfg.Sink.Framing != "none" {
+		t.Fatalf("expected pcapng sink framing none, got %q", cfg.Sink.Framing)
+	}
+	if cfg.Sink.Mode != "truncate" {
+		t.Fatalf("expected pcapng file sink mode truncate, got %q", cfg.Sink.Mode)
+	}
+}
+
 func TestLoadRejectsAggregatorWithoutExportTrigger(t *testing.T) {
 	dir := t.TempDir()
 

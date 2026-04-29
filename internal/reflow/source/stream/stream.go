@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/google/gopacket"
@@ -39,7 +40,30 @@ func New(cfg config.SourceConfig) (*Source, error) {
 }
 
 func (s *Source) InitEvents() ([]*event.Event, error) {
-	return nil, nil
+	now := time.Now().UTC()
+	name := streamInterfaceName(s.cfg.Address)
+	return []*event.Event{
+		{
+			ReceivedAt: now,
+			Kind:       "control",
+			Source: event.SourceMetadata{
+				Network:          s.cfg.Network,
+				Address:          s.cfg.Address,
+				Type:             s.cfg.Type,
+				CaptureInterface: name,
+			},
+			Control: &event.ControlMetadata{
+				Type:   "source_init",
+				Stream: s.cfg.Type,
+			},
+			Fields: map[string]any{
+				"stream_type": s.cfg.Type,
+			},
+			Payload: event.SourceInit{
+				Stream: s.cfg.Type,
+			},
+		},
+	}, nil
 }
 
 func (s *Source) Start(ctx context.Context, emit func(*event.Event) error) error {
@@ -200,4 +224,15 @@ func sampledHeaderProtocol(linkType layers.LinkType, data []byte) uint32 {
 		}
 	}
 	return 0
+}
+
+func streamInterfaceName(address string) string {
+	if address == "" || address == "-" {
+		return "stdin"
+	}
+	base := filepath.Base(address)
+	if base == "." || base == string(filepath.Separator) {
+		return address
+	}
+	return base
 }

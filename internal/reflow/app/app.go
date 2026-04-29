@@ -467,7 +467,7 @@ func encoderTickInterval(cfg config.EncoderConfig) time.Duration {
 // packets, templates, or sequence numbers depend on ordering.
 func requiresOrderedExporter(encoderType string) bool {
 	switch encoderType {
-	case "sflow", "ipfix", "netflowv9", "netflowv5", "pcap":
+	case "sflow", "ipfix", "netflowv9", "netflowv5", "pcap", "pcapng":
 		return true
 	default:
 		return false

@@ -1,0 +1,31 @@
+# Read NDJSON flow/packet fields from stdin, synthesize pseudo packets as needed,
+# encode them as pcapng, and pipe them into Wireshark on macOS.
+#
+# Example:
+#   printf '%s\n' '{"record_kind":"packet","src_addr":"192.0.2.10","dst_addr":"198.51.100.20","proto":6,"src_port":54321,"dst_port":443,"bytes":60,"packets":1}' \
+#     | go run ./cmd/reflow -config cmd/reflow/reflow-stream-json-pseudo-to-wireshark-pcapng.yaml \
+#     | /Applications/Wireshark.app/Contents/MacOS/Wireshark -k -i -
+
+sources:
+  - network: stream
+    address: "-"
+    type: json
+    json:
+      flavor: reflow
+
+processor:
+  type: builtin
+  workers: 1
+  builtin:
+    drop_message: true
+    drop_payload: false
+
+encoder:
+  type: pcapng
+  workers: 1
+  pcap:
+    link_type: raw
+
+sink:
+  type: stdout
+  framing: none
