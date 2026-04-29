@@ -75,16 +75,16 @@ func TestStatefulAggregatesNestedPacketLayerFields(t *testing.T) {
 	agg, err := New(config.AggregatorConfig{
 		Enabled: true,
 		KeyFields: []string{
-			"ip_layers.0.src_addr",
-			"ip_layers.1.src_addr",
-			"ip_layers.1.dst_addr",
-			"ip_layers.1.proto",
-			"ip_layers.1.src_port",
-			"ip_layers.1.dst_port",
+			"outer_src_addr",
+			"src_addr",
+			"dst_addr",
+			"proto",
+			"src_port",
+			"dst_port",
 		},
 		Sum: []string{"bytes", "packets"},
 		Current: []string{
-			"ip_layers.0.dst_addr",
+			"outer_dst_addr",
 		},
 	})
 	if err != nil {
@@ -92,24 +92,16 @@ func TestStatefulAggregatesNestedPacketLayerFields(t *testing.T) {
 	}
 
 	fields := map[string]any{
-		"ip_layers": []map[string]any{
-			{
-				"role":     "outer",
-				"src_addr": "203.0.113.1",
-				"dst_addr": "203.0.113.2",
-				"proto":    uint32(47),
-			},
-			{
-				"role":     "inner",
-				"src_addr": "192.0.2.1",
-				"dst_addr": "198.51.100.2",
-				"proto":    uint32(6),
-				"src_port": uint32(12345),
-				"dst_port": uint32(443),
-			},
-		},
-		"bytes":   int64(60),
-		"packets": int64(1),
+		"outer_src_addr": "203.0.113.1",
+		"outer_dst_addr": "203.0.113.2",
+		"outer_proto":    uint32(47),
+		"src_addr":       "192.0.2.1",
+		"dst_addr":       "198.51.100.2",
+		"proto":          uint32(6),
+		"src_port":       uint32(12345),
+		"dst_port":       uint32(443),
+		"bytes":          int64(60),
+		"packets":        int64(1),
 	}
 	if _, err := agg.Process(&event.Event{Fields: fields}); err != nil {
 		t.Fatalf("Process returned error: %v", err)
@@ -122,13 +114,13 @@ func TestStatefulAggregatesNestedPacketLayerFields(t *testing.T) {
 	if len(out) != 1 {
 		t.Fatalf("expected 1 aggregated event, got %d", len(out))
 	}
-	if got := out[0].Fields["ip_layers.0.src_addr"]; got != "203.0.113.1" {
+	if got := out[0].Fields["outer_src_addr"]; got != "203.0.113.1" {
 		t.Fatalf("expected outer source key to be preserved, got %#v", got)
 	}
-	if got := out[0].Fields["ip_layers.1.src_addr"]; got != "192.0.2.1" {
+	if got := out[0].Fields["src_addr"]; got != "192.0.2.1" {
 		t.Fatalf("expected inner source key to be preserved, got %#v", got)
 	}
-	if got := out[0].Fields["ip_layers.0.dst_addr"]; got != "203.0.113.2" {
+	if got := out[0].Fields["outer_dst_addr"]; got != "203.0.113.2" {
 		t.Fatalf("expected current nested field to be preserved, got %#v", got)
 	}
 	if got := out[0].Fields["bytes"]; got != int64(60) {
@@ -171,9 +163,9 @@ func TestNestedIPLayersSampleConfigsAndJSON(t *testing.T) {
 			name:        "nested ip layers",
 			file:        "nested-ip-layers.json",
 			wantBytes:   96,
-			wantAggKey:  "ip_layers.0.src_addr",
+			wantAggKey:  "outer_src_addr",
 			wantAggVal:  "203.0.113.1",
-			wantAggKey2: "ip_layers.1.src_addr",
+			wantAggKey2: "src_addr",
 			wantAggVal2: "192.0.2.1",
 		},
 		{
@@ -181,10 +173,8 @@ func TestNestedIPLayersSampleConfigsAndJSON(t *testing.T) {
 			file:       "nested-dot1q-mpls-gre.json",
 			wantBytes:  128,
 			wantLayers: []string{"ethernet", "dot1q", "mpls", "ipv4", "gre", "ipv4", "tcp"},
-			wantVLANID: float64(100),
-			wantMPLS:   float64(17),
-			wantEther:  float64(34887),
-			wantAggKey: "ip_layers.0.dst_addr",
+			wantVLANID: uint32(100),
+			wantAggKey: "outer_dst_addr",
 			wantAggVal: "203.0.113.2",
 		},
 	}
@@ -210,17 +200,17 @@ func TestNestedIPLayersSampleConfigsAndJSON(t *testing.T) {
 			if len(events) != 1 {
 				t.Fatalf("expected 1 processed event, got %d", len(events))
 			}
+			if events[0].Packet == nil || len(events[0].Packet.Layers) == 0 {
+				t.Fatalf("expected sample JSON to populate packet.layers")
+			}
 			if len(tt.wantLayers) > 0 {
-				layers, ok := events[0].Fields["packet_layers"].([]any)
-				if !ok {
-					t.Fatalf("expected packet_layers to be []any, got %T", events[0].Fields["packet_layers"])
-				}
+				layers := packetLayerKinds(events[0].Packet)
 				if len(layers) != len(tt.wantLayers) {
-					t.Fatalf("expected packet_layers length %d, got %#v", len(tt.wantLayers), layers)
+					t.Fatalf("expected packet layer count %d, got %#v", len(tt.wantLayers), layers)
 				}
 				for i, want := range tt.wantLayers {
 					if layers[i] != want {
-						t.Fatalf("expected packet_layers[%d]=%q, got %#v", i, want, layers[i])
+						t.Fatalf("expected packet.layers[%d].kind=%q, got %#v", i, want, layers[i])
 					}
 				}
 			}
@@ -270,6 +260,17 @@ func TestNestedIPLayersSampleConfigsAndJSON(t *testing.T) {
 			}
 		})
 	}
+}
+
+func packetLayerKinds(model *event.PacketModel) []string {
+	if model == nil {
+		return nil
+	}
+	layers := make([]string, 0, len(model.Layers))
+	for _, layer := range model.Layers {
+		layers = append(layers, layer.Kind)
+	}
+	return layers
 }
 
 func TestStatefulInitEventsCarryConfiguredStreamAndTemplateBaseID(t *testing.T) {

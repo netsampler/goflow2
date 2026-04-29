@@ -4,28 +4,43 @@
   "sampling_rate": 100,
   "input_if": 10,
   "output_if": 20,
-  "ip_layers": [
-    {
-      "index": 0,
-      "role": "outer",
-      "src_addr": "203.0.113.1",
-      "dst_addr": "203.0.113.2",
-      "proto": 47,
-      "proto_name": "gre",
-      "src_port": 0,
-      "dst_port": 0
-    },
-    {
-      "index": 1,
-      "role": "inner",
-      "src_addr": "192.0.2.1",
-      "dst_addr": "198.51.100.2",
-      "proto": 6,
-      "proto_name": "tcp",
-      "src_port": 12345,
-      "dst_port": 443
-    }
-  ],
+  "packet": {
+    "layers": [
+      {
+        "kind": "ipv4",
+        "ipv4": {
+          "src_addr": "203.0.113.1",
+          "dst_addr": "203.0.113.2",
+          "protocol": 47,
+          "ttl": 64
+        }
+      },
+      {
+        "kind": "gre",
+        "gre": {
+          "protocol": 2048
+        }
+      },
+      {
+        "kind": "ipv4",
+        "ipv4": {
+          "src_addr": "192.0.2.1",
+          "dst_addr": "198.51.100.2",
+          "protocol": 6,
+          "ttl": 64
+        }
+      },
+      {
+        "kind": "tcp",
+        "tcp": {
+          "src_port": 12345,
+          "dst_port": 443,
+          "flags": 2,
+          "window": 65535
+        }
+      }
+    ]
+  },
   "bytes": 96,
   "packets": 1,
   "start_time_unix": 1714483200000,

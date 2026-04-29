@@ -245,6 +245,43 @@ sink:
 	}
 }
 
+func TestLoadAllowsDisabledAggregatorWithoutExportTrigger(t *testing.T) {
+	dir := t.TempDir()
+
+	cfgPath := filepath.Join(dir, "reflow.yaml")
+	if err := os.WriteFile(cfgPath, []byte(`
+sources:
+  - network: udp
+    address: ":18081"
+    type: json
+
+processor:
+  type: builtin
+
+aggregators:
+  - enabled: false
+
+encoder:
+  type: json
+
+sink:
+  type: stdout
+`), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	cfg, err := Load(cfgPath)
+	if err != nil {
+		t.Fatalf("Load returned error: %v", err)
+	}
+	if len(cfg.Aggregators) != 1 {
+		t.Fatalf("expected 1 aggregator, got %d", len(cfg.Aggregators))
+	}
+	if cfg.Aggregators[0].Enabled {
+		t.Fatalf("expected disabled aggregator to remain disabled")
+	}
+}
+
 func TestLoadSupportsAggregatorList(t *testing.T) {
 	dir := t.TempDir()
 

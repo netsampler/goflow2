@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"encoding/json"
 	"net/netip"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -13,6 +15,7 @@ import (
 	"github.com/netsampler/goflow2/v3/internal/reflow/aggregate"
 	"github.com/netsampler/goflow2/v3/internal/reflow/config"
 	"github.com/netsampler/goflow2/v3/internal/reflow/event"
+	"github.com/netsampler/goflow2/v3/internal/reflow/processor"
 	flowpb "github.com/netsampler/goflow2/v3/pb"
 	"github.com/netsampler/goflow2/v3/utils/store/templates"
 	"google.golang.org/protobuf/encoding/protowire"
@@ -542,23 +545,8 @@ func TestSFlowEncoderBuildsDirectIPEncapsulatedPseudoHeader(t *testing.T) {
 	evt := &event.Event{
 		Fields: map[string]any{
 			"agent_ip": "192.0.2.10",
-			"ip_layers": []map[string]any{
-				{
-					"role":     "outer",
-					"src_addr": "203.0.113.1",
-					"dst_addr": "203.0.113.2",
-					"proto":    uint32(47),
-				},
-				{
-					"role":     "inner",
-					"src_addr": "192.0.2.1",
-					"dst_addr": "198.51.100.2",
-					"proto":    uint32(6),
-					"src_port": uint32(12345),
-					"dst_port": uint32(443),
-				},
-			},
 		},
+		Packet: directGRETCPPacketModel(),
 	}
 
 	payloads, err := enc.Encode(evt)
@@ -586,34 +574,58 @@ func TestSFlowEncoderBuildsDirectIPEncapsulatedPseudoHeader(t *testing.T) {
 	}
 }
 
+func TestSFlowEncoderBuildsDirectIPEncapsulatedPseudoHeaderFromReFlowJSON(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("..", "..", "..", "cmd", "reflow", "nested-ip-layers.json"))
+	if err != nil {
+		t.Fatalf("read nested-ip-layers.json: %v", err)
+	}
+	proc := processor.NewBuiltin(config.ProcessorConfig{})
+	events, err := proc.Process(&event.Event{
+		Source: event.SourceMetadata{
+			Type: "json",
+			JSON: event.JSONMetadata{Flavor: "reflow"},
+		},
+		Message: raw,
+	})
+	if err != nil {
+		t.Fatalf("Process returned error: %v", err)
+	}
+	if len(events) != 1 {
+		t.Fatalf("expected 1 event, got %d", len(events))
+	}
+
+	enc := NewSFlowEncoder(config.EncoderConfig{Type: "sflow"})
+	payloads, err := enc.Encode(events[0])
+	if err != nil {
+		t.Fatalf("Encode returned error: %v", err)
+	}
+	packet := decodeSFlowPacket(t, payloads[0])
+	sample := packet.Samples[0].(sflow.FlowSample)
+	header := sample.Records[0].Data.(sflow.SampledHeader)
+	if header.Protocol != 11 {
+		t.Fatalf("expected sampled header protocol=11, got %d", header.Protocol)
+	}
+	if header.HeaderData[9] != 47 {
+		t.Fatalf("expected outer IPv4 protocol GRE, got %d", header.HeaderData[9])
+	}
+	if header.HeaderData[22] != 0x08 || header.HeaderData[23] != 0x00 {
+		t.Fatalf("expected GRE inner protocol 0x0800, got %02x%02x", header.HeaderData[22], header.HeaderData[23])
+	}
+}
+
 func TestSFlowEncoderBuildsEncapsulatedPseudoHeader(t *testing.T) {
 	enc := NewSFlowEncoder(config.EncoderConfig{Type: "sflow"})
 
 	evt := &event.Event{
 		Fields: map[string]any{
-			"agent_ip":   "192.0.2.10",
-			"src_mac":    "66:77:88:99:aa:bb",
-			"dst_mac":    "00:11:22:33:44:55",
-			"vlan_id":    uint32(100),
-			"mpls_label": uint32(17),
-			"ip_layers": []map[string]any{
-				{
-					"role":     "outer",
-					"src_addr": "203.0.113.1",
-					"dst_addr": "203.0.113.2",
-					"proto":    uint32(47),
-				},
-				{
-					"role":     "inner",
-					"src_addr": "192.0.2.1",
-					"dst_addr": "198.51.100.2",
-					"proto":    uint32(6),
-					"src_port": uint32(12345),
-					"dst_port": uint32(443),
-				},
-			},
+			"agent_ip":        "192.0.2.10",
+			"src_mac":         "66:77:88:99:aa:bb",
+			"dst_mac":         "00:11:22:33:44:55",
+			"vlan_id":         uint32(100),
+			"mpls_label":      uint32(17),
 			"original_length": uint32(86),
 		},
+		Packet: encapsulatedGRETCPPacketModel(),
 	}
 
 	payloads, err := enc.Encode(evt)
@@ -649,7 +661,7 @@ func TestSFlowEncoderBuildsEncapsulatedPseudoHeader(t *testing.T) {
 		t.Fatalf("expected GRE inner protocol 0x0800, got %02x%02x", header.HeaderData[44], header.HeaderData[45])
 	}
 	if evt.Packet == nil || len(evt.Packet.Layers) < 4 {
-		t.Fatalf("expected nested ip_layers to build an encapsulated packet model, got %#v", evt.Packet)
+		t.Fatalf("expected nested packet model, got %#v", evt.Packet)
 	}
 }
 
@@ -659,25 +671,8 @@ func TestSFlowEncoderBuildsVXLANPseudoHeaderFromPorts(t *testing.T) {
 	evt := &event.Event{
 		Fields: map[string]any{
 			"agent_ip": "192.0.2.10",
-			"ip_layers": []map[string]any{
-				{
-					"role":     "outer",
-					"src_addr": "203.0.113.1",
-					"dst_addr": "203.0.113.2",
-					"proto":    uint32(17),
-					"src_port": uint32(49152),
-					"dst_port": uint32(4789),
-				},
-				{
-					"role":     "inner",
-					"src_addr": "192.0.2.1",
-					"dst_addr": "198.51.100.2",
-					"proto":    uint32(6),
-					"src_port": uint32(12345),
-					"dst_port": uint32(443),
-				},
-			},
 		},
+		Packet: vxlanTCPPacketModel(),
 	}
 
 	payloads, err := enc.Encode(evt)
@@ -698,6 +693,68 @@ func TestSFlowEncoderBuildsVXLANPseudoHeaderFromPorts(t *testing.T) {
 	}
 	if evt.Packet.Layers[1].Kind != "udp" || evt.Packet.Layers[2].Kind != "vxlan" {
 		t.Fatalf("expected outer UDP and VXLAN layers, got %#v", evt.Packet.Layers)
+	}
+}
+
+func directGRETCPPacketModel() *event.PacketModel {
+	return &event.PacketModel{
+		Layers: []event.LayerSpec{
+			ipv4Layer("203.0.113.1", "203.0.113.2", 47),
+			{Kind: "gre", GRE: &event.GRELayer{Protocol: 0x0800}},
+			ipv4Layer("192.0.2.1", "198.51.100.2", 6),
+			tcpLayer(12345, 443),
+		},
+	}
+}
+
+func encapsulatedGRETCPPacketModel() *event.PacketModel {
+	return &event.PacketModel{
+		Layers: []event.LayerSpec{
+			{Kind: "ethernet", Ethernet: &event.EthernetLayer{SrcMAC: "66:77:88:99:aa:bb", DstMAC: "00:11:22:33:44:55"}},
+			{Kind: "dot1q", VLAN: &event.VLANLayer{ID: 100, TPID: 0x8100}},
+			{Kind: "mpls", MPLS: &event.MPLSLayer{Label: event.MPLSLabel{Label: 17, BOS: true, TTL: 64}}},
+			ipv4Layer("203.0.113.1", "203.0.113.2", 47),
+			{Kind: "gre", GRE: &event.GRELayer{Protocol: 0x0800}},
+			ipv4Layer("192.0.2.1", "198.51.100.2", 6),
+			tcpLayer(12345, 443),
+		},
+	}
+}
+
+func vxlanTCPPacketModel() *event.PacketModel {
+	return &event.PacketModel{
+		Layers: []event.LayerSpec{
+			ipv4Layer("203.0.113.1", "203.0.113.2", 17),
+			{Kind: "udp", UDP: &event.UDPLayer{SrcPort: 49152, DstPort: 4789}},
+			{Kind: "vxlan", VXLAN: &event.VXLANLayer{}},
+			{Kind: "ethernet", Ethernet: &event.EthernetLayer{}},
+			ipv4Layer("192.0.2.1", "198.51.100.2", 6),
+			tcpLayer(12345, 443),
+		},
+	}
+}
+
+func ipv4Layer(src, dst string, proto uint8) event.LayerSpec {
+	return event.LayerSpec{
+		Kind: "ipv4",
+		IPv4: &event.IPv4Layer{
+			SrcAddr:  netip.MustParseAddr(src),
+			DstAddr:  netip.MustParseAddr(dst),
+			Protocol: proto,
+			TTL:      64,
+		},
+	}
+}
+
+func tcpLayer(srcPort, dstPort uint16) event.LayerSpec {
+	return event.LayerSpec{
+		Kind: "tcp",
+		TCP: &event.TCPLayer{
+			SrcPort: srcPort,
+			DstPort: dstPort,
+			Flags:   0x02,
+			Window:  65535,
+		},
 	}
 }
 

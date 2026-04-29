@@ -261,6 +261,9 @@ func TestBuiltinProcessGoFlow2V2PreservesNanosecondTimeAliases(t *testing.T) {
 	if got := fields["end_time_unix"]; got != int64(1_700_000_000_900) {
 		t.Fatalf("expected end_time_unix milliseconds, got %#v", got)
 	}
+	if events[0].SFlow != nil {
+		t.Fatalf("expected sflow metadata to remain unset, got %#v", events[0].SFlow)
+	}
 }
 
 func TestBuiltinProcessBytesCanDisablePacketMapping(t *testing.T) {
@@ -424,19 +427,8 @@ func TestBuiltinProcessBytesExtractsEncapsulatedLayers(t *testing.T) {
 	if len(vlanIDs) != 1 || vlanIDs[0] != 100 {
 		t.Fatalf("expected vlan_ids=[100], got %#v", vlanIDs)
 	}
-	layers, ok := fields["packet_layers"].([]string)
-	if !ok {
-		t.Fatalf("expected packet_layers to be []string, got %T", fields["packet_layers"])
-	}
 	expectedLayers := []string{"ethernet", "dot1q", "ipv4", "gre", "ipv4", "tcp"}
-	if len(layers) != len(expectedLayers) {
-		t.Fatalf("expected %d packet layers, got %#v", len(expectedLayers), layers)
-	}
-	for i, want := range expectedLayers {
-		if layers[i] != want {
-			t.Fatalf("expected packet_layers[%d]=%q, got %#v", i, want, layers[i])
-		}
-	}
+	expectPacketLayers(t, events[0], expectedLayers)
 	if got := fields["outer_src_addr"]; got != "203.0.113.1" {
 		t.Fatalf("expected outer_src_addr=203.0.113.1, got %#v", got)
 	}
@@ -476,19 +468,8 @@ func TestBuiltinProcessBytesExtractsVXLANInnerPacket(t *testing.T) {
 	}
 	fields := events[0].Fields
 
-	layers, ok := fields["packet_layers"].([]string)
-	if !ok {
-		t.Fatalf("expected packet_layers to be []string, got %T", fields["packet_layers"])
-	}
 	expectedLayers := []string{"ethernet", "ipv4", "vxlan", "ethernet", "ipv4", "tcp"}
-	if len(layers) != len(expectedLayers) {
-		t.Fatalf("expected %d packet layers, got %#v", len(expectedLayers), layers)
-	}
-	for i, want := range expectedLayers {
-		if layers[i] != want {
-			t.Fatalf("expected packet_layers[%d]=%q, got %#v", i, want, layers[i])
-		}
-	}
+	expectPacketLayers(t, events[0], expectedLayers)
 	if got := fields["outer_src_addr"]; got != "203.0.113.1" {
 		t.Fatalf("expected outer_src_addr=203.0.113.1, got %#v", got)
 	}
@@ -523,19 +504,8 @@ func TestBuiltinProcessBytesCanDisableUDPTunnelDecoding(t *testing.T) {
 		t.Fatalf("Process returned error: %v", err)
 	}
 	fields := events[0].Fields
-	layers, ok := fields["packet_layers"].([]string)
-	if !ok {
-		t.Fatalf("expected packet_layers to be []string, got %T", fields["packet_layers"])
-	}
 	expectedLayers := []string{"ethernet", "ipv4", "udp"}
-	if len(layers) != len(expectedLayers) {
-		t.Fatalf("expected %d packet layers, got %#v", len(expectedLayers), layers)
-	}
-	for i, want := range expectedLayers {
-		if layers[i] != want {
-			t.Fatalf("expected packet_layers[%d]=%q, got %#v", i, want, layers[i])
-		}
-	}
+	expectPacketLayers(t, events[0], expectedLayers)
 	if got := fields["src_addr"]; got != "203.0.113.1" {
 		t.Fatalf("expected outer src_addr=203.0.113.1, got %#v", got)
 	}
@@ -565,20 +535,8 @@ func TestBuiltinProcessBytesCanDisableVXLANEncapsulation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Process returned error: %v", err)
 	}
-	fields := events[0].Fields
-	layers, ok := fields["packet_layers"].([]string)
-	if !ok {
-		t.Fatalf("expected packet_layers to be []string, got %T", fields["packet_layers"])
-	}
 	expectedLayers := []string{"ethernet", "ipv4", "udp"}
-	if len(layers) != len(expectedLayers) {
-		t.Fatalf("expected %d packet layers, got %#v", len(expectedLayers), layers)
-	}
-	for i, want := range expectedLayers {
-		if layers[i] != want {
-			t.Fatalf("expected packet_layers[%d]=%q, got %#v", i, want, layers[i])
-		}
-	}
+	expectPacketLayers(t, events[0], expectedLayers)
 }
 
 func TestBuiltinProcessBytesDecodesCustomVXLANPort(t *testing.T) {
@@ -642,19 +600,8 @@ func TestBuiltinProcessBytesExtractsIPv6InIPWithRoutingHeader(t *testing.T) {
 		t.Fatalf("Process returned error: %v", err)
 	}
 	fields := events[0].Fields
-	layers, ok := fields["packet_layers"].([]string)
-	if !ok {
-		t.Fatalf("expected packet_layers to be []string, got %T", fields["packet_layers"])
-	}
 	expectedLayers := []string{"ethernet", "ipv4", "ipv6", "ipv6_routing", "tcp"}
-	if len(layers) != len(expectedLayers) {
-		t.Fatalf("expected %d packet layers, got %#v", len(expectedLayers), layers)
-	}
-	for i, want := range expectedLayers {
-		if layers[i] != want {
-			t.Fatalf("expected packet_layers[%d]=%q, got %#v", i, want, layers[i])
-		}
-	}
+	expectPacketLayers(t, events[0], expectedLayers)
 	expectIPLayer(t, fields, 0, "outer", "203.0.113.1", "203.0.113.2", 41, 0, 0)
 	expectIPLayer(t, fields, 1, "inner", "2001:db8::1", "2001:db8::2", 6, 12345, 443)
 }
@@ -695,12 +642,8 @@ func TestBuiltinProcessBytesExtractsL2TPAndGTPUInnerPackets(t *testing.T) {
 				t.Fatalf("Process returned error: %v", err)
 			}
 			fields := events[0].Fields
-			layers, ok := fields["packet_layers"].([]string)
-			if !ok {
-				t.Fatalf("expected packet_layers to be []string, got %T", fields["packet_layers"])
-			}
-			if !containsLayer(layers, tt.wantLayer) {
-				t.Fatalf("expected packet_layers to contain %q, got %#v", tt.wantLayer, layers)
+			if !packetContainsLayer(events[0], tt.wantLayer) {
+				t.Fatalf("expected packet.layers to contain %q, got %#v", tt.wantLayer, events[0].Packet)
 			}
 			expectIPLayer(t, fields, 0, tt.wantOuter.role, tt.wantOuter.srcAddr, tt.wantOuter.dstAddr, tt.wantOuter.proto, tt.wantOuter.srcPort, tt.wantOuter.dstPort)
 			expectIPLayer(t, fields, 1, tt.wantInner.role, tt.wantInner.srcAddr, tt.wantInner.dstAddr, tt.wantInner.proto, tt.wantInner.srcPort, tt.wantInner.dstPort)
@@ -725,19 +668,8 @@ func TestBuiltinProcessBytesExtractsStackedEncapsulations(t *testing.T) {
 		t.Fatalf("Process returned error: %v", err)
 	}
 	fields := events[0].Fields
-	layers, ok := fields["packet_layers"].([]string)
-	if !ok {
-		t.Fatalf("expected packet_layers to be []string, got %T", fields["packet_layers"])
-	}
 	expectedLayers := []string{"ethernet", "dot1q", "pppoe", "mpls", "ipv4", "gre", "ipv4", "tcp"}
-	if len(layers) != len(expectedLayers) {
-		t.Fatalf("expected %d packet layers, got %#v", len(expectedLayers), layers)
-	}
-	for i, want := range expectedLayers {
-		if layers[i] != want {
-			t.Fatalf("expected packet_layers[%d]=%q, got %#v", i, want, layers[i])
-		}
-	}
+	expectPacketLayers(t, events[0], expectedLayers)
 	if got := fields["vlan_id"]; got != uint32(100) {
 		t.Fatalf("expected vlan_id=100, got %#v", got)
 	}
@@ -770,19 +702,8 @@ func TestBuiltinProcessBytesExtractsMPLSInnerPacket(t *testing.T) {
 	}
 	fields := events[0].Fields
 
-	layers, ok := fields["packet_layers"].([]string)
-	if !ok {
-		t.Fatalf("expected packet_layers to be []string, got %T", fields["packet_layers"])
-	}
 	expectedLayers := []string{"ethernet", "mpls", "ipv4", "tcp"}
-	if len(layers) != len(expectedLayers) {
-		t.Fatalf("expected %d packet layers, got %#v", len(expectedLayers), layers)
-	}
-	for i, want := range expectedLayers {
-		if layers[i] != want {
-			t.Fatalf("expected packet_layers[%d]=%q, got %#v", i, want, layers[i])
-		}
-	}
+	expectPacketLayers(t, events[0], expectedLayers)
 	expectIPLayer(t, fields, 0, "single", "192.0.2.1", "198.51.100.2", 6, 12345, 443)
 	if got := fields["src_addr"]; got != "192.0.2.1" {
 		t.Fatalf("expected src_addr=192.0.2.1, got %#v", got)
@@ -792,7 +713,7 @@ func TestBuiltinProcessBytesExtractsMPLSInnerPacket(t *testing.T) {
 	}
 }
 
-func TestBuiltinProcessReFlowJSONPreservesCounterFields(t *testing.T) {
+func TestBuiltinProcessReFlowJSONPreservesCounterFieldsWithoutSFlowMetadata(t *testing.T) {
 	proc := NewBuiltin(config.ProcessorConfig{})
 
 	msg, err := json.Marshal(map[string]any{
@@ -833,8 +754,71 @@ func TestBuiltinProcessReFlowJSONPreservesCounterFields(t *testing.T) {
 	if got := fields["if_index"]; got != float64(5) {
 		t.Fatalf("expected if_index=5, got %#v", got)
 	}
-	if events[0].SFlow == nil || events[0].SFlow.AgentIP != "192.0.2.10" {
-		t.Fatalf("expected sflow metadata to be populated, got %#v", events[0].SFlow)
+	if events[0].SFlow != nil {
+		t.Fatalf("expected sflow metadata to remain unset, got %#v", events[0].SFlow)
+	}
+}
+
+func TestBuiltinProcessReFlowJSONUsesCanonicalEventFieldsWithoutEnvelopeMetadata(t *testing.T) {
+	proc := NewBuiltin(config.ProcessorConfig{})
+
+	msg, err := json.Marshal(map[string]any{
+		"received_at": "2026-04-28T00:00:00Z",
+		"source": map[string]any{
+			"network": "udp",
+			"address": ":18081",
+			"type":    "json",
+		},
+		"fields": map[string]any{
+			"agent_ip": "192.0.2.10",
+			"bytes":    1234,
+		},
+		"packet": map[string]any{
+			"layers": []string{"ipv4"},
+		},
+		"sflow": map[string]any{
+			"agent_ip": "192.0.2.10",
+		},
+	})
+	if err != nil {
+		t.Fatalf("Marshal returned error: %v", err)
+	}
+
+	events, err := proc.Process(&event.Event{
+		Source: event.SourceMetadata{
+			Type: "json",
+			JSON: event.JSONMetadata{Flavor: "reflow"},
+		},
+		Message: msg,
+	})
+	if err != nil {
+		t.Fatalf("Process returned error: %v", err)
+	}
+	if len(events) != 1 {
+		t.Fatalf("expected 1 event, got %d", len(events))
+	}
+
+	processed := events[0]
+	if processed.SFlow != nil {
+		t.Fatalf("expected sflow metadata to remain unset, got %#v", processed.SFlow)
+	}
+	if processed.Packet != nil {
+		t.Fatalf("expected packet metadata to remain unset, got %#v", processed.Packet)
+	}
+	if _, ok := processed.Fields["sflow"]; ok {
+		t.Fatalf("did not expect sflow envelope to be copied into fields")
+	}
+	if _, ok := processed.Fields["packet"]; ok {
+		t.Fatalf("did not expect packet envelope to be copied into fields")
+	}
+	if _, ok := processed.Fields["source"]; ok {
+		t.Fatalf("did not expect source envelope to be copied into fields")
+	}
+	if got := processed.Fields["agent_ip"]; got != "192.0.2.10" {
+		t.Fatalf("expected agent_ip field to be preserved, got %#v", got)
+	}
+	if got := processed.Fields["bytes"]; got != float64(1234) {
+		t.Fatalf("expected bytes field to be preserved, got %#v", got)
 	}
 }
 
@@ -931,35 +915,52 @@ func TestBuiltinProcessFlowDoesNotTreatGenericProtocolAsSFlowHeaderProtocol(t *t
 
 func expectIPLayer(t *testing.T, fields map[string]any, index int, role, srcAddr, dstAddr string, proto, srcPort, dstPort uint32) {
 	t.Helper()
-	layers, ok := fields["ip_layers"].([]map[string]any)
-	if !ok {
-		t.Fatalf("expected ip_layers to be []map[string]any, got %T", fields["ip_layers"])
+	prefix := ""
+	if role == "outer" && index == 0 {
+		prefix = "outer_"
 	}
-	if count := fields["ip_layer_count"]; count != uint32(len(layers)) {
-		t.Fatalf("expected ip_layer_count=%d, got %#v", len(layers), count)
+	if got := fields[prefix+"src_addr"]; got != srcAddr {
+		t.Fatalf("expected %ssrc_addr=%q, got %#v", prefix, srcAddr, got)
 	}
-	if index < 0 || index >= len(layers) {
-		t.Fatalf("expected ip_layers[%d], got %#v", index, layers)
+	if got := fields[prefix+"dst_addr"]; got != dstAddr {
+		t.Fatalf("expected %sdst_addr=%q, got %#v", prefix, dstAddr, got)
 	}
-	layer := layers[index]
-	if got := layer["role"]; got != role {
-		t.Fatalf("expected ip_layers[%d].role=%q, got %#v", index, role, got)
+	if got := fields[prefix+"proto"]; got != proto {
+		t.Fatalf("expected %sproto=%d, got %#v", prefix, proto, got)
 	}
-	if got := layer["src_addr"]; got != srcAddr {
-		t.Fatalf("expected ip_layers[%d].src_addr=%q, got %#v", index, srcAddr, got)
+	if got := fields[prefix+"src_port"]; got != srcPort {
+		t.Fatalf("expected %ssrc_port=%d, got %#v", prefix, srcPort, got)
 	}
-	if got := layer["dst_addr"]; got != dstAddr {
-		t.Fatalf("expected ip_layers[%d].dst_addr=%q, got %#v", index, dstAddr, got)
+	if got := fields[prefix+"dst_port"]; got != dstPort {
+		t.Fatalf("expected %sdst_port=%d, got %#v", prefix, dstPort, got)
 	}
-	if got := layer["proto"]; got != proto {
-		t.Fatalf("expected ip_layers[%d].proto=%d, got %#v", index, proto, got)
+}
+
+func expectPacketLayers(t *testing.T, evt *event.Event, expected []string) {
+	t.Helper()
+	if evt.Packet == nil {
+		t.Fatalf("expected packet model")
 	}
-	if got := layer["src_port"]; got != srcPort {
-		t.Fatalf("expected ip_layers[%d].src_port=%d, got %#v", index, srcPort, got)
+	if len(evt.Packet.Layers) != len(expected) {
+		t.Fatalf("expected %d packet layers, got %#v", len(expected), evt.Packet.Layers)
 	}
-	if got := layer["dst_port"]; got != dstPort {
-		t.Fatalf("expected ip_layers[%d].dst_port=%d, got %#v", index, dstPort, got)
+	for i, want := range expected {
+		if evt.Packet.Layers[i].Kind != want {
+			t.Fatalf("expected packet.layers[%d].kind=%q, got %#v", i, want, evt.Packet.Layers[i].Kind)
+		}
 	}
+}
+
+func packetContainsLayer(evt *event.Event, want string) bool {
+	if evt.Packet == nil {
+		return false
+	}
+	for _, layer := range evt.Packet.Layers {
+		if layer.Kind == want {
+			return true
+		}
+	}
+	return false
 }
 
 type packetLayerExpectation struct {
@@ -969,15 +970,6 @@ type packetLayerExpectation struct {
 	proto   uint32
 	srcPort uint32
 	dstPort uint32
-}
-
-func containsLayer(layers []string, want string) bool {
-	for _, layer := range layers {
-		if layer == want {
-			return true
-		}
-	}
-	return false
 }
 
 func vxlanTestPacket(dstPort uint16) []byte {

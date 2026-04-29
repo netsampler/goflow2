@@ -511,6 +511,9 @@ func validateAggregatorConfig(cfg AggregatorConfig) error {
 	if cfg.Periodic.Every < 0 {
 		return fmt.Errorf("aggregator.periodic.every_ms must be >= 0")
 	}
+	if !cfg.Enabled {
+		return nil
+	}
 	if cfg.Periodic.ResetBuckets && cfg.Periodic.Every == 0 {
 		return fmt.Errorf("aggregator.periodic.reset_buckets requires aggregator.periodic.every_ms > 0")
 	}

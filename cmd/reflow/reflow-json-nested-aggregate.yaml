@@ -1,5 +1,5 @@
-# Accept ReFlow-native JSON over UDP, aggregate encapsulated flows by nested IP
-# layer fields, and print aggregate JSON snapshots.
+# Accept ReFlow-native JSON over UDP, aggregate encapsulated flows by outer and
+# inner tuple fields derived from packet.layers, and print aggregate JSON snapshots.
 #
 # Manual test:
 #   go run ./cmd/reflow -config cmd/reflow/reflow-json-nested-aggregate.yaml
@@ -31,13 +31,13 @@ aggregators:
     periodic:
       every_ms: 1000
     key_fields:
-      - ip_layers.0.src_addr
-      - ip_layers.0.dst_addr
-      - ip_layers.1.src_addr
-      - ip_layers.1.dst_addr
-      - ip_layers.1.proto
-      - ip_layers.1.src_port
-      - ip_layers.1.dst_port
+      - outer_src_addr
+      - outer_dst_addr
+      - src_addr
+      - dst_addr
+      - proto
+      - src_port
+      - dst_port
     template_id: 300
     static_fields:
       example: nested-ip-layers

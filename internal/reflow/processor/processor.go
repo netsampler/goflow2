@@ -97,9 +97,6 @@ func (p *Builtin) processBytes(evt *event.Event) ([]*event.Event, error) {
 	if _, ok := fields["protocol"]; !ok {
 		fields["protocol"] = uint32(1)
 	}
-	if evt.SFlow == nil {
-		evt.SFlow = &event.SFlowMetadata{}
-	}
 	if err := packet.NormalizeEvent(evt, packet.NormalizeOptions{
 		DisablePacketMapping: p.cfg.DisablePacketMapping,
 		TruncatePacketBytes:  p.cfg.TruncatePacketBytes,
@@ -154,13 +151,6 @@ func (p *Builtin) processFlow(evt *event.Event) ([]*event.Event, error) {
 			Decode:               p.decode,
 		}); err != nil {
 			return nil, err
-		}
-	}
-	if evt.SFlow == nil && (fieldStringOrZero(fields, "agent_ip") != "" || fieldUint32(fields, "sub_agent_id") != 0 || fieldUint32(fields, "source_id") != 0) {
-		evt.SFlow = &event.SFlowMetadata{
-			AgentIP:    fieldStringOrZero(fields, "agent_ip"),
-			SubAgentID: fieldUint32(fields, "sub_agent_id"),
-			SourceID:   fieldUint32(fields, "source_id"),
 		}
 	}
 	if p.cfg.DropMessage {
@@ -235,15 +225,6 @@ func (p *Builtin) processJSONRawPacketHeader(evt *event.Event) ([]*event.Event, 
 	fields["header_data"] = headerData
 	fields["bytes"] = int64(in.FrameLength)
 	fields["packets"] = int64(1)
-	evt.SFlow = &event.SFlowMetadata{
-		AgentIP:      in.AgentIP,
-		SubAgentID:   in.SubAgentID,
-		SourceID:     in.SourceID,
-		SamplingRate: in.SamplingRate,
-		SamplePool:   in.SamplePool,
-		Drops:        in.Drops,
-	}
-
 	if err := packet.NormalizeEvent(evt, packet.NormalizeOptions{
 		DisablePacketMapping: p.cfg.DisablePacketMapping,
 		TruncatePacketBytes:  p.cfg.TruncatePacketBytes,
@@ -315,44 +296,87 @@ func (p *Builtin) processReFlowJSON(evt *event.Event, payload any) ([]*event.Eve
 	if !ok {
 		return nil, fmt.Errorf("reflow expects a JSON object")
 	}
-	return p.processReFlowFields(evt, record), nil
+	if fields, ok := canonicalEventFields(record); ok {
+		return p.processReFlowFields(evt, fields)
+	}
+	return p.processReFlowFields(evt, record)
 }
 
 // processReFlowFields copies a native ReFlow JSON object directly into the event field map.
-func (p *Builtin) processReFlowFields(evt *event.Event, record map[string]any) []*event.Event {
+func (p *Builtin) processReFlowFields(evt *event.Event, record map[string]any) ([]*event.Event, error) {
 	fields := ensureFields(evt, len(record))
 	for key, value := range record {
-		fields[key] = normalizeReFlowJSONValue(key, value)
-	}
-	if evt.SFlow == nil && (fieldStringOrZero(fields, "agent_ip") != "" || fieldUint32(fields, "sub_agent_id") != 0 || fieldUint32(fields, "source_id") != 0) {
-		evt.SFlow = &event.SFlowMetadata{
-			AgentIP:    fieldStringOrZero(fields, "agent_ip"),
-			SubAgentID: fieldUint32(fields, "sub_agent_id"),
-			SourceID:   fieldUint32(fields, "source_id"),
+		if key == "packet" {
+			model, err := reFlowPacketModelFromValue(value)
+			if err != nil {
+				return nil, err
+			}
+			evt.Packet = model
+			packet.ApplyModelFields(fields, model)
+			continue
 		}
+		fields[key] = normalizeReFlowJSONValue(key, value)
 	}
 	if p.cfg.DropMessage {
 		evt.Message = nil
 	}
-	return []*event.Event{evt}
+	return []*event.Event{evt}, nil
+}
+
+func reFlowPacketModelFromValue(value any) (*event.PacketModel, error) {
+	data, err := json.Marshal(value)
+	if err != nil {
+		return nil, fmt.Errorf("encode reflow packet model: %w", err)
+	}
+	var model event.PacketModel
+	if err := json.Unmarshal(data, &model); err != nil {
+		return nil, fmt.Errorf("decode reflow packet model: %w", err)
+	}
+	return &model, nil
+}
+
+func canonicalEventFields(record map[string]any) (map[string]any, bool) {
+	fields, ok := record["fields"].(map[string]any)
+	if !ok {
+		return nil, false
+	}
+	for _, key := range []string{"received_at", "kind", "stream", "source", "control", "message", "packet", "sflow"} {
+		if _, ok := record[key]; ok {
+			return fields, true
+		}
+	}
+	return nil, false
 }
 
 func normalizeReFlowJSONValue(key string, value any) any {
-	number, ok := value.(json.Number)
-	if !ok {
-		return value
-	}
-	switch key {
-	case "time_flow_start_ns", "time_flow_end_ns":
-		if n, err := number.Int64(); err == nil {
-			return n
+	switch typed := value.(type) {
+	case json.Number:
+		switch key {
+		case "time_flow_start_ns", "time_flow_end_ns":
+			if n, err := typed.Int64(); err == nil {
+				return n
+			}
 		}
-	}
-	f, err := number.Float64()
-	if err != nil {
+		f, err := typed.Float64()
+		if err != nil {
+			return value
+		}
+		return f
+	case []any:
+		out := make([]any, len(typed))
+		for i, item := range typed {
+			out[i] = normalizeReFlowJSONValue("", item)
+		}
+		return out
+	case map[string]any:
+		out := make(map[string]any, len(typed))
+		for k, item := range typed {
+			out[k] = normalizeReFlowJSONValue(k, item)
+		}
+		return out
+	default:
 		return value
 	}
-	return f
 }
 
 func packetDecodeOptions(cfg config.PacketDecoderConfig) packet.DecodeOptions {
@@ -466,14 +490,6 @@ func (p *Builtin) processGoFlow2V2(evt *event.Event, payload any) ([]*event.Even
 		default:
 			fields["flow_type"] = flowType
 		}
-	}
-	evt.SFlow = &event.SFlowMetadata{
-		AgentIP:      fieldStringOrZero(fields, "agent_ip"),
-		SubAgentID:   fieldUint32(fields, "sub_agent_id"),
-		SourceID:     fieldUint32(fields, "source_id"),
-		SamplingRate: fieldUint32(fields, "sampling_rate"),
-		SamplePool:   fieldUint32(fields, "sample_pool"),
-		Drops:        fieldUint32(fields, "drops"),
 	}
 	if p.cfg.DropMessage {
 		evt.Message = nil

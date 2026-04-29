@@ -573,8 +573,8 @@ func int64Field(fields map[string]any, key string) int64 {
 }
 
 // fieldValue reads flat field names first, then dotted paths through nested
-// maps and slices. This lets aggregate configs key on packet layers such as
-// "ip_layers.0.src_addr" without forcing the event field map itself to be flat.
+// maps and slices. This lets aggregate configs key on structured values without
+// forcing the event field map itself to be flat.
 func fieldValue(fields map[string]any, key string) (any, bool) {
 	if fields == nil {
 		return nil, false

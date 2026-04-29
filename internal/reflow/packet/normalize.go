@@ -2,6 +2,7 @@ package packet
 
 import (
 	"encoding/binary"
+	"encoding/json"
 	"fmt"
 	"net/netip"
 	"strings"
@@ -222,17 +223,9 @@ func BuildPseudoHeader(evt *event.Event, fields map[string]any) ([]byte, bool) {
 }
 
 func pseudoPacketModelFromFields(fields map[string]any) *event.PacketModel {
-	layers := ipLayersFromFields(fields)
 	inner := pseudoIPLayerFromFields(fields, "src_addr", "dst_addr", "proto", "src_port", "dst_port")
 	outer := pseudoIPLayer{}
-	if len(layers) > 0 {
-		inner = layers[len(layers)-1]
-		if len(layers) > 1 {
-			outer = layers[0]
-		}
-	} else {
-		outer = pseudoIPLayerFromFields(fields, "outer_src_addr", "outer_dst_addr", "outer_proto", "outer_src_port", "outer_dst_port")
-	}
+	outer = pseudoIPLayerFromFields(fields, "outer_src_addr", "outer_dst_addr", "outer_proto", "outer_src_port", "outer_dst_port")
 	if !inner.Valid() {
 		return nil
 	}
@@ -320,62 +313,6 @@ func pseudoIPLayerFromFields(fields map[string]any, srcKey, dstKey, protoKey, sr
 		Proto:   fieldUint32(fields, protoKey),
 		SrcPort: fieldUint32(fields, srcPortKey),
 		DstPort: fieldUint32(fields, dstPortKey),
-	}
-}
-
-func ipLayersFromFields(fields map[string]any) []pseudoIPLayer {
-	if fields == nil {
-		return nil
-	}
-	raw, ok := fields["ip_layers"]
-	if !ok {
-		return nil
-	}
-	switch typed := raw.(type) {
-	case []map[string]any:
-		return ipLayersFromMaps(typed)
-	case []any:
-		maps := make([]map[string]any, 0, len(typed))
-		for _, item := range typed {
-			layer, ok := item.(map[string]any)
-			if !ok {
-				return nil
-			}
-			maps = append(maps, layer)
-		}
-		return ipLayersFromMaps(maps)
-	default:
-		return nil
-	}
-}
-
-func ipLayersFromMaps(raw []map[string]any) []pseudoIPLayer {
-	layers := make([]pseudoIPLayer, 0, len(raw))
-	for _, fields := range raw {
-		layer := pseudoIPLayerFromLayerFields(fields)
-		if !layer.Valid() {
-			return nil
-		}
-		layers = append(layers, layer)
-	}
-	return layers
-}
-
-func pseudoIPLayerFromLayerFields(fields map[string]any) pseudoIPLayer {
-	srcAddr, err := netip.ParseAddr(stringFromAny(fields["src_addr"]))
-	if err != nil {
-		return pseudoIPLayer{}
-	}
-	dstAddr, err := netip.ParseAddr(stringFromAny(fields["dst_addr"]))
-	if err != nil {
-		return pseudoIPLayer{}
-	}
-	return pseudoIPLayer{
-		SrcAddr: srcAddr,
-		DstAddr: dstAddr,
-		Proto:   uint32FromAny(fields["proto"]),
-		SrcPort: uint32FromAny(fields["src_port"]),
-		DstPort: uint32FromAny(fields["dst_port"]),
 	}
 }
 
@@ -931,9 +868,6 @@ func applyPacketViewFields(fields map[string]any, view packetView) {
 	if view.EtherType != 0 {
 		fields["ether_type"] = view.EtherType
 	}
-	if len(view.Layers) > 0 {
-		fields["packet_layers"] = append([]string(nil), view.Layers...)
-	}
 	if view.Model != nil {
 		fields["packet_ip_depth"] = uint32(packetIPDepth(view.Model))
 	}
@@ -942,8 +876,6 @@ func applyPacketViewFields(fields map[string]any, view packetView) {
 		fields["vlan_id"] = view.VLANIDs[0]
 	}
 	if len(view.Tuples) > 0 {
-		fields["ip_layers"] = packetTupleLayers(view.Tuples)
-		fields["ip_layer_count"] = uint32(len(view.Tuples))
 		tuple := view.Tuples[len(view.Tuples)-1]
 		fields["src_addr"] = tuple.SrcAddr.String()
 		fields["dst_addr"] = tuple.DstAddr.String()
@@ -967,9 +899,16 @@ func applyPacketViewFields(fields map[string]any, view packetView) {
 func packetTupleLayers(tuples []packetTuple) []map[string]any {
 	layers := make([]map[string]any, 0, len(tuples))
 	for i, tuple := range tuples {
+		role := "single"
+		if len(tuples) > 1 {
+			role = "inner"
+			if i == 0 {
+				role = "outer"
+			}
+		}
 		layers = append(layers, map[string]any{
 			"index":      uint32(i),
-			"role":       packetLayerRole(i, len(tuples)),
+			"role":       role,
 			"src_addr":   tuple.SrcAddr.String(),
 			"dst_addr":   tuple.DstAddr.String(),
 			"proto":      tuple.Proto,
@@ -981,17 +920,80 @@ func packetTupleLayers(tuples []packetTuple) []map[string]any {
 	return layers
 }
 
-func packetLayerRole(index, total int) string {
-	if total <= 1 {
-		return "single"
+// ApplyModelFields projects a packet model into the canonical tuple aliases
+// used by aggregation and encoders. The packet model remains the authoritative
+// full layer structure.
+func ApplyModelFields(fields map[string]any, model *event.PacketModel) {
+	if fields == nil || model == nil {
+		return
 	}
-	if index == 0 {
-		return "outer"
+	applyPacketViewFields(fields, packetViewFromModel(model))
+}
+
+func packetViewFromModel(model *event.PacketModel) packetView {
+	view := packetView{
+		Layers: make([]string, 0, len(model.Layers)),
+		Tuples: make([]packetTuple, 0, packetIPDepth(model)),
+		Model:  model,
 	}
-	if index == total-1 {
-		return "inner"
+	currentTuple := -1
+	for _, layer := range model.Layers {
+		if layer.Kind != "" {
+			view.Layers = append(view.Layers, layer.Kind)
+		}
+		switch layer.Kind {
+		case "ethernet":
+			if layer.Ethernet == nil {
+				continue
+			}
+			view.SrcMAC = layer.Ethernet.SrcMAC
+			view.DstMAC = layer.Ethernet.DstMAC
+			view.EtherType = layer.Ethernet.EtherType
+		case "dot1q":
+			if layer.VLAN != nil {
+				view.VLANIDs = append(view.VLANIDs, uint32(layer.VLAN.ID))
+			}
+		case "ipv4":
+			if layer.IPv4 == nil {
+				continue
+			}
+			view.Tuples = append(view.Tuples, packetTuple{
+				SrcAddr: layer.IPv4.SrcAddr,
+				DstAddr: layer.IPv4.DstAddr,
+				Proto:   uint32(layer.IPv4.Protocol),
+			})
+			currentTuple = len(view.Tuples) - 1
+		case "ipv6":
+			if layer.IPv6 == nil {
+				continue
+			}
+			view.Tuples = append(view.Tuples, packetTuple{
+				SrcAddr: layer.IPv6.SrcAddr,
+				DstAddr: layer.IPv6.DstAddr,
+				Proto:   uint32(layer.IPv6.NextHeader),
+			})
+			currentTuple = len(view.Tuples) - 1
+		case "tcp":
+			if layer.TCP == nil || currentTuple < 0 {
+				continue
+			}
+			if view.Tuples[currentTuple].Proto == 0 {
+				view.Tuples[currentTuple].Proto = 6
+			}
+			view.Tuples[currentTuple].SrcPort = uint32(layer.TCP.SrcPort)
+			view.Tuples[currentTuple].DstPort = uint32(layer.TCP.DstPort)
+		case "udp":
+			if layer.UDP == nil || currentTuple < 0 {
+				continue
+			}
+			if view.Tuples[currentTuple].Proto == 0 {
+				view.Tuples[currentTuple].Proto = 17
+			}
+			view.Tuples[currentTuple].SrcPort = uint32(layer.UDP.SrcPort)
+			view.Tuples[currentTuple].DstPort = uint32(layer.UDP.DstPort)
+		}
 	}
-	return "intermediate"
+	return view
 }
 
 func packetIPDepth(model *event.PacketModel) int {
@@ -1834,6 +1836,12 @@ func uint32FromAny(val any) uint32 {
 		return uint32(v)
 	case float64:
 		return uint32(v)
+	case json.Number:
+		n, err := v.Int64()
+		if err != nil || n < 0 {
+			return 0
+		}
+		return uint32(n)
 	case string:
 		var n uint64
 		fmt.Sscan(v, &n)
