@@ -132,6 +132,7 @@ type EncoderConfig struct {
 	JSON                  JSONConfig      `yaml:"json"`
 	Protobuf              ProtobufConfig  `yaml:"protobuf"`
 	SFlow                 SFlowConfig     `yaml:"sflow"`
+	Pcap                  PcapConfig      `yaml:"pcap"`
 }
 
 type JSONConfig struct {
@@ -165,6 +166,12 @@ type SFlowBatchOverConfig struct {
 	Uptime         *bool `yaml:"uptime"`
 }
 
+type PcapConfig struct {
+	PacketSource string `yaml:"packet_source"`
+	LinkType     string `yaml:"link_type"`
+	SnapLen      int    `yaml:"snaplen"`
+}
+
 type TFlowDataConfig struct {
 	Select     []string                        `yaml:"fields"`
 	FieldsPath string                          `yaml:"fields_path"`
@@ -188,6 +195,8 @@ type SinkConfig struct {
 	Path    string `yaml:"path"`
 	Address string `yaml:"address"`
 	AgentIP string `yaml:"agent_ip"`
+	Framing string `yaml:"framing"`
+	Mode    string `yaml:"mode"`
 }
 
 // BindFlags defines the small CLI surface used to locate config and control logging.
@@ -305,18 +314,65 @@ func (c *Config) setDefaults(configPath string) error {
 	if c.Encoder.Batch.FlushInterval < 0 {
 		return fmt.Errorf("encoder.batch.flush_interval_ms must be >= 0")
 	}
+	switch c.Encoder.Pcap.PacketSource {
+	case "", "auto":
+		c.Encoder.Pcap.PacketSource = "auto"
+	case "header_data", "payload", "pseudo":
+	default:
+		return fmt.Errorf("unsupported encoder.pcap.packet_source %q", c.Encoder.Pcap.PacketSource)
+	}
+	switch c.Encoder.Pcap.LinkType {
+	case "", "ethernet":
+		c.Encoder.Pcap.LinkType = "ethernet"
+	case "raw", "ipv4", "ipv6":
+	default:
+		return fmt.Errorf("unsupported encoder.pcap.link_type %q", c.Encoder.Pcap.LinkType)
+	}
+	if c.Encoder.Pcap.SnapLen < 0 {
+		return fmt.Errorf("encoder.pcap.snaplen must be >= 0")
+	}
+	if c.Encoder.Pcap.SnapLen == 0 {
+		c.Encoder.Pcap.SnapLen = 65535
+	}
 	switch c.Encoder.Type {
-	case "json", "protobuf", "sflow", "ipfix", "netflowv9", "netflowv5":
+	case "json", "protobuf", "sflow", "ipfix", "netflowv9", "netflowv5", "pcap":
 	default:
 		return fmt.Errorf("unsupported encoder.type %q", c.Encoder.Type)
 	}
 	if c.Sink.Type == "" {
 		c.Sink.Type = "stdout"
 	}
+	if c.Encoder.Type == "pcap" && (c.Sink.Type == "udp" || c.Sink.Type == "unixgram") {
+		return fmt.Errorf("encoder.type=pcap requires a stream sink, got sink.type=%s", c.Sink.Type)
+	}
 	switch c.Sink.Type {
 	case "stdout", "file", "udp", "unixgram":
 	default:
 		return fmt.Errorf("unsupported sink.type %q", c.Sink.Type)
+	}
+	if c.Sink.Framing == "" {
+		if c.Encoder.Type == "pcap" {
+			c.Sink.Framing = "none"
+		} else {
+			c.Sink.Framing = "line"
+		}
+	}
+	switch c.Sink.Framing {
+	case "line", "none":
+	default:
+		return fmt.Errorf("unsupported sink.framing %q", c.Sink.Framing)
+	}
+	if c.Sink.Mode == "" {
+		if c.Encoder.Type == "pcap" && c.Sink.Type == "file" {
+			c.Sink.Mode = "truncate"
+		} else {
+			c.Sink.Mode = "append"
+		}
+	}
+	switch c.Sink.Mode {
+	case "append", "truncate":
+	default:
+		return fmt.Errorf("unsupported sink.mode %q", c.Sink.Mode)
 	}
 	if c.Sink.Type == "file" && c.Sink.Path == "" {
 		return fmt.Errorf("sink.path is required when sink.type=file")
@@ -374,6 +430,19 @@ func validateUDPPorts(name string, ports []uint32) error {
 func applySourceDefaults(src *SourceConfig) error {
 	if src.Network == "" {
 		src.Network = "udp"
+	}
+	if src.Network == "stream" {
+		if src.Address == "" {
+			src.Address = "-"
+		}
+		switch src.Type {
+		case "pcap", "pcapng", "json":
+		case "":
+			return fmt.Errorf("source.type is required when source.network=stream")
+		default:
+			return fmt.Errorf("unsupported source.type %q for source.network=stream", src.Type)
+		}
+		return nil
 	}
 	if src.Network != "pcap_live" && src.Address == "" {
 		src.Address = ":18080"

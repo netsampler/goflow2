@@ -1,0 +1,33 @@
+# Accept sFlow over UDP and write sampled packet headers as classic pcap to stdout
+# for live inspection in Wireshark on macOS.
+#
+# Direct stdin pipe:
+#   go run ./cmd/reflow -config cmd/reflow/reflow-sflow-to-wireshark.yaml \
+#     | /Applications/Wireshark.app/Contents/MacOS/Wireshark -k -i -
+#
+# Named pipe alternative:
+#   mkfifo /tmp/reflow.pcap
+#   /Applications/Wireshark.app/Contents/MacOS/Wireshark -k -i /tmp/reflow.pcap &
+#   go run ./cmd/reflow -config cmd/reflow/reflow-sflow-to-wireshark.yaml > /tmp/reflow.pcap
+
+sources:
+  - network: udp
+    address: ":6343"
+    type: flow
+
+processor:
+  type: builtin
+  workers: 2
+  builtin:
+    drop_message: true
+    drop_payload: false
+
+encoder:
+  type: pcap
+  workers: 1
+  pcap:
+    link_type: ethernet
+
+sink:
+  type: stdout
+  framing: none

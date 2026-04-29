@@ -237,6 +237,8 @@ func pseudoPacketModelFromFields(fields map[string]any) *event.PacketModel {
 	if pseudoPacketHasLinkLayer(fields) {
 		dstMAC := fieldStringOrZero(fields, "dst_mac")
 		if dstMAC == "" {
+			// Pseudo packets may need an L2 envelope without source metadata.
+			// Use zero MACs so the frame remains structurally valid.
 			dstMAC = "00:00:00:00:00:00"
 		}
 		srcMAC := fieldStringOrZero(fields, "src_mac")

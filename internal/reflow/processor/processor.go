@@ -93,7 +93,7 @@ func (p *Builtin) processBytes(evt *event.Event) ([]*event.Event, error) {
 	fields["end_time_unix"] = endNS / int64(time.Millisecond)
 
 	// sFlow raw packet headers expect protocol metadata in addition to the bytes.
-	// ReFlow currently assumes Ethernet-framed capture for live pcap input.
+	// Live pcap defaults to Ethernet, while stream sources can provide a header_protocol.
 	if _, ok := fields["protocol"]; !ok {
 		fields["protocol"] = uint32(1)
 	}
@@ -102,6 +102,7 @@ func (p *Builtin) processBytes(evt *event.Event) ([]*event.Event, error) {
 		TruncatePacketBytes:  p.cfg.TruncatePacketBytes,
 		UsePayloadAsPacket:   true,
 		TruncatePayload:      true,
+		HeaderProtocol:       fieldUint32(fields, "header_protocol"),
 		Decode:               p.decode,
 	}); err != nil {
 		return nil, err

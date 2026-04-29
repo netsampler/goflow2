@@ -27,6 +27,8 @@ func New(cfg config.EncoderConfig) (Encoder, error) {
 		return NewNFv9Encoder(cfg), nil
 	case "netflowv5":
 		return NewNFv5Encoder(cfg), nil
+	case "pcap":
+		return NewPcapEncoder(cfg)
 	default:
 		return nil, fmt.Errorf("unsupported encoder.type %q", cfg.Type)
 	}

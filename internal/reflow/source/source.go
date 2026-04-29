@@ -8,6 +8,7 @@ import (
 	"github.com/netsampler/goflow2/v3/internal/reflow/event"
 	"github.com/netsampler/goflow2/v3/internal/reflow/source/pcap"
 	"github.com/netsampler/goflow2/v3/internal/reflow/source/socket"
+	"github.com/netsampler/goflow2/v3/internal/reflow/source/stream"
 )
 
 type Source interface {
@@ -23,6 +24,8 @@ func New(cfg config.SourceConfig) (Source, error) {
 		return socket.New(cfg)
 	case "pcap_live":
 		return pcap.New(cfg)
+	case "stream":
+		return stream.New(cfg)
 	default:
 		return nil, fmt.Errorf("unsupported source.network %q", cfg.Network)
 	}

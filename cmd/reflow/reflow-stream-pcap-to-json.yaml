@@ -1,0 +1,25 @@
+# Read classic pcap from stdin, a FIFO, or a regular file and print normalized JSON.
+#
+# Example:
+#   tcpdump -i en0 -w - -U | go run ./cmd/reflow -config cmd/reflow/reflow-stream-pcap-to-json.yaml
+
+sources:
+  - network: stream
+    address: "-"
+    type: pcap
+
+processor:
+  type: builtin
+  workers: 2
+  builtin:
+    drop_message: true
+    drop_payload: false
+
+encoder:
+  type: json
+  workers: 1
+  json:
+    flavor: canonical
+
+sink:
+  type: stdout

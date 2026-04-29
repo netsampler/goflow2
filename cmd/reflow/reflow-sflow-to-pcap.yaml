@@ -1,0 +1,26 @@
+# Accept sFlow over UDP and write sampled packet headers as classic pcap to stdout.
+#
+# Example:
+#   go run ./cmd/reflow -config cmd/reflow/reflow-sflow-to-pcap.yaml | tcpdump -r -
+
+sources:
+  - network: udp
+    address: ":6343"
+    type: flow
+
+processor:
+  type: builtin
+  workers: 2
+  builtin:
+    drop_message: true
+    drop_payload: false
+
+encoder:
+  type: pcap
+  workers: 1
+  pcap:
+    link_type: ethernet
+
+sink:
+  type: stdout
+  framing: none

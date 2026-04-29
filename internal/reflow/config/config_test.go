@@ -215,6 +215,79 @@ sink:
 	}
 }
 
+func TestLoadSupportsStreamPcapAndPcapSinkDefaults(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "reflow.yaml")
+	if err := os.WriteFile(cfgPath, []byte(`
+sources:
+  - network: stream
+    address: "-"
+    type: pcap
+
+processor:
+  type: builtin
+
+encoder:
+  type: pcap
+
+sink:
+  type: file
+  path: out.pcap
+`), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	cfg, err := Load(cfgPath)
+	if err != nil {
+		t.Fatalf("Load returned error: %v", err)
+	}
+	if cfg.Sources[0].Address != "-" {
+		t.Fatalf("expected stream stdin address, got %q", cfg.Sources[0].Address)
+	}
+	if cfg.Encoder.Pcap.PacketSource != "auto" {
+		t.Fatalf("expected default packet_source auto, got %q", cfg.Encoder.Pcap.PacketSource)
+	}
+	if cfg.Encoder.Pcap.LinkType != "ethernet" {
+		t.Fatalf("expected default pcap link_type ethernet, got %q", cfg.Encoder.Pcap.LinkType)
+	}
+	if cfg.Encoder.Pcap.SnapLen != 65535 {
+		t.Fatalf("expected default pcap snaplen 65535, got %d", cfg.Encoder.Pcap.SnapLen)
+	}
+	if cfg.Sink.Framing != "none" {
+		t.Fatalf("expected pcap sink framing none, got %q", cfg.Sink.Framing)
+	}
+	if cfg.Sink.Mode != "truncate" {
+		t.Fatalf("expected pcap file sink mode truncate, got %q", cfg.Sink.Mode)
+	}
+}
+
+func TestLoadRejectsPcapEncoderWithDatagramSink(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "reflow.yaml")
+	if err := os.WriteFile(cfgPath, []byte(`
+sources:
+  - network: stream
+    address: "-"
+    type: pcap
+
+processor:
+  type: builtin
+
+encoder:
+  type: pcap
+
+sink:
+  type: udp
+  address: "127.0.0.1:9000"
+`), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	if _, err := Load(cfgPath); err == nil {
+		t.Fatalf("expected pcap encoder with UDP sink to be rejected")
+	}
+}
+
 func TestLoadRejectsAggregatorWithoutExportTrigger(t *testing.T) {
 	dir := t.TempDir()
 

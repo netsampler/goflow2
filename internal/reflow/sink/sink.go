@@ -17,15 +17,23 @@ type Sink interface {
 
 // New selects the concrete output sink from the normalized sink config.
 func New(cfg config.SinkConfig) (Sink, error) {
+	sep := []byte("\n")
+	if cfg.Framing == "none" {
+		sep = nil
+	}
 	switch cfg.Type {
 	case "", "stdout":
-		return &writerSink{w: os.Stdout, sep: []byte("\n")}, nil
+		return &writerSink{w: os.Stdout, sep: sep}, nil
 	case "file":
-		f, err := os.OpenFile(cfg.Path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+		flags := os.O_APPEND | os.O_CREATE | os.O_WRONLY
+		if cfg.Mode == "truncate" {
+			flags = os.O_CREATE | os.O_TRUNC | os.O_WRONLY
+		}
+		f, err := os.OpenFile(cfg.Path, flags, 0644)
 		if err != nil {
 			return nil, fmt.Errorf("open sink file %s: %w", cfg.Path, err)
 		}
-		return &writerSink{w: f, f: f, sep: []byte("\n")}, nil
+		return &writerSink{w: f, f: f, sep: sep}, nil
 	case "udp", "unixgram":
 		conn, err := net.Dial(cfg.Type, cfg.Address)
 		if err != nil {

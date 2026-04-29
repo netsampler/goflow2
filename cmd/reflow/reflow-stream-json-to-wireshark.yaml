@@ -1,0 +1,41 @@
+# Read NDJSON packet samples from stdin, encode them as classic pcap, and pipe
+# them into Wireshark on macOS.
+#
+# The stream JSON source expects one JSON object per line. Existing pretty JSON
+# examples can be compacted with jq:
+#
+#   jq -c . cmd/reflow/raw-packet-header.json \
+#     | go run ./cmd/reflow -config cmd/reflow/reflow-stream-json-to-wireshark.yaml \
+#     | /Applications/Wireshark.app/Contents/MacOS/Wireshark -k -i -
+#
+# Named pipe alternative:
+#
+#   mkfifo /tmp/reflow-json.pcap
+#   /Applications/Wireshark.app/Contents/MacOS/Wireshark -k -i /tmp/reflow-json.pcap &
+#   jq -c . cmd/reflow/raw-packet-header.json \
+#     | go run ./cmd/reflow -config cmd/reflow/reflow-stream-json-to-wireshark.yaml > /tmp/reflow-json.pcap
+
+sources:
+  - network: stream
+    address: "-"
+    type: json
+    json:
+      # raw_packet_header accepts header_hex and preserves exact sampled bytes.
+      flavor: raw_packet_header
+
+processor:
+  type: builtin
+  workers: 1
+  builtin:
+    drop_message: true
+    drop_payload: false
+
+encoder:
+  type: pcap
+  workers: 1
+  pcap:
+    link_type: ethernet
+
+sink:
+  type: stdout
+  framing: none
