@@ -124,6 +124,30 @@ headers are always parsed when present; `decode_beyond_l4` controls whether the
 parser continues into encapsulated payloads. GRE, IP-in-IP, and IPv6-in-IP are
 matched by IP protocol number, normally `47`, `4`, and `41`, not by port.
 
+## Source Framing
+
+ReFlow distinguishes datagram input from stream input with `sources[].network`,
+not with `sources[].type`.
+
+`network: udp` and `network: unixgram` are packet-oriented. Each socket read
+becomes one event, and for `type: flow` or `type: bytes` the complete datagram
+is placed in `event.Payload`. For `type: json`, the datagram is parsed as one
+JSON message.
+
+`network: stream` is byte-stream oriented. `address: "-"` means stdin. Stream
+sources do not preserve datagram boundaries; their `type` selects the framing
+inside the stream:
+
+| stream `type` | Framing |
+| --- | --- |
+| `json` | NDJSON, one JSON object per line |
+| `pcap` | classic pcap stream records |
+| `pcapng` | pcapng stream records |
+
+Because stdin is only available through `network: stream`, stdin is never a
+datagram source by itself. It can still carry packets or flow events when the
+input format supplies its own framing, such as pcap, pcapng, or NDJSON.
+
 `record_kind` is the generic record-shape marker. `packet` means the event
 carries packet/header bytes in `header_data`; `interface_counter` means the
 event carries interface counters; `template`, `options_template`, and

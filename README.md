@@ -29,6 +29,11 @@ The goal is to make common traffic conversion and reshaping tasks easier to expr
 one config file. A ReFlow config can start from UDP flow messages, JSON events, or live
 packets, then write the result to stdout, a file, UDP, or a Unix datagram socket.
 
+ReFlow source framing is selected by `sources[].network`. `udp` and `unixgram`
+are packet-oriented sources and produce one event per datagram. `stream` is a
+byte-stream source; `address: "-"` means stdin, and JSON stream input is newline
+delimited with one JSON object per line.
+
 If you want to explore it, start with the example configs in `cmd/reflow/`, including:
 `reflow.yaml`, `reflow-pcap-to-json.yaml`, `reflow-pcap-to-ipfix.yaml`, and
 `reflow-pcap-aggregate-to-json.yaml`.
