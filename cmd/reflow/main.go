@@ -12,6 +12,7 @@ import (
 
 	"github.com/netsampler/goflow2/v3/internal/reflow/app"
 	"github.com/netsampler/goflow2/v3/internal/reflow/config"
+	"gopkg.in/yaml.v3"
 )
 
 var (
@@ -21,8 +22,6 @@ var (
 )
 
 func main() {
-	// CLI flags only control bootstrap behavior. The runtime itself is driven by
-	// the YAML config loaded below.
 	cfg, versionFlag := config.BindFlags(flag.CommandLine)
 	flag.Parse()
 
@@ -31,12 +30,26 @@ func main() {
 		os.Exit(0)
 	}
 
-	loadedCfg, err := config.Load(cfg.ConfigPath)
+	loadedCfg, generated, err := config.LoadFromFlags(cfg)
 	if err != nil {
 		log.Fatal(err)
 	}
 	loadedCfg.LogLevel = cfg.LogLevel
 	loadedCfg.LogFormat = cfg.LogFormat
+
+	if cfg.GenConf {
+		if !generated {
+			log.Fatal("-genconf requires generated config mode; omit -config")
+		}
+		raw, err := yaml.Marshal(loadedCfg)
+		if err != nil {
+			log.Fatal(err)
+		}
+		if _, err := os.Stdout.Write(raw); err != nil {
+			log.Fatal(err)
+		}
+		return
+	}
 
 	// App.New wires the full runtime graph from the loaded config.
 	application, err := app.New(loadedCfg)

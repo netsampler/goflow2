@@ -13,6 +13,11 @@ type FlagConfig struct {
 	ConfigPath string
 	LogLevel   string
 	LogFormat  string
+	Inputs     []string
+	Output     string
+	OutputSet  bool
+	Aggregate  bool
+	GenConf    bool
 }
 
 type Config struct {
@@ -199,13 +204,20 @@ type SinkConfig struct {
 	Mode    string `yaml:"mode"`
 }
 
-// BindFlags defines the small CLI surface used to locate config and control logging.
+// BindFlags defines CLI bootstrap flags. When -config is omitted, helper flags
+// generate an in-memory config and pass it through the same defaults/validation.
 func BindFlags(fs *flag.FlagSet) (*FlagConfig, *bool) {
 	cfg := &FlagConfig{}
 	version := fs.Bool("v", false, "Print version")
-	fs.StringVar(&cfg.ConfigPath, "config", "cmd/reflow/reflow.yaml", "Path to ReFlow YAML config")
+	fs.StringVar(&cfg.ConfigPath, "config", "", "Path to ReFlow YAML config")
 	fs.StringVar(&cfg.LogLevel, "loglevel", "info", "Log level")
 	fs.StringVar(&cfg.LogFormat, "logfmt", "text", "Log format (text or json)")
+	fs.Var((*inputFlags)(&cfg.Inputs), "input", "Input helper spec network:target:type (repeatable)")
+	out := outputFlag{cfg: cfg}
+	fs.Var(out, "output", "Output helper spec encoder:sink[:target]")
+	fs.Var(out, "o", "Output helper spec encoder:sink[:target]")
+	fs.BoolVar(&cfg.Aggregate, "agg", false, "Generate packet aggregation config")
+	fs.BoolVar(&cfg.GenConf, "genconf", false, "Print generated config and exit")
 	return cfg, version
 }
 

@@ -154,6 +154,7 @@ func (p *Builtin) processFlow(evt *event.Event) ([]*event.Event, error) {
 			return nil, err
 		}
 	}
+	setIPFamilyFromFields(fields)
 	if p.cfg.DropMessage {
 		evt.Message = nil
 	}
@@ -318,6 +319,7 @@ func (p *Builtin) processReFlowFields(evt *event.Event, record map[string]any) (
 		}
 		fields[key] = normalizeReFlowJSONValue(key, value)
 	}
+	setIPFamilyFromFields(fields)
 	if p.cfg.DropMessage {
 		evt.Message = nil
 	}
@@ -517,6 +519,29 @@ func fieldStringOrZero(fields map[string]any, key string) string {
 		return v
 	default:
 		return fmt.Sprint(v)
+	}
+}
+
+func setIPFamilyFromFields(fields map[string]any) {
+	if fields == nil || fieldStringOrZero(fields, "ip_family") != "" {
+		return
+	}
+	src := fieldStringOrZero(fields, "src_addr")
+	dst := fieldStringOrZero(fields, "dst_addr")
+	for _, raw := range []string{src, dst} {
+		if raw == "" {
+			continue
+		}
+		addr, err := netip.ParseAddr(raw)
+		if err != nil {
+			continue
+		}
+		if addr.Is6() {
+			fields["ip_family"] = "ipv6"
+		} else {
+			fields["ip_family"] = "ipv4"
+		}
+		return
 	}
 }
 

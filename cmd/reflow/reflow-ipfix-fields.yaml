@@ -64,6 +64,24 @@ fields:
     length: 4
     type: unsigned32
     netflow_v9_id: 34
+  mpls_label1:
+    name: mplsTopLabelStackSection
+    id: 70
+    length: 4
+    type: unsigned32
+    netflow_v9_id: 70
+  mpls_label2:
+    name: mplsLabelStackSection2
+    id: 71
+    length: 4
+    type: unsigned32
+    netflow_v9_id: 71
+  mpls_label3:
+    name: mplsLabelStackSection3
+    id: 72
+    length: 4
+    type: unsigned32
+    netflow_v9_id: 72
   start_time_unix:
     name: flowStartMilliseconds
     id: 152
