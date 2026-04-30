@@ -26,12 +26,22 @@ type ControlMetadata struct {
 type AggregationSchema struct {
 	Stream         string         `json:"stream,omitempty"`
 	FieldNames     []string       `json:"field_names,omitempty"`
+	Fields         []SchemaField  `json:"fields,omitempty"`
 	KeyFields      []string       `json:"key_fields,omitempty"`
 	SumFields      []string       `json:"sum_fields,omitempty"`
 	FirstFields    []string       `json:"first_fields,omitempty"`
 	CurrentFields  []string       `json:"current_fields,omitempty"`
+	MinFields      []string       `json:"min_fields,omitempty"`
+	MaxFields      []string       `json:"max_fields,omitempty"`
 	StaticFields   map[string]any `json:"static_fields,omitempty"`
 	BaseTemplateID uint16         `json:"base_template_id,omitempty"`
+}
+
+type SchemaField struct {
+	Role     string `json:"role,omitempty"`
+	Name     string `json:"name,omitempty"`
+	Modifier string `json:"modifier,omitempty"`
+	Value    any    `json:"value,omitempty"`
 }
 
 type SourceInit struct {

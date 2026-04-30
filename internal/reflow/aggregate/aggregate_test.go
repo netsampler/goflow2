@@ -311,6 +311,66 @@ func TestStatefulInitEventsCarryConfiguredStreamAndTemplateBaseID(t *testing.T) 
 	}
 }
 
+func TestSchemaPassthroughEmitsSchemaAndForwardsEvents(t *testing.T) {
+	agg, err := New(config.AggregatorConfig{
+		Enabled:          true,
+		Passthrough:      true,
+		Stream:           "flow_data",
+		TemplateID:       256,
+		FieldsConfigured: true,
+		Fields: []config.AggregatorField{
+			{Role: "key", Name: "src_addr", Modifier: "4"},
+			{Role: "field", Name: "bytes"},
+			{Role: "static", Name: "exporter_name", Value: "edge-a"},
+		},
+		KeyFields: []string{"src_addr"},
+		StaticFields: map[string]any{
+			"exporter_name": "edge-a",
+		},
+	})
+	if err != nil {
+		t.Fatalf("New returned error: %v", err)
+	}
+
+	initEvents, err := agg.InitEvents()
+	if err != nil {
+		t.Fatalf("InitEvents returned error: %v", err)
+	}
+	if len(initEvents) != 1 {
+		t.Fatalf("expected 1 init event, got %d", len(initEvents))
+	}
+	schema, ok := initEvents[0].Payload.(event.AggregationSchema)
+	if !ok {
+		t.Fatalf("expected aggregation schema payload, got %T", initEvents[0].Payload)
+	}
+	if len(schema.Fields) != 3 {
+		t.Fatalf("expected 3 schema fields, got %#v", schema.Fields)
+	}
+	if schema.Fields[0].Name != "src_addr" || schema.Fields[0].Modifier != "4" {
+		t.Fatalf("unexpected first schema field: %#v", schema.Fields[0])
+	}
+
+	evt := &event.Event{
+		Fields: map[string]any{
+			"src_addr": "192.0.2.1",
+			"bytes":    uint64(64),
+		},
+	}
+	out, err := agg.Process(evt)
+	if err != nil {
+		t.Fatalf("Process returned error: %v", err)
+	}
+	if len(out) != 1 {
+		t.Fatalf("expected 1 forwarded event, got %d", len(out))
+	}
+	if out[0].Fields["exporter_name"] != "edge-a" {
+		t.Fatalf("expected static field to be injected, got %#v", out[0].Fields)
+	}
+	if _, ok := evt.Fields["exporter_name"]; ok {
+		t.Fatalf("did not expect original event fields to be mutated")
+	}
+}
+
 func TestStatefulInitEventsSortStaticFieldsDeterministically(t *testing.T) {
 	agg, err := New(config.AggregatorConfig{
 		Enabled: true,

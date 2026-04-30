@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
@@ -83,22 +85,71 @@ type ToggleEncapsulationConfig struct {
 type AggregatorConfig struct {
 	Enabled bool   `yaml:"enabled"`
 	Stream  string `yaml:"stream"`
+	// Passthrough is derived from config. When no fields have aggregation roles
+	// (sum/first/current/min/max), matching events are forwarded immediately
+	// after schema registration.
+	Passthrough bool `yaml:"-"`
 	// Window controls bucket closure based on activity and age.
 	Window AggregatorWindowConfig `yaml:"window"`
 	// Periodic controls snapshot-style exports of current bucket state.
-	Periodic     AggregatorPeriodicConfig `yaml:"periodic"`
-	KeyFields    []string                 `yaml:"key_fields"`
-	Sum          []string                 `yaml:"sum"`
-	First        []string                 `yaml:"first"`
-	Current      []string                 `yaml:"current"`
-	Match        map[string]string        `yaml:"match"`
-	TemplateID   uint16                   `yaml:"template_id"`
-	StaticFields map[string]any           `yaml:"static_fields"`
+	Periodic AggregatorPeriodicConfig `yaml:"periodic"`
+	// Fields is the preferred ordered field/policy list. Compact entries use:
+	// role:name[:modifier] or static:name:value. IPFIX/NetFlow field mapping
+	// stays in encoder.tflow_data.
+	Fields           []AggregatorField `yaml:"fields"`
+	FieldsConfigured bool              `yaml:"-"`
+	KeyFields        []string          `yaml:"key_fields"`
+	// Legacy aggregation policy lists. They remain supported, but no longer
+	// receive hidden defaults.
+	Sum          []string          `yaml:"sum"`
+	First        []string          `yaml:"first"`
+	Current      []string          `yaml:"current"`
+	Min          []string          `yaml:"min"`
+	Max          []string          `yaml:"max"`
+	Match        map[string]string `yaml:"match"`
+	TemplateID   uint16            `yaml:"template_id"`
+	StaticFields map[string]any    `yaml:"static_fields"`
 
 	// Deprecated compatibility knobs. They are still parsed so older configs keep
 	// loading, then mapped into the explicit window/periodic sections.
 	ResetInterval    int `yaml:"reset_interval_ms"`
 	PeriodicInterval int `yaml:"periodic_interval_ms"`
+}
+
+type AggregatorField struct {
+	Role     string `yaml:"role"`
+	Name     string `yaml:"name"`
+	Modifier string `yaml:"modifier"`
+	Value    any    `yaml:"value,omitempty"`
+
+	// Path is accepted as a compatibility alias for mapping-style entries.
+	Path string `yaml:"path,omitempty"`
+}
+
+func (f *AggregatorField) UnmarshalYAML(value *yaml.Node) error {
+	switch value.Kind {
+	case yaml.ScalarNode:
+		parsed, err := parseAggregatorField(value.Value)
+		if err != nil {
+			return err
+		}
+		*f = parsed
+		return nil
+	case yaml.MappingNode:
+		type rawAggregatorField AggregatorField
+		var raw rawAggregatorField
+		if err := value.Decode(&raw); err != nil {
+			return err
+		}
+		*f = AggregatorField(raw)
+		if f.Name == "" {
+			f.Name = f.Path
+		}
+		f.Path = ""
+		return validateAggregatorField(*f)
+	default:
+		return fmt.Errorf("aggregator field must be a string or mapping")
+	}
 }
 
 type AggregatorWindowConfig struct {
@@ -251,10 +302,12 @@ func (c *Config) setDefaults(configPath string) error {
 	if len(c.Aggregators) > 0 {
 		for i := range c.Aggregators {
 			applyAggregatorCompatibility(&c.Aggregators[i])
+			if err := normalizeAggregatorConfig(&c.Aggregators[i]); err != nil {
+				return fmt.Errorf("aggregators[%d]: %w", i, err)
+			}
 			if err := validateAggregatorConfig(c.Aggregators[i]); err != nil {
 				return fmt.Errorf("aggregators[%d]: %w", i, err)
 			}
-			defaultAggregateFields(&c.Aggregators[i])
 		}
 	}
 	if err := c.loadFlowDataCatalog(configPath); err != nil {
@@ -522,36 +575,77 @@ func mergeIPFIXFields(sources ...map[string]IPFIXFieldDefinition) map[string]IPF
 	return merged
 }
 
-// defaultAggregateFields fills the commonly expected aggregation field policies
-// so simple configs do not need to repeat them.
-func defaultAggregateFields(cfg *AggregatorConfig) {
+// normalizeAggregatorConfig applies defaults that do not change aggregation
+// semantics and translates legacy field lists into the preferred field DSL.
+func normalizeAggregatorConfig(cfg *AggregatorConfig) error {
 	if cfg.Stream == "" {
 		cfg.Stream = "flow_data"
 	}
-	if len(cfg.Sum) == 0 {
-		cfg.Sum = []string{"bytes", "packets"}
-	}
-	if len(cfg.First) == 0 {
-		cfg.First = []string{
-			"agent_ip",
-			"sub_agent_id",
-			"source_id",
-			"start_time_unix",
+
+	cfg.FieldsConfigured = len(cfg.Fields) > 0
+	if !cfg.FieldsConfigured {
+		for _, field := range cfg.KeyFields {
+			cfg.Fields = append(cfg.Fields, AggregatorField{Role: "key", Name: field})
+		}
+		for _, field := range cfg.Sum {
+			cfg.Fields = append(cfg.Fields, AggregatorField{Role: "sum", Name: field})
+		}
+		for _, field := range cfg.First {
+			cfg.Fields = append(cfg.Fields, AggregatorField{Role: "first", Name: field})
+		}
+		for _, field := range cfg.Current {
+			cfg.Fields = append(cfg.Fields, AggregatorField{Role: "current", Name: field})
+		}
+		for _, field := range cfg.Min {
+			cfg.Fields = append(cfg.Fields, AggregatorField{Role: "min", Name: field})
+		}
+		for _, field := range cfg.Max {
+			cfg.Fields = append(cfg.Fields, AggregatorField{Role: "max", Name: field})
+		}
+		staticFields := make([]string, 0, len(cfg.StaticFields))
+		for field := range cfg.StaticFields {
+			staticFields = append(staticFields, field)
+		}
+		sort.Strings(staticFields)
+		for _, field := range staticFields {
+			cfg.Fields = append(cfg.Fields, AggregatorField{Role: "static", Name: field, Value: cfg.StaticFields[field]})
+		}
+	} else {
+		cfg.KeyFields = nil
+		cfg.Sum = nil
+		cfg.First = nil
+		cfg.Current = nil
+		cfg.Min = nil
+		cfg.Max = nil
+		cfg.StaticFields = nil
+		for _, field := range cfg.Fields {
+			if err := validateAggregatorField(field); err != nil {
+				return err
+			}
+			switch field.Role {
+			case "key":
+				cfg.KeyFields = append(cfg.KeyFields, field.Name)
+			case "sum":
+				cfg.Sum = append(cfg.Sum, field.Name)
+			case "first":
+				cfg.First = append(cfg.First, field.Name)
+			case "current":
+				cfg.Current = append(cfg.Current, field.Name)
+			case "min":
+				cfg.Min = append(cfg.Min, field.Name)
+			case "max":
+				cfg.Max = append(cfg.Max, field.Name)
+			case "static":
+				if cfg.StaticFields == nil {
+					cfg.StaticFields = make(map[string]any)
+				}
+				cfg.StaticFields[field.Name] = field.Value
+			}
 		}
 	}
-	if len(cfg.Current) == 0 {
-		cfg.Current = []string{
-			"agent_ip",
-			"sub_agent_id",
-			"source_id",
-			"input_if",
-			"output_if",
-			"sampling_rate",
-			"sample_pool",
-			"drops",
-			"end_time_unix",
-		}
-	}
+
+	cfg.Passthrough = cfg.Enabled && !aggregatorHasAggregationRole(cfg.Fields)
+	return nil
 }
 
 // applyAggregatorCompatibility maps legacy knobs into the explicit window and
@@ -583,6 +677,9 @@ func validateAggregatorConfig(cfg AggregatorConfig) error {
 	if !cfg.Enabled {
 		return nil
 	}
+	if cfg.Passthrough {
+		return nil
+	}
 	if cfg.Periodic.ResetBuckets && cfg.Periodic.Every == 0 {
 		return fmt.Errorf("aggregator.periodic.reset_buckets requires aggregator.periodic.every_ms > 0")
 	}
@@ -590,4 +687,53 @@ func validateAggregatorConfig(cfg AggregatorConfig) error {
 		return fmt.Errorf("aggregator requires at least one export trigger: window.idle_flush_after_ms, window.max_flush_after_ms, or periodic.every_ms")
 	}
 	return nil
+}
+
+func parseAggregatorField(raw string) (AggregatorField, error) {
+	if raw == "" {
+		return AggregatorField{}, fmt.Errorf("aggregator field entry cannot be empty")
+	}
+	if strings.HasPrefix(raw, "static:") {
+		parts := strings.SplitN(raw, ":", 3)
+		if len(parts) != 3 || parts[1] == "" {
+			return AggregatorField{}, fmt.Errorf("invalid static field entry %q", raw)
+		}
+		field := AggregatorField{Role: "static", Name: parts[1], Value: parts[2]}
+		return field, validateAggregatorField(field)
+	}
+
+	parts := strings.Split(raw, ":")
+	if len(parts) < 2 || len(parts) > 3 {
+		return AggregatorField{}, fmt.Errorf("invalid aggregator field entry %q", raw)
+	}
+	field := AggregatorField{
+		Role: parts[0],
+		Name: parts[1],
+	}
+	if len(parts) > 2 {
+		field.Modifier = parts[2]
+	}
+	return field, validateAggregatorField(field)
+}
+
+func validateAggregatorField(field AggregatorField) error {
+	switch field.Role {
+	case "key", "field", "sum", "first", "current", "min", "max", "static":
+	default:
+		return fmt.Errorf("unsupported aggregator field role %q", field.Role)
+	}
+	if field.Name == "" {
+		return fmt.Errorf("aggregator field name is required for role %q", field.Role)
+	}
+	return nil
+}
+
+func aggregatorHasAggregationRole(fields []AggregatorField) bool {
+	for _, field := range fields {
+		switch field.Role {
+		case "sum", "first", "current", "min", "max":
+			return true
+		}
+	}
+	return false
 }

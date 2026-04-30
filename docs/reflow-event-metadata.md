@@ -124,6 +124,80 @@ headers are always parsed when present; `decode_beyond_l4` controls whether the
 parser continues into encapsulated payloads. GRE, IP-in-IP, and IPv6-in-IP are
 matched by IP protocol number, normally `47`, `4`, and `41`, not by port.
 
+## Aggregator Field Entries
+
+Aggregator `fields` entries describe aggregation policy and schema order only.
+They do not choose IPFIX or NetFlow information element IDs. Protocol mapping
+stays in `encoder.tflow_data`, including enterprise/PEN, field ID, type, and
+length overrides.
+
+Compact entries use colon-separated parts:
+
+```text
+role:name[:modifier]
+static:name:value
+```
+
+`role` can be `key`, `field`, `sum`, `first`, `current`, `min`, `max`, or
+`static`. The `modifier` is optional and is carried through the schema for the
+encoder to interpret. Today the IPFIX and NetFlow v9 encoders use `4` or `6` on
+`src_addr` and `dst_addr` to force IPv4 or IPv6 template selection:
+
+```yaml
+aggregators:
+  - enabled: true
+    stream: flow_data
+    fields:
+      - key:src_addr:4
+      - key:dst_addr:4
+      - field:tenant_id
+      - sum:bytes
+      - sum:packets
+      - current:end_time_unix
+      - static:exporter_name:edge-a
+```
+
+If no aggregation role is present (`sum`, `first`, `current`, `min`, or `max`),
+the aggregator is schema pass-through. It emits a schema event when `fields` are
+configured and forwards matching events to the encoder immediately. This is the
+mode to use when aggregation is acting as a filter in order to reuse a template:
+
+```yaml
+aggregators:
+  - enabled: true
+    stream: flow_data
+    match:
+      packet.has_layer.mpls: "true"
+    fields:
+      - key:src_addr:4
+      - key:dst_addr:4
+      - field:mpls_label
+      - field:bytes
+      - static:exporter_name:edge-a
+```
+
+Legacy `key_fields`, `sum`, `first`, `current`, and `static_fields` lists still
+load, but they no longer receive hidden default aggregation fields. Omitting
+`sum` means the sum list is empty. An enabled aggregator with no aggregation
+roles forwards matching events immediately.
+
+When a custom field needs IPFIX enterprise mapping, configure it under the
+encoder catalog or overrides instead:
+
+```yaml
+encoder:
+  type: ipfix
+  tflow_data:
+    overrides:
+      tenant_id:
+        name: tenantId
+        id: 12345
+        pen: 32473
+        enterprise_scoped: true
+        length: 4
+        type: unsigned32
+```
+
 ## Source Framing
 
 ReFlow distinguishes datagram input from stream input with `sources[].network`,

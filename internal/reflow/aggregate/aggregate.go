@@ -27,6 +27,9 @@ func New(cfg config.AggregatorConfig) (Aggregator, error) {
 	if !cfg.Enabled {
 		return passthrough{}, nil
 	}
+	if cfg.Passthrough {
+		return schemaPassthrough{cfg: cfg}, nil
+	}
 	return NewStateful(cfg), nil
 }
 
@@ -37,6 +40,33 @@ func (passthrough) Process(evt *event.Event) ([]*event.Event, error) { return []
 func (passthrough) Flush() ([]*event.Event, error)                   { return nil, nil }
 func (passthrough) Close() ([]*event.Event, error)                   { return nil, nil }
 func (passthrough) Interval() time.Duration                          { return 0 }
+
+type schemaPassthrough struct {
+	cfg config.AggregatorConfig
+}
+
+func (p schemaPassthrough) InitEvents() ([]*event.Event, error) {
+	return schemaInitEvents(p.cfg)
+}
+
+func (p schemaPassthrough) Process(evt *event.Event) ([]*event.Event, error) {
+	if len(p.cfg.StaticFields) == 0 {
+		return []*event.Event{evt}, nil
+	}
+	if evt == nil {
+		return []*event.Event{evt}, nil
+	}
+	out := *evt
+	out.Fields = cloneFields(evt.Fields)
+	for key, val := range p.cfg.StaticFields {
+		out.Fields[key] = val
+	}
+	return []*event.Event{&out}, nil
+}
+
+func (schemaPassthrough) Flush() ([]*event.Event, error) { return nil, nil }
+func (schemaPassthrough) Close() ([]*event.Event, error) { return nil, nil }
+func (schemaPassthrough) Interval() time.Duration        { return 0 }
 
 type aggregateRecord struct {
 	Fields    map[string]any
@@ -112,28 +142,38 @@ func (a *Stateful) InitEvents() ([]*event.Event, error) {
 	if !a.cfg.Enabled {
 		return nil, nil
 	}
-	fieldNames := orderedSchemaFields(a.cfg)
+	return schemaInitEvents(a.cfg)
+}
+
+func schemaInitEvents(cfg config.AggregatorConfig) ([]*event.Event, error) {
+	fieldNames := orderedSchemaFields(cfg)
+	if len(fieldNames) == 0 {
+		return nil, nil
+	}
 	return []*event.Event{
 		{
 			ReceivedAt: time.Now().UTC(),
 			Kind:       "control",
-			Stream:     a.cfg.Stream,
+			Stream:     cfg.Stream,
 			Source: event.SourceMetadata{
 				Type: "aggregator",
 			},
 			Control: &event.ControlMetadata{
 				Type:   "schema",
-				Stream: a.cfg.Stream,
+				Stream: cfg.Stream,
 			},
 			Payload: event.AggregationSchema{
-				Stream:         a.cfg.Stream,
+				Stream:         cfg.Stream,
 				FieldNames:     fieldNames,
-				KeyFields:      append([]string(nil), a.cfg.KeyFields...),
-				SumFields:      append([]string(nil), a.cfg.Sum...),
-				FirstFields:    append([]string(nil), a.cfg.First...),
-				CurrentFields:  append([]string(nil), a.cfg.Current...),
-				StaticFields:   cloneFields(a.cfg.StaticFields),
-				BaseTemplateID: a.cfg.TemplateID,
+				Fields:         schemaFields(cfg),
+				KeyFields:      append([]string(nil), cfg.KeyFields...),
+				SumFields:      append([]string(nil), cfg.Sum...),
+				FirstFields:    append([]string(nil), cfg.First...),
+				CurrentFields:  append([]string(nil), cfg.Current...),
+				MinFields:      append([]string(nil), cfg.Min...),
+				MaxFields:      append([]string(nil), cfg.Max...),
+				StaticFields:   cloneFields(cfg.StaticFields),
+				BaseTemplateID: cfg.TemplateID,
 			},
 		},
 	}, nil
@@ -167,6 +207,22 @@ func (a *Stateful) Process(evt *event.Event) ([]*event.Event, error) {
 // orderedSchemaFields produces a stable field order for schema announcements and
 // templated encoders that depend on deterministic field positions.
 func orderedSchemaFields(cfg config.AggregatorConfig) []string {
+	if cfg.FieldsConfigured {
+		seen := make(map[string]struct{})
+		out := make([]string, 0, len(cfg.Fields))
+		for _, field := range cfg.Fields {
+			if field.Name == "" {
+				continue
+			}
+			if _, ok := seen[field.Name]; ok {
+				continue
+			}
+			seen[field.Name] = struct{}{}
+			out = append(out, field.Name)
+		}
+		return out
+	}
+
 	seen := make(map[string]struct{})
 	var out []string
 	appendField := func(field string) {
@@ -191,6 +247,12 @@ func orderedSchemaFields(cfg config.AggregatorConfig) []string {
 	for _, field := range cfg.Current {
 		appendField(field)
 	}
+	for _, field := range cfg.Min {
+		appendField(field)
+	}
+	for _, field := range cfg.Max {
+		appendField(field)
+	}
 	appendField("start_time_unix")
 	appendField("end_time_unix")
 	staticFields := make([]string, 0, len(cfg.StaticFields))
@@ -200,6 +262,58 @@ func orderedSchemaFields(cfg config.AggregatorConfig) []string {
 	sort.Strings(staticFields)
 	for _, field := range staticFields {
 		appendField(field)
+	}
+	return out
+}
+
+func schemaFields(cfg config.AggregatorConfig) []event.SchemaField {
+	if cfg.FieldsConfigured {
+		out := make([]event.SchemaField, 0, len(cfg.Fields))
+		for _, field := range cfg.Fields {
+			out = append(out, event.SchemaField{
+				Role:     field.Role,
+				Name:     field.Name,
+				Modifier: field.Modifier,
+				Value:    field.Value,
+			})
+		}
+		return out
+	}
+
+	names := orderedSchemaFields(cfg)
+	out := make([]event.SchemaField, 0, len(names))
+	roleByName := make(map[string]string, len(names))
+	for _, field := range cfg.KeyFields {
+		roleByName[field] = "key"
+	}
+	for _, field := range cfg.Sum {
+		roleByName[field] = "sum"
+	}
+	for _, field := range cfg.First {
+		roleByName[field] = "first"
+	}
+	for _, field := range cfg.Current {
+		roleByName[field] = "current"
+	}
+	for _, field := range cfg.Min {
+		roleByName[field] = "min"
+	}
+	for _, field := range cfg.Max {
+		roleByName[field] = "max"
+	}
+	for _, name := range names {
+		role := roleByName[name]
+		if _, ok := cfg.StaticFields[name]; ok {
+			role = "static"
+		}
+		if role == "" {
+			role = "field"
+		}
+		out = append(out, event.SchemaField{
+			Role:  role,
+			Name:  name,
+			Value: cfg.StaticFields[name],
+		})
 	}
 	return out
 }
@@ -382,6 +496,16 @@ func aggregateFromEvent(cfg config.AggregatorConfig, recordCapacity int, evt *ev
 			recordFields[currentField] = currentValue{Value: val}
 		}
 	}
+	for _, minField := range cfg.Min {
+		if val, ok := fieldValue(fields, minField); ok {
+			recordFields[minField] = minValue{Value: val}
+		}
+	}
+	for _, maxField := range cfg.Max {
+		if val, ok := fieldValue(fields, maxField); ok {
+			recordFields[maxField] = maxValue{Value: val}
+		}
+	}
 	seedTimestamps(recordFields, fields, now)
 
 	return key, aggregateRecord{
@@ -392,7 +516,7 @@ func aggregateFromEvent(cfg config.AggregatorConfig, recordCapacity int, evt *ev
 }
 
 func aggregateRecordCapacity(cfg config.AggregatorConfig) int {
-	return len(cfg.StaticFields) + len(cfg.KeyFields) + len(cfg.Sum) + len(cfg.First) + len(cfg.Current) + 2
+	return len(cfg.StaticFields) + len(cfg.KeyFields) + len(cfg.Sum) + len(cfg.First) + len(cfg.Current) + len(cfg.Min) + len(cfg.Max) + 2
 }
 
 // seedTimestamps ensures aggregates always have start/end fields even when the
@@ -478,6 +602,10 @@ func cloneFields(in map[string]any) map[string]any {
 			out[key] = typed.Value
 		case currentValue:
 			out[key] = typed.Value
+		case minValue:
+			out[key] = typed.Value
+		case maxValue:
+			out[key] = typed.Value
 		default:
 			out[key] = val
 		}
@@ -488,6 +616,8 @@ func cloneFields(in map[string]any) map[string]any {
 type firstValue struct{ Value any }
 type sumValue struct{ Value any }
 type currentValue struct{ Value any }
+type minValue struct{ Value any }
+type maxValue struct{ Value any }
 
 // mergeFields applies the configured aggregation semantics by field wrapper type:
 // sum values add, first values stick, current values overwrite.
@@ -511,6 +641,10 @@ func mergeFields(dst, src map[string]any) {
 			}
 		case currentValue:
 			dst[key] = incoming
+		case minValue:
+			dst[key] = minValue{Value: minAny(dst[key], incoming.Value)}
+		case maxValue:
+			dst[key] = maxValue{Value: maxAny(dst[key], incoming.Value)}
 		default:
 			dst[key] = val
 		}
@@ -525,6 +659,32 @@ func sumValueOf(val any) int64 {
 	default:
 		return int64FromAny(val)
 	}
+}
+
+func minAny(current, incoming any) any {
+	if wrapped, exists := current.(minValue); exists {
+		if int64FromAny(incoming) < int64FromAny(wrapped.Value) {
+			return incoming
+		}
+		return wrapped.Value
+	}
+	if int64FromAny(incoming) < int64FromAny(current) {
+		return incoming
+	}
+	return current
+}
+
+func maxAny(current, incoming any) any {
+	if wrapped, exists := current.(maxValue); exists {
+		if int64FromAny(incoming) > int64FromAny(wrapped.Value) {
+			return incoming
+		}
+		return wrapped.Value
+	}
+	if int64FromAny(incoming) > int64FromAny(current) {
+		return incoming
+	}
+	return current
 }
 
 // timestampFieldOrNow prefers an existing field timestamp and falls back to the

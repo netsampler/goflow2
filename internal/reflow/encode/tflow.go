@@ -36,6 +36,7 @@ type NFv9Encoder struct {
 type templatedSchemaState struct {
 	stream         string
 	fieldNames     []string
+	fields         []event.SchemaField
 	baseTemplateID uint16
 	ipv4Template   netflow.TemplateRecord
 	ipv6Template   netflow.TemplateRecord
@@ -204,7 +205,7 @@ func (e *IPFIXEncoder) buildPacket(evt *event.Event) (*netflow.IPFIXPacket, erro
 	if schema, ok := e.dataSchemas[stream]; ok {
 		ipv6 := schema.usesIPv6Template(evt.Fields)
 		templateRecord := schema.templateForFamily(ipv6)
-		dataRecord, err := buildTemplatedValues(e.cfg.TFlowData, evt.Fields, schema.fieldNames, false, ipv6)
+		dataRecord, err := buildTemplatedValuesFromSchemaFields(e.cfg.TFlowData, evt.Fields, schema.fields, false, ipv6)
 		if err != nil {
 			return nil, err
 		}
@@ -332,7 +333,7 @@ func (e *NFv9Encoder) buildPacket(evt *event.Event) (*netflow.NFv9Packet, error)
 	if schema, ok := e.dataSchemas[stream]; ok {
 		ipv6 := schema.usesIPv6Template(evt.Fields)
 		templateRecord := schema.templateForFamily(ipv6)
-		dataRecord, err := buildTemplatedValues(e.cfg.TFlowData, evt.Fields, schema.fieldNames, true, ipv6)
+		dataRecord, err := buildTemplatedValuesFromSchemaFields(e.cfg.TFlowData, evt.Fields, schema.fields, true, ipv6)
 		if err != nil {
 			return nil, err
 		}
@@ -750,15 +751,16 @@ func buildSchemaStateWithBase(cfg config.TFlowDataConfig, schema event.Aggregati
 	state := templatedSchemaState{
 		stream:         stream,
 		fieldNames:     append([]string(nil), schema.FieldNames...),
+		fields:         schemaFieldsOrNames(schema),
 		baseTemplateID: baseTemplateID,
 	}
-	ipv4Template, err := buildTemplateRecordFromFields(cfg, state.fieldNames, baseTemplateID, netflowV9, false)
+	ipv4Template, err := buildTemplateRecordFromSchemaFields(cfg, state.fields, baseTemplateID, netflowV9, false)
 	if err != nil {
 		return templatedSchemaState{}, err
 	}
 	state.ipv4Template = ipv4Template
-	if hasAddressField(state.fieldNames) {
-		ipv6Template, err := buildTemplateRecordFromFields(cfg, state.fieldNames, baseTemplateID+1, netflowV9, true)
+	if schemaNeedsIPv6Variant(state.fields) {
+		ipv6Template, err := buildTemplateRecordFromSchemaFields(cfg, state.fields, baseTemplateID+1, netflowV9, true)
 		if err != nil {
 			return templatedSchemaState{}, err
 		}
@@ -766,6 +768,29 @@ func buildSchemaStateWithBase(cfg config.TFlowDataConfig, schema event.Aggregati
 		state.hasIPv6Variant = true
 	}
 	return state, nil
+}
+
+func schemaFieldsOrNames(schema event.AggregationSchema) []event.SchemaField {
+	if len(schema.Fields) > 0 {
+		return append([]event.SchemaField(nil), schema.Fields...)
+	}
+	fields := make([]event.SchemaField, 0, len(schema.FieldNames))
+	for _, name := range schema.FieldNames {
+		fields = append(fields, event.SchemaField{Name: name, Role: "field"})
+	}
+	return fields
+}
+
+func schemaNeedsIPv6Variant(fields []event.SchemaField) bool {
+	for _, field := range fields {
+		if field.Modifier == "4" {
+			continue
+		}
+		if field.Name == "src_addr" || field.Name == "dst_addr" {
+			return true
+		}
+	}
+	return false
 }
 
 // templateForFields selects the IPv6 variant only when the current event needs it.
@@ -1050,42 +1075,73 @@ func buildTemplatedDataRecordWithNames(cfg config.TFlowDataConfig, fieldMap map[
 		}, nil
 }
 
+func schemaFieldDefinition(cfg config.TFlowDataConfig, field event.SchemaField, netflowV9 bool, ipv6 bool) (config.IPFIXFieldDefinition, bool) {
+	def, ok := cfg.Catalog[field.Name]
+	if !ok {
+		return config.IPFIXFieldDefinition{}, false
+	}
+
+	fieldIPv6 := ipv6
+	switch field.Modifier {
+	case "4":
+		fieldIPv6 = false
+	case "6":
+		fieldIPv6 = true
+	}
+	def = resolvedFieldDefinitionForFamily(field.Name, def, fieldIPv6)
+	if def.Name == "" {
+		def.Name = field.Name
+	}
+	return def, true
+}
+
+func protocolFieldType(def config.IPFIXFieldDefinition, netflowV9 bool) uint16 {
+	if netflowV9 && def.NetFlowV9ID != 0 {
+		return def.NetFlowV9ID
+	}
+	return def.ID
+}
+
 // buildTemplatedValues emits one data record using a preannounced template layout,
 // filling missing fields with protocol-appropriate zero values.
 func buildTemplatedValues(cfg config.TFlowDataConfig, fieldMap map[string]any, names []string, netflowV9 bool, ipv6 bool) (netflow.DataRecord, error) {
-	values := make([]netflow.DataField, 0, len(names))
+	fields := make([]event.SchemaField, 0, len(names))
 	for _, name := range names {
-		def, ok := cfg.Catalog[name]
+		fields = append(fields, event.SchemaField{Name: name, Role: "field"})
+	}
+	return buildTemplatedValuesFromSchemaFields(cfg, fieldMap, fields, netflowV9, ipv6)
+}
+
+func buildTemplatedValuesFromSchemaFields(cfg config.TFlowDataConfig, fieldMap map[string]any, fields []event.SchemaField, netflowV9 bool, ipv6 bool) (netflow.DataRecord, error) {
+	values := make([]netflow.DataField, 0, len(fields))
+	for _, field := range fields {
+		def, ok := schemaFieldDefinition(cfg, field, netflowV9, ipv6)
 		if !ok {
 			continue
 		}
-		def = resolvedFieldDefinitionForFamily(name, def, ipv6)
 
-		val, ok := fieldMap[name]
+		val, ok := fieldMap[field.Name]
+		if !ok && field.Role == "static" && field.Value != nil {
+			val = field.Value
+			ok = true
+		}
 		var encoded []byte
 		var err error
 		if ok {
 			encoded, err = encodeIPFIXValue(def, val)
 			if err != nil {
-				return netflow.DataRecord{}, fmt.Errorf("encode field %q: %w", name, err)
+				return netflow.DataRecord{}, fmt.Errorf("encode field %q: %w", field.Name, err)
 			}
 		} else {
 			encoded, err = defaultEncodedValue(def)
 			if err != nil {
-				return netflow.DataRecord{}, fmt.Errorf("default field %q: %w", name, err)
+				return netflow.DataRecord{}, fmt.Errorf("default field %q: %w", field.Name, err)
 			}
 		}
 
-		fieldType := def.ID
-		if netflowV9 {
-			fieldType = def.NetFlowV9ID
-			if fieldType == 0 {
-				fieldType = def.ID
-			}
-		}
 		values = append(values, netflow.DataField{
 			PenProvided: def.EnterpriseScoped || def.PEN != 0,
-			Type:        fieldType,
+			Type:        protocolFieldType(def, netflowV9),
 			Pen:         def.PEN,
 			Value:       encoded,
 		})
@@ -1098,23 +1154,23 @@ func buildTemplatedValues(cfg config.TFlowDataConfig, fieldMap map[string]any, n
 
 // buildTemplateRecordFromFields creates a protocol template record without any data.
 func buildTemplateRecordFromFields(cfg config.TFlowDataConfig, names []string, templateID uint16, netflowV9 bool, ipv6 bool) (netflow.TemplateRecord, error) {
-	fields := make([]netflow.Field, 0, len(names))
+	fields := make([]event.SchemaField, 0, len(names))
 	for _, name := range names {
-		def, ok := cfg.Catalog[name]
+		fields = append(fields, event.SchemaField{Name: name, Role: "field"})
+	}
+	return buildTemplateRecordFromSchemaFields(cfg, fields, templateID, netflowV9, ipv6)
+}
+
+func buildTemplateRecordFromSchemaFields(cfg config.TFlowDataConfig, schemaFields []event.SchemaField, templateID uint16, netflowV9 bool, ipv6 bool) (netflow.TemplateRecord, error) {
+	fields := make([]netflow.Field, 0, len(schemaFields))
+	for _, field := range schemaFields {
+		def, ok := schemaFieldDefinition(cfg, field, netflowV9, ipv6)
 		if !ok {
 			continue
 		}
-		def = resolvedFieldDefinitionForFamily(name, def, ipv6)
-		fieldType := def.ID
-		if netflowV9 {
-			fieldType = def.NetFlowV9ID
-			if fieldType == 0 {
-				fieldType = def.ID
-			}
-		}
 		fields = append(fields, netflow.Field{
 			PenProvided: def.EnterpriseScoped || def.PEN != 0,
-			Type:        fieldType,
+			Type:        protocolFieldType(def, netflowV9),
 			Length:      def.Length,
 			Pen:         def.PEN,
 		})

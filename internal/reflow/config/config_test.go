@@ -143,14 +143,17 @@ sink:
 	if cfg.Aggregators[0].Window.IdleFlushAfter != 5000 {
 		t.Fatalf("expected aggregators[0].window.idle_flush_after_ms=5000, got %d", cfg.Aggregators[0].Window.IdleFlushAfter)
 	}
-	if len(cfg.Aggregators[0].Sum) == 0 || cfg.Aggregators[0].Sum[0] != "bytes" {
-		t.Fatalf("expected default sum fields to include bytes, got %#v", cfg.Aggregators[0].Sum)
+	if !cfg.Aggregators[0].Passthrough {
+		t.Fatalf("expected aggregators[0] without aggregation fields to use pass-through schema mode")
 	}
-	if len(cfg.Aggregators[0].First) == 0 || cfg.Aggregators[0].First[0] != "agent_ip" {
-		t.Fatalf("expected default first fields to include agent_ip, got %#v", cfg.Aggregators[0].First)
+	if len(cfg.Aggregators[0].Sum) != 0 {
+		t.Fatalf("expected sum fields to default empty, got %#v", cfg.Aggregators[0].Sum)
 	}
-	if len(cfg.Aggregators[0].Current) == 0 || cfg.Aggregators[0].Current[0] != "agent_ip" {
-		t.Fatalf("expected default current fields to include agent_ip, got %#v", cfg.Aggregators[0].Current)
+	if len(cfg.Aggregators[0].First) != 0 {
+		t.Fatalf("expected first fields to default empty, got %#v", cfg.Aggregators[0].First)
+	}
+	if len(cfg.Aggregators[0].Current) != 0 {
+		t.Fatalf("expected current fields to default empty, got %#v", cfg.Aggregators[0].Current)
 	}
 	custom := cfg.Encoder.TFlowData.Catalog["custom_counter"]
 	if custom.ID != 2000 || custom.PEN != 64512 {
@@ -167,7 +170,7 @@ sink:
 	}
 }
 
-func TestLoadSupportsAccumulativeAggregatorDefaults(t *testing.T) {
+func TestLoadSupportsAccumulativeAggregatorWithExplicitFields(t *testing.T) {
 	dir := t.TempDir()
 
 	cfgPath := filepath.Join(dir, "reflow.yaml")
@@ -186,6 +189,9 @@ aggregators:
   - enabled: true
     periodic:
       every_ms: 60000
+    fields:
+      - key:agent_ip
+      - current:sampling_rate
 
 encoder:
   type: json
@@ -207,11 +213,69 @@ sink:
 	if cfg.Aggregators[0].Periodic.Every != 60000 {
 		t.Fatalf("expected periodic.every_ms=60000, got %d", cfg.Aggregators[0].Periodic.Every)
 	}
-	if len(cfg.Aggregators[0].Sum) == 0 || len(cfg.Aggregators[0].First) == 0 || len(cfg.Aggregators[0].Current) == 0 {
-		t.Fatalf("expected aggregation defaults to be populated, got sum=%#v first=%#v current=%#v", cfg.Aggregators[0].Sum, cfg.Aggregators[0].First, cfg.Aggregators[0].Current)
+	if cfg.Aggregators[0].Passthrough {
+		t.Fatalf("expected current field to force aggregate mode")
+	}
+	if len(cfg.Aggregators[0].KeyFields) != 1 || cfg.Aggregators[0].KeyFields[0] != "agent_ip" {
+		t.Fatalf("expected key field agent_ip, got %#v", cfg.Aggregators[0].KeyFields)
+	}
+	if len(cfg.Aggregators[0].Current) != 1 || cfg.Aggregators[0].Current[0] != "sampling_rate" {
+		t.Fatalf("expected current field sampling_rate, got %#v", cfg.Aggregators[0].Current)
 	}
 	if cfg.Aggregators[0].Stream != "flow_data" {
 		t.Fatalf("expected default stream=flow_data, got %q", cfg.Aggregators[0].Stream)
+	}
+}
+
+func TestLoadParsesAggregatorFieldDSL(t *testing.T) {
+	dir := t.TempDir()
+
+	cfgPath := filepath.Join(dir, "reflow.yaml")
+	if err := os.WriteFile(cfgPath, []byte(`
+sources:
+  - network: udp
+    address: ":18081"
+    type: json
+
+processor:
+  type: builtin
+
+aggregators:
+  - enabled: true
+    fields:
+      - key:src_addr:4
+      - key:dst_addr:4
+      - field:tenant_id
+      - static:exporter_name:edge-a
+
+encoder:
+  type: json
+
+sink:
+  type: stdout
+`), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	cfg, err := Load(cfgPath)
+	if err != nil {
+		t.Fatalf("Load returned error: %v", err)
+	}
+	agg := cfg.Aggregators[0]
+	if !agg.Passthrough {
+		t.Fatalf("expected no aggregation roles to use pass-through schema mode")
+	}
+	if len(agg.Fields) != 4 {
+		t.Fatalf("expected 4 parsed fields, got %#v", agg.Fields)
+	}
+	if got := agg.Fields[0]; got.Role != "key" || got.Name != "src_addr" || got.Modifier != "4" {
+		t.Fatalf("unexpected first field: %#v", got)
+	}
+	if got := agg.Fields[2]; got.Role != "field" || got.Name != "tenant_id" || got.Modifier != "" {
+		t.Fatalf("unexpected tenant field: %#v", got)
+	}
+	if agg.StaticFields["exporter_name"] != "edge-a" {
+		t.Fatalf("expected static exporter_name edge-a, got %#v", agg.StaticFields["exporter_name"])
 	}
 }
 
@@ -352,7 +416,7 @@ sink:
 	}
 }
 
-func TestLoadRejectsAggregatorWithoutExportTrigger(t *testing.T) {
+func TestLoadAllowsPassthroughAggregatorWithoutExportTrigger(t *testing.T) {
 	dir := t.TempDir()
 
 	cfgPath := filepath.Join(dir, "reflow.yaml")
@@ -367,6 +431,9 @@ processor:
 
 aggregators:
   - enabled: true
+    fields:
+      - key:src_addr
+      - field:bytes
 
 encoder:
   type: json
@@ -377,8 +444,12 @@ sink:
 		t.Fatalf("write config: %v", err)
 	}
 
-	if _, err := Load(cfgPath); err == nil {
-		t.Fatalf("expected Load to reject aggregator without export trigger")
+	cfg, err := Load(cfgPath)
+	if err != nil {
+		t.Fatalf("Load returned error: %v", err)
+	}
+	if !cfg.Aggregators[0].Passthrough {
+		t.Fatalf("expected aggregator without aggregation roles to use pass-through schema mode")
 	}
 }
 

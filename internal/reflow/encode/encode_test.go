@@ -1159,6 +1159,54 @@ func TestIPFIXSchemaDrivenDataRecordKeepsTemplateWidth(t *testing.T) {
 	}
 }
 
+func TestIPFIXSchemaFieldsUseEncoderCatalogForEnterpriseMapping(t *testing.T) {
+	cfg := testTFlowEncoderConfig("ipfix")
+	cfg.ObservationDomainID = 42
+	cfg.TFlowData.Catalog["tenant_id"] = config.IPFIXFieldDefinition{
+		Name:             "tenantId",
+		ID:               12345,
+		PEN:              32473,
+		Length:           4,
+		Type:             "unsigned32",
+		EnterpriseScoped: true,
+	}
+	enc := NewIPFIXEncoder(cfg)
+
+	payloads, err := enc.Encode(&event.Event{
+		Kind: "control",
+		Control: &event.ControlMetadata{
+			Type:   "schema",
+			Stream: "flow_data",
+		},
+		Payload: event.AggregationSchema{
+			Stream: "flow_data",
+			Fields: []event.SchemaField{
+				{Role: "field", Name: "tenant_id"},
+			},
+			FieldNames:     []string{"tenant_id"},
+			BaseTemplateID: 300,
+		},
+	})
+	if err != nil {
+		t.Fatalf("schema Encode returned error: %v", err)
+	}
+	if len(payloads) != 1 {
+		t.Fatalf("expected one schema payload, got %d", len(payloads))
+	}
+
+	store := templates.NewTemplateFlowStore()
+	store.Start()
+	var decoded netflow.IPFIXPacket
+	if err := netflow.DecodeMessageVersion(bytes.NewBuffer(payloads[0]), store, netflow.FlowContext{RouterKey: "test-router"}, nil, &decoded); err != nil {
+		t.Fatalf("decode schema payload: %v", err)
+	}
+	templateSet := decoded.FlowSets[0].(netflow.TemplateFlowSet)
+	field := templateSet.Records[0].Fields[0]
+	if !field.PenProvided || field.Pen != 32473 || field.Type != 12345 || field.Length != 4 {
+		t.Fatalf("expected enterprise field 12345/32473 length 4, got %#v", field)
+	}
+}
+
 func TestIPFIXEncoderUsesIPv6InformationElementsForIPv6Addresses(t *testing.T) {
 	enc := NewIPFIXEncoder(testTFlowEncoderConfig("ipfix"))
 	evt := testTemplatedFlowEvent()
