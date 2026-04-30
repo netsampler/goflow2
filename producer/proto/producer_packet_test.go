@@ -182,6 +182,8 @@ func TestProcessPacketBase(t *testing.T) {
 	}
 
 	assert.Equal(t, uint32(0x86dd), flowMessage.Etype)
+	assert.Equal(t, uint32(128), flowMessage.IcmpType)
+	assert.Equal(t, uint32(0), flowMessage.IcmpCode)
 
 }
 
@@ -222,6 +224,8 @@ func TestProcessPacketGRE(t *testing.T) {
 
 	assert.Equal(t, uint32(0x86dd), flowMessage.Etype)
 	assert.Equal(t, uint32(47), flowMessage.Proto)
+	assert.Equal(t, uint32(1), flowMessage.IcmpType)
+	assert.Equal(t, uint32(1), flowMessage.IcmpCode)
 	// todo: check addresses
 
 }
