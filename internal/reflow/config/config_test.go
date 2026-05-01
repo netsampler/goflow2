@@ -237,8 +237,8 @@ processor:
 
 aggregators:
   - fields:
-      - key:src_addr:4
-      - key:dst_addr:4
+      - key:src_addr
+      - key:dst_addr
       - current:tenant_id
       - static:exporter_name:edge-a
 
@@ -262,10 +262,10 @@ sink:
 	if len(agg.Fields) != 4 {
 		t.Fatalf("expected 4 parsed fields, got %#v", agg.Fields)
 	}
-	if got := agg.Fields[0]; got.Role != "key" || got.Name != "src_addr" || got.Modifier != "4" {
+	if got := agg.Fields[0]; got.Role != "key" || got.Name != "src_addr" {
 		t.Fatalf("unexpected first field: %#v", got)
 	}
-	if got := agg.Fields[2]; got.Role != "current" || got.Name != "tenant_id" || got.Modifier != "" {
+	if got := agg.Fields[2]; got.Role != "current" || got.Name != "tenant_id" {
 		t.Fatalf("unexpected tenant field: %#v", got)
 	}
 	if agg.StaticFields["exporter_name"] != "edge-a" {
@@ -302,6 +302,37 @@ sink:
 
 	if _, err := Load(cfgPath); err == nil {
 		t.Fatalf("expected Load to reject plain field role")
+	}
+}
+
+func TestLoadRejectsAggregatorFieldModifier(t *testing.T) {
+	dir := t.TempDir()
+
+	cfgPath := filepath.Join(dir, "reflow.yaml")
+	if err := os.WriteFile(cfgPath, []byte(`
+sources:
+  - network: udp
+    address: ":18081"
+    type: json
+
+processor:
+  type: builtin
+
+aggregators:
+  - fields:
+      - key:src_addr:4
+
+encoder:
+  type: json
+
+sink:
+  type: stdout
+`), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	if _, err := Load(cfgPath); err == nil {
+		t.Fatalf("expected Load to reject field modifier")
 	}
 }
 

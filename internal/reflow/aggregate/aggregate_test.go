@@ -315,7 +315,7 @@ func TestSchemaPassthroughEmitsSchemaAndForwardsEvents(t *testing.T) {
 		TemplateID:       256,
 		FieldsConfigured: true,
 		Fields: []config.AggregatorField{
-			{Role: "key", Name: "src_addr", Modifier: "4"},
+			{Role: "key", Name: "src_addr"},
 			{Role: "current", Name: "bytes"},
 			{Role: "static", Name: "exporter_name", Value: "edge-a"},
 		},
@@ -342,7 +342,7 @@ func TestSchemaPassthroughEmitsSchemaAndForwardsEvents(t *testing.T) {
 	if len(schema.Fields) != 3 {
 		t.Fatalf("expected 3 schema fields, got %#v", schema.Fields)
 	}
-	if schema.Fields[0].Name != "src_addr" || schema.Fields[0].Modifier != "4" {
+	if schema.Fields[0].Name != "src_addr" {
 		t.Fatalf("unexpected first schema field: %#v", schema.Fields[0])
 	}
 

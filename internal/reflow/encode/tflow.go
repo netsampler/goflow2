@@ -783,9 +783,6 @@ func schemaFieldsOrNames(schema event.AggregationSchema) []event.SchemaField {
 
 func schemaNeedsIPv6Variant(fields []event.SchemaField) bool {
 	for _, field := range fields {
-		if field.Modifier == "4" {
-			continue
-		}
 		if field.Name == "src_addr" || field.Name == "dst_addr" {
 			return true
 		}
@@ -1081,14 +1078,7 @@ func schemaFieldDefinition(cfg config.TFlowDataConfig, field event.SchemaField, 
 		return config.IPFIXFieldDefinition{}, false
 	}
 
-	fieldIPv6 := ipv6
-	switch field.Modifier {
-	case "4":
-		fieldIPv6 = false
-	case "6":
-		fieldIPv6 = true
-	}
-	def = resolvedFieldDefinitionForFamily(field.Name, def, fieldIPv6)
+	def = resolvedFieldDefinitionForFamily(field.Name, def, ipv6)
 	if def.Name == "" {
 		def.Name = field.Name
 	}

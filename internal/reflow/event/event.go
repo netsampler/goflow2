@@ -38,10 +38,9 @@ type AggregationSchema struct {
 }
 
 type SchemaField struct {
-	Role     string `json:"role,omitempty"`
-	Name     string `json:"name,omitempty"`
-	Modifier string `json:"modifier,omitempty"`
-	Value    any    `json:"value,omitempty"`
+	Role  string `json:"role,omitempty"`
+	Name  string `json:"name,omitempty"`
+	Value any    `json:"value,omitempty"`
 }
 
 type SourceInit struct {

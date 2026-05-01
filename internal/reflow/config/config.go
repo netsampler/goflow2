@@ -92,7 +92,7 @@ type AggregatorConfig struct {
 	// Periodic controls snapshot-style exports of current bucket state.
 	Periodic AggregatorPeriodicConfig `yaml:"periodic"`
 	// Fields is the preferred ordered field/policy list. Compact entries use:
-	// role:name[:modifier] or static:name:value. IPFIX/NetFlow field mapping
+	// role:name or static:name:value. IPFIX/NetFlow field mapping
 	// stays in encoder.tflow_data.
 	Fields           []AggregatorField `yaml:"fields"`
 	FieldsConfigured bool              `yaml:"-"`
@@ -115,10 +115,9 @@ type AggregatorConfig struct {
 }
 
 type AggregatorField struct {
-	Role     string `yaml:"role"`
-	Name     string `yaml:"name"`
-	Modifier string `yaml:"modifier"`
-	Value    any    `yaml:"value,omitempty"`
+	Role  string `yaml:"role"`
+	Name  string `yaml:"name"`
+	Value any    `yaml:"value,omitempty"`
 
 	// Path is accepted as a compatibility alias for mapping-style entries.
 	Path string `yaml:"path,omitempty"`
@@ -698,15 +697,12 @@ func parseAggregatorField(raw string) (AggregatorField, error) {
 	}
 
 	parts := strings.Split(raw, ":")
-	if len(parts) < 2 || len(parts) > 3 {
+	if len(parts) != 2 {
 		return AggregatorField{}, fmt.Errorf("invalid aggregator field entry %q", raw)
 	}
 	field := AggregatorField{
 		Role: parts[0],
 		Name: parts[1],
-	}
-	if len(parts) > 2 {
-		field.Modifier = parts[2]
 	}
 	return field, validateAggregatorField(field)
 }

@@ -23,7 +23,7 @@ aggregators:
     periodic:
       every_ms: 60000
     template_id: 256
-    # `fields` is ordered. Entries use role:name[:modifier], except static:name:value.
+    # `fields` is ordered. Entries use role:name, except static:name:value.
     # key forms the bucket key, sum adds numeric counters, first keeps the first value,
     # current keeps the latest value, and static injects a configured constant.
     fields:

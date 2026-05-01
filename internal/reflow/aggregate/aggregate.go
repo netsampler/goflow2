@@ -257,10 +257,9 @@ func schemaFields(cfg config.AggregatorConfig) []event.SchemaField {
 		out := make([]event.SchemaField, 0, len(cfg.Fields))
 		for _, field := range cfg.Fields {
 			out = append(out, event.SchemaField{
-				Role:     field.Role,
-				Name:     field.Name,
-				Modifier: field.Modifier,
-				Value:    field.Value,
+				Role:  field.Role,
+				Name:  field.Name,
+				Value: field.Value,
 			})
 		}
 		return out

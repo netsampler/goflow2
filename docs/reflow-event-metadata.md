@@ -137,23 +137,22 @@ length overrides.
 Compact entries use colon-separated parts:
 
 ```text
-role:name[:modifier]
+role:name
 static:name:value
 ```
 
 `role` can be `key`, `sum`, `first`, `current`, `min`, `max`, or `static`.
-The `modifier` is optional and is carried through the schema for the encoder to
-interpret. `current` includes the field in pass-through schemas and keeps the
-latest value when stateful aggregation is active. Today the IPFIX and NetFlow
-v9 encoders use `4` or `6` on `src_addr` and `dst_addr` to force IPv4 or IPv6
-template selection:
+`current` includes the field in pass-through schemas and keeps the latest value
+when stateful aggregation is active. IPFIX and NetFlow v9 templates for
+`src_addr` and `dst_addr` automatically use IPv4 or IPv6 information elements
+based on the event address family.
 
 ```yaml
 aggregators:
   - stream: flow_data
     fields:
-      - key:src_addr:4
-      - key:dst_addr:4
+      - key:src_addr
+      - key:dst_addr
       - current:tenant_id
       - sum:bytes
       - sum:packets
@@ -172,8 +171,8 @@ aggregators:
     match:
       packet.has_layer.mpls: "true"
     fields:
-      - key:src_addr:4
-      - key:dst_addr:4
+      - key:src_addr
+      - key:dst_addr
       - key:mpls_label
       - current:bytes
       - static:exporter_name:edge-a
