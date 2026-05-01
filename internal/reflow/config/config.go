@@ -45,11 +45,17 @@ type ProcessorConfig struct {
 }
 
 type BuiltinProcessorConfig struct {
-	DropMessage          bool                `yaml:"drop_message"`
-	DropPayload          bool                `yaml:"drop_payload"`
-	DisablePacketMapping bool                `yaml:"disable_packet_mapping"`
-	TruncatePacketBytes  int                 `yaml:"truncate_packet_bytes"`
-	PacketDecoder        PacketDecoderConfig `yaml:"packet_decoder"`
+	DropMessage          bool                    `yaml:"drop_message"`
+	DropPayload          bool                    `yaml:"drop_payload"`
+	DisablePacketMapping bool                    `yaml:"disable_packet_mapping"`
+	TruncatePacketBytes  int                     `yaml:"truncate_packet_bytes"`
+	PacketDecoder        PacketDecoderConfig     `yaml:"packet_decoder"`
+	AggregationHelpers   AggregationHelperConfig `yaml:"aggregation_helpers"`
+}
+
+type AggregationHelperConfig struct {
+	MPLSLabels int `yaml:"mpls_labels"`
+	IPLayers   int `yaml:"ip_layers"`
 }
 
 type PacketDecoderConfig struct {
@@ -286,6 +292,12 @@ func (c *Config) setDefaults(configPath string) error {
 	}
 	if c.Processor.Builtin.TruncatePacketBytes < 0 {
 		return fmt.Errorf("processor.builtin.truncate_packet_bytes must be >= 0")
+	}
+	if c.Processor.Builtin.AggregationHelpers.MPLSLabels < 0 {
+		return fmt.Errorf("processor.builtin.aggregation_helpers.mpls_labels must be >= 0")
+	}
+	if c.Processor.Builtin.AggregationHelpers.IPLayers < 0 {
+		return fmt.Errorf("processor.builtin.aggregation_helpers.ip_layers must be >= 0")
 	}
 	if err := validatePacketDecoderConfig(c.Processor.Builtin.PacketDecoder); err != nil {
 		return fmt.Errorf("processor.builtin.packet_decoder: %w", err)

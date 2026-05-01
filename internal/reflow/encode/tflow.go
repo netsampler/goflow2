@@ -34,13 +34,15 @@ type NFv9Encoder struct {
 }
 
 type templatedSchemaState struct {
-	stream         string
-	fieldNames     []string
-	fields         []event.SchemaField
-	baseTemplateID uint16
-	ipv4Template   netflow.TemplateRecord
-	ipv6Template   netflow.TemplateRecord
-	hasIPv6Variant bool
+	stream           string
+	fieldNames       []string
+	fields           []event.SchemaField
+	baseTemplateID   uint16
+	ipv4Template     netflow.TemplateRecord
+	ipv6Template     netflow.TemplateRecord
+	hasIPv6Variant   bool
+	addressGroups    []string
+	templateVariants map[uint64]netflow.TemplateRecord
 }
 
 type sourceOptionsState struct {
@@ -203,9 +205,9 @@ func (e *IPFIXEncoder) buildPacket(evt *event.Event) (*netflow.IPFIXPacket, erro
 
 	stream := eventStream(evt, "flow_data")
 	if schema, ok := e.dataSchemas[stream]; ok {
-		ipv6 := schema.usesIPv6Template(evt.Fields)
-		templateRecord := schema.templateForFamily(ipv6)
-		dataRecord, err := buildTemplatedValuesFromSchemaFields(e.cfg.TFlowData, evt.Fields, schema.fields, false, ipv6)
+		mask := schema.addressVariantMask(evt.Fields)
+		templateRecord := schema.templateForMask(mask)
+		dataRecord, err := buildTemplatedValuesFromSchemaFieldsForMask(e.cfg.TFlowData, evt.Fields, schema.fields, false, schema.addressGroups, mask)
 		if err != nil {
 			return nil, err
 		}
@@ -331,9 +333,9 @@ func (e *NFv9Encoder) buildPacket(evt *event.Event) (*netflow.NFv9Packet, error)
 
 	stream := eventStream(evt, "flow_data")
 	if schema, ok := e.dataSchemas[stream]; ok {
-		ipv6 := schema.usesIPv6Template(evt.Fields)
-		templateRecord := schema.templateForFamily(ipv6)
-		dataRecord, err := buildTemplatedValuesFromSchemaFields(e.cfg.TFlowData, evt.Fields, schema.fields, true, ipv6)
+		mask := schema.addressVariantMask(evt.Fields)
+		templateRecord := schema.templateForMask(mask)
+		dataRecord, err := buildTemplatedValuesFromSchemaFieldsForMask(e.cfg.TFlowData, evt.Fields, schema.fields, true, schema.addressGroups, mask)
 		if err != nil {
 			return nil, err
 		}
@@ -754,19 +756,32 @@ func buildSchemaStateWithBase(cfg config.TFlowDataConfig, schema event.Aggregati
 		fields:         schemaFieldsOrNames(schema),
 		baseTemplateID: baseTemplateID,
 	}
-	ipv4Template, err := buildTemplateRecordFromSchemaFields(cfg, state.fields, baseTemplateID, netflowV9, false)
-	if err != nil {
-		return templatedSchemaState{}, err
+	state.addressGroups = schemaAddressGroups(state.fields)
+	if len(state.addressGroups) > 8 {
+		return templatedSchemaState{}, fmt.Errorf("schema has %d address groups; maximum is 8", len(state.addressGroups))
 	}
-	state.ipv4Template = ipv4Template
-	if schemaNeedsIPv6Variant(state.fields) {
-		ipv6Template, err := buildTemplateRecordFromSchemaFields(cfg, state.fields, baseTemplateID+1, netflowV9, true)
+	variantCount := uint64(1)
+	if len(state.addressGroups) > 0 {
+		variantCount = 1 << len(state.addressGroups)
+	}
+	if uint64(baseTemplateID)+variantCount-1 > 0xffff {
+		return templatedSchemaState{}, fmt.Errorf("template id range %d..%d exceeds 65535", baseTemplateID, uint64(baseTemplateID)+variantCount-1)
+	}
+	state.templateVariants = make(map[uint64]netflow.TemplateRecord, variantCount)
+	for mask := uint64(0); mask < variantCount; mask++ {
+		template, err := buildTemplateRecordFromSchemaFieldsForMask(cfg, state.fields, baseTemplateID+uint16(mask), netflowV9, state.addressGroups, mask)
 		if err != nil {
 			return templatedSchemaState{}, err
 		}
-		state.ipv6Template = ipv6Template
-		state.hasIPv6Variant = true
+		state.templateVariants[mask] = template
+		if mask == 0 {
+			state.ipv4Template = template
+		}
+		if mask == variantCount-1 {
+			state.ipv6Template = template
+		}
 	}
+	state.hasIPv6Variant = variantCount > 1
 	return state, nil
 }
 
@@ -782,41 +797,86 @@ func schemaFieldsOrNames(schema event.AggregationSchema) []event.SchemaField {
 }
 
 func schemaNeedsIPv6Variant(fields []event.SchemaField) bool {
-	for _, field := range fields {
-		if field.Name == "src_addr" || field.Name == "dst_addr" {
-			return true
-		}
-	}
-	return false
+	return len(schemaAddressGroups(fields)) > 0
 }
 
-// templateForFields selects the IPv6 variant only when the current event needs it.
+// templateForFields selects the address-family variant needed by the current event.
 func (s templatedSchemaState) templateForFields(fields map[string]any) netflow.TemplateRecord {
-	if s.hasIPv6Variant && eventHasIPv6(fields) {
-		return s.ipv6Template
-	}
-	return s.ipv4Template
+	return s.templateForMask(s.addressVariantMask(fields))
 }
 
-// usesIPv6Template reports whether the event requires the IPv6 schema variant.
+// usesIPv6Template reports whether the event requires any IPv6 schema variant.
 func (s templatedSchemaState) usesIPv6Template(fields map[string]any) bool {
-	return s.hasIPv6Variant && eventHasIPv6(fields)
+	return s.addressVariantMask(fields) != 0
 }
 
 // templateForFamily selects the prebuilt template by IP family.
 func (s templatedSchemaState) templateForFamily(ipv6 bool) netflow.TemplateRecord {
-	if ipv6 && s.hasIPv6Variant {
-		return s.ipv6Template
+	if !ipv6 {
+		return s.templateForMask(0)
 	}
-	return s.ipv4Template
+	if len(s.addressGroups) == 0 {
+		return s.ipv4Template
+	}
+	return s.templateForMask((uint64(1) << len(s.addressGroups)) - 1)
+}
+
+func (s templatedSchemaState) templateForMask(mask uint64) netflow.TemplateRecord {
+	if len(s.templateVariants) == 0 {
+		if mask != 0 && s.hasIPv6Variant {
+			return s.ipv6Template
+		}
+		return s.ipv4Template
+	}
+	if template, ok := s.templateVariants[mask]; ok {
+		return template
+	}
+	return s.templateVariants[0]
 }
 
 // templates returns every template record that must be announced for this schema.
 func (s templatedSchemaState) templates() []netflow.TemplateRecord {
-	if s.hasIPv6Variant {
-		return []netflow.TemplateRecord{s.ipv4Template, s.ipv6Template}
+	if len(s.templateVariants) == 0 {
+		if s.hasIPv6Variant {
+			return []netflow.TemplateRecord{s.ipv4Template, s.ipv6Template}
+		}
+		return []netflow.TemplateRecord{s.ipv4Template}
 	}
-	return []netflow.TemplateRecord{s.ipv4Template}
+	masks := make([]uint64, 0, len(s.templateVariants))
+	for mask := range s.templateVariants {
+		masks = append(masks, mask)
+	}
+	sort.Slice(masks, func(i, j int) bool { return masks[i] < masks[j] })
+	templates := make([]netflow.TemplateRecord, 0, len(masks))
+	for _, mask := range masks {
+		templates = append(templates, s.templateVariants[mask])
+	}
+	return templates
+}
+
+func (s templatedSchemaState) addressVariantMask(fields map[string]any) uint64 {
+	if len(s.addressGroups) == 0 || len(fields) == 0 {
+		return 0
+	}
+	groupIndexes := make(map[string]int, len(s.addressGroups))
+	for i, group := range s.addressGroups {
+		groupIndexes[group] = i
+	}
+	var mask uint64
+	for _, field := range s.fields {
+		group, ok := addressFieldGroup(field.Name)
+		if !ok {
+			continue
+		}
+		index, ok := groupIndexes[group]
+		if !ok {
+			continue
+		}
+		if fieldValueIsIPv6(fields[field.Name]) {
+			mask |= 1 << index
+		}
+	}
+	return mask
 }
 
 // sourceOptionsFromEvent extracts source-level exporter metadata from either the
@@ -1085,6 +1145,19 @@ func schemaFieldDefinition(cfg config.TFlowDataConfig, field event.SchemaField, 
 	return def, true
 }
 
+func schemaFieldDefinitionForMask(cfg config.TFlowDataConfig, field event.SchemaField, netflowV9 bool, groups []string, mask uint64) (config.IPFIXFieldDefinition, bool) {
+	def, ok := cfg.Catalog[field.Name]
+	if !ok {
+		return config.IPFIXFieldDefinition{}, false
+	}
+
+	def = resolvedFieldDefinitionForAddressMask(field.Name, def, groups, mask)
+	if def.Name == "" {
+		def.Name = field.Name
+	}
+	return def, true
+}
+
 func protocolFieldType(def config.IPFIXFieldDefinition, netflowV9 bool) uint16 {
 	if netflowV9 && def.NetFlowV9ID != 0 {
 		return def.NetFlowV9ID
@@ -1103,9 +1176,13 @@ func buildTemplatedValues(cfg config.TFlowDataConfig, fieldMap map[string]any, n
 }
 
 func buildTemplatedValuesFromSchemaFields(cfg config.TFlowDataConfig, fieldMap map[string]any, fields []event.SchemaField, netflowV9 bool, ipv6 bool) (netflow.DataRecord, error) {
+	return buildTemplatedValuesFromSchemaFieldsForMask(cfg, fieldMap, fields, netflowV9, nil, boolAddressMask(ipv6))
+}
+
+func buildTemplatedValuesFromSchemaFieldsForMask(cfg config.TFlowDataConfig, fieldMap map[string]any, fields []event.SchemaField, netflowV9 bool, groups []string, mask uint64) (netflow.DataRecord, error) {
 	values := make([]netflow.DataField, 0, len(fields))
 	for _, field := range fields {
-		def, ok := schemaFieldDefinition(cfg, field, netflowV9, ipv6)
+		def, ok := schemaFieldDefinitionForMask(cfg, field, netflowV9, groups, mask)
 		if !ok {
 			continue
 		}
@@ -1152,9 +1229,13 @@ func buildTemplateRecordFromFields(cfg config.TFlowDataConfig, names []string, t
 }
 
 func buildTemplateRecordFromSchemaFields(cfg config.TFlowDataConfig, schemaFields []event.SchemaField, templateID uint16, netflowV9 bool, ipv6 bool) (netflow.TemplateRecord, error) {
+	return buildTemplateRecordFromSchemaFieldsForMask(cfg, schemaFields, templateID, netflowV9, nil, boolAddressMask(ipv6))
+}
+
+func buildTemplateRecordFromSchemaFieldsForMask(cfg config.TFlowDataConfig, schemaFields []event.SchemaField, templateID uint16, netflowV9 bool, groups []string, mask uint64) (netflow.TemplateRecord, error) {
 	fields := make([]netflow.Field, 0, len(schemaFields))
 	for _, field := range schemaFields {
-		def, ok := schemaFieldDefinition(cfg, field, netflowV9, ipv6)
+		def, ok := schemaFieldDefinitionForMask(cfg, field, netflowV9, groups, mask)
 		if !ok {
 			continue
 		}
@@ -1266,7 +1347,7 @@ func defaultEncodedValue(def config.IPFIXFieldDefinition) ([]byte, error) {
 	}
 }
 
-// resolvedFieldDefinition upgrades src_addr/dst_addr to their IPv6 definitions
+// resolvedFieldDefinition upgrades address fields to their IPv6 definitions
 // when the concrete runtime value contains an IPv6 address.
 func resolvedFieldDefinition(name string, def config.IPFIXFieldDefinition, val any) config.IPFIXFieldDefinition {
 	ipStr, ok := val.(string)
@@ -1277,8 +1358,8 @@ func resolvedFieldDefinition(name string, def config.IPFIXFieldDefinition, val a
 	if err != nil {
 		return def
 	}
-	switch name {
-	case "src_addr":
+	switch {
+	case isSourceAddressField(name):
 		if addr.Is6() {
 			def.Name = "sourceIPv6Address"
 			def.ID = netflow.IPFIX_FIELD_sourceIPv6Address
@@ -1286,7 +1367,7 @@ func resolvedFieldDefinition(name string, def config.IPFIXFieldDefinition, val a
 			def.Length = 16
 			def.Type = "ipv6Address"
 		}
-	case "dst_addr":
+	case isDestinationAddressField(name):
 		if addr.Is6() {
 			def.Name = "destinationIPv6Address"
 			def.ID = netflow.IPFIX_FIELD_destinationIPv6Address
@@ -1304,14 +1385,14 @@ func resolvedFieldDefinitionForFamily(name string, def config.IPFIXFieldDefiniti
 	if !ipv6 {
 		return def
 	}
-	switch name {
-	case "src_addr":
+	switch {
+	case isSourceAddressField(name):
 		def.Name = "sourceIPv6Address"
 		def.ID = netflow.IPFIX_FIELD_sourceIPv6Address
 		def.NetFlowV9ID = netflow.NFV9_FIELD_IPV6_SRC_ADDR
 		def.Length = 16
 		def.Type = "ipv6Address"
-	case "dst_addr":
+	case isDestinationAddressField(name):
 		def.Name = "destinationIPv6Address"
 		def.ID = netflow.IPFIX_FIELD_destinationIPv6Address
 		def.NetFlowV9ID = netflow.NFV9_FIELD_IPV6_DST_ADDR
@@ -1321,10 +1402,76 @@ func resolvedFieldDefinitionForFamily(name string, def config.IPFIXFieldDefiniti
 	return def
 }
 
+func resolvedFieldDefinitionForAddressMask(name string, def config.IPFIXFieldDefinition, groups []string, mask uint64) config.IPFIXFieldDefinition {
+	ipv6 := false
+	if len(groups) == 0 {
+		ipv6 = mask != 0
+	} else if group, ok := addressFieldGroup(name); ok {
+		for i, candidate := range groups {
+			if candidate == group {
+				ipv6 = mask&(1<<i) != 0
+				break
+			}
+		}
+	}
+	return resolvedFieldDefinitionForFamily(name, def, ipv6)
+}
+
+func isSourceAddressField(name string) bool {
+	return name == "src_addr" || strings.HasSuffix(name, "_src_addr")
+}
+
+func isDestinationAddressField(name string) bool {
+	return name == "dst_addr" || strings.HasSuffix(name, "_dst_addr")
+}
+
+func addressFieldGroup(name string) (string, bool) {
+	switch {
+	case name == "src_addr" || name == "dst_addr":
+		return "", true
+	case strings.HasSuffix(name, "_src_addr"):
+		return strings.TrimSuffix(name, "_src_addr"), true
+	case strings.HasSuffix(name, "_dst_addr"):
+		return strings.TrimSuffix(name, "_dst_addr"), true
+	default:
+		return "", false
+	}
+}
+
+func schemaAddressGroups(fields []event.SchemaField) []string {
+	var groups []string
+	seen := make(map[string]bool)
+	for _, field := range fields {
+		group, ok := addressFieldGroup(field.Name)
+		if !ok || seen[group] {
+			continue
+		}
+		seen[group] = true
+		groups = append(groups, group)
+	}
+	return groups
+}
+
+func fieldValueIsIPv6(val any) bool {
+	ip, ok := val.(string)
+	if !ok {
+		return false
+	}
+	addr, err := netip.ParseAddr(ip)
+	return err == nil && addr.Is6()
+}
+
+func boolAddressMask(ipv6 bool) uint64 {
+	if ipv6 {
+		return 1
+	}
+	return 0
+}
+
 // hasAddressField reports whether a schema needs dual IPv4/IPv6 template support.
 func hasAddressField(names []string) bool {
 	for _, name := range names {
-		if name == "src_addr" || name == "dst_addr" {
+		if isSourceAddressField(name) || isDestinationAddressField(name) {
 			return true
 		}
 	}
@@ -1333,11 +1480,11 @@ func hasAddressField(names []string) bool {
 
 // eventHasIPv6 checks the common address fields to determine which template family to use.
 func eventHasIPv6(fields map[string]any) bool {
-	for _, key := range []string{"src_addr", "dst_addr"} {
-		ip := stringFieldOrZero(fields, key)
-		if ip == "" {
+	for key, val := range fields {
+		if !isSourceAddressField(key) && !isDestinationAddressField(key) {
 			continue
 		}
+		ip, _ := val.(string)
 		addr, err := netip.ParseAddr(ip)
 		if err == nil && addr.Is6() {
 			return true

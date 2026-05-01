@@ -1,6 +1,7 @@
 package processor
 
 import (
+	"bytes"
 	"encoding/binary"
 	"encoding/json"
 	"testing"
@@ -786,6 +787,99 @@ func TestBuiltinProcessBytesExtractsMPLSInnerPacket(t *testing.T) {
 	}
 	if got := fields["dst_addr"]; got != "198.51.100.2" {
 		t.Fatalf("expected dst_addr=198.51.100.2, got %#v", got)
+	}
+}
+
+func TestBuiltinProcessBytesAddsAggregationHelperFields(t *testing.T) {
+	proc := NewBuiltin(config.ProcessorConfig{
+		Builtin: config.BuiltinProcessorConfig{
+			AggregationHelpers: config.AggregationHelperConfig{
+				MPLSLabels: 3,
+				IPLayers:   2,
+			},
+		},
+	})
+	inner := ipv4Packet(6, [4]byte{192, 0, 2, 1}, [4]byte{198, 51, 100, 2}, tcpHeader(12345, 443))
+	outer := ipv4Packet(47, [4]byte{203, 0, 113, 1}, [4]byte{203, 0, 113, 2}, grePayload(0x0800, inner))
+	packet := ethernetPayload(0x8847, mplsPayload(17, false, mplsPayload(18, false, mplsPayload(19, true, outer))))
+
+	events, err := proc.Process(&event.Event{
+		Source:  event.SourceMetadata{Type: "bytes"},
+		Payload: packet,
+	})
+	if err != nil {
+		t.Fatalf("Process returned error: %v", err)
+	}
+	fields := events[0].Fields
+	if got := fields["mpls_label_1"]; got != uint32(17) {
+		t.Fatalf("expected mpls_label_1=17, got %#v", got)
+	}
+	if got := fields["mpls_label_2"]; got != uint32(18) {
+		t.Fatalf("expected mpls_label_2=18, got %#v", got)
+	}
+	if got := fields["mpls_label_3"]; got != uint32(19) {
+		t.Fatalf("expected mpls_label_3=19, got %#v", got)
+	}
+	if got := fields["mpls_label_stack_section_3"]; !bytes.Equal(got.([]byte), []byte{0x00, 0x01, 0x31}) {
+		t.Fatalf("expected MPLS label stack section bytes for label 3, got %#v", got)
+	}
+	if got := fields["ip_1_src_addr"]; got != "203.0.113.1" {
+		t.Fatalf("expected ip_1_src_addr outer address, got %#v", got)
+	}
+	if got := fields["ip_2_src_addr"]; got != "192.0.2.1" {
+		t.Fatalf("expected ip_2_src_addr inner address, got %#v", got)
+	}
+	if got := fields["ip_2_dst_port"]; got != uint32(443) {
+		t.Fatalf("expected ip_2_dst_port=443, got %#v", got)
+	}
+	if _, ok := fields["ip_3_src_addr"]; ok {
+		t.Fatalf("did not expect ip_3_src_addr beyond configured helper depth")
+	}
+}
+
+func TestBuiltinProcessReFlowJSONAddsAggregationHelperFieldsFromPacketModel(t *testing.T) {
+	proc := NewBuiltin(config.ProcessorConfig{
+		Builtin: config.BuiltinProcessorConfig{
+			AggregationHelpers: config.AggregationHelperConfig{
+				MPLSLabels: 1,
+				IPLayers:   2,
+			},
+		},
+	})
+	msg := []byte(`{
+		"packet": {
+			"layers": [
+				{"kind": "mpls", "mpls": {"label": {"label": 17, "bos": true}}},
+				{"kind": "ipv4", "ipv4": {"src_addr": "203.0.113.1", "dst_addr": "203.0.113.2", "protocol": 47}},
+				{"kind": "gre", "gre": {"protocol": 34525}},
+				{"kind": "ipv6", "ipv6": {"src_addr": "2001:db8::1", "dst_addr": "2001:db8::2", "next_header": 6}},
+				{"kind": "tcp", "tcp": {"src_port": 12345, "dst_port": 443}}
+			]
+		}
+	}`)
+
+	events, err := proc.Process(&event.Event{
+		Source: event.SourceMetadata{
+			Type: "json",
+			JSON: event.JSONMetadata{Flavor: "reflow"},
+		},
+		Message: msg,
+	})
+	if err != nil {
+		t.Fatalf("Process returned error: %v", err)
+	}
+	fields := events[0].Fields
+	if got := fields["mpls_label_1"]; got != uint32(17) {
+		t.Fatalf("expected mpls_label_1=17, got %#v", got)
+	}
+	if got := fields["ip_1_src_addr"]; got != "203.0.113.1" {
+		t.Fatalf("expected ip_1_src_addr outer address, got %#v", got)
+	}
+	if got := fields["ip_2_src_addr"]; got != "2001:db8::1" {
+		t.Fatalf("expected ip_2_src_addr inner address, got %#v", got)
+	}
+	if got := fields["ip_2_dst_port"]; got != uint32(443) {
+		t.Fatalf("expected ip_2_dst_port=443, got %#v", got)
 	}
 }
 

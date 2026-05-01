@@ -114,6 +114,27 @@ innermost flow tuple, while `outer_*` fields remain aliases for the first
 encapsulating IP tuple. Aggregation configs can use those aliases when they need
 stable keys across packets whose full layer stacks have different non-IP layers.
 
+Aggregation helper fields are opt-in under
+`processor.builtin.aggregation_helpers`. `mpls_labels: N` emits
+`mpls_label_1..N` numeric labels for aggregation keys and
+`mpls_label_stack_section_1..N` 3-byte IPFIX MPLS label stack section values
+for export. `ip_layers: N` emits `ip_1_*`, `ip_2_*`, ... aliases, ordered from
+outermost IP tuple to innermost parsed IP tuple, with `src_addr`, `dst_addr`,
+`proto`, `proto_name`, `src_port`, and `dst_port` for each layer. The IPFIX
+catalog maps `ip_N_src_addr` and `ip_N_dst_addr` through the same IPv4/IPv6
+address element selection used by `src_addr` and `dst_addr`, so mixed tunnels
+can export an IPv4 outer layer and IPv6 inner layer in separate template
+variants.
+
+```yaml
+processor:
+  type: builtin
+  builtin:
+    aggregation_helpers:
+      mpls_labels: 3
+      ip_layers: 2
+```
+
 Packet decoding policy lives under `processor.builtin.packet_decoder`.
 `decode_beyond_l4` controls whether the parser may continue past TCP/UDP/ICMP
 or the first encapsulation header. Encapsulation-specific settings live under

@@ -62,6 +62,9 @@ processor:
           ports: [2152]
         pppoe:
           enabled: false
+    aggregation_helpers:
+      mpls_labels: 3
+      ip_layers: 2
 
 aggregators:
   - window:
@@ -118,6 +121,12 @@ sink:
 	}
 	if len(decoder.Encapsulations.GTPU.Ports) != 1 || decoder.Encapsulations.GTPU.Ports[0] != 2152 {
 		t.Fatalf("expected GTP-U ports [2152], got %#v", decoder.Encapsulations.GTPU.Ports)
+	}
+	if cfg.Processor.Builtin.AggregationHelpers.MPLSLabels != 3 {
+		t.Fatalf("expected aggregation helper mpls_labels=3, got %d", cfg.Processor.Builtin.AggregationHelpers.MPLSLabels)
+	}
+	if cfg.Processor.Builtin.AggregationHelpers.IPLayers != 2 {
+		t.Fatalf("expected aggregation helper ip_layers=2, got %d", cfg.Processor.Builtin.AggregationHelpers.IPLayers)
 	}
 	if len(cfg.Aggregators) != 1 {
 		t.Fatalf("expected 1 aggregator, got %d", len(cfg.Aggregators))

@@ -46,6 +46,13 @@ func NewBuiltin(cfg config.ProcessorConfig) *Builtin {
 	}
 }
 
+func (p *Builtin) aggregationHelpers() packet.AggregationHelperOptions {
+	return packet.AggregationHelperOptions{
+		MPLSLabels: p.cfg.AggregationHelpers.MPLSLabels,
+		IPLayers:   p.cfg.AggregationHelpers.IPLayers,
+	}
+}
+
 // Process dispatches to the built-in mapper for the incoming source message type.
 func (p *Builtin) Process(evt *event.Event) ([]*event.Event, error) {
 	if evt != nil && evt.Kind == "control" {
@@ -104,6 +111,7 @@ func (p *Builtin) processBytes(evt *event.Event) ([]*event.Event, error) {
 		TruncatePayload:      true,
 		HeaderProtocol:       fieldUint32(fields, "header_protocol"),
 		Decode:               p.decode,
+		AggregationHelpers:   p.aggregationHelpers(),
 	}); err != nil {
 		return nil, err
 	}
@@ -150,6 +158,7 @@ func (p *Builtin) processFlow(evt *event.Event) ([]*event.Event, error) {
 			TruncatePacketBytes:  p.cfg.TruncatePacketBytes,
 			HeaderProtocol:       packetHeaderProtocol(fields),
 			Decode:               p.decode,
+			AggregationHelpers:   p.aggregationHelpers(),
 		}); err != nil {
 			return nil, err
 		}
@@ -231,6 +240,7 @@ func (p *Builtin) processJSONRawPacketHeader(evt *event.Event) ([]*event.Event, 
 		TruncatePacketBytes:  p.cfg.TruncatePacketBytes,
 		HeaderProtocol:       in.Protocol,
 		Decode:               p.decode,
+		AggregationHelpers:   p.aggregationHelpers(),
 	}); err != nil {
 		return nil, err
 	}
@@ -313,7 +323,7 @@ func (p *Builtin) processReFlowFields(evt *event.Event, record map[string]any) (
 				return nil, err
 			}
 			evt.Packet = model
-			packet.ApplyModelFields(fields, model)
+			packet.ApplyModelFieldsWithHelpers(fields, model, p.aggregationHelpers())
 			continue
 		}
 		fields[key] = normalizeReFlowJSONValue(key, value)

@@ -18,7 +18,13 @@ type NormalizeOptions struct {
 	TruncatePayload      bool
 	HeaderProtocol       uint32
 	Decode               DecodeOptions
+	AggregationHelpers   AggregationHelperOptions
 	Extractors           []FeatureExtractor
+}
+
+type AggregationHelperOptions struct {
+	MPLSLabels int
+	IPLayers   int
 }
 
 type DecodeOptions struct {
@@ -137,7 +143,7 @@ func NormalizeEvent(evt *event.Event, opts NormalizeOptions) error {
 			}
 		}
 		if !opts.DisablePacketMapping {
-			applyPacketViewFields(fields, view)
+			applyPacketViewFields(fields, view, opts.AggregationHelpers)
 		}
 	}
 	truncatePacketData(evt, fields, opts.TruncatePacketBytes, opts.TruncatePayload)
@@ -852,7 +858,7 @@ func (v *packetView) appendLayer(layer event.LayerSpec) {
 	v.Model.Layers = append(v.Model.Layers, layer)
 }
 
-func applyPacketViewFields(fields map[string]any, view packetView) {
+func applyPacketViewFields(fields map[string]any, view packetView, helpers AggregationHelperOptions) {
 	if view.SrcMAC != "" {
 		fields["src_mac"] = view.SrcMAC
 	}
@@ -865,6 +871,7 @@ func applyPacketViewFields(fields map[string]any, view packetView) {
 	if view.Model != nil {
 		fields["packet_ip_depth"] = uint32(packetIPDepth(view.Model))
 	}
+	applyAggregationHelperFields(fields, view, helpers)
 	if len(view.VLANIDs) > 0 {
 		fields["vlan_ids"] = append([]uint32(nil), view.VLANIDs...)
 		fields["vlan_id"] = view.VLANIDs[0]
@@ -888,6 +895,64 @@ func applyPacketViewFields(fields map[string]any, view packetView) {
 		fields["outer_dst_port"] = outer.DstPort
 		fields["encap_depth"] = uint32(len(view.Tuples) - 1)
 	}
+}
+
+func applyAggregationHelperFields(fields map[string]any, view packetView, helpers AggregationHelperOptions) {
+	if view.Model == nil {
+		return
+	}
+	if helpers.MPLSLabels > 0 {
+		applyMPLSLabelHelperFields(fields, view.Model, helpers.MPLSLabels)
+	}
+	if helpers.IPLayers > 0 {
+		applyIPLayerHelperFields(fields, view.Tuples, helpers.IPLayers)
+	}
+}
+
+func applyMPLSLabelHelperFields(fields map[string]any, model *event.PacketModel, limit int) {
+	if limit <= 0 {
+		return
+	}
+	index := 0
+	for _, layer := range model.Layers {
+		if layer.Kind != "mpls" || layer.MPLS == nil {
+			continue
+		}
+		index++
+		if index > limit {
+			return
+		}
+		label := layer.MPLS.Label
+		fields[fmt.Sprintf("mpls_label_%d", index)] = label.Label
+		fields[fmt.Sprintf("mpls_label_stack_section_%d", index)] = mplsLabelStackSection(label)
+	}
+}
+
+func applyIPLayerHelperFields(fields map[string]any, tuples []packetTuple, limit int) {
+	if limit <= 0 {
+		return
+	}
+	for i, tuple := range tuples {
+		if i >= limit {
+			return
+		}
+		prefix := fmt.Sprintf("ip_%d_", i+1)
+		fields[prefix+"src_addr"] = tuple.SrcAddr.String()
+		fields[prefix+"dst_addr"] = tuple.DstAddr.String()
+		fields[prefix+"proto"] = tuple.Proto
+		fields[prefix+"proto_name"] = ipProtocolName(tuple.Proto)
+		fields[prefix+"src_port"] = tuple.SrcPort
+		fields[prefix+"dst_port"] = tuple.DstPort
+	}
+}
+
+func mplsLabelStackSection(label event.MPLSLabel) []byte {
+	raw := (label.Label & 0xfffff) << 4
+	raw |= uint32(label.TC&0x7) << 1
+	if label.BOS {
+		raw |= 1
+	}
+	return []byte{byte(raw >> 16), byte(raw >> 8), byte(raw)}
 }
 
 func packetTupleLayers(tuples []packetTuple) []map[string]any {
@@ -918,10 +983,16 @@ func packetTupleLayers(tuples []packetTuple) []map[string]any {
 // used by aggregation and encoders. The packet model remains the authoritative
 // full layer structure.
 func ApplyModelFields(fields map[string]any, model *event.PacketModel) {
+	ApplyModelFieldsWithHelpers(fields, model, AggregationHelperOptions{})
+}
+
+// ApplyModelFieldsWithHelpers projects a packet model into the canonical tuple
+// aliases and any configured aggregation helper aliases.
+func ApplyModelFieldsWithHelpers(fields map[string]any, model *event.PacketModel, helpers AggregationHelperOptions) {
 	if fields == nil || model == nil {
 		return
 	}
-	applyPacketViewFields(fields, packetViewFromModel(model))
+	applyPacketViewFields(fields, packetViewFromModel(model), helpers)
 }
 
 func packetViewFromModel(model *event.PacketModel) packetView {

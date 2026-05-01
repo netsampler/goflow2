@@ -1159,6 +1159,57 @@ func TestIPFIXSchemaDrivenDataRecordKeepsTemplateWidth(t *testing.T) {
 	}
 }
 
+func TestIPFIXSchemaDrivenLayerAddressFieldsUseIndependentFamilies(t *testing.T) {
+	cfg := testTFlowEncoderConfig("ipfix")
+	cfg.TFlowData.Catalog["ip_1_src_addr"] = config.IPFIXFieldDefinition{ID: 8, NetFlowV9ID: 8, Length: 4, Type: "ipv4Address"}
+	cfg.TFlowData.Catalog["ip_1_dst_addr"] = config.IPFIXFieldDefinition{ID: 12, NetFlowV9ID: 12, Length: 4, Type: "ipv4Address"}
+	cfg.TFlowData.Catalog["ip_2_src_addr"] = config.IPFIXFieldDefinition{ID: 8, NetFlowV9ID: 8, Length: 4, Type: "ipv4Address"}
+	cfg.TFlowData.Catalog["ip_2_dst_addr"] = config.IPFIXFieldDefinition{ID: 12, NetFlowV9ID: 12, Length: 4, Type: "ipv4Address"}
+	enc := NewIPFIXEncoder(cfg)
+
+	templatePayloads, err := enc.Encode(&event.Event{
+		Kind: "control",
+		Control: &event.ControlMetadata{
+			Type:   "schema",
+			Stream: "flow_data",
+		},
+		Payload: event.AggregationSchema{
+			Stream:         "flow_data",
+			FieldNames:     []string{"ip_1_src_addr", "ip_1_dst_addr", "ip_2_src_addr", "ip_2_dst_addr"},
+			BaseTemplateID: 300,
+		},
+	})
+	if err != nil {
+		t.Fatalf("schema Encode returned error: %v", err)
+	}
+	if len(templatePayloads) != 4 {
+		t.Fatalf("expected four address-family template variants, got %d", len(templatePayloads))
+	}
+
+	evt := &event.Event{
+		ReceivedAt: testEventTime(),
+		Fields: map[string]any{
+			"ip_1_src_addr": "203.0.113.1",
+			"ip_1_dst_addr": "203.0.113.2",
+			"ip_2_src_addr": "2001:db8::1",
+			"ip_2_dst_addr": "2001:db8::2",
+		},
+	}
+	template := enc.dataSchemas["flow_data"].templateForFields(evt.Fields)
+	if template.TemplateId != 302 {
+		t.Fatalf("expected mixed-family template id 302, got %d", template.TemplateId)
+	}
+	if template.Fields[0].Type != netflow.IPFIX_FIELD_sourceIPv4Address || template.Fields[1].Type != netflow.IPFIX_FIELD_destinationIPv4Address {
+		t.Fatalf("expected first IP layer to use IPv4 fields, got %#v", template.Fields[:2])
+	}
+	if template.Fields[2].Type != netflow.IPFIX_FIELD_sourceIPv6Address || template.Fields[3].Type != netflow.IPFIX_FIELD_destinationIPv6Address {
+		t.Fatalf("expected second IP layer to use IPv6 fields, got %#v", template.Fields[2:])
+	}
+	if _, err := enc.Encode(evt); err != nil {
+		t.Fatalf("data Encode returned error: %v", err)
+	}
+}
+
 func TestIPFIXSchemaFieldsUseEncoderCatalogForEnterpriseMapping(t *testing.T) {
 	cfg := testTFlowEncoderConfig("ipfix")
 	cfg.ObservationDomainID = 42
