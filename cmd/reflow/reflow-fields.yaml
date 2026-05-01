@@ -1,6 +1,8 @@
 # Shared field catalog for templated IPFIX/NetFlow v9 exports.
 # Format: id:length:type[:format][pen=<enterprise-number>]
 # Type aliases: u8/u16/u32/u64, s8/s16/s32/s64, ip4, ip6, mac, str.
+# Enterprise-specific example, commented out:
+# custom_metric: 40000:4:u32[pen=42424242] # example enterprise field
 
 fields:
   bytes: 1:8:u64:delta # octetDeltaCount
