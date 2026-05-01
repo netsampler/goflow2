@@ -567,23 +567,99 @@ func TestBuiltinProcessBytesDecodesCustomVXLANPort(t *testing.T) {
 	}
 }
 
-func TestBuiltinProcessBytesExtractsIPInIP(t *testing.T) {
-	proc := NewBuiltin(config.ProcessorConfig{})
-	inner := ipv4Packet(6, [4]byte{192, 0, 2, 1}, [4]byte{198, 51, 100, 2}, tcpHeader(12345, 443))
-	outer := ipv4Packet(4, [4]byte{203, 0, 113, 1}, [4]byte{203, 0, 113, 2}, inner)
+func TestBuiltinProcessBytesExtractsIPInIPFamilies(t *testing.T) {
+	inner4 := ipv4Packet(6, [4]byte{192, 0, 2, 1}, [4]byte{198, 51, 100, 2}, tcpHeader(12345, 443))
+	inner6 := ipv6Packet(6,
+		[16]byte{0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1},
+		[16]byte{0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2},
+		tcpHeader(12345, 443))
 
-	events, err := proc.Process(&event.Event{
-		Source:  event.SourceMetadata{Type: "bytes"},
-		Payload: ethernetPayload(0x0800, outer),
-	})
-	if err != nil {
-		t.Fatalf("Process returned error: %v", err)
+	tests := []struct {
+		name        string
+		payload     []byte
+		outerLayer  string
+		outerSrc    string
+		outerDst    string
+		outerProto  uint32
+		innerLayer  string
+		innerSrc    string
+		innerDst    string
+		expectedSrc string
+	}{
+		{
+			name:        "ipv4 in ipv4",
+			payload:     ethernetPayload(0x0800, ipv4Packet(4, [4]byte{203, 0, 113, 1}, [4]byte{203, 0, 113, 2}, inner4)),
+			outerLayer:  "ipv4",
+			outerSrc:    "203.0.113.1",
+			outerDst:    "203.0.113.2",
+			outerProto:  4,
+			innerLayer:  "ipv4",
+			innerSrc:    "192.0.2.1",
+			innerDst:    "198.51.100.2",
+			expectedSrc: "192.0.2.1",
+		},
+		{
+			name:        "ipv6 in ipv4",
+			payload:     ethernetPayload(0x0800, ipv4Packet(41, [4]byte{203, 0, 113, 1}, [4]byte{203, 0, 113, 2}, inner6)),
+			outerLayer:  "ipv4",
+			outerSrc:    "203.0.113.1",
+			outerDst:    "203.0.113.2",
+			outerProto:  41,
+			innerLayer:  "ipv6",
+			innerSrc:    "2001:db8::1",
+			innerDst:    "2001:db8::2",
+			expectedSrc: "2001:db8::1",
+		},
+		{
+			name: "ipv4 in ipv6",
+			payload: ethernetPayload(0x86dd, ipv6Packet(4,
+				[16]byte{0x20, 0x01, 0x0d, 0xb8, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1},
+				[16]byte{0x20, 0x01, 0x0d, 0xb8, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2},
+				inner4)),
+			outerLayer:  "ipv6",
+			outerSrc:    "2001:db8:1::1",
+			outerDst:    "2001:db8:1::2",
+			outerProto:  4,
+			innerLayer:  "ipv4",
+			innerSrc:    "192.0.2.1",
+			innerDst:    "198.51.100.2",
+			expectedSrc: "192.0.2.1",
+		},
+		{
+			name: "ipv6 in ipv6",
+			payload: ethernetPayload(0x86dd, ipv6Packet(41,
+				[16]byte{0x20, 0x01, 0x0d, 0xb8, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1},
+				[16]byte{0x20, 0x01, 0x0d, 0xb8, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2},
+				inner6)),
+			outerLayer:  "ipv6",
+			outerSrc:    "2001:db8:1::1",
+			outerDst:    "2001:db8:1::2",
+			outerProto:  41,
+			innerLayer:  "ipv6",
+			innerSrc:    "2001:db8::1",
+			innerDst:    "2001:db8::2",
+			expectedSrc: "2001:db8::1",
+		},
 	}
-	fields := events[0].Fields
-	expectIPLayer(t, fields, 0, "outer", "203.0.113.1", "203.0.113.2", 4, 0, 0)
-	expectIPLayer(t, fields, 1, "inner", "192.0.2.1", "198.51.100.2", 6, 12345, 443)
-	if got := fields["src_addr"]; got != "192.0.2.1" {
-		t.Fatalf("expected inner src_addr=192.0.2.1, got %#v", got)
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			proc := NewBuiltin(config.ProcessorConfig{})
+			events, err := proc.Process(&event.Event{
+				Source:  event.SourceMetadata{Type: "bytes"},
+				Payload: tt.payload,
+			})
+			if err != nil {
+				t.Fatalf("Process returned error: %v", err)
+			}
+			fields := events[0].Fields
+			expectPacketLayers(t, events[0], []string{"ethernet", tt.outerLayer, tt.innerLayer, "tcp"})
+			expectIPLayer(t, fields, 0, "outer", tt.outerSrc, tt.outerDst, tt.outerProto, 0, 0)
+			expectIPLayer(t, fields, 1, "inner", tt.innerSrc, tt.innerDst, 6, 12345, 443)
+			if got := fields["src_addr"]; got != tt.expectedSrc {
+				t.Fatalf("expected inner src_addr=%s, got %#v", tt.expectedSrc, got)
+			}
+		})
 	}
 }
 
@@ -1056,6 +1132,18 @@ func ipv4Packet(proto byte, src, dst [4]byte, payload []byte) []byte {
 	copy(out[12:16], src[:])
 	copy(out[16:20], dst[:])
 	copy(out[20:], payload)
+	return out
+}
+
+func ipv6Packet(nextHeader byte, src, dst [16]byte, payload []byte) []byte {
+	out := make([]byte, 40+len(payload))
+	out[0] = 0x60
+	binary.BigEndian.PutUint16(out[4:6], uint16(len(payload)))
+	out[6] = nextHeader
+	out[7] = 64
+	copy(out[8:24], src[:])
+	copy(out[24:40], dst[:])
+	copy(out[40:], payload)
 	return out
 }
 

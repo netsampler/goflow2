@@ -383,7 +383,6 @@ func packetDecodeOptions(cfg config.PacketDecoderConfig) packet.DecodeOptions {
 		DecodeBeyondL4: true,
 		DecodeGRE:      true,
 		DecodeIPIP:     true,
-		DecodeIP6IP:    true,
 		DecodeVXLAN:    true,
 		DecodeGeneve:   true,
 		DecodeL2TP:     true,
@@ -399,9 +398,6 @@ func packetDecodeOptions(cfg config.PacketDecoderConfig) packet.DecodeOptions {
 	}
 	if encaps.IPIP.Enabled != nil {
 		opts.DecodeIPIP = *encaps.IPIP.Enabled
-	}
-	if encaps.IP6IP.Enabled != nil {
-		opts.DecodeIP6IP = *encaps.IP6IP.Enabled
 	}
 	if encaps.VXLAN.Enabled != nil {
 		opts.DecodeVXLAN = *encaps.VXLAN.Enabled

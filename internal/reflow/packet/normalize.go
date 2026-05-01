@@ -26,7 +26,6 @@ type DecodeOptions struct {
 	DecodeBeyondL4 bool
 	DecodeGRE      bool
 	DecodeIPIP     bool
-	DecodeIP6IP    bool
 	DecodeVXLAN    bool
 	VXLANPorts     []uint32
 	DecodeGeneve   bool
@@ -43,7 +42,6 @@ var defaultDecodeOptions = DecodeOptions{
 	DecodeBeyondL4: true,
 	DecodeGRE:      true,
 	DecodeIPIP:     true,
-	DecodeIP6IP:    true,
 	DecodeVXLAN:    true,
 	DecodeGeneve:   true,
 	DecodeL2TP:     true,
@@ -1108,14 +1106,9 @@ func parsePacketViewWithOptions(data []byte, protocol uint32, opts DecodeOptions
 				},
 			})
 			view.Tuples = append(view.Tuples, tuple)
-			if opts.DecodeBeyondL4 && opts.DecodeIPIP && nextProto == 4 {
+			if innerEtherType, ok := ipInIPInnerEtherType(nextProto, opts); ok {
 				offset += nextOffset
-				etherType = 0x0800
-				continue
-			}
-			if opts.DecodeBeyondL4 && opts.DecodeIP6IP && nextProto == 41 {
-				offset += nextOffset
-				etherType = 0x86dd
+				etherType = innerEtherType
 				continue
 			}
 			if opts.DecodeGRE && nextProto == 47 {
@@ -1181,14 +1174,9 @@ func parsePacketViewWithOptions(data []byte, protocol uint32, opts DecodeOptions
 				view.appendLayer(layer)
 			}
 			view.Tuples = append(view.Tuples, tuple)
-			if opts.DecodeBeyondL4 && opts.DecodeIPIP && nextProto == 4 {
+			if innerEtherType, ok := ipInIPInnerEtherType(nextProto, opts); ok {
 				offset += nextOffset
-				etherType = 0x0800
-				continue
-			}
-			if opts.DecodeBeyondL4 && opts.DecodeIP6IP && nextProto == 41 {
-				offset += nextOffset
-				etherType = 0x86dd
+				etherType = innerEtherType
 				continue
 			}
 			if opts.DecodeGRE && nextProto == 47 {
@@ -1317,6 +1305,20 @@ func canContinueEtherType(etherType uint16) bool {
 		return true
 	default:
 		return false
+	}
+}
+
+func ipInIPInnerEtherType(protocol uint32, opts DecodeOptions) (uint16, bool) {
+	if !opts.DecodeBeyondL4 || !opts.DecodeIPIP {
+		return 0, false
+	}
+	switch protocol {
+	case 4:
+		return 0x0800, true
+	case 41:
+		return 0x86dd, true
+	default:
+		return 0, false
 	}
 }
 

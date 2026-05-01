@@ -24,8 +24,6 @@ processor:
           enabled: true
         ipip:
           enabled: true
-        ip6ip:
-          enabled: true
         vxlan:
           enabled: true
           ports: [4789]

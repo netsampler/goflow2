@@ -60,7 +60,6 @@ type PacketDecoderConfig struct {
 type PacketEncapsulationConfig struct {
 	GRE    ToggleEncapsulationConfig `yaml:"gre"`
 	IPIP   ToggleEncapsulationConfig `yaml:"ipip"`
-	IP6IP  ToggleEncapsulationConfig `yaml:"ip6ip"`
 	VXLAN  PortEncapsulationConfig   `yaml:"vxlan"`
 	Geneve PortEncapsulationConfig   `yaml:"geneve"`
 	L2TP   PortEncapsulationConfig   `yaml:"l2tp"`
