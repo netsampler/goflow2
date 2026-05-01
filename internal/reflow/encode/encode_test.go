@@ -1181,7 +1181,7 @@ func TestIPFIXSchemaFieldsUseEncoderCatalogForEnterpriseMapping(t *testing.T) {
 		Payload: event.AggregationSchema{
 			Stream: "flow_data",
 			Fields: []event.SchemaField{
-				{Role: "field", Name: "tenant_id"},
+				{Role: "current", Name: "tenant_id"},
 			},
 			FieldNames:     []string{"tenant_id"},
 			BaseTemplateID: 300,

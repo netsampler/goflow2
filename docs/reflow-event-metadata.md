@@ -141,10 +141,12 @@ role:name[:modifier]
 static:name:value
 ```
 
-`role` can be `key`, `field`, `sum`, `first`, `current`, `min`, `max`, or
-`static`. The `modifier` is optional and is carried through the schema for the
-encoder to interpret. Today the IPFIX and NetFlow v9 encoders use `4` or `6` on
-`src_addr` and `dst_addr` to force IPv4 or IPv6 template selection:
+`role` can be `key`, `sum`, `first`, `current`, `min`, `max`, or `static`.
+The `modifier` is optional and is carried through the schema for the encoder to
+interpret. `current` includes the field in pass-through schemas and keeps the
+latest value when stateful aggregation is active. Today the IPFIX and NetFlow
+v9 encoders use `4` or `6` on `src_addr` and `dst_addr` to force IPv4 or IPv6
+template selection:
 
 ```yaml
 aggregators:
@@ -152,17 +154,17 @@ aggregators:
     fields:
       - key:src_addr:4
       - key:dst_addr:4
-      - field:tenant_id
+      - current:tenant_id
       - sum:bytes
       - sum:packets
       - current:end_time_unix
       - static:exporter_name:edge-a
 ```
 
-If no aggregation role is present (`sum`, `first`, `current`, `min`, or `max`),
-the aggregator is schema pass-through. It emits a schema event when `fields` are
-configured and forwards matching events to the encoder immediately. This is the
-mode to use when aggregation is acting as a filter in order to reuse a template:
+If no stateful rollup is required, the aggregator is schema pass-through. It
+emits a schema event when `fields` are configured and forwards matching events
+to the encoder immediately. This is the mode to use when aggregation is acting
+as a filter in order to reuse a template:
 
 ```yaml
 aggregators:
@@ -172,15 +174,15 @@ aggregators:
     fields:
       - key:src_addr:4
       - key:dst_addr:4
-      - field:mpls_label
-      - field:bytes
+      - key:mpls_label
+      - current:bytes
       - static:exporter_name:edge-a
 ```
 
 Legacy `key_fields`, `sum`, `first`, `current`, and `static_fields` lists still
 load, but they no longer receive hidden default aggregation fields. Omitting
-`sum` means the sum list is empty. An enabled aggregator with no aggregation
-roles forwards matching events immediately.
+`sum` means the sum list is empty. An aggregator with only `key`, `current`, and
+`static` fields and no export trigger forwards matching events immediately.
 
 When a custom field needs IPFIX enterprise mapping, configure it under the
 encoder catalog or overrides instead:

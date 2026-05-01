@@ -84,9 +84,8 @@ type ToggleEncapsulationConfig struct {
 
 type AggregatorConfig struct {
 	Stream string `yaml:"stream"`
-	// Passthrough is derived from config. When no fields have aggregation roles
-	// (sum/first/current/min/max), matching events are forwarded immediately
-	// after schema registration.
+	// Passthrough is derived from config. When no stateful rollup is required,
+	// matching events are forwarded immediately after schema registration.
 	Passthrough bool `yaml:"-"`
 	// Window controls bucket closure based on activity and age.
 	Window AggregatorWindowConfig `yaml:"window"`
@@ -643,7 +642,7 @@ func normalizeAggregatorConfig(cfg *AggregatorConfig) error {
 		}
 	}
 
-	cfg.Passthrough = !aggregatorHasAggregationRole(cfg.Fields)
+	cfg.Passthrough = !aggregatorNeedsState(cfg)
 	return nil
 }
 
@@ -714,7 +713,7 @@ func parseAggregatorField(raw string) (AggregatorField, error) {
 
 func validateAggregatorField(field AggregatorField) error {
 	switch field.Role {
-	case "key", "field", "sum", "first", "current", "min", "max", "static":
+	case "key", "sum", "first", "current", "min", "max", "static":
 	default:
 		return fmt.Errorf("unsupported aggregator field role %q", field.Role)
 	}
@@ -724,12 +723,19 @@ func validateAggregatorField(field AggregatorField) error {
 	return nil
 }
 
-func aggregatorHasAggregationRole(fields []AggregatorField) bool {
-	for _, field := range fields {
+func aggregatorNeedsState(cfg *AggregatorConfig) bool {
+	hasCurrent := false
+	for _, field := range cfg.Fields {
 		switch field.Role {
-		case "sum", "first", "current", "min", "max":
+		case "sum", "first", "min", "max":
 			return true
+		case "current":
+			hasCurrent = true
 		}
 	}
-	return false
+	return hasCurrent && aggregatorHasExportTrigger(*cfg)
+}
+
+func aggregatorHasExportTrigger(cfg AggregatorConfig) bool {
+	return cfg.Window.IdleFlushAfter > 0 || cfg.Window.MaxFlushAfter > 0 || cfg.Periodic.Every > 0
 }

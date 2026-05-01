@@ -316,7 +316,7 @@ func TestSchemaPassthroughEmitsSchemaAndForwardsEvents(t *testing.T) {
 		FieldsConfigured: true,
 		Fields: []config.AggregatorField{
 			{Role: "key", Name: "src_addr", Modifier: "4"},
-			{Role: "field", Name: "bytes"},
+			{Role: "current", Name: "bytes"},
 			{Role: "static", Name: "exporter_name", Value: "edge-a"},
 		},
 		KeyFields: []string{"src_addr"},

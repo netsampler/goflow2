@@ -209,7 +209,7 @@ sink:
 		t.Fatalf("expected periodic.every_ms=60000, got %d", cfg.Aggregators[0].Periodic.Every)
 	}
 	if cfg.Aggregators[0].Passthrough {
-		t.Fatalf("expected current field to force aggregate mode")
+		t.Fatalf("expected current field with export trigger to force aggregate mode")
 	}
 	if len(cfg.Aggregators[0].KeyFields) != 1 || cfg.Aggregators[0].KeyFields[0] != "agent_ip" {
 		t.Fatalf("expected key field agent_ip, got %#v", cfg.Aggregators[0].KeyFields)
@@ -239,7 +239,7 @@ aggregators:
   - fields:
       - key:src_addr:4
       - key:dst_addr:4
-      - field:tenant_id
+      - current:tenant_id
       - static:exporter_name:edge-a
 
 encoder:
@@ -257,7 +257,7 @@ sink:
 	}
 	agg := cfg.Aggregators[0]
 	if !agg.Passthrough {
-		t.Fatalf("expected no aggregation roles to use pass-through schema mode")
+		t.Fatalf("expected key/current/static fields without export triggers to use pass-through schema mode")
 	}
 	if len(agg.Fields) != 4 {
 		t.Fatalf("expected 4 parsed fields, got %#v", agg.Fields)
@@ -265,11 +265,43 @@ sink:
 	if got := agg.Fields[0]; got.Role != "key" || got.Name != "src_addr" || got.Modifier != "4" {
 		t.Fatalf("unexpected first field: %#v", got)
 	}
-	if got := agg.Fields[2]; got.Role != "field" || got.Name != "tenant_id" || got.Modifier != "" {
+	if got := agg.Fields[2]; got.Role != "current" || got.Name != "tenant_id" || got.Modifier != "" {
 		t.Fatalf("unexpected tenant field: %#v", got)
 	}
 	if agg.StaticFields["exporter_name"] != "edge-a" {
 		t.Fatalf("expected static exporter_name edge-a, got %#v", agg.StaticFields["exporter_name"])
+	}
+}
+
+func TestLoadRejectsPlainAggregatorFieldRole(t *testing.T) {
+	dir := t.TempDir()
+
+	cfgPath := filepath.Join(dir, "reflow.yaml")
+	if err := os.WriteFile(cfgPath, []byte(`
+sources:
+  - network: udp
+    address: ":18081"
+    type: json
+
+processor:
+  type: builtin
+
+aggregators:
+  - fields:
+      - key:src_addr
+      - field:bytes
+
+encoder:
+  type: json
+
+sink:
+  type: stdout
+`), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	if _, err := Load(cfgPath); err == nil {
+		t.Fatalf("expected Load to reject plain field role")
 	}
 }
 
@@ -426,7 +458,7 @@ processor:
 aggregators:
   - fields:
       - key:src_addr
-      - field:bytes
+      - current:bytes
 
 encoder:
   type: json
@@ -442,7 +474,7 @@ sink:
 		t.Fatalf("Load returned error: %v", err)
 	}
 	if !cfg.Aggregators[0].Passthrough {
-		t.Fatalf("expected aggregator without aggregation roles to use pass-through schema mode")
+		t.Fatalf("expected aggregator without stateful rollup to use pass-through schema mode")
 	}
 }
 

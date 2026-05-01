@@ -776,7 +776,7 @@ func schemaFieldsOrNames(schema event.AggregationSchema) []event.SchemaField {
 	}
 	fields := make([]event.SchemaField, 0, len(schema.FieldNames))
 	for _, name := range schema.FieldNames {
-		fields = append(fields, event.SchemaField{Name: name, Role: "field"})
+		fields = append(fields, event.SchemaField{Name: name, Role: "current"})
 	}
 	return fields
 }
@@ -1107,7 +1107,7 @@ func protocolFieldType(def config.IPFIXFieldDefinition, netflowV9 bool) uint16 {
 func buildTemplatedValues(cfg config.TFlowDataConfig, fieldMap map[string]any, names []string, netflowV9 bool, ipv6 bool) (netflow.DataRecord, error) {
 	fields := make([]event.SchemaField, 0, len(names))
 	for _, name := range names {
-		fields = append(fields, event.SchemaField{Name: name, Role: "field"})
+		fields = append(fields, event.SchemaField{Name: name, Role: "current"})
 	}
 	return buildTemplatedValuesFromSchemaFields(cfg, fieldMap, fields, netflowV9, ipv6)
 }
@@ -1156,7 +1156,7 @@ func buildTemplatedValuesFromSchemaFields(cfg config.TFlowDataConfig, fieldMap m
 func buildTemplateRecordFromFields(cfg config.TFlowDataConfig, names []string, templateID uint16, netflowV9 bool, ipv6 bool) (netflow.TemplateRecord, error) {
 	fields := make([]event.SchemaField, 0, len(names))
 	for _, name := range names {
-		fields = append(fields, event.SchemaField{Name: name, Role: "field"})
+		fields = append(fields, event.SchemaField{Name: name, Role: "current"})
 	}
 	return buildTemplateRecordFromSchemaFields(cfg, fields, templateID, netflowV9, ipv6)
 }

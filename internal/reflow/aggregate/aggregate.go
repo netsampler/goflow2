@@ -293,7 +293,7 @@ func schemaFields(cfg config.AggregatorConfig) []event.SchemaField {
 			role = "static"
 		}
 		if role == "" {
-			role = "field"
+			role = "current"
 		}
 		out = append(out, event.SchemaField{
 			Role:  role,
