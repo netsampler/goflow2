@@ -25,11 +25,8 @@ type DecodeOptions struct {
 	Configured     bool
 	DecodeBeyondL4 bool
 	DecodeGRE      bool
-	GREProtocols   []uint32
 	DecodeIPIP     bool
-	IPIPProtocols  []uint32
 	DecodeIP6IP    bool
-	IP6IPProtocols []uint32
 	DecodeVXLAN    bool
 	VXLANPorts     []uint32
 	DecodeGeneve   bool
@@ -56,9 +53,6 @@ var defaultDecodeOptions = DecodeOptions{
 
 func DefaultDecodeOptions() DecodeOptions {
 	opts := defaultDecodeOptions
-	opts.GREProtocols = []uint32{47}
-	opts.IPIPProtocols = []uint32{4}
-	opts.IP6IPProtocols = []uint32{41}
 	opts.VXLANPorts = []uint32{4789}
 	opts.GenevePorts = []uint32{6081}
 	opts.L2TPPorts = []uint32{1701}
@@ -1114,17 +1108,17 @@ func parsePacketViewWithOptions(data []byte, protocol uint32, opts DecodeOptions
 				},
 			})
 			view.Tuples = append(view.Tuples, tuple)
-			if opts.DecodeBeyondL4 && opts.DecodeIPIP && protocolMatches(nextProto, opts.IPIPProtocols, 4) {
+			if opts.DecodeBeyondL4 && opts.DecodeIPIP && nextProto == 4 {
 				offset += nextOffset
 				etherType = 0x0800
 				continue
 			}
-			if opts.DecodeBeyondL4 && opts.DecodeIP6IP && protocolMatches(nextProto, opts.IP6IPProtocols, 41) {
+			if opts.DecodeBeyondL4 && opts.DecodeIP6IP && nextProto == 41 {
 				offset += nextOffset
 				etherType = 0x86dd
 				continue
 			}
-			if opts.DecodeGRE && protocolMatches(nextProto, opts.GREProtocols, 47) {
+			if opts.DecodeGRE && nextProto == 47 {
 				innerOffset, innerProto, err := parseGRE(data[offset+nextOffset:], &view)
 				if err != nil {
 					return view, nil
@@ -1187,17 +1181,17 @@ func parsePacketViewWithOptions(data []byte, protocol uint32, opts DecodeOptions
 				view.appendLayer(layer)
 			}
 			view.Tuples = append(view.Tuples, tuple)
-			if opts.DecodeBeyondL4 && opts.DecodeIPIP && protocolMatches(nextProto, opts.IPIPProtocols, 4) {
+			if opts.DecodeBeyondL4 && opts.DecodeIPIP && nextProto == 4 {
 				offset += nextOffset
 				etherType = 0x0800
 				continue
 			}
-			if opts.DecodeBeyondL4 && opts.DecodeIP6IP && protocolMatches(nextProto, opts.IP6IPProtocols, 41) {
+			if opts.DecodeBeyondL4 && opts.DecodeIP6IP && nextProto == 41 {
 				offset += nextOffset
 				etherType = 0x86dd
 				continue
 			}
-			if opts.DecodeGRE && protocolMatches(nextProto, opts.GREProtocols, 47) {
+			if opts.DecodeGRE && nextProto == 47 {
 				innerOffset, innerProto, err := parseGRE(data[offset+nextOffset:], &view)
 				if err != nil {
 					return view, nil
@@ -1630,18 +1624,6 @@ func portMatches(tuple packetTuple, ports []uint32, defaultPort uint32) bool {
 	}
 	for _, port := range ports {
 		if port != 0 && (tuple.DstPort == port || tuple.SrcPort == port) {
-			return true
-		}
-	}
-	return false
-}
-
-func protocolMatches(protocol uint32, protocols []uint32, defaultProtocol uint32) bool {
-	if len(protocols) == 0 {
-		return protocol == defaultProtocol
-	}
-	for _, candidate := range protocols {
-		if candidate == protocol {
 			return true
 		}
 	}

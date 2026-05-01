@@ -397,20 +397,11 @@ func packetDecodeOptions(cfg config.PacketDecoderConfig) packet.DecodeOptions {
 	if encaps.GRE.Enabled != nil {
 		opts.DecodeGRE = *encaps.GRE.Enabled
 	}
-	if len(encaps.GRE.Protocols) > 0 {
-		opts.GREProtocols = append([]uint32(nil), encaps.GRE.Protocols...)
-	}
 	if encaps.IPIP.Enabled != nil {
 		opts.DecodeIPIP = *encaps.IPIP.Enabled
 	}
-	if len(encaps.IPIP.Protocols) > 0 {
-		opts.IPIPProtocols = append([]uint32(nil), encaps.IPIP.Protocols...)
-	}
 	if encaps.IP6IP.Enabled != nil {
 		opts.DecodeIP6IP = *encaps.IP6IP.Enabled
-	}
-	if len(encaps.IP6IP.Protocols) > 0 {
-		opts.IP6IPProtocols = append([]uint32(nil), encaps.IP6IP.Protocols...)
 	}
 	if encaps.VXLAN.Enabled != nil {
 		opts.DecodeVXLAN = *encaps.VXLAN.Enabled

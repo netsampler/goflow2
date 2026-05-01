@@ -46,13 +46,10 @@ processor:
       encapsulations:
         gre:
           enabled: true
-          protocols: [47]
         ipip:
           enabled: true
-          protocols: [4]
         ip6ip:
           enabled: true
-          protocols: [41]
         vxlan:
           enabled: false
           ports: [4789, 4790]
@@ -111,15 +108,6 @@ sink:
 	}
 	if decoder.Encapsulations.GRE.Enabled == nil || !*decoder.Encapsulations.GRE.Enabled {
 		t.Fatalf("expected GRE encapsulation enabled=true, got %#v", decoder.Encapsulations.GRE.Enabled)
-	}
-	if len(decoder.Encapsulations.GRE.Protocols) != 1 || decoder.Encapsulations.GRE.Protocols[0] != 47 {
-		t.Fatalf("expected GRE protocols [47], got %#v", decoder.Encapsulations.GRE.Protocols)
-	}
-	if len(decoder.Encapsulations.IPIP.Protocols) != 1 || decoder.Encapsulations.IPIP.Protocols[0] != 4 {
-		t.Fatalf("expected IPIP protocols [4], got %#v", decoder.Encapsulations.IPIP.Protocols)
-	}
-	if len(decoder.Encapsulations.IP6IP.Protocols) != 1 || decoder.Encapsulations.IP6IP.Protocols[0] != 41 {
-		t.Fatalf("expected IP6IP protocols [41], got %#v", decoder.Encapsulations.IP6IP.Protocols)
 	}
 	if decoder.Encapsulations.VXLAN.Enabled == nil || *decoder.Encapsulations.VXLAN.Enabled {
 		t.Fatalf("expected VXLAN encapsulation enabled=false, got %#v", decoder.Encapsulations.VXLAN.Enabled)

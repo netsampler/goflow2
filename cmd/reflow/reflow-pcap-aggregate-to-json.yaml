@@ -22,14 +22,10 @@ processor:
       encapsulations:
         gre:
           enabled: true
-          # GRE is IP protocol 47, not a UDP/TCP port.
-          protocols: [47]
         ipip:
           enabled: true
-          protocols: [4]
         ip6ip:
           enabled: true
-          protocols: [41]
         vxlan:
           enabled: true
           ports: [4789]

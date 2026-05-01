@@ -121,8 +121,8 @@ or the first encapsulation header. Encapsulation-specific settings live under
 IP-in-IP, IPv6-in-IP, VXLAN, Geneve, L2TP, GTP-U, and PPPoE handling. UDP-based
 encapsulations can use non-standard port lists. MPLS labels and IPv6 extension
 headers are always parsed when present; `decode_beyond_l4` controls whether the
-parser continues into encapsulated payloads. GRE, IP-in-IP, and IPv6-in-IP are
-matched by IP protocol number, normally `47`, `4`, and `41`, not by port.
+parser continues into encapsulated payloads. GRE, IP-in-IP, and IPv6-in-IP use
+their fixed IP protocol numbers: `47`, `4`, and `41`.
 
 ## Aggregator Field Entries
 
