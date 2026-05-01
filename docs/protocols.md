@@ -31,7 +31,7 @@ The mapping to the protobuf format is listed in the table below.
 |dst_mac|Destination mac address| |Included|OUT_DST_MAC (57)|postDestinationMacAddress (57)|
 |src_vlan|Source VLAN ID| |From ExtendedSwitch|SRC_VLAN (58)|vlanId (58)|
 |dst_vlan|Destination VLAN ID| |From ExtendedSwitch|DST_VLAN (59)|postVlanId (59)|
-|vlan_id|802.1Q VLAN ID| |Included|SRC_VLAN (58)|dot1qVlanId (243)|
+|vlan_id|VLAN ID compatibility alias| |Included|SRC_VLAN (58)|vlanId (58)|
 |dot1q_vlan_id|Outer 802.1Q VLAN ID| |Included|SRC_VLAN (58)|dot1qVlanId (243)|
 |dot1q_priority|Outer 802.1Q priority| |Included||dot1qPriority (244)|
 |dot1q_dei|Outer 802.1Q drop eligible indicator| |Included||dot1qDEI (388)|
