@@ -120,11 +120,12 @@ Aggregation helper fields are opt-in under
 `mpls_label_stack_section_1..N` 3-byte IPFIX MPLS label stack section values
 for export. `ip_layers: N` emits `ip_1_*`, `ip_2_*`, ... aliases, ordered from
 outermost IP tuple to innermost parsed IP tuple, with `src_addr`, `dst_addr`,
-`proto`, `proto_name`, `src_port`, and `dst_port` for each layer. The IPFIX
-catalog maps `ip_N_src_addr` and `ip_N_dst_addr` through the same IPv4/IPv6
-address element selection used by `src_addr` and `dst_addr`, so mixed tunnels
-can export an IPv4 outer layer and IPv6 inner layer in separate template
-variants.
+`proto`, `proto_name`, `src_port`, and `dst_port` for each layer. The default
+IPFIX catalog does not map `outer_*` or `ip_N_*` helper fields to the standard
+source/destination address elements, because IPFIX does not define generic
+outer/encapsulated address elements. Use them directly for aggregation keys or
+JSON output, or add explicit enterprise/catalog mappings for an IPFIX collector
+that understands those semantics.
 
 ```yaml
 processor:

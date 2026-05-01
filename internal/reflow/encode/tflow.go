@@ -756,7 +756,7 @@ func buildSchemaStateWithBase(cfg config.TFlowDataConfig, schema event.Aggregati
 		fields:         schemaFieldsOrNames(schema),
 		baseTemplateID: baseTemplateID,
 	}
-	state.addressGroups = schemaAddressGroups(state.fields)
+	state.addressGroups = schemaAddressGroups(cfg, state.fields)
 	if len(state.addressGroups) > 8 {
 		return templatedSchemaState{}, fmt.Errorf("schema has %d address groups; maximum is 8", len(state.addressGroups))
 	}
@@ -797,7 +797,12 @@ func schemaFieldsOrNames(schema event.AggregationSchema) []event.SchemaField {
 }
 
 func schemaNeedsIPv6Variant(fields []event.SchemaField) bool {
-	return len(schemaAddressGroups(fields)) > 0
+	for _, field := range fields {
+		if isSourceAddressField(field.Name) || isDestinationAddressField(field.Name) {
+			return true
+		}
+	}
+	return false
 }
 
 // templateForFields selects the address-family variant needed by the current event.
@@ -1359,7 +1364,7 @@ func resolvedFieldDefinition(name string, def config.IPFIXFieldDefinition, val a
 		return def
 	}
 	switch {
-	case isSourceAddressField(name):
+	case isSourceAddressField(name) && isStandardSourceIPv4Definition(def):
 		if addr.Is6() {
 			def.Name = "sourceIPv6Address"
 			def.ID = netflow.IPFIX_FIELD_sourceIPv6Address
@@ -1367,7 +1372,7 @@ func resolvedFieldDefinition(name string, def config.IPFIXFieldDefinition, val a
 			def.Length = 16
 			def.Type = "ipv6Address"
 		}
-	case isDestinationAddressField(name):
+	case isDestinationAddressField(name) && isStandardDestinationIPv4Definition(def):
 		if addr.Is6() {
 			def.Name = "destinationIPv6Address"
 			def.ID = netflow.IPFIX_FIELD_destinationIPv6Address
@@ -1386,13 +1391,13 @@ func resolvedFieldDefinitionForFamily(name string, def config.IPFIXFieldDefiniti
 		return def
 	}
 	switch {
-	case isSourceAddressField(name):
+	case isSourceAddressField(name) && isStandardSourceIPv4Definition(def):
 		def.Name = "sourceIPv6Address"
 		def.ID = netflow.IPFIX_FIELD_sourceIPv6Address
 		def.NetFlowV9ID = netflow.NFV9_FIELD_IPV6_SRC_ADDR
 		def.Length = 16
 		def.Type = "ipv6Address"
-	case isDestinationAddressField(name):
+	case isDestinationAddressField(name) && isStandardDestinationIPv4Definition(def):
 		def.Name = "destinationIPv6Address"
 		def.ID = netflow.IPFIX_FIELD_destinationIPv6Address
 		def.NetFlowV9ID = netflow.NFV9_FIELD_IPV6_DST_ADDR
@@ -1425,6 +1430,14 @@ func isDestinationAddressField(name string) bool {
 	return name == "dst_addr" || strings.HasSuffix(name, "_dst_addr")
 }
 
+func isStandardSourceIPv4Definition(def config.IPFIXFieldDefinition) bool {
+	return def.Type == "ipv4Address" && (def.ID == netflow.IPFIX_FIELD_sourceIPv4Address || def.Name == "sourceIPv4Address")
+}
+
+func isStandardDestinationIPv4Definition(def config.IPFIXFieldDefinition) bool {
+	return def.Type == "ipv4Address" && (def.ID == netflow.IPFIX_FIELD_destinationIPv4Address || def.Name == "destinationIPv4Address")
+}
+
 func addressFieldGroup(name string) (string, bool) {
 	switch {
 	case name == "src_addr" || name == "dst_addr":
@@ -1438,10 +1451,17 @@ func addressFieldGroup(name string) (string, bool) {
 	}
 }
 
-func schemaAddressGroups(fields []event.SchemaField) []string {
+func schemaAddressGroups(cfg config.TFlowDataConfig, fields []event.SchemaField) []string {
 	var groups []string
 	seen := make(map[string]bool)
 	for _, field := range fields {
+		def, ok := cfg.Catalog[field.Name]
+		if !ok {
+			continue
+		}
+		if !isStandardSourceIPv4Definition(def) && !isStandardDestinationIPv4Definition(def) {
+			continue
+		}
 		group, ok := addressFieldGroup(field.Name)
 		if !ok || seen[group] {
 			continue
