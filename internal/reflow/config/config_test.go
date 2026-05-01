@@ -69,8 +69,7 @@ processor:
           enabled: false
 
 aggregators:
-  - enabled: true
-    window:
+  - window:
       idle_flush_after_ms: 5000
     template_id: 256
     static_fields:
@@ -137,9 +136,6 @@ sink:
 	if len(cfg.Aggregators) != 1 {
 		t.Fatalf("expected 1 aggregator, got %d", len(cfg.Aggregators))
 	}
-	if !cfg.Aggregators[0].Enabled {
-		t.Fatalf("expected aggregators[0].enabled=true")
-	}
 	if cfg.Aggregators[0].Window.IdleFlushAfter != 5000 {
 		t.Fatalf("expected aggregators[0].window.idle_flush_after_ms=5000, got %d", cfg.Aggregators[0].Window.IdleFlushAfter)
 	}
@@ -186,8 +182,7 @@ processor:
   type: builtin
 
 aggregators:
-  - enabled: true
-    periodic:
+  - periodic:
       every_ms: 60000
     fields:
       - key:agent_ip
@@ -241,8 +236,7 @@ processor:
   type: builtin
 
 aggregators:
-  - enabled: true
-    fields:
+  - fields:
       - key:src_addr:4
       - key:dst_addr:4
       - field:tenant_id
@@ -430,8 +424,7 @@ processor:
   type: builtin
 
 aggregators:
-  - enabled: true
-    fields:
+  - fields:
       - key:src_addr
       - field:bytes
 
@@ -453,43 +446,6 @@ sink:
 	}
 }
 
-func TestLoadAllowsDisabledAggregatorWithoutExportTrigger(t *testing.T) {
-	dir := t.TempDir()
-
-	cfgPath := filepath.Join(dir, "reflow.yaml")
-	if err := os.WriteFile(cfgPath, []byte(`
-sources:
-  - network: udp
-    address: ":18081"
-    type: json
-
-processor:
-  type: builtin
-
-aggregators:
-  - enabled: false
-
-encoder:
-  type: json
-
-sink:
-  type: stdout
-`), 0o644); err != nil {
-		t.Fatalf("write config: %v", err)
-	}
-
-	cfg, err := Load(cfgPath)
-	if err != nil {
-		t.Fatalf("Load returned error: %v", err)
-	}
-	if len(cfg.Aggregators) != 1 {
-		t.Fatalf("expected 1 aggregator, got %d", len(cfg.Aggregators))
-	}
-	if cfg.Aggregators[0].Enabled {
-		t.Fatalf("expected disabled aggregator to remain disabled")
-	}
-}
-
 func TestLoadSupportsAggregatorList(t *testing.T) {
 	dir := t.TempDir()
 
@@ -504,14 +460,12 @@ processor:
   type: builtin
 
 aggregators:
-  - enabled: true
-    stream: agg_samples
+  - stream: agg_samples
     periodic:
       every_ms: 1000
     match:
       record_kind: packet
-  - enabled: true
-    stream: agg_counters
+  - stream: agg_counters
     periodic:
       every_ms: 1000
     match:

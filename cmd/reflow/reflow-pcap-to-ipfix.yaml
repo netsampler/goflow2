@@ -18,8 +18,7 @@ processor:
     truncate_packet_bytes: 0
 
 aggregators:
-  - enabled: true
-    stream: flow_data
+  - stream: flow_data
     # Aggregate packets into flow-like records before exporting as templated IPFIX.
     window:
       idle_flush_after_ms: 10000

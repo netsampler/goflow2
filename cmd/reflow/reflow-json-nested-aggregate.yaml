@@ -24,8 +24,7 @@ processor:
     drop_payload: true
 
 aggregators:
-  - enabled: true
-    stream: nested_flow_data
+  - stream: nested_flow_data
     window:
       idle_flush_after_ms: 5000
     periodic:

@@ -83,8 +83,7 @@ type ToggleEncapsulationConfig struct {
 }
 
 type AggregatorConfig struct {
-	Enabled bool   `yaml:"enabled"`
-	Stream  string `yaml:"stream"`
+	Stream string `yaml:"stream"`
 	// Passthrough is derived from config. When no fields have aggregation roles
 	// (sum/first/current/min/max), matching events are forwarded immediately
 	// after schema registration.
@@ -644,7 +643,7 @@ func normalizeAggregatorConfig(cfg *AggregatorConfig) error {
 		}
 	}
 
-	cfg.Passthrough = cfg.Enabled && !aggregatorHasAggregationRole(cfg.Fields)
+	cfg.Passthrough = !aggregatorHasAggregationRole(cfg.Fields)
 	return nil
 }
 
@@ -673,9 +672,6 @@ func validateAggregatorConfig(cfg AggregatorConfig) error {
 	}
 	if cfg.Periodic.Every < 0 {
 		return fmt.Errorf("aggregator.periodic.every_ms must be >= 0")
-	}
-	if !cfg.Enabled {
-		return nil
 	}
 	if cfg.Passthrough {
 		return nil

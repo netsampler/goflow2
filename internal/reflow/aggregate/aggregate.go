@@ -24,22 +24,11 @@ type Aggregator interface {
 
 // New builds the configured aggregation stage. Disabled aggregation keeps the input stream unchanged.
 func New(cfg config.AggregatorConfig) (Aggregator, error) {
-	if !cfg.Enabled {
-		return passthrough{}, nil
-	}
 	if cfg.Passthrough {
 		return schemaPassthrough{cfg: cfg}, nil
 	}
 	return NewStateful(cfg), nil
 }
-
-type passthrough struct{}
-
-func (passthrough) InitEvents() ([]*event.Event, error)              { return nil, nil }
-func (passthrough) Process(evt *event.Event) ([]*event.Event, error) { return []*event.Event{evt}, nil }
-func (passthrough) Flush() ([]*event.Event, error)                   { return nil, nil }
-func (passthrough) Close() ([]*event.Event, error)                   { return nil, nil }
-func (passthrough) Interval() time.Duration                          { return 0 }
 
 type schemaPassthrough struct {
 	cfg config.AggregatorConfig
@@ -139,9 +128,6 @@ func NewStateful(cfg config.AggregatorConfig) *Stateful {
 // InitEvents emits one schema control event so downstream templated encoders can
 // advertise aggregated streams before the first bucket flushes.
 func (a *Stateful) InitEvents() ([]*event.Event, error) {
-	if !a.cfg.Enabled {
-		return nil, nil
-	}
 	return schemaInitEvents(a.cfg)
 }
 
@@ -342,9 +328,6 @@ func (a *Stateful) Close() ([]*event.Event, error) {
 // Interval reports the smallest configured timer so the runtime knows how often
 // to wake this aggregator worker for flush evaluation.
 func (a *Stateful) Interval() time.Duration {
-	if !a.cfg.Enabled {
-		return 0
-	}
 	var min time.Duration
 	add := func(ms int) {
 		if ms <= 0 {

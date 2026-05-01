@@ -46,8 +46,7 @@ processor:
           enabled: true
 
 aggregators:
-  - enabled: true
-    stream: flow_data
+  - stream: flow_data
     # Export a bucket after 10s of inactivity, plus a periodic snapshot every minute.
     window:
       idle_flush_after_ms: 10000

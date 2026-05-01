@@ -126,6 +126,9 @@ matched by IP protocol number, normally `47`, `4`, and `41`, not by port.
 
 ## Aggregator Field Entries
 
+Every item in `aggregators` is active. To disable an aggregator, remove or
+comment out that list item.
+
 Aggregator `fields` entries describe aggregation policy and schema order only.
 They do not choose IPFIX or NetFlow information element IDs. Protocol mapping
 stays in `encoder.tflow_data`, including enterprise/PEN, field ID, type, and
@@ -145,8 +148,7 @@ encoder to interpret. Today the IPFIX and NetFlow v9 encoders use `4` or `6` on
 
 ```yaml
 aggregators:
-  - enabled: true
-    stream: flow_data
+  - stream: flow_data
     fields:
       - key:src_addr:4
       - key:dst_addr:4
@@ -164,8 +166,7 @@ mode to use when aggregation is acting as a filter in order to reuse a template:
 
 ```yaml
 aggregators:
-  - enabled: true
-    stream: flow_data
+  - stream: flow_data
     match:
       packet.has_layer.mpls: "true"
     fields:

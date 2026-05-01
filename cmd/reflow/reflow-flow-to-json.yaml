@@ -14,8 +14,7 @@ processor:
     drop_payload: true
 
 aggregators:
-  - enabled: true
-    stream: agg_samples
+  - stream: agg_samples
     match:
       # Only aggregate sampled packet records in this stream.
       record_kind: packet
@@ -48,8 +47,7 @@ aggregators:
       - drops
       - end_time_unix
 
-  - enabled: true
-    stream: agg_counters
+  - stream: agg_counters
     match:
       # Counter samples are routed into a separate aggregate stream.
       record_kind: interface_counter

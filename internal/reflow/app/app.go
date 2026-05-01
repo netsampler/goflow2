@@ -125,9 +125,6 @@ func (a *App) Run(ctx context.Context) error {
 	var aggregateWG sync.WaitGroup
 	aggregateWorkers := make([]aggregateWorker, 0, len(a.aggregatorCfgs))
 	for _, aggCfg := range a.aggregatorCfgs {
-		if !aggCfg.Enabled {
-			continue
-		}
 		agg, err := aggregate.New(aggCfg)
 		if err != nil {
 			return fmt.Errorf("init aggregator %q: %w", aggCfg.Stream, err)

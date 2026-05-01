@@ -1236,7 +1236,6 @@ func TestIPFIXEncoderUsesIPv6InformationElementsForIPv6Addresses(t *testing.T) {
 
 func TestAggregatorDropsPacketsMissingConfiguredKeys(t *testing.T) {
 	agg, err := aggregate.New(config.AggregatorConfig{
-		Enabled:   true,
 		KeyFields: []string{"src_addr", "dst_addr"},
 	})
 	if err != nil {

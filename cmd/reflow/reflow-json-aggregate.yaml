@@ -15,8 +15,7 @@ processor:
     drop_payload: false
 
 aggregators:
-  - enabled: true
-    stream: flow_data
+  - stream: flow_data
     # Window flush exports a bucket when it has been idle for the configured time.
     window:
       idle_flush_after_ms: 10000
