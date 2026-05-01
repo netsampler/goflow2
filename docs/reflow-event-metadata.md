@@ -113,6 +113,11 @@ fields (`src_addr`, `dst_addr`, `proto`, `src_port`, `dst_port`) describe the
 innermost flow tuple, while `outer_*` fields remain aliases for the first
 encapsulating IP tuple. Aggregation configs can use those aliases when they need
 stable keys across packets whose full layer stacks have different non-IP layers.
+Parsed VLAN tags also populate Dot1Q aliases: `dot1q_vlan_id`,
+`dot1q_priority`, and `dot1q_dei` for the outer tag, plus
+`dot1q_customer_vlan_id`, `dot1q_customer_priority`, and
+`dot1q_customer_dei` for the second tag when present. Parsed VXLAN packets
+populate `vxlan_vni` and the standard IPFIX `layer2_segment_id` helper.
 
 Aggregation helper fields are opt-in under
 `processor.builtin.aggregation_helpers`. `mpls_labels: N` emits

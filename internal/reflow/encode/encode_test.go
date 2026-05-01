@@ -1285,6 +1285,25 @@ func TestIPFIXEncoderUsesIPv6InformationElementsForIPv6Addresses(t *testing.T) {
 	}
 }
 
+func TestEncodeIPFIXBooleanValue(t *testing.T) {
+	def := config.IPFIXFieldDefinition{ID: 388, Length: 1, Type: "boolean"}
+	encoded, err := encodeIPFIXValue(def, true)
+	if err != nil {
+		t.Fatalf("encodeIPFIXValue returned error: %v", err)
+	}
+	if !bytes.Equal(encoded, []byte{1}) {
+		t.Fatalf("expected true boolean to encode as 1, got %x", encoded)
+	}
+
+	encoded, err = encodeIPFIXValue(def, false)
+	if err != nil {
+		t.Fatalf("encodeIPFIXValue returned error: %v", err)
+	}
+	if !bytes.Equal(encoded, []byte{0}) {
+		t.Fatalf("expected false boolean to encode as 0, got %x", encoded)
+	}
+}
+
 func TestAggregatorDropsPacketsMissingConfiguredKeys(t *testing.T) {
 	agg, err := aggregate.New(config.AggregatorConfig{
 		KeyFields: []string{"src_addr", "dst_addr"},

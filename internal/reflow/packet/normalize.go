@@ -870,6 +870,8 @@ func applyPacketViewFields(fields map[string]any, view packetView, helpers Aggre
 	}
 	if view.Model != nil {
 		fields["packet_ip_depth"] = uint32(packetIPDepth(view.Model))
+		applyDot1QFields(fields, view.Model)
+		applyLayer2SegmentFields(fields, view.Model)
 	}
 	applyAggregationHelperFields(fields, view, helpers)
 	if len(view.VLANIDs) > 0 {
@@ -906,6 +908,44 @@ func applyAggregationHelperFields(fields map[string]any, view packetView, helper
 	}
 	if helpers.IPLayers > 0 {
 		applyIPLayerHelperFields(fields, view.Tuples, helpers.IPLayers)
+	}
+}
+
+func applyDot1QFields(fields map[string]any, model *event.PacketModel) {
+	index := 0
+	for _, layer := range model.Layers {
+		if layer.Kind != "dot1q" || layer.VLAN == nil {
+			continue
+		}
+		index++
+		id := uint32(layer.VLAN.ID)
+		priority := uint32(layer.VLAN.PCP)
+		dei := layer.VLAN.DEI
+		fields[fmt.Sprintf("dot1q_%d_vlan_id", index)] = id
+		fields[fmt.Sprintf("dot1q_%d_priority", index)] = priority
+		fields[fmt.Sprintf("dot1q_%d_dei", index)] = dei
+		switch index {
+		case 1:
+			fields["dot1q_vlan_id"] = id
+			fields["dot1q_priority"] = priority
+			fields["dot1q_dei"] = dei
+		case 2:
+			fields["dot1q_customer_vlan_id"] = id
+			fields["dot1q_customer_priority"] = priority
+			fields["dot1q_customer_dei"] = dei
+		}
+	}
+}
+
+func applyLayer2SegmentFields(fields map[string]any, model *event.PacketModel) {
+	for _, layer := range model.Layers {
+		if layer.Kind != "vxlan" || layer.VXLAN == nil {
+			continue
+		}
+		vni := layer.VXLAN.VNI & 0x00ffffff
+		fields["vxlan_vni"] = vni
+		fields["layer2_segment_id"] = (uint64(0x01) << 56) | uint64(vni)
+		return
 	}
 }
 

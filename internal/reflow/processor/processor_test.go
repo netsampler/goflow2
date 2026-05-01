@@ -421,6 +421,15 @@ func TestBuiltinProcessBytesExtractsEncapsulatedLayers(t *testing.T) {
 	if got := fields["vlan_id"]; got != uint32(100) {
 		t.Fatalf("expected vlan_id=100, got %#v", got)
 	}
+	if got := fields["dot1q_vlan_id"]; got != uint32(100) {
+		t.Fatalf("expected dot1q_vlan_id=100, got %#v", got)
+	}
+	if got := fields["dot1q_priority"]; got != uint32(0) {
+		t.Fatalf("expected dot1q_priority=0, got %#v", got)
+	}
+	if got := fields["dot1q_dei"]; got != false {
+		t.Fatalf("expected dot1q_dei=false, got %#v", got)
+	}
 	vlanIDs, ok := fields["vlan_ids"].([]uint32)
 	if !ok {
 		t.Fatalf("expected vlan_ids to be []uint32, got %T", fields["vlan_ids"])
@@ -471,6 +480,12 @@ func TestBuiltinProcessBytesExtractsVXLANInnerPacket(t *testing.T) {
 
 	expectedLayers := []string{"ethernet", "ipv4", "vxlan", "ethernet", "ipv4", "tcp"}
 	expectPacketLayers(t, events[0], expectedLayers)
+	if got := fields["vxlan_vni"]; got != uint32(100) {
+		t.Fatalf("expected vxlan_vni=100, got %#v", got)
+	}
+	if got := fields["layer2_segment_id"]; got != uint64(0x0100000000000064) {
+		t.Fatalf("expected VXLAN layer2_segment_id, got %#v", got)
+	}
 	if got := fields["outer_src_addr"]; got != "203.0.113.1" {
 		t.Fatalf("expected outer_src_addr=203.0.113.1, got %#v", got)
 	}
@@ -484,6 +499,42 @@ func TestBuiltinProcessBytesExtractsVXLANInnerPacket(t *testing.T) {
 	}
 	if got := fields["dst_addr"]; got != "198.51.100.2" {
 		t.Fatalf("expected inner dst_addr=198.51.100.2, got %#v", got)
+	}
+}
+
+func TestBuiltinProcessBytesExtractsDot1QCustomerFields(t *testing.T) {
+	proc := NewBuiltin(config.ProcessorConfig{})
+	inner := ipv4Packet(6, [4]byte{192, 0, 2, 1}, [4]byte{198, 51, 100, 2}, tcpHeader(12345, 443))
+	packet := ethernetPayload(
+		0x88a8,
+		dot1qTCIPayload((5<<13)|(1<<12)|100, 0x8100, dot1qTCIPayload((3<<13)|200, 0x0800, inner)),
+	)
+
+	events, err := proc.Process(&event.Event{
+		Source:  event.SourceMetadata{Type: "bytes"},
+		Payload: packet,
+	})
+	if err != nil {
+		t.Fatalf("Process returned error: %v", err)
+	}
+	fields := events[0].Fields
+	if got := fields["dot1q_vlan_id"]; got != uint32(100) {
+		t.Fatalf("expected dot1q_vlan_id=100, got %#v", got)
+	}
+	if got := fields["dot1q_priority"]; got != uint32(5) {
+		t.Fatalf("expected dot1q_priority=5, got %#v", got)
+	}
+	if got := fields["dot1q_dei"]; got != true {
+		t.Fatalf("expected dot1q_dei=true, got %#v", got)
+	}
+	if got := fields["dot1q_customer_vlan_id"]; got != uint32(200) {
+		t.Fatalf("expected dot1q_customer_vlan_id=200, got %#v", got)
+	}
+	if got := fields["dot1q_customer_priority"]; got != uint32(3) {
+		t.Fatalf("expected dot1q_customer_priority=3, got %#v", got)
+	}
+	if got := fields["dot1q_customer_dei"]; got != false {
+		t.Fatalf("expected dot1q_customer_dei=false, got %#v", got)
 	}
 }
 
@@ -1210,8 +1261,12 @@ func ethernetPayload(etherType uint16, payload []byte) []byte {
 }
 
 func dot1qPayload(vlanID uint16, etherType uint16, payload []byte) []byte {
+	return dot1qTCIPayload(vlanID&0x0fff, etherType, payload)
+}
+
+func dot1qTCIPayload(tci uint16, etherType uint16, payload []byte) []byte {
 	out := make([]byte, 4+len(payload))
-	binary.BigEndian.PutUint16(out[0:2], vlanID&0x0fff)
+	binary.BigEndian.PutUint16(out[0:2], tci)
 	binary.BigEndian.PutUint16(out[2:4], etherType)
 	copy(out[4:], payload)
 	return out

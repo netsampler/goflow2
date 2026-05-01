@@ -31,7 +31,14 @@ The mapping to the protobuf format is listed in the table below.
 |dst_mac|Destination mac address| |Included|OUT_DST_MAC (57)|postDestinationMacAddress (57)|
 |src_vlan|Source VLAN ID| |From ExtendedSwitch|SRC_VLAN (58)|vlanId (58)|
 |dst_vlan|Destination VLAN ID| |From ExtendedSwitch|DST_VLAN (59)|postVlanId (59)|
-|vlan_id|802.11q VLAN ID| |Included|SRC_VLAN (58)|vlanId (58)|
+|vlan_id|802.1Q VLAN ID| |Included|SRC_VLAN (58)|dot1qVlanId (243)|
+|dot1q_vlan_id|Outer 802.1Q VLAN ID| |Included|SRC_VLAN (58)|dot1qVlanId (243)|
+|dot1q_priority|Outer 802.1Q priority| |Included||dot1qPriority (244)|
+|dot1q_dei|Outer 802.1Q drop eligible indicator| |Included||dot1qDEI (388)|
+|dot1q_customer_vlan_id|Customer 802.1Q VLAN ID| |Included||dot1qCustomerVlanId (245)|
+|dot1q_customer_priority|Customer 802.1Q priority| |Included||dot1qCustomerPriority (246)|
+|dot1q_customer_dei|Customer 802.1Q drop eligible indicator| |Included||dot1qCustomerDEI (389)|
+|layer2_segment_id|Overlay layer-2 segment identifier| |Included||layer2SegmentId (351)|
 |ip_tos|IP Type of Service|tos|Included|SRC_TOS (5)|ipClassOfService (5)|
 |forwarding_status|Forwarding status| | |FORWARDING_STATUS (89)|forwardingStatus (89)|
 |ip_ttl|IP Time to Live| |Included|IPTTL (52)|minimumTTL (52|

@@ -1,6 +1,7 @@
 package encode
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/netip"
 	"sort"
@@ -1302,6 +1303,11 @@ func encodeIPFIXValue(def config.IPFIXFieldDefinition, val any) ([]byte, error) 
 		return encodeUnsigned(def.Type, val)
 	case "signed8", "signed16", "signed32", "signed64":
 		return encodeSigned(def.Type, val)
+	case "boolean":
+		if boolField(val) {
+			return []byte{1}, nil
+		}
+		return []byte{0}, nil
 	case "string":
 		switch v := val.(type) {
 		case string:
@@ -1331,7 +1337,7 @@ func defaultEncodedValue(def config.IPFIXFieldDefinition) ([]byte, error) {
 		return make([]byte, 4), nil
 	case "ipv6Address":
 		return make([]byte, 16), nil
-	case "unsigned8", "signed8":
+	case "unsigned8", "signed8", "boolean":
 		return make([]byte, 1), nil
 	case "unsigned16", "signed16":
 		return make([]byte, 2), nil
@@ -1486,6 +1492,34 @@ func boolAddressMask(ipv6 bool) uint64 {
 		return 1
 	}
 	return 0
+}
+
+func boolField(val any) bool {
+	switch v := val.(type) {
+	case bool:
+		return v
+	case uint64:
+		return v != 0
+	case uint32:
+		return v != 0
+	case uint16:
+		return v != 0
+	case uint8:
+		return v != 0
+	case int64:
+		return v != 0
+	case int:
+		return v != 0
+	case float64:
+		return v != 0
+	case json.Number:
+		n, _ := v.Int64()
+		return n != 0
+	case string:
+		return v == "true" || v == "1"
+	default:
+		return false
+	}
 }
 
 // hasAddressField reports whether a schema needs dual IPv4/IPv6 template support.
