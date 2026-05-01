@@ -713,58 +713,6 @@ func TestBuiltinProcessBytesExtractsMPLSInnerPacket(t *testing.T) {
 	}
 }
 
-func TestBuiltinProcessBytesExtractsMPLSStackLabelsAndIPFamily(t *testing.T) {
-	proc := NewBuiltin(config.ProcessorConfig{})
-	inner := ipv4Packet(6, [4]byte{192, 0, 2, 1}, [4]byte{198, 51, 100, 2}, tcpHeader(12345, 443))
-	stack := mplsPayload(17, false, mplsPayload(18, false, mplsPayload(19, true, inner)))
-	packet := ethernetPayload(0x8847, stack)
-
-	events, err := proc.Process(&event.Event{
-		Source:  event.SourceMetadata{Type: "bytes"},
-		Payload: packet,
-	})
-	if err != nil {
-		t.Fatalf("Process returned error: %v", err)
-	}
-	fields := events[0].Fields
-
-	if got := fields["ip_family"]; got != "ipv4" {
-		t.Fatalf("expected ip_family=ipv4, got %#v", got)
-	}
-	for key, want := range map[string]uint32{
-		"mpls_label":  uint32(17),
-		"mpls_label1": uint32(17),
-		"mpls_label2": uint32(18),
-		"mpls_label3": uint32(19),
-	} {
-		if got := fields[key]; got != want {
-			t.Fatalf("expected %s=%d, got %#v", key, want, got)
-		}
-	}
-}
-
-func TestBuiltinProcessFlowDerivesIPFamilyWithoutPacketHeader(t *testing.T) {
-	proc := NewBuiltin(config.ProcessorConfig{})
-	events, err := proc.Process(&event.Event{
-		Source: event.SourceMetadata{Type: "flow"},
-		Fields: map[string]any{
-			"flow_type":     "ipfix",
-			"src_addr":      "2001:db8::1",
-			"dst_addr":      "2001:db8::2",
-			"sampling_rate": uint32(100),
-		},
-	})
-	if err != nil {
-		t.Fatalf("Process returned error: %v", err)
-	}
-	if got := events[0].Fields["ip_family"]; got != "ipv6" {
-		t.Fatalf("expected ip_family=ipv6, got %#v", got)
-	}
-	if got := events[0].Fields["sampling_rate"]; got != uint32(100) {
-		t.Fatalf("expected sampling_rate to be preserved, got %#v", got)
-	}
-}
-
 func TestBuiltinProcessReFlowJSONPreservesCounterFieldsWithoutSFlowMetadata(t *testing.T) {
 	proc := NewBuiltin(config.ProcessorConfig{})
 

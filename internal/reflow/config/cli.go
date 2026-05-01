@@ -95,9 +95,6 @@ func (c *FlagConfig) generatedConfig() (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
-	encoder.TFlowData.FieldsPath = "reflow-ipfix-fields.yaml"
-	encoder.TFlowData.Overrides = generatedIPFIXOverrides()
-
 	cfg := &Config{
 		Sources: sources,
 		Processor: ProcessorConfig{
@@ -309,31 +306,5 @@ func generatedAggregators() []AggregatorConfig {
 	return []AggregatorConfig{
 		base("ipv4", 256),
 		base("ipv6", 258),
-	}
-}
-
-func generatedIPFIXOverrides() map[string]IPFIXFieldDefinition {
-	return map[string]IPFIXFieldDefinition{
-		"mpls_label1": {
-			Name:        "mplsTopLabelStackSection",
-			ID:          70,
-			Length:      4,
-			Type:        "unsigned32",
-			NetFlowV9ID: 70,
-		},
-		"mpls_label2": {
-			Name:        "mplsLabelStackSection2",
-			ID:          71,
-			Length:      4,
-			Type:        "unsigned32",
-			NetFlowV9ID: 71,
-		},
-		"mpls_label3": {
-			Name:        "mplsLabelStackSection3",
-			ID:          72,
-			Length:      4,
-			Type:        "unsigned32",
-			NetFlowV9ID: 72,
-		},
 	}
 }

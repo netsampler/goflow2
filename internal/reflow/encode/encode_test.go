@@ -2,6 +2,7 @@ package encode
 
 import (
 	"bytes"
+	"encoding/binary"
 	"encoding/json"
 	"net/netip"
 	"os"
@@ -941,7 +942,7 @@ func TestIPFIXEncoderUsesEventObservationDomainID(t *testing.T) {
 
 func TestIPFIXEncoderConfigObservationDomainIDOverridesEvent(t *testing.T) {
 	cfg := testTFlowEncoderConfig("ipfix")
-	cfg.ObservationDomainID = 888
+	cfg.TemplatedFlow.ObservationDomainID = 888
 	enc := NewIPFIXEncoder(cfg)
 	evt := testTemplatedFlowEvent()
 	evt.Fields["observation_domain_id"] = uint32(777)
@@ -997,6 +998,80 @@ func TestNFv9EncoderEmitsTemplateAndDataRecord(t *testing.T) {
 	}
 	if templateSet.Records[0].Fields[0].Type != 8 {
 		t.Fatalf("expected first field type 8 for src_addr, got %d", templateSet.Records[0].Fields[0].Type)
+	}
+}
+
+func TestNFv9EncoderUsesSwitchedTimeFields(t *testing.T) {
+	cfg := testTFlowEncoderConfig("netflowv9")
+	cfg.TemplatedFlow.Data.Select = append(cfg.TemplatedFlow.Data.Select, "start_time_unix", "end_time_unix")
+	enc := NewNFv9Encoder(cfg)
+
+	payloads, err := enc.Encode(testTemplatedFlowEvent())
+	if err != nil {
+		t.Fatalf("Encode returned error: %v", err)
+	}
+
+	store := templates.NewTemplateFlowStore()
+	store.Start()
+	var decoded netflow.NFv9Packet
+	if err := netflow.DecodeMessageVersion(bytes.NewBuffer(payloads[0]), store, netflow.FlowContext{RouterKey: "test-router"}, &decoded, nil); err != nil {
+		t.Fatalf("decode netflow v9 payload: %v", err)
+	}
+
+	templateSet := decoded.FlowSets[0].(netflow.TemplateFlowSet)
+	fields := templateSet.Records[0].Fields
+	startField := fields[len(fields)-2]
+	endField := fields[len(fields)-1]
+	if startField.Type != netflow.NFV9_FIELD_FIRST_SWITCHED || startField.Length != 4 {
+		t.Fatalf("expected start_time_unix to use FIRST_SWITCHED/4, got type=%d length=%d", startField.Type, startField.Length)
+	}
+	if endField.Type != netflow.NFV9_FIELD_LAST_SWITCHED || endField.Length != 4 {
+		t.Fatalf("expected end_time_unix to use LAST_SWITCHED/4, got type=%d length=%d", endField.Type, endField.Length)
+	}
+
+	dataSet := decoded.FlowSets[1].(netflow.DataFlowSet)
+	values := dataSet.Records[0].Values
+	startValue := values[len(values)-2]
+	endValue := values[len(values)-1]
+	startRaw, ok := startValue.Value.([]byte)
+	if !ok {
+		t.Fatalf("expected FIRST_SWITCHED value bytes, got %T", startValue.Value)
+	}
+	endRaw, ok := endValue.Value.([]byte)
+	if !ok {
+		t.Fatalf("expected LAST_SWITCHED value bytes, got %T", endValue.Value)
+	}
+	if got := binary.BigEndian.Uint32(startRaw); got != 0 {
+		t.Fatalf("expected FIRST_SWITCHED value 0, got %d", got)
+	}
+	if got := binary.BigEndian.Uint32(endRaw); got != 800 {
+		t.Fatalf("expected LAST_SWITCHED value 800, got %d", got)
+	}
+}
+
+func TestTemplatedEncoderEncodesMacAddressFields(t *testing.T) {
+	cfg := config.TemplatedFlowDataConfig{
+		Select: []string{"src_mac"},
+		Catalog: map[string]config.IPFIXFieldDefinition{
+			"src_mac": {ID: 56, Length: 6, Type: "macAddress"},
+		},
+	}
+	template, record, err := buildTemplatedDataRecord(cfg, map[string]any{
+		"src_mac": "66:77:88:99:aa:bb",
+	}, 256, false)
+	if err != nil {
+		t.Fatalf("buildTemplatedDataRecord returned error: %v", err)
+	}
+	if template.Fields[0].Type != netflow.IPFIX_FIELD_sourceMacAddress || template.Fields[0].Length != 6 {
+		t.Fatalf("expected sourceMacAddress/6 template field, got %#v", template.Fields[0])
+	}
+	got, ok := record.Values[0].Value.([]byte)
+	if !ok {
+		t.Fatalf("expected encoded MAC bytes, got %T", record.Values[0].Value)
+	}
+	want := []byte{0x66, 0x77, 0x88, 0x99, 0xaa, 0xbb}
+	if !bytes.Equal(got, want) {
+		t.Fatalf("expected MAC %x, got %x", want, got)
 	}
 }
 
@@ -1105,7 +1180,7 @@ func TestIPFIXTemplatePacketDoesNotAdvanceSequence(t *testing.T) {
 
 func TestIPFIXSchemaDrivenDataRecordKeepsTemplateWidth(t *testing.T) {
 	cfg := testTFlowEncoderConfig("ipfix")
-	cfg.ObservationDomainID = 42
+	cfg.TemplatedFlow.ObservationDomainID = 42
 	enc := NewIPFIXEncoder(cfg)
 
 	_, err := enc.Encode(&event.Event{
@@ -1257,18 +1332,20 @@ func decodeFlowMessage(t *testing.T, payload []byte) *flowpb.FlowMessage {
 func testTFlowEncoderConfig(typ string) config.EncoderConfig {
 	return config.EncoderConfig{
 		Type: typ,
-		TFlowData: config.TFlowDataConfig{
-			Select: []string{"src_addr", "dst_addr", "src_port", "dst_port", "proto", "bytes", "packets"},
-			Catalog: map[string]config.IPFIXFieldDefinition{
-				"src_addr":        {ID: 8, NetFlowV9ID: 8, Length: 4, Type: "ipv4Address"},
-				"dst_addr":        {ID: 12, NetFlowV9ID: 12, Length: 4, Type: "ipv4Address"},
-				"src_port":        {ID: 7, NetFlowV9ID: 7, Length: 2, Type: "unsigned16"},
-				"dst_port":        {ID: 11, NetFlowV9ID: 11, Length: 2, Type: "unsigned16"},
-				"proto":           {ID: 4, NetFlowV9ID: 4, Length: 1, Type: "unsigned8"},
-				"bytes":           {ID: 1, NetFlowV9ID: 1, Length: 8, Type: "unsigned64"},
-				"packets":         {ID: 2, NetFlowV9ID: 2, Length: 8, Type: "unsigned64"},
-				"start_time_unix": {ID: 152, Length: 8, Type: "unsigned64"},
-				"end_time_unix":   {ID: 153, Length: 8, Type: "unsigned64"},
+		TemplatedFlow: config.TemplatedFlowConfig{
+			Data: config.TemplatedFlowDataConfig{
+				Select: []string{"src_addr", "dst_addr", "src_port", "dst_port", "proto", "bytes", "packets"},
+				Catalog: map[string]config.IPFIXFieldDefinition{
+					"src_addr":        {ID: 8, Length: 4, Type: "ipv4Address"},
+					"dst_addr":        {ID: 12, Length: 4, Type: "ipv4Address"},
+					"src_port":        {ID: 7, Length: 2, Type: "unsigned16"},
+					"dst_port":        {ID: 11, Length: 2, Type: "unsigned16"},
+					"proto":           {ID: 4, Length: 1, Type: "unsigned8"},
+					"bytes":           {ID: 1, Length: 8, Type: "unsigned64"},
+					"packets":         {ID: 2, Length: 8, Type: "unsigned64"},
+					"start_time_unix": {ID: 152, Length: 8, Type: "unsigned64"},
+					"end_time_unix":   {ID: 153, Length: 8, Type: "unsigned64"},
+				},
 			},
 		},
 	}

@@ -1,13 +1,20 @@
 package config
 
 import (
+	"bytes"
+	_ "embed"
 	"flag"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
+
+//go:embed default-fields.yaml
+var defaultFlowFields []byte
 
 type FlagConfig struct {
 	ConfigPath string
@@ -123,21 +130,25 @@ type AggregatorPeriodicConfig struct {
 }
 
 type EncoderConfig struct {
-	Type                  string          `yaml:"type"`
-	Workers               int             `yaml:"workers"`
-	TemplateBaseID        uint16          `yaml:"template_base_id"`
-	OptionsTemplateBaseID uint16          `yaml:"options_template_base_id"`
-	ObservationDomainID   uint32          `yaml:"observation_domain_id"`
-	MaxDatagramBytes      int             `yaml:"max_datagram_bytes"`
-	AllowTruncate         bool            `yaml:"allow_truncate"`
-	TemplateRefresh       int             `yaml:"template_refresh_ms"`
-	OptionsRefresh        int             `yaml:"options_refresh_ms"`
-	Batch                 BatchConfig     `yaml:"batch"`
-	TFlowData             TFlowDataConfig `yaml:"tflow_data"`
-	JSON                  JSONConfig      `yaml:"json"`
-	Protobuf              ProtobufConfig  `yaml:"protobuf"`
-	SFlow                 SFlowConfig     `yaml:"sflow"`
-	Pcap                  PcapConfig      `yaml:"pcap"`
+	Type             string              `yaml:"type"`
+	Workers          int                 `yaml:"workers"`
+	MaxDatagramBytes int                 `yaml:"max_datagram_bytes"`
+	AllowTruncate    bool                `yaml:"allow_truncate"`
+	Batch            BatchConfig         `yaml:"batch"`
+	TemplatedFlow    TemplatedFlowConfig `yaml:"templated_flow"`
+	JSON             JSONConfig          `yaml:"json"`
+	Protobuf         ProtobufConfig      `yaml:"protobuf"`
+	SFlow            SFlowConfig         `yaml:"sflow"`
+	Pcap             PcapConfig          `yaml:"pcap"`
+}
+
+type TemplatedFlowConfig struct {
+	TemplateBaseID        uint16                  `yaml:"template_base_id"`
+	OptionsTemplateBaseID uint16                  `yaml:"options_template_base_id"`
+	ObservationDomainID   uint32                  `yaml:"observation_domain_id"`
+	TemplateRefresh       int                     `yaml:"template_refresh_ms"`
+	OptionsRefresh        int                     `yaml:"options_refresh_ms"`
+	Data                  TemplatedFlowDataConfig `yaml:"data"`
 }
 
 type JSONConfig struct {
@@ -177,7 +188,7 @@ type PcapConfig struct {
 	SnapLen      int    `yaml:"snaplen"`
 }
 
-type TFlowDataConfig struct {
+type TemplatedFlowDataConfig struct {
 	Select     []string                        `yaml:"fields"`
 	FieldsPath string                          `yaml:"fields_path"`
 	Catalog    map[string]IPFIXFieldDefinition `yaml:"-"`
@@ -191,8 +202,139 @@ type IPFIXFieldDefinition struct {
 	Length           uint16 `yaml:"length"`
 	Type             string `yaml:"type"`
 	Format           string `yaml:"format"`
-	NetFlowV9ID      uint16 `yaml:"netflow_v9_id"`
 	EnterpriseScoped bool   `yaml:"enterprise_scoped"`
+}
+
+func (d *IPFIXFieldDefinition) UnmarshalYAML(value *yaml.Node) error {
+	type rawDefinition IPFIXFieldDefinition
+	if value.Kind != yaml.ScalarNode {
+		var raw rawDefinition
+		if err := value.Decode(&raw); err != nil {
+			return err
+		}
+		*d = IPFIXFieldDefinition(raw)
+		return nil
+	}
+
+	var compact string
+	if err := value.Decode(&compact); err != nil {
+		return err
+	}
+	def, err := parseCompactFieldDefinition(compact)
+	if err != nil {
+		return err
+	}
+	*d = def
+	return nil
+}
+
+func parseCompactFieldDefinition(raw string) (IPFIXFieldDefinition, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return IPFIXFieldDefinition{}, fmt.Errorf("empty field definition")
+	}
+
+	var penInfo string
+	if open := strings.LastIndex(raw, "["); open >= 0 {
+		if !strings.HasSuffix(raw, "]") {
+			return IPFIXFieldDefinition{}, fmt.Errorf("invalid field definition %q: missing closing bracket", raw)
+		}
+		penInfo = strings.TrimSpace(raw[open+1 : len(raw)-1])
+		raw = strings.TrimSpace(raw[:open])
+	}
+
+	parts := strings.Split(raw, ":")
+	if len(parts) < 3 || len(parts) > 4 {
+		return IPFIXFieldDefinition{}, fmt.Errorf("invalid field definition %q: expected id:length:type[:format]", raw)
+	}
+	id, err := parseUint16Part(parts[0], "id")
+	if err != nil {
+		return IPFIXFieldDefinition{}, err
+	}
+	length, err := parseUint16Part(parts[1], "length")
+	if err != nil {
+		return IPFIXFieldDefinition{}, err
+	}
+	def := IPFIXFieldDefinition{
+		ID:     id,
+		Length: length,
+		Type:   expandFieldTypeAlias(parts[2]),
+	}
+	if len(parts) == 4 {
+		def.Format = strings.TrimSpace(parts[3])
+	}
+	if penInfo != "" {
+		pen, enterpriseScoped, err := parsePENInfo(penInfo)
+		if err != nil {
+			return IPFIXFieldDefinition{}, err
+		}
+		def.PEN = pen
+		def.EnterpriseScoped = enterpriseScoped
+	}
+	return def, nil
+}
+
+func parseUint16Part(raw, name string) (uint16, error) {
+	v, err := strconv.ParseUint(strings.TrimSpace(raw), 0, 16)
+	if err != nil {
+		return 0, fmt.Errorf("invalid %s %q: %w", name, raw, err)
+	}
+	return uint16(v), nil
+}
+
+func expandFieldTypeAlias(raw string) string {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "u8":
+		return "unsigned8"
+	case "u16":
+		return "unsigned16"
+	case "u32":
+		return "unsigned32"
+	case "u64":
+		return "unsigned64"
+	case "s8":
+		return "signed8"
+	case "s16":
+		return "signed16"
+	case "s32":
+		return "signed32"
+	case "s64":
+		return "signed64"
+	case "ip4", "ipv4":
+		return "ipv4Address"
+	case "ip6", "ipv6":
+		return "ipv6Address"
+	case "mac":
+		return "macAddress"
+	case "str":
+		return "string"
+	default:
+		return strings.TrimSpace(raw)
+	}
+}
+
+func parsePENInfo(raw string) (uint32, bool, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return 0, false, nil
+	}
+	enterpriseScoped := true
+	if key, val, ok := strings.Cut(raw, "="); ok {
+		switch strings.ToLower(strings.TrimSpace(key)) {
+		case "pen":
+			raw = val
+		case "enterprise", "enterprise_scoped":
+			enterpriseScoped = strings.TrimSpace(val) != "false"
+			return 0, enterpriseScoped, nil
+		default:
+			return 0, false, fmt.Errorf("invalid PEN info key %q", key)
+		}
+	}
+	pen, err := strconv.ParseUint(strings.TrimSpace(raw), 0, 32)
+	if err != nil {
+		return 0, false, fmt.Errorf("invalid PEN info %q: %w", raw, err)
+	}
+	return uint32(pen), enterpriseScoped, nil
 }
 
 type SinkConfig struct {
@@ -281,23 +423,23 @@ func (c *Config) setDefaults(configPath string) error {
 	if c.Encoder.MaxDatagramBytes <= 0 {
 		c.Encoder.MaxDatagramBytes = 1400
 	}
-	if (c.Encoder.Type == "ipfix" || c.Encoder.Type == "netflowv9") && c.Encoder.TemplateBaseID == 0 {
-		c.Encoder.TemplateBaseID = 256
+	if (c.Encoder.Type == "ipfix" || c.Encoder.Type == "netflowv9") && c.Encoder.TemplatedFlow.TemplateBaseID == 0 {
+		c.Encoder.TemplatedFlow.TemplateBaseID = 256
 	}
-	if (c.Encoder.Type == "ipfix" || c.Encoder.Type == "netflowv9") && c.Encoder.OptionsTemplateBaseID == 0 {
-		c.Encoder.OptionsTemplateBaseID = 1024
+	if (c.Encoder.Type == "ipfix" || c.Encoder.Type == "netflowv9") && c.Encoder.TemplatedFlow.OptionsTemplateBaseID == 0 {
+		c.Encoder.TemplatedFlow.OptionsTemplateBaseID = 1024
 	}
-	if c.Encoder.TemplateRefresh < 0 {
-		return fmt.Errorf("encoder.template_refresh_ms must be >= 0")
+	if c.Encoder.TemplatedFlow.TemplateRefresh < 0 {
+		return fmt.Errorf("encoder.templated_flow.template_refresh_ms must be >= 0")
 	}
-	if c.Encoder.OptionsRefresh < 0 {
-		return fmt.Errorf("encoder.options_refresh_ms must be >= 0")
+	if c.Encoder.TemplatedFlow.OptionsRefresh < 0 {
+		return fmt.Errorf("encoder.templated_flow.options_refresh_ms must be >= 0")
 	}
-	if (c.Encoder.Type == "ipfix" || c.Encoder.Type == "netflowv9") && c.Encoder.TemplateRefresh == 0 {
-		c.Encoder.TemplateRefresh = 60000
+	if (c.Encoder.Type == "ipfix" || c.Encoder.Type == "netflowv9") && c.Encoder.TemplatedFlow.TemplateRefresh == 0 {
+		c.Encoder.TemplatedFlow.TemplateRefresh = 60000
 	}
-	if (c.Encoder.Type == "ipfix" || c.Encoder.Type == "netflowv9") && c.Encoder.OptionsRefresh == 0 {
-		c.Encoder.OptionsRefresh = 30000
+	if (c.Encoder.Type == "ipfix" || c.Encoder.Type == "netflowv9") && c.Encoder.TemplatedFlow.OptionsRefresh == 0 {
+		c.Encoder.TemplatedFlow.OptionsRefresh = 30000
 	}
 	defaultTrue(&c.Encoder.SFlow.BatchOver.AgentIP)
 	defaultTrue(&c.Encoder.SFlow.BatchOver.SubAgentID)
@@ -492,34 +634,37 @@ func defaultTrue(dst **bool) {
 	*dst = &v
 }
 
-// loadFlowDataCatalog resolves the IPFIX field catalog relative to the config
-// file and merges file-backed definitions with inline overrides.
+// loadFlowDataCatalog resolves the templated flow field catalog. Empty fields_path uses
+// the embedded default catalog; explicit paths are resolved relative to config.
 func (c *Config) loadFlowDataCatalog(configPath string) error {
-	if c.Encoder.TFlowData.FieldsPath == "" {
-		c.Encoder.TFlowData.FieldsPath = "reflow-ipfix-fields.yaml"
-	}
-	if !filepath.IsAbs(c.Encoder.TFlowData.FieldsPath) {
-		c.Encoder.TFlowData.FieldsPath = filepath.Join(filepath.Dir(configPath), c.Encoder.TFlowData.FieldsPath)
-	}
-
 	type ipfixCatalog struct {
 		Fields map[string]IPFIXFieldDefinition `yaml:"fields"`
 	}
 
-	catalog := ipfixCatalog{}
-	raw, err := os.ReadFile(c.Encoder.TFlowData.FieldsPath)
-	if err != nil {
-		if os.IsNotExist(err) {
-			c.Encoder.TFlowData.Catalog = mergeIPFIXFields(c.Encoder.TFlowData.Catalog, c.Encoder.TFlowData.Overrides)
-			return nil
+	raw := defaultFlowFields
+	source := "embedded default flow fields"
+	if c.Encoder.TemplatedFlow.Data.FieldsPath != "" {
+		if !filepath.IsAbs(c.Encoder.TemplatedFlow.Data.FieldsPath) {
+			c.Encoder.TemplatedFlow.Data.FieldsPath = filepath.Join(filepath.Dir(configPath), c.Encoder.TemplatedFlow.Data.FieldsPath)
 		}
-		return fmt.Errorf("load tflow_data fields %s: %w", c.Encoder.TFlowData.FieldsPath, err)
-	}
-	if err := yaml.Unmarshal(raw, &catalog); err != nil {
-		return fmt.Errorf("decode tflow_data fields %s: %w", c.Encoder.TFlowData.FieldsPath, err)
+		source = c.Encoder.TemplatedFlow.Data.FieldsPath
+		var err error
+		raw, err = os.ReadFile(c.Encoder.TemplatedFlow.Data.FieldsPath)
+		if err != nil {
+			return fmt.Errorf("load templated_flow.data fields %s: %w", source, err)
+		}
+		if len(bytes.TrimSpace(raw)) == 0 {
+			raw = defaultFlowFields
+			source = "embedded default flow fields"
+		}
 	}
 
-	c.Encoder.TFlowData.Catalog = mergeIPFIXFields(catalog.Fields, c.Encoder.TFlowData.Catalog, c.Encoder.TFlowData.Overrides)
+	catalog := ipfixCatalog{}
+	if err := yaml.Unmarshal(raw, &catalog); err != nil {
+		return fmt.Errorf("decode templated_flow.data fields %s: %w", source, err)
+	}
+
+	c.Encoder.TemplatedFlow.Data.Catalog = mergeIPFIXFields(catalog.Fields, c.Encoder.TemplatedFlow.Data.Catalog, c.Encoder.TemplatedFlow.Data.Overrides)
 	return nil
 }
 

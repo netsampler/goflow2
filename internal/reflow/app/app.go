@@ -458,8 +458,8 @@ func encoderTickInterval(cfg config.EncoderConfig) time.Duration {
 	if cfg.Batch.Enabled {
 		add(cfg.Batch.FlushInterval)
 	}
-	add(cfg.TemplateRefresh)
-	add(cfg.OptionsRefresh)
+	add(cfg.TemplatedFlow.TemplateRefresh)
+	add(cfg.TemplatedFlow.OptionsRefresh)
 	return min
 }
 

@@ -49,17 +49,17 @@ aggregators:
 encoder:
   type: json
   workers: 1
-  tflow_data:
-    # This section still matters for schema-aware encoders even though this example emits JSON.
-    # If omitted or empty, all fields produced by aggregation are eligible for export.
-    fields_path: reflow-ipfix-fields.yaml
-    overrides:
-      src_addr:
-        name: sourceIPv4Address
-        id: 8
-        length: 4
-        type: ipv4Address
-        netflow_v9_id: 8
+  templated_flow:
+    data:
+      # This section still matters for schema-aware encoders even though this example emits JSON.
+      # If omitted or empty, all fields produced by aggregation are eligible for export.
+      fields_path: reflow-fields.yaml
+      overrides:
+        src_addr:
+          name: sourceIPv4Address
+          id: 8
+          length: 4
+          type: ipv4Address
 
 sink:
   type: stdout

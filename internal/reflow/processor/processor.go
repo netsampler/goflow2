@@ -526,9 +526,7 @@ func setIPFamilyFromFields(fields map[string]any) {
 	if fields == nil || fieldStringOrZero(fields, "ip_family") != "" {
 		return
 	}
-	src := fieldStringOrZero(fields, "src_addr")
-	dst := fieldStringOrZero(fields, "dst_addr")
-	for _, raw := range []string{src, dst} {
+	for _, raw := range []string{fieldStringOrZero(fields, "src_addr"), fieldStringOrZero(fields, "dst_addr")} {
 		if raw == "" {
 			continue
 		}
