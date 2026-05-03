@@ -1,0 +1,34 @@
+# Embedded default field catalog for templated IPFIX/NetFlow v9 exports.
+# Format: id:length:type[:format][pen=<enterprise-number>]
+# Type aliases: u8/u16/u32/u64, s8/s16/s32/s64, ip4, ip6, mac, str.
+# Enterprise-specific example, commented out:
+# custom_metric: 40000:4:u32[pen=42424242] # example enterprise field
+
+fields:
+  bytes: 1:8:u64:delta # octetDeltaCount
+  packets: 2:8:u64:delta # packetDeltaCount
+  proto: 4:1:u8 # protocolIdentifier
+  tcp_flags: 6:1:u8 # tcpControlBits
+  src_port: 7:2:u16 # sourceTransportPort
+  src_addr: 8:4:ip4 # sourceIPv4Address
+  input_if: 10:4:u32 # ingressInterface
+  dst_port: 11:2:u16 # destinationTransportPort
+  dst_addr: 12:4:ip4 # destinationIPv4Address
+  output_if: 14:4:u32 # egressInterface
+  sampling_rate: 34:4:u32 # samplingInterval
+  src_mac: 56:6:mac # sourceMacAddress
+  vlan_id: 58:2:u16 # vlanId
+  mpls_label1: 70:4:u32 # mplsTopLabelStackSection
+  mpls_label2: 71:4:u32 # mplsLabelStackSection2
+  mpls_label3: 72:4:u32 # mplsLabelStackSection3
+  dst_mac: 80:6:mac # destinationMacAddress
+  agent_ip: 130:4:ip4 # exporterIPv4Address
+  drops: 133:8:u64:delta # droppedPacketDeltaCount
+  source_id: 138:8:u64 # observationPointId
+  sub_agent_id: 144:4:u32 # exportingProcessId
+  template_id: 145:2:u16 # templateId
+  observation_domain_id: 149:4:u32 # observationDomainId
+  start_time_unix: 152:8:u64 # flowStartMilliseconds
+  end_time_unix: 153:8:u64 # flowEndMilliseconds
+  ether_type: 256:2:u16 # ethernetType
+  sample_pool: 310:8:u64 # samplingPopulation

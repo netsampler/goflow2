@@ -341,6 +341,23 @@ func appendMPLSLayers(model *event.PacketModel, fields map[string]any) {
 	if model == nil {
 		return
 	}
+	for i := 1; i <= 3; i++ {
+		if label := fieldUint32(fields, fmt.Sprintf("mpls_label%d", i)); label != 0 {
+			model.Layers = append(model.Layers, event.LayerSpec{
+				Kind: "mpls",
+				MPLS: &event.MPLSLayer{
+					Label: event.MPLSLabel{
+						Label: label,
+						BOS:   true,
+						TTL:   64,
+					},
+				},
+			})
+		}
+	}
+	if len(model.Layers) > 0 && model.Layers[len(model.Layers)-1].Kind == "mpls" {
+		return
+	}
 	if label := fieldUint32(fields, "mpls_label"); label != 0 {
 		model.Layers = append(model.Layers, event.LayerSpec{
 			Kind: "mpls",
@@ -841,13 +858,14 @@ type packetTuple struct {
 }
 
 type packetView struct {
-	Layers    []string
-	SrcMAC    string
-	DstMAC    string
-	EtherType uint32
-	VLANIDs   []uint32
-	Tuples    []packetTuple
-	Model     *event.PacketModel
+	Layers     []string
+	SrcMAC     string
+	DstMAC     string
+	EtherType  uint32
+	VLANIDs    []uint32
+	MPLSLabels []uint32
+	Tuples     []packetTuple
+	Model      *event.PacketModel
 }
 
 func (v *packetView) appendLayer(layer event.LayerSpec) {
@@ -878,10 +896,24 @@ func applyPacketViewFields(fields map[string]any, view packetView, helpers Aggre
 		fields["vlan_ids"] = append([]uint32(nil), view.VLANIDs...)
 		fields["vlan_id"] = view.VLANIDs[0]
 	}
+	if len(view.MPLSLabels) > 0 {
+		fields["mpls_label"] = view.MPLSLabels[0]
+		for i, label := range view.MPLSLabels {
+			if i >= 3 {
+				break
+			}
+			fields[fmt.Sprintf("mpls_label%d", i+1)] = label
+		}
+	}
 	if len(view.Tuples) > 0 {
 		tuple := view.Tuples[len(view.Tuples)-1]
 		fields["src_addr"] = tuple.SrcAddr.String()
 		fields["dst_addr"] = tuple.DstAddr.String()
+		if tuple.SrcAddr.Is6() || tuple.DstAddr.Is6() {
+			fields["ip_family"] = "ipv6"
+		} else {
+			fields["ip_family"] = "ipv4"
+		}
 		fields["proto"] = tuple.Proto
 		fields["proto_name"] = ipProtocolName(tuple.Proto)
 		fields["src_port"] = tuple.SrcPort
@@ -1057,6 +1089,10 @@ func packetViewFromModel(model *event.PacketModel) packetView {
 		case "dot1q":
 			if layer.VLAN != nil {
 				view.VLANIDs = append(view.VLANIDs, uint32(layer.VLAN.ID))
+			}
+		case "mpls":
+			if layer.MPLS != nil {
+				view.MPLSLabels = append(view.MPLSLabels, layer.MPLS.Label.Label)
 			}
 		case "ipv4":
 			if layer.IPv4 == nil {
@@ -1753,11 +1789,13 @@ func parseMPLS(data []byte, view *packetView) (int, uint16, error) {
 			return 0, 0, fmt.Errorf("truncated mpls label stack")
 		}
 		label := binary.BigEndian.Uint32(data[offset : offset+4])
+		labelValue := label >> 12
+		view.MPLSLabels = append(view.MPLSLabels, labelValue)
 		view.appendLayer(event.LayerSpec{
 			Kind: "mpls",
 			MPLS: &event.MPLSLayer{
 				Label: event.MPLSLabel{
-					Label: label >> 12,
+					Label: labelValue,
 					TC:    uint8((label >> 9) & 0x7),
 					BOS:   ((label >> 8) & 0x1) == 1,
 					TTL:   uint8(label & 0xff),

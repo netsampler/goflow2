@@ -9,15 +9,10 @@ import (
 func TestLoadSetsAggregatorDefaultsAndLoadsFlowDataFields(t *testing.T) {
 	dir := t.TempDir()
 
-	ipfixPath := filepath.Join(dir, "ipfix-fields.yaml")
+	ipfixPath := filepath.Join(dir, "fields.yaml")
 	if err := os.WriteFile(ipfixPath, []byte(`
 fields:
-  bytes:
-    name: octetDeltaCount
-    id: 1
-    length: 8
-    type: unsigned64
-    netflow_v9_id: 1
+  bytes: 1:8:u64:delta
   custom_counter:
     name: customCounter
     id: 1000
@@ -25,6 +20,7 @@ fields:
     enterprise_scoped: true
     length: 8
     type: unsigned64
+  compact_enterprise: 4000:4:u32[pen=64513]
 `), 0o644); err != nil {
 		t.Fatalf("write ipfix fields: %v", err)
 	}
@@ -75,16 +71,17 @@ aggregators:
 
 encoder:
   type: json
-  tflow_data:
-    fields_path: ipfix-fields.yaml
-    overrides:
-      custom_counter:
-        name: customCounterOverride
-        id: 2000
-        pen: 64512
-        enterprise_scoped: true
-        length: 8
-        type: unsigned64
+  templated_flow:
+    data:
+      fields_path: fields.yaml
+      overrides:
+        custom_counter:
+          name: customCounterOverride
+          id: 2000
+          pen: 64512
+          enterprise_scoped: true
+          length: 8
+          type: unsigned64
 
 sink:
   type: stdout
@@ -146,18 +143,111 @@ sink:
 	if len(cfg.Aggregators[0].Current) != 0 {
 		t.Fatalf("expected current fields to default empty, got %#v", cfg.Aggregators[0].Current)
 	}
-	custom := cfg.Encoder.TFlowData.Catalog["custom_counter"]
+	custom := cfg.Encoder.TemplatedFlow.Data.Catalog["custom_counter"]
 	if custom.ID != 2000 || custom.PEN != 64512 {
 		t.Fatalf("expected override for custom_counter to win, got %#v", custom)
 	}
-	if cfg.Encoder.TFlowData.Catalog["bytes"].ID != 1 {
+	if cfg.Encoder.TemplatedFlow.Data.Catalog["bytes"].ID != 1 {
 		t.Fatalf("expected bytes field definition to be loaded from external catalog")
+	}
+	compact := cfg.Encoder.TemplatedFlow.Data.Catalog["compact_enterprise"]
+	if compact.ID != 4000 || compact.Length != 4 || compact.Type != "unsigned32" || compact.PEN != 64513 || !compact.EnterpriseScoped {
+		t.Fatalf("expected compact enterprise field to load, got %#v", compact)
 	}
 	if cfg.Aggregators[0].TemplateID != 256 {
 		t.Fatalf("expected aggregators[0].template_id=256, got %d", cfg.Aggregators[0].TemplateID)
 	}
 	if cfg.Aggregators[0].StaticFields["exporter_name"] != "reflow-test" {
 		t.Fatalf("expected static field exporter_name to be loaded, got %#v", cfg.Aggregators[0].StaticFields["exporter_name"])
+	}
+}
+
+func TestLoadUsesEmbeddedFlowDataCatalogWhenFieldsPathEmpty(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "reflow.yaml")
+	if err := os.WriteFile(cfgPath, []byte(`
+sources:
+  - network: udp
+    address: ":18081"
+    type: flow
+
+processor:
+  type: builtin
+
+encoder:
+  type: ipfix
+  templated_flow:
+    data:
+      overrides:
+        custom_counter:
+          name: customCounter
+          id: 2000
+          length: 8
+          type: unsigned64
+
+sink:
+  type: stdout
+`), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	cfg, err := Load(cfgPath)
+	if err != nil {
+		t.Fatalf("Load returned error: %v", err)
+	}
+	if cfg.Encoder.TemplatedFlow.Data.FieldsPath != "" {
+		t.Fatalf("expected empty fields_path to keep using embedded catalog, got %q", cfg.Encoder.TemplatedFlow.Data.FieldsPath)
+	}
+	if cfg.Encoder.TemplatedFlow.Data.Catalog["bytes"].ID != 1 {
+		t.Fatalf("expected bytes field from embedded catalog, got %#v", cfg.Encoder.TemplatedFlow.Data.Catalog["bytes"])
+	}
+	if cfg.Encoder.TemplatedFlow.Data.Catalog["mpls_label3"].ID != 72 {
+		t.Fatalf("expected mpls_label3 field from embedded catalog, got %#v", cfg.Encoder.TemplatedFlow.Data.Catalog["mpls_label3"])
+	}
+	if cfg.Encoder.TemplatedFlow.Data.Catalog["agent_ip"].ID != 130 {
+		t.Fatalf("expected agent_ip field from embedded catalog, got %#v", cfg.Encoder.TemplatedFlow.Data.Catalog["agent_ip"])
+	}
+	if cfg.Encoder.TemplatedFlow.Data.Catalog["sample_pool"].ID != 310 {
+		t.Fatalf("expected sample_pool field from embedded catalog, got %#v", cfg.Encoder.TemplatedFlow.Data.Catalog["sample_pool"])
+	}
+	if cfg.Encoder.TemplatedFlow.Data.Catalog["src_mac"].Type != "macAddress" {
+		t.Fatalf("expected src_mac macAddress field from embedded catalog, got %#v", cfg.Encoder.TemplatedFlow.Data.Catalog["src_mac"])
+	}
+	if cfg.Encoder.TemplatedFlow.Data.Catalog["custom_counter"].ID != 2000 {
+		t.Fatalf("expected override to merge over embedded catalog, got %#v", cfg.Encoder.TemplatedFlow.Data.Catalog["custom_counter"])
+	}
+
+	emptyCatalog := filepath.Join(dir, "empty-fields.yaml")
+	if err := os.WriteFile(emptyCatalog, nil, 0o644); err != nil {
+		t.Fatalf("write empty catalog: %v", err)
+	}
+	emptyPathCfg := filepath.Join(dir, "empty-file.yaml")
+	if err := os.WriteFile(emptyPathCfg, []byte(`
+sources:
+  - network: udp
+    address: ":18081"
+    type: flow
+
+processor:
+  type: builtin
+
+encoder:
+  type: ipfix
+  templated_flow:
+    data:
+      fields_path: empty-fields.yaml
+
+sink:
+  type: stdout
+`), 0o644); err != nil {
+		t.Fatalf("write empty-file config: %v", err)
+	}
+	emptyFile, err := Load(emptyPathCfg)
+	if err != nil {
+		t.Fatalf("Load empty file returned error: %v", err)
+	}
+	if emptyFile.Encoder.TemplatedFlow.Data.Catalog["bytes"].ID != 1 {
+		t.Fatalf("expected empty catalog file to use embedded bytes field, got %#v", emptyFile.Encoder.TemplatedFlow.Data.Catalog["bytes"])
 	}
 }
 
@@ -675,6 +765,55 @@ sink:
 	}
 	if !cfg.Encoder.Protobuf.LengthPrefixed {
 		t.Fatalf("expected protobuf.length_prefixed=true")
+	}
+}
+
+func TestLoadSupportsTemplatedFlowEncoderSubsection(t *testing.T) {
+	dir := t.TempDir()
+
+	cfgPath := filepath.Join(dir, "reflow.yaml")
+	if err := os.WriteFile(cfgPath, []byte(`
+sources:
+  - network: udp
+    address: ":18081"
+    type: flow
+
+processor:
+  type: builtin
+
+encoder:
+  type: ipfix
+  templated_flow:
+    template_base_id: 300
+    options_template_base_id: 1300
+    observation_domain_id: 42
+    template_refresh_ms: 70000
+    options_refresh_ms: 40000
+
+sink:
+  type: stdout
+`), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	cfg, err := Load(cfgPath)
+	if err != nil {
+		t.Fatalf("Load returned error: %v", err)
+	}
+	if cfg.Encoder.TemplatedFlow.TemplateBaseID != 300 {
+		t.Fatalf("expected templated_flow.template_base_id=300, got %d", cfg.Encoder.TemplatedFlow.TemplateBaseID)
+	}
+	if cfg.Encoder.TemplatedFlow.OptionsTemplateBaseID != 1300 {
+		t.Fatalf("expected templated_flow.options_template_base_id=1300, got %d", cfg.Encoder.TemplatedFlow.OptionsTemplateBaseID)
+	}
+	if cfg.Encoder.TemplatedFlow.ObservationDomainID != 42 {
+		t.Fatalf("expected templated_flow.observation_domain_id=42, got %d", cfg.Encoder.TemplatedFlow.ObservationDomainID)
+	}
+	if cfg.Encoder.TemplatedFlow.TemplateRefresh != 70000 {
+		t.Fatalf("expected templated_flow.template_refresh_ms=70000, got %d", cfg.Encoder.TemplatedFlow.TemplateRefresh)
+	}
+	if cfg.Encoder.TemplatedFlow.OptionsRefresh != 40000 {
+		t.Fatalf("expected templated_flow.options_refresh_ms=40000, got %d", cfg.Encoder.TemplatedFlow.OptionsRefresh)
 	}
 }
 

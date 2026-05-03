@@ -28,8 +28,9 @@ encoder:
     max_records: 8
     max_bytes: 1200
     flush_interval_ms: 1000
-  tflow_data:
-    fields_path: reflow-ipfix-fields.yaml
+  templated_flow:
+    data:
+      fields_path: reflow-fields.yaml
 
 sink:
   # Send encoded sFlow datagrams to a local collector.

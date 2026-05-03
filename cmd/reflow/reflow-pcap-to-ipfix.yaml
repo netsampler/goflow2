@@ -52,10 +52,11 @@ aggregators:
 encoder:
   type: ipfix
   workers: 1
-  tflow_data:
-    # Field definitions drive both schema templates and data record encoding.
-    # If omitted or empty, all fields produced by aggregation are eligible for export.
-    fields_path: reflow-ipfix-fields.yaml
+  templated_flow:
+    data:
+      # Field definitions drive both schema templates and data record encoding.
+      # If omitted or empty, all fields produced by aggregation are eligible for export.
+      fields_path: reflow-fields.yaml
 
 sink:
   type: udp
