@@ -46,6 +46,13 @@ func NewBuiltin(cfg config.ProcessorConfig) *Builtin {
 	}
 }
 
+func (p *Builtin) aggregationHelpers() packet.AggregationHelperOptions {
+	return packet.AggregationHelperOptions{
+		MPLSLabels: p.cfg.AggregationHelpers.MPLSLabels,
+		IPLayers:   p.cfg.AggregationHelpers.IPLayers,
+	}
+}
+
 // Process dispatches to the built-in mapper for the incoming source message type.
 func (p *Builtin) Process(evt *event.Event) ([]*event.Event, error) {
 	if evt != nil && evt.Kind == "control" {
@@ -104,6 +111,7 @@ func (p *Builtin) processBytes(evt *event.Event) ([]*event.Event, error) {
 		TruncatePayload:      true,
 		HeaderProtocol:       fieldUint32(fields, "header_protocol"),
 		Decode:               p.decode,
+		AggregationHelpers:   p.aggregationHelpers(),
 	}); err != nil {
 		return nil, err
 	}
@@ -150,6 +158,7 @@ func (p *Builtin) processFlow(evt *event.Event) ([]*event.Event, error) {
 			TruncatePacketBytes:  p.cfg.TruncatePacketBytes,
 			HeaderProtocol:       packetHeaderProtocol(fields),
 			Decode:               p.decode,
+			AggregationHelpers:   p.aggregationHelpers(),
 		}); err != nil {
 			return nil, err
 		}
@@ -231,6 +240,7 @@ func (p *Builtin) processJSONRawPacketHeader(evt *event.Event) ([]*event.Event, 
 		TruncatePacketBytes:  p.cfg.TruncatePacketBytes,
 		HeaderProtocol:       in.Protocol,
 		Decode:               p.decode,
+		AggregationHelpers:   p.aggregationHelpers(),
 	}); err != nil {
 		return nil, err
 	}
@@ -313,7 +323,7 @@ func (p *Builtin) processReFlowFields(evt *event.Event, record map[string]any) (
 				return nil, err
 			}
 			evt.Packet = model
-			packet.ApplyModelFields(fields, model)
+			packet.ApplyModelFieldsWithHelpers(fields, model, p.aggregationHelpers())
 			continue
 		}
 		fields[key] = normalizeReFlowJSONValue(key, value)
@@ -383,7 +393,6 @@ func packetDecodeOptions(cfg config.PacketDecoderConfig) packet.DecodeOptions {
 		DecodeBeyondL4: true,
 		DecodeGRE:      true,
 		DecodeIPIP:     true,
-		DecodeIP6IP:    true,
 		DecodeVXLAN:    true,
 		DecodeGeneve:   true,
 		DecodeL2TP:     true,
@@ -397,20 +406,8 @@ func packetDecodeOptions(cfg config.PacketDecoderConfig) packet.DecodeOptions {
 	if encaps.GRE.Enabled != nil {
 		opts.DecodeGRE = *encaps.GRE.Enabled
 	}
-	if len(encaps.GRE.Protocols) > 0 {
-		opts.GREProtocols = append([]uint32(nil), encaps.GRE.Protocols...)
-	}
 	if encaps.IPIP.Enabled != nil {
 		opts.DecodeIPIP = *encaps.IPIP.Enabled
-	}
-	if len(encaps.IPIP.Protocols) > 0 {
-		opts.IPIPProtocols = append([]uint32(nil), encaps.IPIP.Protocols...)
-	}
-	if encaps.IP6IP.Enabled != nil {
-		opts.DecodeIP6IP = *encaps.IP6IP.Enabled
-	}
-	if len(encaps.IP6IP.Protocols) > 0 {
-		opts.IP6IPProtocols = append([]uint32(nil), encaps.IP6IP.Protocols...)
 	}
 	if encaps.VXLAN.Enabled != nil {
 		opts.DecodeVXLAN = *encaps.VXLAN.Enabled

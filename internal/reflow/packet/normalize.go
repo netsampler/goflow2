@@ -18,18 +18,20 @@ type NormalizeOptions struct {
 	TruncatePayload      bool
 	HeaderProtocol       uint32
 	Decode               DecodeOptions
+	AggregationHelpers   AggregationHelperOptions
 	Extractors           []FeatureExtractor
+}
+
+type AggregationHelperOptions struct {
+	MPLSLabels int
+	IPLayers   int
 }
 
 type DecodeOptions struct {
 	Configured     bool
 	DecodeBeyondL4 bool
 	DecodeGRE      bool
-	GREProtocols   []uint32
 	DecodeIPIP     bool
-	IPIPProtocols  []uint32
-	DecodeIP6IP    bool
-	IP6IPProtocols []uint32
 	DecodeVXLAN    bool
 	VXLANPorts     []uint32
 	DecodeGeneve   bool
@@ -46,7 +48,6 @@ var defaultDecodeOptions = DecodeOptions{
 	DecodeBeyondL4: true,
 	DecodeGRE:      true,
 	DecodeIPIP:     true,
-	DecodeIP6IP:    true,
 	DecodeVXLAN:    true,
 	DecodeGeneve:   true,
 	DecodeL2TP:     true,
@@ -56,9 +57,6 @@ var defaultDecodeOptions = DecodeOptions{
 
 func DefaultDecodeOptions() DecodeOptions {
 	opts := defaultDecodeOptions
-	opts.GREProtocols = []uint32{47}
-	opts.IPIPProtocols = []uint32{4}
-	opts.IP6IPProtocols = []uint32{41}
 	opts.VXLANPorts = []uint32{4789}
 	opts.GenevePorts = []uint32{6081}
 	opts.L2TPPorts = []uint32{1701}
@@ -145,7 +143,7 @@ func NormalizeEvent(evt *event.Event, opts NormalizeOptions) error {
 			}
 		}
 		if !opts.DisablePacketMapping {
-			applyPacketViewFields(fields, view)
+			applyPacketViewFields(fields, view, opts.AggregationHelpers)
 		}
 	}
 	truncatePacketData(evt, fields, opts.TruncatePacketBytes, opts.TruncatePayload)
@@ -860,7 +858,7 @@ func (v *packetView) appendLayer(layer event.LayerSpec) {
 	v.Model.Layers = append(v.Model.Layers, layer)
 }
 
-func applyPacketViewFields(fields map[string]any, view packetView) {
+func applyPacketViewFields(fields map[string]any, view packetView, helpers AggregationHelperOptions) {
 	if view.SrcMAC != "" {
 		fields["src_mac"] = view.SrcMAC
 	}
@@ -872,7 +870,10 @@ func applyPacketViewFields(fields map[string]any, view packetView) {
 	}
 	if view.Model != nil {
 		fields["packet_ip_depth"] = uint32(packetIPDepth(view.Model))
+		applyDot1QFields(fields, view.Model)
+		applyLayer2SegmentFields(fields, view.Model)
 	}
+	applyAggregationHelperFields(fields, view, helpers)
 	if len(view.VLANIDs) > 0 {
 		fields["vlan_ids"] = append([]uint32(nil), view.VLANIDs...)
 		fields["vlan_id"] = view.VLANIDs[0]
@@ -896,6 +897,102 @@ func applyPacketViewFields(fields map[string]any, view packetView) {
 		fields["outer_dst_port"] = outer.DstPort
 		fields["encap_depth"] = uint32(len(view.Tuples) - 1)
 	}
+}
+
+func applyAggregationHelperFields(fields map[string]any, view packetView, helpers AggregationHelperOptions) {
+	if view.Model == nil {
+		return
+	}
+	if helpers.MPLSLabels > 0 {
+		applyMPLSLabelHelperFields(fields, view.Model, helpers.MPLSLabels)
+	}
+	if helpers.IPLayers > 0 {
+		applyIPLayerHelperFields(fields, view.Tuples, helpers.IPLayers)
+	}
+}
+
+func applyDot1QFields(fields map[string]any, model *event.PacketModel) {
+	index := 0
+	for _, layer := range model.Layers {
+		if layer.Kind != "dot1q" || layer.VLAN == nil {
+			continue
+		}
+		index++
+		id := uint32(layer.VLAN.ID)
+		priority := uint32(layer.VLAN.PCP)
+		dei := layer.VLAN.DEI
+		fields[fmt.Sprintf("dot1q_%d_vlan_id", index)] = id
+		fields[fmt.Sprintf("dot1q_%d_priority", index)] = priority
+		fields[fmt.Sprintf("dot1q_%d_dei", index)] = dei
+		switch index {
+		case 1:
+			fields["dot1q_vlan_id"] = id
+			fields["dot1q_priority"] = priority
+			fields["dot1q_dei"] = dei
+		case 2:
+			fields["dot1q_customer_vlan_id"] = id
+			fields["dot1q_customer_priority"] = priority
+			fields["dot1q_customer_dei"] = dei
+		}
+	}
+}
+
+func applyLayer2SegmentFields(fields map[string]any, model *event.PacketModel) {
+	for _, layer := range model.Layers {
+		if layer.Kind != "vxlan" || layer.VXLAN == nil {
+			continue
+		}
+		vni := layer.VXLAN.VNI & 0x00ffffff
+		fields["vxlan_vni"] = vni
+		fields["layer2_segment_id"] = (uint64(0x01) << 56) | uint64(vni)
+		return
+	}
+}
+
+func applyMPLSLabelHelperFields(fields map[string]any, model *event.PacketModel, limit int) {
+	if limit <= 0 {
+		return
+	}
+	index := 0
+	for _, layer := range model.Layers {
+		if layer.Kind != "mpls" || layer.MPLS == nil {
+			continue
+		}
+		index++
+		if index > limit {
+			return
+		}
+		label := layer.MPLS.Label
+		fields[fmt.Sprintf("mpls_label_%d", index)] = label.Label
+		fields[fmt.Sprintf("mpls_label_stack_section_%d", index)] = mplsLabelStackSection(label)
+	}
+}
+
+func applyIPLayerHelperFields(fields map[string]any, tuples []packetTuple, limit int) {
+	if limit <= 0 {
+		return
+	}
+	for i, tuple := range tuples {
+		if i >= limit {
+			return
+		}
+		prefix := fmt.Sprintf("ip_%d_", i+1)
+		fields[prefix+"src_addr"] = tuple.SrcAddr.String()
+		fields[prefix+"dst_addr"] = tuple.DstAddr.String()
+		fields[prefix+"proto"] = tuple.Proto
+		fields[prefix+"proto_name"] = ipProtocolName(tuple.Proto)
+		fields[prefix+"src_port"] = tuple.SrcPort
+		fields[prefix+"dst_port"] = tuple.DstPort
+	}
+}
+
+func mplsLabelStackSection(label event.MPLSLabel) []byte {
+	raw := (label.Label & 0xfffff) << 4
+	raw |= uint32(label.TC&0x7) << 1
+	if label.BOS {
+		raw |= 1
+	}
+	return []byte{byte(raw >> 16), byte(raw >> 8), byte(raw)}
 }
 
 func packetTupleLayers(tuples []packetTuple) []map[string]any {
@@ -926,10 +1023,16 @@ func packetTupleLayers(tuples []packetTuple) []map[string]any {
 // used by aggregation and encoders. The packet model remains the authoritative
 // full layer structure.
 func ApplyModelFields(fields map[string]any, model *event.PacketModel) {
+	ApplyModelFieldsWithHelpers(fields, model, AggregationHelperOptions{})
+}
+
+// ApplyModelFieldsWithHelpers projects a packet model into the canonical tuple
+// aliases and any configured aggregation helper aliases.
+func ApplyModelFieldsWithHelpers(fields map[string]any, model *event.PacketModel, helpers AggregationHelperOptions) {
 	if fields == nil || model == nil {
 		return
 	}
-	applyPacketViewFields(fields, packetViewFromModel(model))
+	applyPacketViewFields(fields, packetViewFromModel(model), helpers)
 }
 
 func packetViewFromModel(model *event.PacketModel) packetView {
@@ -1114,17 +1217,12 @@ func parsePacketViewWithOptions(data []byte, protocol uint32, opts DecodeOptions
 				},
 			})
 			view.Tuples = append(view.Tuples, tuple)
-			if opts.DecodeBeyondL4 && opts.DecodeIPIP && protocolMatches(nextProto, opts.IPIPProtocols, 4) {
+			if innerEtherType, ok := ipInIPInnerEtherType(nextProto, opts); ok {
 				offset += nextOffset
-				etherType = 0x0800
+				etherType = innerEtherType
 				continue
 			}
-			if opts.DecodeBeyondL4 && opts.DecodeIP6IP && protocolMatches(nextProto, opts.IP6IPProtocols, 41) {
-				offset += nextOffset
-				etherType = 0x86dd
-				continue
-			}
-			if opts.DecodeGRE && protocolMatches(nextProto, opts.GREProtocols, 47) {
+			if opts.DecodeGRE && nextProto == 47 {
 				innerOffset, innerProto, err := parseGRE(data[offset+nextOffset:], &view)
 				if err != nil {
 					return view, nil
@@ -1187,17 +1285,12 @@ func parsePacketViewWithOptions(data []byte, protocol uint32, opts DecodeOptions
 				view.appendLayer(layer)
 			}
 			view.Tuples = append(view.Tuples, tuple)
-			if opts.DecodeBeyondL4 && opts.DecodeIPIP && protocolMatches(nextProto, opts.IPIPProtocols, 4) {
+			if innerEtherType, ok := ipInIPInnerEtherType(nextProto, opts); ok {
 				offset += nextOffset
-				etherType = 0x0800
+				etherType = innerEtherType
 				continue
 			}
-			if opts.DecodeBeyondL4 && opts.DecodeIP6IP && protocolMatches(nextProto, opts.IP6IPProtocols, 41) {
-				offset += nextOffset
-				etherType = 0x86dd
-				continue
-			}
-			if opts.DecodeGRE && protocolMatches(nextProto, opts.GREProtocols, 47) {
+			if opts.DecodeGRE && nextProto == 47 {
 				innerOffset, innerProto, err := parseGRE(data[offset+nextOffset:], &view)
 				if err != nil {
 					return view, nil
@@ -1323,6 +1416,20 @@ func canContinueEtherType(etherType uint16) bool {
 		return true
 	default:
 		return false
+	}
+}
+
+func ipInIPInnerEtherType(protocol uint32, opts DecodeOptions) (uint16, bool) {
+	if !opts.DecodeBeyondL4 || !opts.DecodeIPIP {
+		return 0, false
+	}
+	switch protocol {
+	case 4:
+		return 0x0800, true
+	case 41:
+		return 0x86dd, true
+	default:
+		return 0, false
 	}
 }
 
@@ -1630,18 +1737,6 @@ func portMatches(tuple packetTuple, ports []uint32, defaultPort uint32) bool {
 	}
 	for _, port := range ports {
 		if port != 0 && (tuple.DstPort == port || tuple.SrcPort == port) {
-			return true
-		}
-	}
-	return false
-}
-
-func protocolMatches(protocol uint32, protocols []uint32, defaultProtocol uint32) bool {
-	if len(protocols) == 0 {
-		return protocol == defaultProtocol
-	}
-	for _, candidate := range protocols {
-		if candidate == protocol {
 			return true
 		}
 	}

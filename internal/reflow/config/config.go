@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
@@ -43,11 +45,17 @@ type ProcessorConfig struct {
 }
 
 type BuiltinProcessorConfig struct {
-	DropMessage          bool                `yaml:"drop_message"`
-	DropPayload          bool                `yaml:"drop_payload"`
-	DisablePacketMapping bool                `yaml:"disable_packet_mapping"`
-	TruncatePacketBytes  int                 `yaml:"truncate_packet_bytes"`
-	PacketDecoder        PacketDecoderConfig `yaml:"packet_decoder"`
+	DropMessage          bool                    `yaml:"drop_message"`
+	DropPayload          bool                    `yaml:"drop_payload"`
+	DisablePacketMapping bool                    `yaml:"disable_packet_mapping"`
+	TruncatePacketBytes  int                     `yaml:"truncate_packet_bytes"`
+	PacketDecoder        PacketDecoderConfig     `yaml:"packet_decoder"`
+	AggregationHelpers   AggregationHelperConfig `yaml:"aggregation_helpers"`
+}
+
+type AggregationHelperConfig struct {
+	MPLSLabels int `yaml:"mpls_labels"`
+	IPLayers   int `yaml:"ip_layers"`
 }
 
 type PacketDecoderConfig struct {
@@ -56,19 +64,13 @@ type PacketDecoderConfig struct {
 }
 
 type PacketEncapsulationConfig struct {
-	GRE    ProtocolEncapsulationConfig `yaml:"gre"`
-	IPIP   ProtocolEncapsulationConfig `yaml:"ipip"`
-	IP6IP  ProtocolEncapsulationConfig `yaml:"ip6ip"`
-	VXLAN  PortEncapsulationConfig     `yaml:"vxlan"`
-	Geneve PortEncapsulationConfig     `yaml:"geneve"`
-	L2TP   PortEncapsulationConfig     `yaml:"l2tp"`
-	GTPU   PortEncapsulationConfig     `yaml:"gtpu"`
-	PPPoE  ToggleEncapsulationConfig   `yaml:"pppoe"`
-}
-
-type ProtocolEncapsulationConfig struct {
-	Enabled   *bool    `yaml:"enabled"`
-	Protocols []uint32 `yaml:"protocols"`
+	GRE    ToggleEncapsulationConfig `yaml:"gre"`
+	IPIP   ToggleEncapsulationConfig `yaml:"ipip"`
+	VXLAN  PortEncapsulationConfig   `yaml:"vxlan"`
+	Geneve PortEncapsulationConfig   `yaml:"geneve"`
+	L2TP   PortEncapsulationConfig   `yaml:"l2tp"`
+	GTPU   PortEncapsulationConfig   `yaml:"gtpu"`
+	PPPoE  ToggleEncapsulationConfig `yaml:"pppoe"`
 }
 
 type PortEncapsulationConfig struct {
@@ -81,24 +83,70 @@ type ToggleEncapsulationConfig struct {
 }
 
 type AggregatorConfig struct {
-	Enabled bool   `yaml:"enabled"`
-	Stream  string `yaml:"stream"`
+	Stream string `yaml:"stream"`
+	// Passthrough is derived from config. When no stateful rollup is required,
+	// matching events are forwarded immediately after schema registration.
+	Passthrough bool `yaml:"-"`
 	// Window controls bucket closure based on activity and age.
 	Window AggregatorWindowConfig `yaml:"window"`
 	// Periodic controls snapshot-style exports of current bucket state.
-	Periodic     AggregatorPeriodicConfig `yaml:"periodic"`
-	KeyFields    []string                 `yaml:"key_fields"`
-	Sum          []string                 `yaml:"sum"`
-	First        []string                 `yaml:"first"`
-	Current      []string                 `yaml:"current"`
-	Match        map[string]string        `yaml:"match"`
-	TemplateID   uint16                   `yaml:"template_id"`
-	StaticFields map[string]any           `yaml:"static_fields"`
+	Periodic AggregatorPeriodicConfig `yaml:"periodic"`
+	// Fields is the preferred ordered field/policy list. Compact entries use:
+	// role:name or static:name:value. IPFIX/NetFlow field mapping
+	// stays in encoder.tflow_data.
+	Fields           []AggregatorField `yaml:"fields"`
+	FieldsConfigured bool              `yaml:"-"`
+	KeyFields        []string          `yaml:"key_fields"`
+	// Legacy aggregation policy lists. They remain supported, but no longer
+	// receive hidden defaults.
+	Sum          []string          `yaml:"sum"`
+	First        []string          `yaml:"first"`
+	Current      []string          `yaml:"current"`
+	Min          []string          `yaml:"min"`
+	Max          []string          `yaml:"max"`
+	Match        map[string]string `yaml:"match"`
+	TemplateID   uint16            `yaml:"template_id"`
+	StaticFields map[string]any    `yaml:"static_fields"`
 
 	// Deprecated compatibility knobs. They are still parsed so older configs keep
 	// loading, then mapped into the explicit window/periodic sections.
 	ResetInterval    int `yaml:"reset_interval_ms"`
 	PeriodicInterval int `yaml:"periodic_interval_ms"`
+}
+
+type AggregatorField struct {
+	Role  string `yaml:"role"`
+	Name  string `yaml:"name"`
+	Value any    `yaml:"value,omitempty"`
+
+	// Path is accepted as a compatibility alias for mapping-style entries.
+	Path string `yaml:"path,omitempty"`
+}
+
+func (f *AggregatorField) UnmarshalYAML(value *yaml.Node) error {
+	switch value.Kind {
+	case yaml.ScalarNode:
+		parsed, err := parseAggregatorField(value.Value)
+		if err != nil {
+			return err
+		}
+		*f = parsed
+		return nil
+	case yaml.MappingNode:
+		type rawAggregatorField AggregatorField
+		var raw rawAggregatorField
+		if err := value.Decode(&raw); err != nil {
+			return err
+		}
+		*f = AggregatorField(raw)
+		if f.Name == "" {
+			f.Name = f.Path
+		}
+		f.Path = ""
+		return validateAggregatorField(*f)
+	default:
+		return fmt.Errorf("aggregator field must be a string or mapping")
+	}
 }
 
 type AggregatorWindowConfig struct {
@@ -245,16 +293,24 @@ func (c *Config) setDefaults(configPath string) error {
 	if c.Processor.Builtin.TruncatePacketBytes < 0 {
 		return fmt.Errorf("processor.builtin.truncate_packet_bytes must be >= 0")
 	}
+	if c.Processor.Builtin.AggregationHelpers.MPLSLabels < 0 {
+		return fmt.Errorf("processor.builtin.aggregation_helpers.mpls_labels must be >= 0")
+	}
+	if c.Processor.Builtin.AggregationHelpers.IPLayers < 0 {
+		return fmt.Errorf("processor.builtin.aggregation_helpers.ip_layers must be >= 0")
+	}
 	if err := validatePacketDecoderConfig(c.Processor.Builtin.PacketDecoder); err != nil {
 		return fmt.Errorf("processor.builtin.packet_decoder: %w", err)
 	}
 	if len(c.Aggregators) > 0 {
 		for i := range c.Aggregators {
 			applyAggregatorCompatibility(&c.Aggregators[i])
+			if err := normalizeAggregatorConfig(&c.Aggregators[i]); err != nil {
+				return fmt.Errorf("aggregators[%d]: %w", i, err)
+			}
 			if err := validateAggregatorConfig(c.Aggregators[i]); err != nil {
 				return fmt.Errorf("aggregators[%d]: %w", i, err)
 			}
-			defaultAggregateFields(&c.Aggregators[i])
 		}
 	}
 	if err := c.loadFlowDataCatalog(configPath); err != nil {
@@ -384,15 +440,6 @@ func (c *Config) setDefaults(configPath string) error {
 }
 
 func validatePacketDecoderConfig(cfg PacketDecoderConfig) error {
-	if err := validateIPProtocols("encapsulations.gre.protocols", cfg.Encapsulations.GRE.Protocols); err != nil {
-		return err
-	}
-	if err := validateIPProtocols("encapsulations.ipip.protocols", cfg.Encapsulations.IPIP.Protocols); err != nil {
-		return err
-	}
-	if err := validateIPProtocols("encapsulations.ip6ip.protocols", cfg.Encapsulations.IP6IP.Protocols); err != nil {
-		return err
-	}
 	if err := validateUDPPorts("encapsulations.vxlan.ports", cfg.Encapsulations.VXLAN.Ports); err != nil {
 		return err
 	}
@@ -404,15 +451,6 @@ func validatePacketDecoderConfig(cfg PacketDecoderConfig) error {
 	}
 	if err := validateUDPPorts("encapsulations.gtpu.ports", cfg.Encapsulations.GTPU.Ports); err != nil {
 		return err
-	}
-	return nil
-}
-
-func validateIPProtocols(name string, protocols []uint32) error {
-	for _, protocol := range protocols {
-		if protocol > 255 {
-			return fmt.Errorf("%s contains invalid IP protocol %d", name, protocol)
-		}
 	}
 	return nil
 }
@@ -522,36 +560,77 @@ func mergeIPFIXFields(sources ...map[string]IPFIXFieldDefinition) map[string]IPF
 	return merged
 }
 
-// defaultAggregateFields fills the commonly expected aggregation field policies
-// so simple configs do not need to repeat them.
-func defaultAggregateFields(cfg *AggregatorConfig) {
+// normalizeAggregatorConfig applies defaults that do not change aggregation
+// semantics and translates legacy field lists into the preferred field DSL.
+func normalizeAggregatorConfig(cfg *AggregatorConfig) error {
 	if cfg.Stream == "" {
 		cfg.Stream = "flow_data"
 	}
-	if len(cfg.Sum) == 0 {
-		cfg.Sum = []string{"bytes", "packets"}
-	}
-	if len(cfg.First) == 0 {
-		cfg.First = []string{
-			"agent_ip",
-			"sub_agent_id",
-			"source_id",
-			"start_time_unix",
+
+	cfg.FieldsConfigured = len(cfg.Fields) > 0
+	if !cfg.FieldsConfigured {
+		for _, field := range cfg.KeyFields {
+			cfg.Fields = append(cfg.Fields, AggregatorField{Role: "key", Name: field})
+		}
+		for _, field := range cfg.Sum {
+			cfg.Fields = append(cfg.Fields, AggregatorField{Role: "sum", Name: field})
+		}
+		for _, field := range cfg.First {
+			cfg.Fields = append(cfg.Fields, AggregatorField{Role: "first", Name: field})
+		}
+		for _, field := range cfg.Current {
+			cfg.Fields = append(cfg.Fields, AggregatorField{Role: "current", Name: field})
+		}
+		for _, field := range cfg.Min {
+			cfg.Fields = append(cfg.Fields, AggregatorField{Role: "min", Name: field})
+		}
+		for _, field := range cfg.Max {
+			cfg.Fields = append(cfg.Fields, AggregatorField{Role: "max", Name: field})
+		}
+		staticFields := make([]string, 0, len(cfg.StaticFields))
+		for field := range cfg.StaticFields {
+			staticFields = append(staticFields, field)
+		}
+		sort.Strings(staticFields)
+		for _, field := range staticFields {
+			cfg.Fields = append(cfg.Fields, AggregatorField{Role: "static", Name: field, Value: cfg.StaticFields[field]})
+		}
+	} else {
+		cfg.KeyFields = nil
+		cfg.Sum = nil
+		cfg.First = nil
+		cfg.Current = nil
+		cfg.Min = nil
+		cfg.Max = nil
+		cfg.StaticFields = nil
+		for _, field := range cfg.Fields {
+			if err := validateAggregatorField(field); err != nil {
+				return err
+			}
+			switch field.Role {
+			case "key":
+				cfg.KeyFields = append(cfg.KeyFields, field.Name)
+			case "sum":
+				cfg.Sum = append(cfg.Sum, field.Name)
+			case "first":
+				cfg.First = append(cfg.First, field.Name)
+			case "current":
+				cfg.Current = append(cfg.Current, field.Name)
+			case "min":
+				cfg.Min = append(cfg.Min, field.Name)
+			case "max":
+				cfg.Max = append(cfg.Max, field.Name)
+			case "static":
+				if cfg.StaticFields == nil {
+					cfg.StaticFields = make(map[string]any)
+				}
+				cfg.StaticFields[field.Name] = field.Value
+			}
 		}
 	}
-	if len(cfg.Current) == 0 {
-		cfg.Current = []string{
-			"agent_ip",
-			"sub_agent_id",
-			"source_id",
-			"input_if",
-			"output_if",
-			"sampling_rate",
-			"sample_pool",
-			"drops",
-			"end_time_unix",
-		}
-	}
+
+	cfg.Passthrough = !aggregatorNeedsState(cfg)
+	return nil
 }
 
 // applyAggregatorCompatibility maps legacy knobs into the explicit window and
@@ -580,7 +659,7 @@ func validateAggregatorConfig(cfg AggregatorConfig) error {
 	if cfg.Periodic.Every < 0 {
 		return fmt.Errorf("aggregator.periodic.every_ms must be >= 0")
 	}
-	if !cfg.Enabled {
+	if cfg.Passthrough {
 		return nil
 	}
 	if cfg.Periodic.ResetBuckets && cfg.Periodic.Every == 0 {
@@ -590,4 +669,57 @@ func validateAggregatorConfig(cfg AggregatorConfig) error {
 		return fmt.Errorf("aggregator requires at least one export trigger: window.idle_flush_after_ms, window.max_flush_after_ms, or periodic.every_ms")
 	}
 	return nil
+}
+
+func parseAggregatorField(raw string) (AggregatorField, error) {
+	if raw == "" {
+		return AggregatorField{}, fmt.Errorf("aggregator field entry cannot be empty")
+	}
+	if strings.HasPrefix(raw, "static:") {
+		parts := strings.SplitN(raw, ":", 3)
+		if len(parts) != 3 || parts[1] == "" {
+			return AggregatorField{}, fmt.Errorf("invalid static field entry %q", raw)
+		}
+		field := AggregatorField{Role: "static", Name: parts[1], Value: parts[2]}
+		return field, validateAggregatorField(field)
+	}
+
+	parts := strings.Split(raw, ":")
+	if len(parts) != 2 {
+		return AggregatorField{}, fmt.Errorf("invalid aggregator field entry %q", raw)
+	}
+	field := AggregatorField{
+		Role: parts[0],
+		Name: parts[1],
+	}
+	return field, validateAggregatorField(field)
+}
+
+func validateAggregatorField(field AggregatorField) error {
+	switch field.Role {
+	case "key", "sum", "first", "current", "min", "max", "static":
+	default:
+		return fmt.Errorf("unsupported aggregator field role %q", field.Role)
+	}
+	if field.Name == "" {
+		return fmt.Errorf("aggregator field name is required for role %q", field.Role)
+	}
+	return nil
+}
+
+func aggregatorNeedsState(cfg *AggregatorConfig) bool {
+	hasCurrent := false
+	for _, field := range cfg.Fields {
+		switch field.Role {
+		case "sum", "first", "min", "max":
+			return true
+		case "current":
+			hasCurrent = true
+		}
+	}
+	return hasCurrent && aggregatorHasExportTrigger(*cfg)
+}
+
+func aggregatorHasExportTrigger(cfg AggregatorConfig) bool {
+	return cfg.Window.IdleFlushAfter > 0 || cfg.Window.MaxFlushAfter > 0 || cfg.Periodic.Every > 0
 }

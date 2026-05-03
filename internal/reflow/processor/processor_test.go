@@ -1,6 +1,7 @@
 package processor
 
 import (
+	"bytes"
 	"encoding/binary"
 	"encoding/json"
 	"testing"
@@ -420,6 +421,15 @@ func TestBuiltinProcessBytesExtractsEncapsulatedLayers(t *testing.T) {
 	if got := fields["vlan_id"]; got != uint32(100) {
 		t.Fatalf("expected vlan_id=100, got %#v", got)
 	}
+	if got := fields["dot1q_vlan_id"]; got != uint32(100) {
+		t.Fatalf("expected dot1q_vlan_id=100, got %#v", got)
+	}
+	if got := fields["dot1q_priority"]; got != uint32(0) {
+		t.Fatalf("expected dot1q_priority=0, got %#v", got)
+	}
+	if got := fields["dot1q_dei"]; got != false {
+		t.Fatalf("expected dot1q_dei=false, got %#v", got)
+	}
 	vlanIDs, ok := fields["vlan_ids"].([]uint32)
 	if !ok {
 		t.Fatalf("expected vlan_ids to be []uint32, got %T", fields["vlan_ids"])
@@ -470,6 +480,12 @@ func TestBuiltinProcessBytesExtractsVXLANInnerPacket(t *testing.T) {
 
 	expectedLayers := []string{"ethernet", "ipv4", "vxlan", "ethernet", "ipv4", "tcp"}
 	expectPacketLayers(t, events[0], expectedLayers)
+	if got := fields["vxlan_vni"]; got != uint32(100) {
+		t.Fatalf("expected vxlan_vni=100, got %#v", got)
+	}
+	if got := fields["layer2_segment_id"]; got != uint64(0x0100000000000064) {
+		t.Fatalf("expected VXLAN layer2_segment_id, got %#v", got)
+	}
 	if got := fields["outer_src_addr"]; got != "203.0.113.1" {
 		t.Fatalf("expected outer_src_addr=203.0.113.1, got %#v", got)
 	}
@@ -483,6 +499,42 @@ func TestBuiltinProcessBytesExtractsVXLANInnerPacket(t *testing.T) {
 	}
 	if got := fields["dst_addr"]; got != "198.51.100.2" {
 		t.Fatalf("expected inner dst_addr=198.51.100.2, got %#v", got)
+	}
+}
+
+func TestBuiltinProcessBytesExtractsDot1QCustomerFields(t *testing.T) {
+	proc := NewBuiltin(config.ProcessorConfig{})
+	inner := ipv4Packet(6, [4]byte{192, 0, 2, 1}, [4]byte{198, 51, 100, 2}, tcpHeader(12345, 443))
+	packet := ethernetPayload(
+		0x88a8,
+		dot1qTCIPayload((5<<13)|(1<<12)|100, 0x8100, dot1qTCIPayload((3<<13)|200, 0x0800, inner)),
+	)
+
+	events, err := proc.Process(&event.Event{
+		Source:  event.SourceMetadata{Type: "bytes"},
+		Payload: packet,
+	})
+	if err != nil {
+		t.Fatalf("Process returned error: %v", err)
+	}
+	fields := events[0].Fields
+	if got := fields["dot1q_vlan_id"]; got != uint32(100) {
+		t.Fatalf("expected dot1q_vlan_id=100, got %#v", got)
+	}
+	if got := fields["dot1q_priority"]; got != uint32(5) {
+		t.Fatalf("expected dot1q_priority=5, got %#v", got)
+	}
+	if got := fields["dot1q_dei"]; got != true {
+		t.Fatalf("expected dot1q_dei=true, got %#v", got)
+	}
+	if got := fields["dot1q_customer_vlan_id"]; got != uint32(200) {
+		t.Fatalf("expected dot1q_customer_vlan_id=200, got %#v", got)
+	}
+	if got := fields["dot1q_customer_priority"]; got != uint32(3) {
+		t.Fatalf("expected dot1q_customer_priority=3, got %#v", got)
+	}
+	if got := fields["dot1q_customer_dei"]; got != false {
+		t.Fatalf("expected dot1q_customer_dei=false, got %#v", got)
 	}
 }
 
@@ -567,23 +619,99 @@ func TestBuiltinProcessBytesDecodesCustomVXLANPort(t *testing.T) {
 	}
 }
 
-func TestBuiltinProcessBytesExtractsIPInIP(t *testing.T) {
-	proc := NewBuiltin(config.ProcessorConfig{})
-	inner := ipv4Packet(6, [4]byte{192, 0, 2, 1}, [4]byte{198, 51, 100, 2}, tcpHeader(12345, 443))
-	outer := ipv4Packet(4, [4]byte{203, 0, 113, 1}, [4]byte{203, 0, 113, 2}, inner)
+func TestBuiltinProcessBytesExtractsIPInIPFamilies(t *testing.T) {
+	inner4 := ipv4Packet(6, [4]byte{192, 0, 2, 1}, [4]byte{198, 51, 100, 2}, tcpHeader(12345, 443))
+	inner6 := ipv6Packet(6,
+		[16]byte{0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1},
+		[16]byte{0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2},
+		tcpHeader(12345, 443))
 
-	events, err := proc.Process(&event.Event{
-		Source:  event.SourceMetadata{Type: "bytes"},
-		Payload: ethernetPayload(0x0800, outer),
-	})
-	if err != nil {
-		t.Fatalf("Process returned error: %v", err)
+	tests := []struct {
+		name        string
+		payload     []byte
+		outerLayer  string
+		outerSrc    string
+		outerDst    string
+		outerProto  uint32
+		innerLayer  string
+		innerSrc    string
+		innerDst    string
+		expectedSrc string
+	}{
+		{
+			name:        "ipv4 in ipv4",
+			payload:     ethernetPayload(0x0800, ipv4Packet(4, [4]byte{203, 0, 113, 1}, [4]byte{203, 0, 113, 2}, inner4)),
+			outerLayer:  "ipv4",
+			outerSrc:    "203.0.113.1",
+			outerDst:    "203.0.113.2",
+			outerProto:  4,
+			innerLayer:  "ipv4",
+			innerSrc:    "192.0.2.1",
+			innerDst:    "198.51.100.2",
+			expectedSrc: "192.0.2.1",
+		},
+		{
+			name:        "ipv6 in ipv4",
+			payload:     ethernetPayload(0x0800, ipv4Packet(41, [4]byte{203, 0, 113, 1}, [4]byte{203, 0, 113, 2}, inner6)),
+			outerLayer:  "ipv4",
+			outerSrc:    "203.0.113.1",
+			outerDst:    "203.0.113.2",
+			outerProto:  41,
+			innerLayer:  "ipv6",
+			innerSrc:    "2001:db8::1",
+			innerDst:    "2001:db8::2",
+			expectedSrc: "2001:db8::1",
+		},
+		{
+			name: "ipv4 in ipv6",
+			payload: ethernetPayload(0x86dd, ipv6Packet(4,
+				[16]byte{0x20, 0x01, 0x0d, 0xb8, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1},
+				[16]byte{0x20, 0x01, 0x0d, 0xb8, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2},
+				inner4)),
+			outerLayer:  "ipv6",
+			outerSrc:    "2001:db8:1::1",
+			outerDst:    "2001:db8:1::2",
+			outerProto:  4,
+			innerLayer:  "ipv4",
+			innerSrc:    "192.0.2.1",
+			innerDst:    "198.51.100.2",
+			expectedSrc: "192.0.2.1",
+		},
+		{
+			name: "ipv6 in ipv6",
+			payload: ethernetPayload(0x86dd, ipv6Packet(41,
+				[16]byte{0x20, 0x01, 0x0d, 0xb8, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1},
+				[16]byte{0x20, 0x01, 0x0d, 0xb8, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2},
+				inner6)),
+			outerLayer:  "ipv6",
+			outerSrc:    "2001:db8:1::1",
+			outerDst:    "2001:db8:1::2",
+			outerProto:  41,
+			innerLayer:  "ipv6",
+			innerSrc:    "2001:db8::1",
+			innerDst:    "2001:db8::2",
+			expectedSrc: "2001:db8::1",
+		},
 	}
-	fields := events[0].Fields
-	expectIPLayer(t, fields, 0, "outer", "203.0.113.1", "203.0.113.2", 4, 0, 0)
-	expectIPLayer(t, fields, 1, "inner", "192.0.2.1", "198.51.100.2", 6, 12345, 443)
-	if got := fields["src_addr"]; got != "192.0.2.1" {
-		t.Fatalf("expected inner src_addr=192.0.2.1, got %#v", got)
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			proc := NewBuiltin(config.ProcessorConfig{})
+			events, err := proc.Process(&event.Event{
+				Source:  event.SourceMetadata{Type: "bytes"},
+				Payload: tt.payload,
+			})
+			if err != nil {
+				t.Fatalf("Process returned error: %v", err)
+			}
+			fields := events[0].Fields
+			expectPacketLayers(t, events[0], []string{"ethernet", tt.outerLayer, tt.innerLayer, "tcp"})
+			expectIPLayer(t, fields, 0, "outer", tt.outerSrc, tt.outerDst, tt.outerProto, 0, 0)
+			expectIPLayer(t, fields, 1, "inner", tt.innerSrc, tt.innerDst, 6, 12345, 443)
+			if got := fields["src_addr"]; got != tt.expectedSrc {
+				t.Fatalf("expected inner src_addr=%s, got %#v", tt.expectedSrc, got)
+			}
+		})
 	}
 }
 
@@ -710,6 +838,99 @@ func TestBuiltinProcessBytesExtractsMPLSInnerPacket(t *testing.T) {
 	}
 	if got := fields["dst_addr"]; got != "198.51.100.2" {
 		t.Fatalf("expected dst_addr=198.51.100.2, got %#v", got)
+	}
+}
+
+func TestBuiltinProcessBytesAddsAggregationHelperFields(t *testing.T) {
+	proc := NewBuiltin(config.ProcessorConfig{
+		Builtin: config.BuiltinProcessorConfig{
+			AggregationHelpers: config.AggregationHelperConfig{
+				MPLSLabels: 3,
+				IPLayers:   2,
+			},
+		},
+	})
+	inner := ipv4Packet(6, [4]byte{192, 0, 2, 1}, [4]byte{198, 51, 100, 2}, tcpHeader(12345, 443))
+	outer := ipv4Packet(47, [4]byte{203, 0, 113, 1}, [4]byte{203, 0, 113, 2}, grePayload(0x0800, inner))
+	packet := ethernetPayload(0x8847, mplsPayload(17, false, mplsPayload(18, false, mplsPayload(19, true, outer))))
+
+	events, err := proc.Process(&event.Event{
+		Source:  event.SourceMetadata{Type: "bytes"},
+		Payload: packet,
+	})
+	if err != nil {
+		t.Fatalf("Process returned error: %v", err)
+	}
+	fields := events[0].Fields
+	if got := fields["mpls_label_1"]; got != uint32(17) {
+		t.Fatalf("expected mpls_label_1=17, got %#v", got)
+	}
+	if got := fields["mpls_label_2"]; got != uint32(18) {
+		t.Fatalf("expected mpls_label_2=18, got %#v", got)
+	}
+	if got := fields["mpls_label_3"]; got != uint32(19) {
+		t.Fatalf("expected mpls_label_3=19, got %#v", got)
+	}
+	if got := fields["mpls_label_stack_section_3"]; !bytes.Equal(got.([]byte), []byte{0x00, 0x01, 0x31}) {
+		t.Fatalf("expected MPLS label stack section bytes for label 3, got %#v", got)
+	}
+	if got := fields["ip_1_src_addr"]; got != "203.0.113.1" {
+		t.Fatalf("expected ip_1_src_addr outer address, got %#v", got)
+	}
+	if got := fields["ip_2_src_addr"]; got != "192.0.2.1" {
+		t.Fatalf("expected ip_2_src_addr inner address, got %#v", got)
+	}
+	if got := fields["ip_2_dst_port"]; got != uint32(443) {
+		t.Fatalf("expected ip_2_dst_port=443, got %#v", got)
+	}
+	if _, ok := fields["ip_3_src_addr"]; ok {
+		t.Fatalf("did not expect ip_3_src_addr beyond configured helper depth")
+	}
+}
+
+func TestBuiltinProcessReFlowJSONAddsAggregationHelperFieldsFromPacketModel(t *testing.T) {
+	proc := NewBuiltin(config.ProcessorConfig{
+		Builtin: config.BuiltinProcessorConfig{
+			AggregationHelpers: config.AggregationHelperConfig{
+				MPLSLabels: 1,
+				IPLayers:   2,
+			},
+		},
+	})
+	msg := []byte(`{
+		"packet": {
+			"layers": [
+				{"kind": "mpls", "mpls": {"label": {"label": 17, "bos": true}}},
+				{"kind": "ipv4", "ipv4": {"src_addr": "203.0.113.1", "dst_addr": "203.0.113.2", "protocol": 47}},
+				{"kind": "gre", "gre": {"protocol": 34525}},
+				{"kind": "ipv6", "ipv6": {"src_addr": "2001:db8::1", "dst_addr": "2001:db8::2", "next_header": 6}},
+				{"kind": "tcp", "tcp": {"src_port": 12345, "dst_port": 443}}
+			]
+		}
+	}`)
+
+	events, err := proc.Process(&event.Event{
+		Source: event.SourceMetadata{
+			Type: "json",
+			JSON: event.JSONMetadata{Flavor: "reflow"},
+		},
+		Message: msg,
+	})
+	if err != nil {
+		t.Fatalf("Process returned error: %v", err)
+	}
+	fields := events[0].Fields
+	if got := fields["mpls_label_1"]; got != uint32(17) {
+		t.Fatalf("expected mpls_label_1=17, got %#v", got)
+	}
+	if got := fields["ip_1_src_addr"]; got != "203.0.113.1" {
+		t.Fatalf("expected ip_1_src_addr outer address, got %#v", got)
+	}
+	if got := fields["ip_2_src_addr"]; got != "2001:db8::1" {
+		t.Fatalf("expected ip_2_src_addr inner address, got %#v", got)
+	}
+	if got := fields["ip_2_dst_port"]; got != uint32(443) {
+		t.Fatalf("expected ip_2_dst_port=443, got %#v", got)
 	}
 }
 
@@ -1040,8 +1261,12 @@ func ethernetPayload(etherType uint16, payload []byte) []byte {
 }
 
 func dot1qPayload(vlanID uint16, etherType uint16, payload []byte) []byte {
+	return dot1qTCIPayload(vlanID&0x0fff, etherType, payload)
+}
+
+func dot1qTCIPayload(tci uint16, etherType uint16, payload []byte) []byte {
 	out := make([]byte, 4+len(payload))
-	binary.BigEndian.PutUint16(out[0:2], vlanID&0x0fff)
+	binary.BigEndian.PutUint16(out[0:2], tci)
 	binary.BigEndian.PutUint16(out[2:4], etherType)
 	copy(out[4:], payload)
 	return out
@@ -1056,6 +1281,18 @@ func ipv4Packet(proto byte, src, dst [4]byte, payload []byte) []byte {
 	copy(out[12:16], src[:])
 	copy(out[16:20], dst[:])
 	copy(out[20:], payload)
+	return out
+}
+
+func ipv6Packet(nextHeader byte, src, dst [16]byte, payload []byte) []byte {
+	out := make([]byte, 40+len(payload))
+	out[0] = 0x60
+	binary.BigEndian.PutUint16(out[4:6], uint16(len(payload)))
+	out[6] = nextHeader
+	out[7] = 64
+	copy(out[8:24], src[:])
+	copy(out[24:40], dst[:])
+	copy(out[40:], payload)
 	return out
 }
 

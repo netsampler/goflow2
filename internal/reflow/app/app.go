@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strings"
 	"sync"
 	"time"
 
@@ -124,9 +125,6 @@ func (a *App) Run(ctx context.Context) error {
 	var aggregateWG sync.WaitGroup
 	aggregateWorkers := make([]aggregateWorker, 0, len(a.aggregatorCfgs))
 	for _, aggCfg := range a.aggregatorCfgs {
-		if !aggCfg.Enabled {
-			continue
-		}
 		agg, err := aggregate.New(aggCfg)
 		if err != nil {
 			return fmt.Errorf("init aggregator %q: %w", aggCfg.Stream, err)
@@ -414,6 +412,12 @@ func eventMatchValue(evt *event.Event, key string) string {
 	if evt == nil {
 		return ""
 	}
+	if layer, ok := strings.CutPrefix(key, "packet.has_layer."); ok {
+		if packetHasLayer(evt.Packet, layer) {
+			return "true"
+		}
+		return "false"
+	}
 	switch key {
 	case "stream":
 		return evt.Stream
@@ -433,6 +437,18 @@ func eventMatchValue(evt *event.Event, key string) string {
 		return fmt.Sprint(val)
 	}
 	return ""
+}
+
+func packetHasLayer(packet *event.PacketModel, kind string) bool {
+	if packet == nil || kind == "" {
+		return false
+	}
+	for _, layer := range packet.Layers {
+		if layer.Kind == kind {
+			return true
+		}
+	}
+	return false
 }
 
 // tickerChannel keeps select logic simple when a stage does not need timer-driven flushing.

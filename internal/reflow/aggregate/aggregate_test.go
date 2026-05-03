@@ -13,7 +13,6 @@ import (
 
 func TestStatefulFlushSumsPacketCounters(t *testing.T) {
 	agg, err := New(config.AggregatorConfig{
-		Enabled: true,
 		Periodic: config.AggregatorPeriodicConfig{
 			Every: 1,
 		},
@@ -73,7 +72,6 @@ func TestStatefulFlushSumsPacketCounters(t *testing.T) {
 
 func TestStatefulAggregatesNestedPacketLayerFields(t *testing.T) {
 	agg, err := New(config.AggregatorConfig{
-		Enabled: true,
 		KeyFields: []string{
 			"outer_src_addr",
 			"src_addr",
@@ -275,8 +273,7 @@ func packetLayerKinds(model *event.PacketModel) []string {
 
 func TestStatefulInitEventsCarryConfiguredStreamAndTemplateBaseID(t *testing.T) {
 	agg, err := New(config.AggregatorConfig{
-		Enabled: true,
-		Stream:  "agg_packets",
+		Stream: "agg_packets",
 		Periodic: config.AggregatorPeriodicConfig{
 			Every: 1,
 		},
@@ -311,10 +308,68 @@ func TestStatefulInitEventsCarryConfiguredStreamAndTemplateBaseID(t *testing.T) 
 	}
 }
 
+func TestSchemaPassthroughEmitsSchemaAndForwardsEvents(t *testing.T) {
+	agg, err := New(config.AggregatorConfig{
+		Passthrough:      true,
+		Stream:           "flow_data",
+		TemplateID:       256,
+		FieldsConfigured: true,
+		Fields: []config.AggregatorField{
+			{Role: "key", Name: "src_addr"},
+			{Role: "current", Name: "bytes"},
+			{Role: "static", Name: "exporter_name", Value: "edge-a"},
+		},
+		KeyFields: []string{"src_addr"},
+		StaticFields: map[string]any{
+			"exporter_name": "edge-a",
+		},
+	})
+	if err != nil {
+		t.Fatalf("New returned error: %v", err)
+	}
+
+	initEvents, err := agg.InitEvents()
+	if err != nil {
+		t.Fatalf("InitEvents returned error: %v", err)
+	}
+	if len(initEvents) != 1 {
+		t.Fatalf("expected 1 init event, got %d", len(initEvents))
+	}
+	schema, ok := initEvents[0].Payload.(event.AggregationSchema)
+	if !ok {
+		t.Fatalf("expected aggregation schema payload, got %T", initEvents[0].Payload)
+	}
+	if len(schema.Fields) != 3 {
+		t.Fatalf("expected 3 schema fields, got %#v", schema.Fields)
+	}
+	if schema.Fields[0].Name != "src_addr" {
+		t.Fatalf("unexpected first schema field: %#v", schema.Fields[0])
+	}
+
+	evt := &event.Event{
+		Fields: map[string]any{
+			"src_addr": "192.0.2.1",
+			"bytes":    uint64(64),
+		},
+	}
+	out, err := agg.Process(evt)
+	if err != nil {
+		t.Fatalf("Process returned error: %v", err)
+	}
+	if len(out) != 1 {
+		t.Fatalf("expected 1 forwarded event, got %d", len(out))
+	}
+	if out[0].Fields["exporter_name"] != "edge-a" {
+		t.Fatalf("expected static field to be injected, got %#v", out[0].Fields)
+	}
+	if _, ok := evt.Fields["exporter_name"]; ok {
+		t.Fatalf("did not expect original event fields to be mutated")
+	}
+}
+
 func TestStatefulInitEventsSortStaticFieldsDeterministically(t *testing.T) {
 	agg, err := New(config.AggregatorConfig{
-		Enabled: true,
-		Stream:  "agg_packets",
+		Stream: "agg_packets",
 		Periodic: config.AggregatorPeriodicConfig{
 			Every: 1,
 		},
@@ -351,8 +406,7 @@ func TestStatefulInitEventsSortStaticFieldsDeterministically(t *testing.T) {
 
 func TestStatefulAggregatedEventsCarryConfiguredStream(t *testing.T) {
 	agg, err := New(config.AggregatorConfig{
-		Enabled: true,
-		Stream:  "agg_counters",
+		Stream: "agg_counters",
 		Periodic: config.AggregatorPeriodicConfig{
 			Every: 1,
 		},
@@ -383,7 +437,6 @@ func TestStatefulAggregatedEventsCarryConfiguredStream(t *testing.T) {
 
 func TestStatefulTTLFlushSumsPacketCounters(t *testing.T) {
 	agg, err := New(config.AggregatorConfig{
-		Enabled: true,
 		Window: config.AggregatorWindowConfig{
 			IdleFlushAfter: 1,
 		},
@@ -445,7 +498,6 @@ func TestStatefulTTLFlushSumsPacketCounters(t *testing.T) {
 
 func TestStatefulTracksMinStartAndMaxEndTimestamps(t *testing.T) {
 	agg, err := New(config.AggregatorConfig{
-		Enabled: true,
 		Periodic: config.AggregatorPeriodicConfig{
 			Every: 1,
 		},
@@ -499,7 +551,6 @@ func TestStatefulTracksMinStartAndMaxEndTimestamps(t *testing.T) {
 
 func TestStatefulOnlySumsConfiguredSumFields(t *testing.T) {
 	agg, err := New(config.AggregatorConfig{
-		Enabled: true,
 		Periodic: config.AggregatorPeriodicConfig{
 			Every: 1,
 		},
@@ -552,7 +603,6 @@ func TestStatefulOnlySumsConfiguredSumFields(t *testing.T) {
 
 func TestStatefulPeriodicFlushOnlyEmitsDirtyBuckets(t *testing.T) {
 	agg, err := New(config.AggregatorConfig{
-		Enabled: true,
 		Periodic: config.AggregatorPeriodicConfig{
 			Every: 1,
 		},
@@ -623,7 +673,6 @@ func TestStatefulPeriodicFlushOnlyEmitsDirtyBuckets(t *testing.T) {
 
 func TestStatefulIdleEraseDropsUntouchedBucketWithoutEmit(t *testing.T) {
 	agg, err := New(config.AggregatorConfig{
-		Enabled: true,
 		Window: config.AggregatorWindowConfig{
 			IdleEraseAfter: 1,
 			MaxFlushAfter:  1000,
@@ -656,7 +705,6 @@ func TestStatefulIdleEraseDropsUntouchedBucketWithoutEmit(t *testing.T) {
 
 func TestStatefulPeriodicResetDeletesBucketsAfterEmit(t *testing.T) {
 	agg, err := New(config.AggregatorConfig{
-		Enabled: true,
 		Periodic: config.AggregatorPeriodicConfig{
 			Every:        1,
 			ResetBuckets: true,

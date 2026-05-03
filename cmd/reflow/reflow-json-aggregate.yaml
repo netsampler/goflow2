@@ -15,36 +15,30 @@ processor:
     drop_payload: false
 
 aggregators:
-  - enabled: true
-    stream: flow_data
+  - stream: flow_data
     # Window flush exports a bucket when it has been idle for the configured time.
     window:
       idle_flush_after_ms: 10000
     # Periodic snapshots export the current state even if a bucket stays open.
     periodic:
       every_ms: 60000
-    key_fields:
-      - src_addr
-      - dst_addr
-      - proto
-      - src_port
-      - dst_port
     template_id: 256
-    static_fields:
-      exporter_name: reflow-example
-    # `sum` adds numeric values into the bucket on every matching event.
-    sum:
-      - bytes
-      - packets
-    # `first` keeps the first observed value for the lifetime of the bucket.
-    first:
-      - agent_ip
-      - start_time_unix
-    # `current` replaces the stored value on every bucket update.
-    current:
-      - agent_ip
-      - end_time_unix
-      - sampling_rate
+    # `fields` is ordered. Entries use role:name, except static:name:value.
+    # key forms the bucket key, sum adds numeric counters, first keeps the first value,
+    # current keeps the latest value, and static injects a configured constant.
+    fields:
+      - key:src_addr
+      - key:dst_addr
+      - key:proto
+      - key:src_port
+      - key:dst_port
+      - sum:bytes
+      - sum:packets
+      - first:start_time_unix
+      - current:agent_ip
+      - current:end_time_unix
+      - current:sampling_rate
+      - static:exporter_name:reflow-example
 
 encoder:
   type: json

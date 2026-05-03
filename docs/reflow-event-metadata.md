@@ -113,16 +113,119 @@ fields (`src_addr`, `dst_addr`, `proto`, `src_port`, `dst_port`) describe the
 innermost flow tuple, while `outer_*` fields remain aliases for the first
 encapsulating IP tuple. Aggregation configs can use those aliases when they need
 stable keys across packets whose full layer stacks have different non-IP layers.
+Parsed VLAN tags also populate Dot1Q aliases: `dot1q_vlan_id`,
+`dot1q_priority`, and `dot1q_dei` for the outer tag, plus
+`dot1q_customer_vlan_id`, `dot1q_customer_priority`, and
+`dot1q_customer_dei` for the second tag when present. Parsed VXLAN packets
+populate `vxlan_vni` and the standard IPFIX `layer2_segment_id` helper.
+
+Aggregation helper fields are opt-in under
+`processor.builtin.aggregation_helpers`. `mpls_labels: N` emits
+`mpls_label_1..N` numeric labels for aggregation keys and
+`mpls_label_stack_section_1..N` 3-byte IPFIX MPLS label stack section values
+for export. `ip_layers: N` emits `ip_1_*`, `ip_2_*`, ... aliases, ordered from
+outermost IP tuple to innermost parsed IP tuple, with `src_addr`, `dst_addr`,
+`proto`, `proto_name`, `src_port`, and `dst_port` for each layer. The default
+IPFIX catalog does not map `outer_*` or `ip_N_*` helper fields to the standard
+source/destination address elements, because IPFIX does not define generic
+outer/encapsulated address elements. Use them directly for aggregation keys or
+JSON output, or add explicit enterprise/catalog mappings for an IPFIX collector
+that understands those semantics.
+
+```yaml
+processor:
+  type: builtin
+  builtin:
+    aggregation_helpers:
+      mpls_labels: 3
+      ip_layers: 2
+```
 
 Packet decoding policy lives under `processor.builtin.packet_decoder`.
 `decode_beyond_l4` controls whether the parser may continue past TCP/UDP/ICMP
 or the first encapsulation header. Encapsulation-specific settings live under
 `packet_decoder.encapsulations`, where operators can enable/disable GRE,
-IP-in-IP, IPv6-in-IP, VXLAN, Geneve, L2TP, GTP-U, and PPPoE handling. UDP-based
+IP-in-IP, VXLAN, Geneve, L2TP, GTP-U, and PPPoE handling. UDP-based
 encapsulations can use non-standard port lists. MPLS labels and IPv6 extension
 headers are always parsed when present; `decode_beyond_l4` controls whether the
-parser continues into encapsulated payloads. GRE, IP-in-IP, and IPv6-in-IP are
-matched by IP protocol number, normally `47`, `4`, and `41`, not by port.
+parser continues into encapsulated payloads. GRE uses IP protocol `47`; IP-in-IP
+covers both IPv4 and IPv6 inner packets, using IP protocols `4` and `41`.
+
+## Aggregator Field Entries
+
+Every item in `aggregators` is active. To disable an aggregator, remove or
+comment out that list item.
+
+Aggregator `fields` entries describe aggregation policy and schema order only.
+They do not choose IPFIX or NetFlow information element IDs. Protocol mapping
+stays in `encoder.tflow_data`, including enterprise/PEN, field ID, type, and
+length overrides.
+
+Compact entries use colon-separated parts:
+
+```text
+role:name
+static:name:value
+```
+
+`role` can be `key`, `sum`, `first`, `current`, `min`, `max`, or `static`.
+`current` includes the field in pass-through schemas and keeps the latest value
+when stateful aggregation is active. IPFIX and NetFlow v9 templates for
+`src_addr` and `dst_addr` automatically use IPv4 or IPv6 information elements
+based on the event address family.
+
+```yaml
+aggregators:
+  - stream: flow_data
+    fields:
+      - key:src_addr
+      - key:dst_addr
+      - current:tenant_id
+      - sum:bytes
+      - sum:packets
+      - current:end_time_unix
+      - static:exporter_name:edge-a
+```
+
+If no stateful rollup is required, the aggregator is schema pass-through. It
+emits a schema event when `fields` are configured and forwards matching events
+to the encoder immediately. This is the mode to use when aggregation is acting
+as a filter in order to reuse a template:
+
+```yaml
+aggregators:
+  - stream: flow_data
+    match:
+      packet.has_layer.mpls: "true"
+    fields:
+      - key:src_addr
+      - key:dst_addr
+      - key:mpls_label
+      - current:bytes
+      - static:exporter_name:edge-a
+```
+
+Legacy `key_fields`, `sum`, `first`, `current`, and `static_fields` lists still
+load, but they no longer receive hidden default aggregation fields. Omitting
+`sum` means the sum list is empty. An aggregator with only `key`, `current`, and
+`static` fields and no export trigger forwards matching events immediately.
+
+When a custom field needs IPFIX enterprise mapping, configure it under the
+encoder catalog or overrides instead:
+
+```yaml
+encoder:
+  type: ipfix
+  tflow_data:
+    overrides:
+      tenant_id:
+        name: tenantId
+        id: 12345
+        pen: 32473
+        enterprise_scoped: true
+        length: 4
+        type: unsigned32
+```
 
 ## Source Framing
 

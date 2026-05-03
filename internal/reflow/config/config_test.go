@@ -46,13 +46,8 @@ processor:
       encapsulations:
         gre:
           enabled: true
-          protocols: [47]
         ipip:
           enabled: true
-          protocols: [4]
-        ip6ip:
-          enabled: true
-          protocols: [41]
         vxlan:
           enabled: false
           ports: [4789, 4790]
@@ -67,10 +62,12 @@ processor:
           ports: [2152]
         pppoe:
           enabled: false
+    aggregation_helpers:
+      mpls_labels: 3
+      ip_layers: 2
 
 aggregators:
-  - enabled: true
-    window:
+  - window:
       idle_flush_after_ms: 5000
     template_id: 256
     static_fields:
@@ -113,15 +110,6 @@ sink:
 	if decoder.Encapsulations.GRE.Enabled == nil || !*decoder.Encapsulations.GRE.Enabled {
 		t.Fatalf("expected GRE encapsulation enabled=true, got %#v", decoder.Encapsulations.GRE.Enabled)
 	}
-	if len(decoder.Encapsulations.GRE.Protocols) != 1 || decoder.Encapsulations.GRE.Protocols[0] != 47 {
-		t.Fatalf("expected GRE protocols [47], got %#v", decoder.Encapsulations.GRE.Protocols)
-	}
-	if len(decoder.Encapsulations.IPIP.Protocols) != 1 || decoder.Encapsulations.IPIP.Protocols[0] != 4 {
-		t.Fatalf("expected IPIP protocols [4], got %#v", decoder.Encapsulations.IPIP.Protocols)
-	}
-	if len(decoder.Encapsulations.IP6IP.Protocols) != 1 || decoder.Encapsulations.IP6IP.Protocols[0] != 41 {
-		t.Fatalf("expected IP6IP protocols [41], got %#v", decoder.Encapsulations.IP6IP.Protocols)
-	}
 	if decoder.Encapsulations.VXLAN.Enabled == nil || *decoder.Encapsulations.VXLAN.Enabled {
 		t.Fatalf("expected VXLAN encapsulation enabled=false, got %#v", decoder.Encapsulations.VXLAN.Enabled)
 	}
@@ -134,23 +122,29 @@ sink:
 	if len(decoder.Encapsulations.GTPU.Ports) != 1 || decoder.Encapsulations.GTPU.Ports[0] != 2152 {
 		t.Fatalf("expected GTP-U ports [2152], got %#v", decoder.Encapsulations.GTPU.Ports)
 	}
+	if cfg.Processor.Builtin.AggregationHelpers.MPLSLabels != 3 {
+		t.Fatalf("expected aggregation helper mpls_labels=3, got %d", cfg.Processor.Builtin.AggregationHelpers.MPLSLabels)
+	}
+	if cfg.Processor.Builtin.AggregationHelpers.IPLayers != 2 {
+		t.Fatalf("expected aggregation helper ip_layers=2, got %d", cfg.Processor.Builtin.AggregationHelpers.IPLayers)
+	}
 	if len(cfg.Aggregators) != 1 {
 		t.Fatalf("expected 1 aggregator, got %d", len(cfg.Aggregators))
-	}
-	if !cfg.Aggregators[0].Enabled {
-		t.Fatalf("expected aggregators[0].enabled=true")
 	}
 	if cfg.Aggregators[0].Window.IdleFlushAfter != 5000 {
 		t.Fatalf("expected aggregators[0].window.idle_flush_after_ms=5000, got %d", cfg.Aggregators[0].Window.IdleFlushAfter)
 	}
-	if len(cfg.Aggregators[0].Sum) == 0 || cfg.Aggregators[0].Sum[0] != "bytes" {
-		t.Fatalf("expected default sum fields to include bytes, got %#v", cfg.Aggregators[0].Sum)
+	if !cfg.Aggregators[0].Passthrough {
+		t.Fatalf("expected aggregators[0] without aggregation fields to use pass-through schema mode")
 	}
-	if len(cfg.Aggregators[0].First) == 0 || cfg.Aggregators[0].First[0] != "agent_ip" {
-		t.Fatalf("expected default first fields to include agent_ip, got %#v", cfg.Aggregators[0].First)
+	if len(cfg.Aggregators[0].Sum) != 0 {
+		t.Fatalf("expected sum fields to default empty, got %#v", cfg.Aggregators[0].Sum)
 	}
-	if len(cfg.Aggregators[0].Current) == 0 || cfg.Aggregators[0].Current[0] != "agent_ip" {
-		t.Fatalf("expected default current fields to include agent_ip, got %#v", cfg.Aggregators[0].Current)
+	if len(cfg.Aggregators[0].First) != 0 {
+		t.Fatalf("expected first fields to default empty, got %#v", cfg.Aggregators[0].First)
+	}
+	if len(cfg.Aggregators[0].Current) != 0 {
+		t.Fatalf("expected current fields to default empty, got %#v", cfg.Aggregators[0].Current)
 	}
 	custom := cfg.Encoder.TFlowData.Catalog["custom_counter"]
 	if custom.ID != 2000 || custom.PEN != 64512 {
@@ -167,7 +161,7 @@ sink:
 	}
 }
 
-func TestLoadSupportsAccumulativeAggregatorDefaults(t *testing.T) {
+func TestLoadSupportsAccumulativeAggregatorWithExplicitFields(t *testing.T) {
 	dir := t.TempDir()
 
 	cfgPath := filepath.Join(dir, "reflow.yaml")
@@ -183,9 +177,11 @@ processor:
   type: builtin
 
 aggregators:
-  - enabled: true
-    periodic:
+  - periodic:
       every_ms: 60000
+    fields:
+      - key:agent_ip
+      - current:sampling_rate
 
 encoder:
   type: json
@@ -207,11 +203,131 @@ sink:
 	if cfg.Aggregators[0].Periodic.Every != 60000 {
 		t.Fatalf("expected periodic.every_ms=60000, got %d", cfg.Aggregators[0].Periodic.Every)
 	}
-	if len(cfg.Aggregators[0].Sum) == 0 || len(cfg.Aggregators[0].First) == 0 || len(cfg.Aggregators[0].Current) == 0 {
-		t.Fatalf("expected aggregation defaults to be populated, got sum=%#v first=%#v current=%#v", cfg.Aggregators[0].Sum, cfg.Aggregators[0].First, cfg.Aggregators[0].Current)
+	if cfg.Aggregators[0].Passthrough {
+		t.Fatalf("expected current field with export trigger to force aggregate mode")
+	}
+	if len(cfg.Aggregators[0].KeyFields) != 1 || cfg.Aggregators[0].KeyFields[0] != "agent_ip" {
+		t.Fatalf("expected key field agent_ip, got %#v", cfg.Aggregators[0].KeyFields)
+	}
+	if len(cfg.Aggregators[0].Current) != 1 || cfg.Aggregators[0].Current[0] != "sampling_rate" {
+		t.Fatalf("expected current field sampling_rate, got %#v", cfg.Aggregators[0].Current)
 	}
 	if cfg.Aggregators[0].Stream != "flow_data" {
 		t.Fatalf("expected default stream=flow_data, got %q", cfg.Aggregators[0].Stream)
+	}
+}
+
+func TestLoadParsesAggregatorFieldDSL(t *testing.T) {
+	dir := t.TempDir()
+
+	cfgPath := filepath.Join(dir, "reflow.yaml")
+	if err := os.WriteFile(cfgPath, []byte(`
+sources:
+  - network: udp
+    address: ":18081"
+    type: json
+
+processor:
+  type: builtin
+
+aggregators:
+  - fields:
+      - key:src_addr
+      - key:dst_addr
+      - current:tenant_id
+      - static:exporter_name:edge-a
+
+encoder:
+  type: json
+
+sink:
+  type: stdout
+`), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	cfg, err := Load(cfgPath)
+	if err != nil {
+		t.Fatalf("Load returned error: %v", err)
+	}
+	agg := cfg.Aggregators[0]
+	if !agg.Passthrough {
+		t.Fatalf("expected key/current/static fields without export triggers to use pass-through schema mode")
+	}
+	if len(agg.Fields) != 4 {
+		t.Fatalf("expected 4 parsed fields, got %#v", agg.Fields)
+	}
+	if got := agg.Fields[0]; got.Role != "key" || got.Name != "src_addr" {
+		t.Fatalf("unexpected first field: %#v", got)
+	}
+	if got := agg.Fields[2]; got.Role != "current" || got.Name != "tenant_id" {
+		t.Fatalf("unexpected tenant field: %#v", got)
+	}
+	if agg.StaticFields["exporter_name"] != "edge-a" {
+		t.Fatalf("expected static exporter_name edge-a, got %#v", agg.StaticFields["exporter_name"])
+	}
+}
+
+func TestLoadRejectsPlainAggregatorFieldRole(t *testing.T) {
+	dir := t.TempDir()
+
+	cfgPath := filepath.Join(dir, "reflow.yaml")
+	if err := os.WriteFile(cfgPath, []byte(`
+sources:
+  - network: udp
+    address: ":18081"
+    type: json
+
+processor:
+  type: builtin
+
+aggregators:
+  - fields:
+      - key:src_addr
+      - field:bytes
+
+encoder:
+  type: json
+
+sink:
+  type: stdout
+`), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	if _, err := Load(cfgPath); err == nil {
+		t.Fatalf("expected Load to reject plain field role")
+	}
+}
+
+func TestLoadRejectsAggregatorFieldModifier(t *testing.T) {
+	dir := t.TempDir()
+
+	cfgPath := filepath.Join(dir, "reflow.yaml")
+	if err := os.WriteFile(cfgPath, []byte(`
+sources:
+  - network: udp
+    address: ":18081"
+    type: json
+
+processor:
+  type: builtin
+
+aggregators:
+  - fields:
+      - key:src_addr:4
+
+encoder:
+  type: json
+
+sink:
+  type: stdout
+`), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	if _, err := Load(cfgPath); err == nil {
+		t.Fatalf("expected Load to reject field modifier")
 	}
 }
 
@@ -352,7 +468,7 @@ sink:
 	}
 }
 
-func TestLoadRejectsAggregatorWithoutExportTrigger(t *testing.T) {
+func TestLoadAllowsPassthroughAggregatorWithoutExportTrigger(t *testing.T) {
 	dir := t.TempDir()
 
 	cfgPath := filepath.Join(dir, "reflow.yaml")
@@ -366,37 +482,9 @@ processor:
   type: builtin
 
 aggregators:
-  - enabled: true
-
-encoder:
-  type: json
-
-sink:
-  type: stdout
-`), 0o644); err != nil {
-		t.Fatalf("write config: %v", err)
-	}
-
-	if _, err := Load(cfgPath); err == nil {
-		t.Fatalf("expected Load to reject aggregator without export trigger")
-	}
-}
-
-func TestLoadAllowsDisabledAggregatorWithoutExportTrigger(t *testing.T) {
-	dir := t.TempDir()
-
-	cfgPath := filepath.Join(dir, "reflow.yaml")
-	if err := os.WriteFile(cfgPath, []byte(`
-sources:
-  - network: udp
-    address: ":18081"
-    type: json
-
-processor:
-  type: builtin
-
-aggregators:
-  - enabled: false
+  - fields:
+      - key:src_addr
+      - current:bytes
 
 encoder:
   type: json
@@ -411,11 +499,8 @@ sink:
 	if err != nil {
 		t.Fatalf("Load returned error: %v", err)
 	}
-	if len(cfg.Aggregators) != 1 {
-		t.Fatalf("expected 1 aggregator, got %d", len(cfg.Aggregators))
-	}
-	if cfg.Aggregators[0].Enabled {
-		t.Fatalf("expected disabled aggregator to remain disabled")
+	if !cfg.Aggregators[0].Passthrough {
+		t.Fatalf("expected aggregator without stateful rollup to use pass-through schema mode")
 	}
 }
 
@@ -433,14 +518,12 @@ processor:
   type: builtin
 
 aggregators:
-  - enabled: true
-    stream: agg_samples
+  - stream: agg_samples
     periodic:
       every_ms: 1000
     match:
       record_kind: packet
-  - enabled: true
-    stream: agg_counters
+  - stream: agg_counters
     periodic:
       every_ms: 1000
     match:

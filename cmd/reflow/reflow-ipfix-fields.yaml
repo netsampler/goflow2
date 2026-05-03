@@ -46,6 +46,66 @@ fields:
     length: 1
     type: unsigned8
     netflow_v9_id: 4
+  vlan_id:
+    name: vlanId
+    id: 58
+    length: 2
+    type: unsigned16
+    netflow_v9_id: 58
+  dot1q_vlan_id:
+    name: dot1qVlanId
+    id: 243
+    length: 2
+    type: unsigned16
+    netflow_v9_id: 58
+  dot1q_priority:
+    name: dot1qPriority
+    id: 244
+    length: 1
+    type: unsigned8
+  dot1q_dei:
+    name: dot1qDEI
+    id: 388
+    length: 1
+    type: boolean
+  dot1q_customer_vlan_id:
+    name: dot1qCustomerVlanId
+    id: 245
+    length: 2
+    type: unsigned16
+  dot1q_customer_priority:
+    name: dot1qCustomerPriority
+    id: 246
+    length: 1
+    type: unsigned8
+  dot1q_customer_dei:
+    name: dot1qCustomerDEI
+    id: 389
+    length: 1
+    type: boolean
+  layer2_segment_id:
+    name: layer2SegmentId
+    id: 351
+    length: 8
+    type: unsigned64
+  mpls_label_stack_section_1:
+    name: mplsTopLabelStackSection
+    id: 70
+    length: 3
+    type: octetArray
+    netflow_v9_id: 70
+  mpls_label_stack_section_2:
+    name: mplsLabelStackSection2
+    id: 71
+    length: 3
+    type: octetArray
+    netflow_v9_id: 71
+  mpls_label_stack_section_3:
+    name: mplsLabelStackSection3
+    id: 72
+    length: 3
+    type: octetArray
+    netflow_v9_id: 72
   input_if:
     name: ingressInterface
     id: 10

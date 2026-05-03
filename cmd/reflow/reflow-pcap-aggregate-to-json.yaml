@@ -15,6 +15,12 @@ processor:
     drop_message: true
     drop_payload: false
     disable_packet_mapping: false
+    aggregation_helpers:
+      # Optional aggregation/export helpers for layered packets.
+      # mpls_labels emits mpls_label_1..N plus IPFIX stack-section bytes.
+      # ip_layers emits ip_1_*..ip_N_* from outermost to innermost IP tuple.
+      mpls_labels: 3
+      ip_layers: 2
     packet_decoder:
       # Defaults shown here. Set decode_beyond_l4=false to stop at TCP/UDP/ICMP
       # or the first encapsulation header, or add non-standard tunnel ports.
@@ -22,14 +28,8 @@ processor:
       encapsulations:
         gre:
           enabled: true
-          # GRE is IP protocol 47, not a UDP/TCP port.
-          protocols: [47]
         ipip:
           enabled: true
-          protocols: [4]
-        ip6ip:
-          enabled: true
-          protocols: [41]
         vxlan:
           enabled: true
           ports: [4789]
@@ -46,8 +46,7 @@ processor:
           enabled: true
 
 aggregators:
-  - enabled: true
-    stream: flow_data
+  - stream: flow_data
     # Export a bucket after 10s of inactivity, plus a periodic snapshot every minute.
     window:
       idle_flush_after_ms: 10000
