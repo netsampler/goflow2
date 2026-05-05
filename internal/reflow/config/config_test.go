@@ -918,8 +918,14 @@ func TestGeneratedConfigYAMLUsesFalseForPacketDecoderBooleans(t *testing.T) {
 		t.Fatalf("expected generated config to avoid null booleans, got:\n%s", text)
 	}
 	for _, want := range []string{
+		"snaplen: 65535",
+		"sample_every: 1",
 		"decode_beyond_l4: false",
 		"enabled: false",
+		"- 4789",
+		"- 6081",
+		"- 1701",
+		"- 2152",
 		"template_base_id: 256",
 		"options_template_base_id: 1024",
 		"template_refresh_ms: 60000",
@@ -928,6 +934,9 @@ func TestGeneratedConfigYAMLUsesFalseForPacketDecoderBooleans(t *testing.T) {
 		if !strings.Contains(text, want) {
 			t.Fatalf("expected generated config to contain %q, got:\n%s", want, text)
 		}
+	}
+	if strings.Contains(text, "ports: []") {
+		t.Fatalf("expected generated config to materialize encapsulation ports, got:\n%s", text)
 	}
 }
 
@@ -976,5 +985,24 @@ func TestParseInputSpecSupportsEBPF(t *testing.T) {
 	}
 	if src.Network != "ebpf" || src.Interface != "eth0" || src.Type != "bytes" || src.Address != "" {
 		t.Fatalf("unexpected ebpf source config: %#v", src)
+	}
+}
+
+func TestParseInputSpecSupportsCaptureParams(t *testing.T) {
+	src, err := parseInputSpec("pcap_live:en0:bytes?snaplen=262144&sample_every=10&sample_offset=3")
+	if err != nil {
+		t.Fatalf("parseInputSpec returned error: %v", err)
+	}
+	if src.Network != "pcap_live" || src.Interface != "en0" || src.Type != "bytes" || src.Address != "" {
+		t.Fatalf("unexpected pcap_live source config: %#v", src)
+	}
+	if src.SnapLen != 262144 || src.SampleEvery != 10 || src.SampleOffset != 3 {
+		t.Fatalf("unexpected capture params: snaplen=%d sample_every=%d sample_offset=%d", src.SnapLen, src.SampleEvery, src.SampleOffset)
+	}
+}
+
+func TestParseInputSpecRejectsCaptureParamsOnSocketInputs(t *testing.T) {
+	if _, err := parseInputSpec("udp::6343:flow?snaplen=128"); err == nil {
+		t.Fatalf("expected capture params on udp input to fail")
 	}
 }

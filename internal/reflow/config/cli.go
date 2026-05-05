@@ -3,6 +3,8 @@ package config
 import (
 	"fmt"
 	"net/netip"
+	"net/url"
+	"strconv"
 	"strings"
 )
 
@@ -22,8 +24,8 @@ var (
 		"stream:<path-or-stdin>:pcap",
 		"stream:<path-or-stdin>:pcapng",
 		"stream:<path-or-stdin>:json",
-		"ebpf:<interface>:bytes",
-		"pcap_live:<interface>:bytes",
+		"ebpf:<interface>:bytes[?snaplen=<bytes>&sample_every=<n>&sample_offset=<n>]",
+		"pcap_live:<interface>:bytes[?snaplen=<bytes>&sample_every=<n>&sample_offset=<n>]",
 	}
 	outputEncoderOptions = []string{
 		"json",
@@ -47,7 +49,7 @@ var (
 		"udp:127.0.0.1:2055:flow",
 		"stream:-:json",
 		"ebpf:eth0:bytes",
-		"pcap_live:en0:bytes",
+		"'pcap_live:en0:bytes?snaplen=262144&sample_every=10'",
 	}
 	outputHelperExamples = []string{
 		"json:stdout",
@@ -191,6 +193,14 @@ func (c *FlagConfig) generatedConfig() (*Config, error) {
 }
 
 func (c *Config) materializeGeneratedYAMLDefaults() {
+	for i := range c.Sources {
+		if c.Sources[i].SnapLen == 0 {
+			c.Sources[i].SnapLen = 65535
+		}
+		if c.Sources[i].SampleEvery == 0 {
+			c.Sources[i].SampleEvery = 1
+		}
+	}
 	defaultFalse(&c.Processor.Builtin.PacketDecoder.DecodeBeyondL4)
 	defaultFalse(&c.Processor.Builtin.PacketDecoder.Encapsulations.GRE.Enabled)
 	defaultFalse(&c.Processor.Builtin.PacketDecoder.Encapsulations.IPIP.Enabled)
@@ -199,6 +209,18 @@ func (c *Config) materializeGeneratedYAMLDefaults() {
 	defaultFalse(&c.Processor.Builtin.PacketDecoder.Encapsulations.L2TP.Enabled)
 	defaultFalse(&c.Processor.Builtin.PacketDecoder.Encapsulations.GTPU.Enabled)
 	defaultFalse(&c.Processor.Builtin.PacketDecoder.Encapsulations.PPPoE.Enabled)
+	if len(c.Processor.Builtin.PacketDecoder.Encapsulations.VXLAN.Ports) == 0 {
+		c.Processor.Builtin.PacketDecoder.Encapsulations.VXLAN.Ports = []uint32{4789}
+	}
+	if len(c.Processor.Builtin.PacketDecoder.Encapsulations.Geneve.Ports) == 0 {
+		c.Processor.Builtin.PacketDecoder.Encapsulations.Geneve.Ports = []uint32{6081}
+	}
+	if len(c.Processor.Builtin.PacketDecoder.Encapsulations.L2TP.Ports) == 0 {
+		c.Processor.Builtin.PacketDecoder.Encapsulations.L2TP.Ports = []uint32{1701}
+	}
+	if len(c.Processor.Builtin.PacketDecoder.Encapsulations.GTPU.Ports) == 0 {
+		c.Processor.Builtin.PacketDecoder.Encapsulations.GTPU.Ports = []uint32{2152}
+	}
 	if c.Encoder.TemplatedFlow.TemplateBaseID == 0 {
 		c.Encoder.TemplatedFlow.TemplateBaseID = 256
 	}
@@ -223,6 +245,10 @@ func parseInputSpec(spec string) (SourceConfig, error) {
 		return SourceConfig{}, fmt.Errorf("invalid -input %q: expected network:target:type", spec)
 	}
 	network = normalizeSocketAlias(network)
+	sourceType, rawParams, ok := strings.Cut(sourceType, "?")
+	if ok && rawParams == "" {
+		return SourceConfig{}, fmt.Errorf("invalid -input %q: source parameters cannot be empty", spec)
+	}
 
 	source := SourceConfig{
 		Network: network,
@@ -260,7 +286,62 @@ func parseInputSpec(spec string) (SourceConfig, error) {
 	default:
 		return SourceConfig{}, fmt.Errorf("invalid -input %q: unsupported network %q", spec, network)
 	}
+	if rawParams != "" {
+		if err := applyInputParams(&source, rawParams); err != nil {
+			return SourceConfig{}, fmt.Errorf("invalid -input %q: %w", spec, err)
+		}
+	}
 	return source, nil
+}
+
+func applyInputParams(source *SourceConfig, rawParams string) error {
+	if source.Network != "pcap_live" && source.Network != "ebpf" {
+		return fmt.Errorf("source parameters are only supported for pcap_live and ebpf inputs")
+	}
+	params, err := url.ParseQuery(rawParams)
+	if err != nil {
+		return fmt.Errorf("parse source parameters: %w", err)
+	}
+	for key, values := range params {
+		if len(values) != 1 {
+			return fmt.Errorf("source parameter %q must be set once", key)
+		}
+		value := values[0]
+		switch key {
+		case "snaplen":
+			parsed, err := parseNonNegativeInputParam(key, value)
+			if err != nil {
+				return err
+			}
+			source.SnapLen = parsed
+		case "sample_every":
+			parsed, err := parseNonNegativeInputParam(key, value)
+			if err != nil {
+				return err
+			}
+			source.SampleEvery = parsed
+		case "sample_offset":
+			parsed, err := parseNonNegativeInputParam(key, value)
+			if err != nil {
+				return err
+			}
+			source.SampleOffset = parsed
+		default:
+			return fmt.Errorf("unsupported source parameter %q", key)
+		}
+	}
+	return nil
+}
+
+func parseNonNegativeInputParam(name, value string) (int, error) {
+	parsed, err := strconv.Atoi(value)
+	if err != nil {
+		return 0, fmt.Errorf("source parameter %q must be an integer", name)
+	}
+	if parsed < 0 {
+		return 0, fmt.Errorf("source parameter %q must be >= 0", name)
+	}
+	return parsed, nil
 }
 
 func parseOutputSpec(spec string) (EncoderConfig, SinkConfig, error) {
