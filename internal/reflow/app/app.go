@@ -57,7 +57,8 @@ func New(cfg *config.Config) (*App, error) {
 	}
 
 	encoderCfg := cfg.Encoder
-	encoderWorkers := cfg.Encoder.Workers
+	processorWorkers := config.ResolveProcessorWorkers(cfg.Processor.Workers)
+	encoderWorkers := config.ResolveEncoderWorkers(cfg.Encoder.Workers, encoderCfg.Type)
 	// Ordered exporters own protocol sequence numbers and template refresh state.
 	// The effective config is:
 	//
@@ -65,13 +66,12 @@ func New(cfg *config.Config) (*App, error) {
 	//     type: sflow # also ipfix, netflowv9, or netflowv5
 	//     workers: 1
 	//
-	if requiresOrderedExporter(encoderCfg.Type) && encoderWorkers > 1 {
+	if requiresOrderedExporter(encoderCfg.Type) && cfg.Encoder.Workers > 1 {
 		logger.Warn(
 			"forcing encoder workers to 1 for ordered exporter",
 			slog.String("encoder_type", encoderCfg.Type),
-			slog.Int("requested_workers", encoderWorkers),
+			slog.Int("requested_workers", int(cfg.Encoder.Workers)),
 		)
-		encoderWorkers = 1
 	}
 
 	return &App{
@@ -79,7 +79,7 @@ func New(cfg *config.Config) (*App, error) {
 		sources:          sources,
 		decoder:          decode.New(),
 		processor:        proc,
-		processorWorkers: cfg.Processor.Workers,
+		processorWorkers: processorWorkers,
 		aggregatorCfgs:   cfg.Aggregators,
 		encoderCfg:       encoderCfg,
 		encoderWorkers:   encoderWorkers,

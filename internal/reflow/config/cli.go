@@ -46,6 +46,7 @@ var (
 	}
 	outputHelperOptions = []string{
 		"sflow:*[?allow_truncate=<bool>&max_header_bytes=<bytes>]",
+		"sflow|ipfix:*[?batch=<bool>&batch_max_records=<n>&batch_max_bytes=<bytes>&batch_flush_interval_ms=<ms>]",
 	}
 	inputHelperExamples = []string{
 		"udp::6343:flow",
@@ -60,6 +61,7 @@ var (
 		"protobuf:file:/tmp/reflow.pb",
 		"pcap:stdout",
 		"'sflow:udp:127.0.0.1:6343?allow_truncate=true&max_header_bytes=128'",
+		"'ipfix:udp:127.0.0.1:4739?batch=true&batch_max_records=32&batch_max_bytes=4096&batch_flush_interval_ms=250'",
 	}
 	aggregateHelperOptions = []string{
 		"-agg",
@@ -251,7 +253,7 @@ func (c *FlagConfig) generatedConfig() (*Config, error) {
 		Sources: sources,
 		Processor: ProcessorConfig{
 			Type:    "builtin",
-			Workers: 2,
+			Workers: AutoWorkers,
 			Builtin: BuiltinProcessorConfig{
 				DropMessage: true,
 				DropPayload: true,
@@ -544,7 +546,7 @@ func parseOutputSpec(spec string) (EncoderConfig, SinkConfig, error) {
 		return EncoderConfig{}, SinkConfig{}, fmt.Errorf("invalid -output %q: unsupported sink %q", spec, sinkType)
 	}
 
-	encoder := EncoderConfig{Type: encoderType}
+	encoder := EncoderConfig{Type: encoderType, Workers: AutoWorkers}
 	if encoderType == "sflow" {
 		encoder.AllowTruncate = boolPtr(true)
 	}
@@ -585,11 +587,67 @@ func applyOutputParams(spec, encoderType string, params url.Values, encoder *Enc
 				return fmt.Errorf("invalid -output %q: output parameter %q must be >= 0", spec, key)
 			}
 			encoder.SFlow.MaxHeaderBytes = parsed
+		case "batch":
+			if !supportsBatchOutputParams(encoderType) {
+				return fmt.Errorf("invalid -output %q: output parameter %q is only supported for sflow and ipfix", spec, key)
+			}
+			parsed, err := strconv.ParseBool(value)
+			if err != nil {
+				return fmt.Errorf("invalid -output %q: output parameter %q must be a boolean", spec, key)
+			}
+			encoder.Batch.Enabled = boolPtr(parsed)
+		case "batch_max_records":
+			if !supportsBatchOutputParams(encoderType) {
+				return fmt.Errorf("invalid -output %q: output parameter %q is only supported for sflow and ipfix", spec, key)
+			}
+			parsed, err := parseNonNegativeOutputParam(spec, key, value)
+			if err != nil {
+				return err
+			}
+			encoder.Batch.MaxRecords = parsed
+		case "batch_max_bytes":
+			if !supportsBatchOutputParams(encoderType) {
+				return fmt.Errorf("invalid -output %q: output parameter %q is only supported for sflow and ipfix", spec, key)
+			}
+			parsed, err := parseNonNegativeOutputParam(spec, key, value)
+			if err != nil {
+				return err
+			}
+			encoder.Batch.MaxBytes = parsed
+		case "batch_flush_interval_ms":
+			if !supportsBatchOutputParams(encoderType) {
+				return fmt.Errorf("invalid -output %q: output parameter %q is only supported for sflow and ipfix", spec, key)
+			}
+			parsed, err := parseNonNegativeOutputParam(spec, key, value)
+			if err != nil {
+				return err
+			}
+			encoder.Batch.FlushInterval = parsed
 		default:
 			return fmt.Errorf("invalid -output %q: unsupported output parameter %q", spec, key)
 		}
 	}
 	return nil
+}
+
+func parseNonNegativeOutputParam(spec, key, value string) (int, error) {
+	parsed, err := strconv.Atoi(value)
+	if err != nil {
+		return 0, fmt.Errorf("invalid -output %q: output parameter %q must be an integer", spec, key)
+	}
+	if parsed < 0 {
+		return 0, fmt.Errorf("invalid -output %q: output parameter %q must be >= 0", spec, key)
+	}
+	return parsed, nil
+}
+
+func supportsBatchOutputParams(encoderType string) bool {
+	switch encoderType {
+	case "sflow", "ipfix":
+		return true
+	default:
+		return false
+	}
 }
 
 func boolPtr(v bool) *bool {

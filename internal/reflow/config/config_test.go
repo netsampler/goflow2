@@ -4,6 +4,7 @@ import (
 	"flag"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -820,6 +821,52 @@ sink:
 	}
 }
 
+func TestLoadSupportsAutoWorkers(t *testing.T) {
+	dir := t.TempDir()
+
+	cfgPath := filepath.Join(dir, "reflow.yaml")
+	if err := os.WriteFile(cfgPath, []byte(`
+sources:
+  - network: udp
+    address: ":18081"
+    type: json
+
+processor:
+  type: builtin
+  workers: auto
+
+encoder:
+  type: ipfix
+  workers: auto
+
+sink:
+  type: udp
+  address: "127.0.0.1:4739"
+`), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	cfg, err := Load(cfgPath)
+	if err != nil {
+		t.Fatalf("Load returned error: %v", err)
+	}
+	if cfg.Processor.Workers != AutoWorkers {
+		t.Fatalf("expected processor workers auto, got %d", cfg.Processor.Workers)
+	}
+	if cfg.Encoder.Workers != AutoWorkers {
+		t.Fatalf("expected encoder workers auto, got %d", cfg.Encoder.Workers)
+	}
+	if got := ResolveProcessorWorkers(cfg.Processor.Workers); got != runtime.NumCPU() {
+		t.Fatalf("expected auto processor workers to resolve to CPU count, got %d", got)
+	}
+	if got := ResolveEncoderWorkers(cfg.Encoder.Workers, cfg.Encoder.Type); got != 1 {
+		t.Fatalf("expected ordered auto encoder workers to resolve to 1, got %d", got)
+	}
+	if got := ResolveEncoderWorkers(AutoWorkers, "json"); got != runtime.NumCPU() {
+		t.Fatalf("expected unordered auto encoder workers to resolve to CPU count, got %d", got)
+	}
+}
+
 func TestLoadSupportsSFlowTruncationOverrides(t *testing.T) {
 	dir := t.TempDir()
 
@@ -977,7 +1024,11 @@ func TestHelperOptionsTextListsInputAndOutputExamples(t *testing.T) {
 		"pcap:stdout",
 		"allow_truncate=<bool>",
 		"max_header_bytes=<bytes>",
+		"batch_max_records=<n>",
+		"batch_max_bytes=<bytes>",
+		"batch_flush_interval_ms=<ms>",
 		"sflow:udp:127.0.0.1:6343?allow_truncate=true&max_header_bytes=128",
+		"ipfix:udp:127.0.0.1:4739?batch=true&batch_max_records=32&batch_max_bytes=4096&batch_flush_interval_ms=250",
 		"stream:<path-or-stdin>:json",
 		"encoders: json, protobuf, sflow, ipfix, netflowv9, netflowv5, pcap, pcapng",
 	} {
@@ -1014,6 +1065,12 @@ func TestGeneratedSFlowOutputAllowsTruncate(t *testing.T) {
 	if cfg.Encoder.Batch.MaxRecords != 8 || cfg.Encoder.Batch.MaxBytes != 1200 || cfg.Encoder.Batch.FlushInterval != 1000 {
 		t.Fatalf("unexpected default sflow batch settings: %#v", cfg.Encoder.Batch)
 	}
+	if cfg.Encoder.Workers != AutoWorkers {
+		t.Fatalf("expected helper sflow output to keep encoder workers auto, got %d", cfg.Encoder.Workers)
+	}
+	if got := ResolveEncoderWorkers(cfg.Encoder.Workers, cfg.Encoder.Type); got != 1 {
+		t.Fatalf("expected helper sflow auto encoder workers to resolve to 1, got %d", got)
+	}
 }
 
 func TestGeneratedIPFIXOutputEnablesBatching(t *testing.T) {
@@ -1032,6 +1089,53 @@ func TestGeneratedIPFIXOutputEnablesBatching(t *testing.T) {
 	}
 	if cfg.Encoder.Batch.MaxRecords != 8 || cfg.Encoder.Batch.MaxBytes != 1200 || cfg.Encoder.Batch.FlushInterval != 1000 {
 		t.Fatalf("unexpected default ipfix batch settings: %#v", cfg.Encoder.Batch)
+	}
+	if cfg.Encoder.Workers != AutoWorkers {
+		t.Fatalf("expected helper ipfix output to keep encoder workers auto, got %d", cfg.Encoder.Workers)
+	}
+	if got := ResolveEncoderWorkers(cfg.Encoder.Workers, cfg.Encoder.Type); got != 1 {
+		t.Fatalf("expected helper ipfix auto encoder workers to resolve to 1, got %d", got)
+	}
+}
+
+func TestGeneratedOutputParsesBatchParams(t *testing.T) {
+	cfg, generated, err := LoadFromFlags(&FlagConfig{
+		Output:    "ipfix:udp:127.0.0.1:4739?batch=true&batch_max_records=32&batch_max_bytes=4096&batch_flush_interval_ms=250",
+		OutputSet: true,
+	})
+	if err != nil {
+		t.Fatalf("LoadFromFlags returned error: %v", err)
+	}
+	if !generated {
+		t.Fatalf("expected generated config")
+	}
+	if !cfg.Encoder.Batch.IsEnabled() {
+		t.Fatalf("expected explicit batch=true")
+	}
+	if cfg.Encoder.Batch.MaxRecords != 32 {
+		t.Fatalf("expected batch max_records=32, got %d", cfg.Encoder.Batch.MaxRecords)
+	}
+	if cfg.Encoder.Batch.MaxBytes != 4096 {
+		t.Fatalf("expected batch max_bytes=4096, got %d", cfg.Encoder.Batch.MaxBytes)
+	}
+	if cfg.Encoder.Batch.FlushInterval != 250 {
+		t.Fatalf("expected batch flush_interval_ms=250, got %d", cfg.Encoder.Batch.FlushInterval)
+	}
+}
+
+func TestGeneratedOutputParsesBatchDisable(t *testing.T) {
+	cfg, generated, err := LoadFromFlags(&FlagConfig{
+		Output:    "sflow:udp:127.0.0.1:6343?batch=false",
+		OutputSet: true,
+	})
+	if err != nil {
+		t.Fatalf("LoadFromFlags returned error: %v", err)
+	}
+	if !generated {
+		t.Fatalf("expected generated config")
+	}
+	if cfg.Encoder.Batch.IsEnabled() {
+		t.Fatalf("expected explicit batch=false")
 	}
 }
 
@@ -1099,6 +1203,19 @@ func TestGeneratedOutputRejectsUnsupportedParams(t *testing.T) {
 	}
 }
 
+func TestGeneratedOutputRejectsUnsupportedBatchParams(t *testing.T) {
+	_, _, err := LoadFromFlags(&FlagConfig{
+		Output:    "json:stdout?batch=true",
+		OutputSet: true,
+	})
+	if err == nil {
+		t.Fatalf("expected json output to reject batch")
+	}
+	if !strings.Contains(err.Error(), "only supported for sflow and ipfix") {
+		t.Fatalf("expected sflow/ipfix-only error, got %v", err)
+	}
+}
+
 func TestGeneratedConfigYAMLUsesFalseForPacketDecoderBooleans(t *testing.T) {
 	cfg, generated, err := LoadFromFlags(&FlagConfig{GenConf: true})
 	if err != nil {
@@ -1118,6 +1235,7 @@ func TestGeneratedConfigYAMLUsesFalseForPacketDecoderBooleans(t *testing.T) {
 	for _, want := range []string{
 		"snaplen: 65535",
 		"sample_every: 1",
+		"workers: auto",
 		"decode_beyond_l4: false",
 		"enabled: false",
 		"- 4789",

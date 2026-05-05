@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -57,8 +58,75 @@ type SourceConfig struct {
 
 type ProcessorConfig struct {
 	Type    string                 `yaml:"type"`
-	Workers int                    `yaml:"workers"`
+	Workers WorkerCount            `yaml:"workers"`
 	Builtin BuiltinProcessorConfig `yaml:"builtin"`
+}
+
+type WorkerCount int
+
+const AutoWorkers WorkerCount = -1
+
+func (w *WorkerCount) UnmarshalYAML(value *yaml.Node) error {
+	if value.Kind != yaml.ScalarNode {
+		return fmt.Errorf("workers must be an integer or \"auto\"")
+	}
+	if strings.EqualFold(value.Value, "auto") {
+		*w = AutoWorkers
+		return nil
+	}
+	var count int
+	if err := value.Decode(&count); err != nil {
+		return fmt.Errorf("workers must be an integer or \"auto\"")
+	}
+	*w = WorkerCount(count)
+	return nil
+}
+
+func (w WorkerCount) MarshalYAML() (any, error) {
+	if w == AutoWorkers {
+		return "auto", nil
+	}
+	return int(w), nil
+}
+
+func ResolveProcessorWorkers(workers WorkerCount) int {
+	if workers == AutoWorkers {
+		return autoWorkerCount()
+	}
+	if workers <= 0 {
+		return 1
+	}
+	return int(workers)
+}
+
+func ResolveEncoderWorkers(workers WorkerCount, encoderType string) int {
+	if workers == AutoWorkers {
+		if orderedEncoderType(encoderType) {
+			return 1
+		}
+		return autoWorkerCount()
+	}
+	if workers <= 0 {
+		return 1
+	}
+	return int(workers)
+}
+
+func autoWorkerCount() int {
+	workers := runtime.NumCPU()
+	if workers < 1 {
+		return 1
+	}
+	return workers
+}
+
+func orderedEncoderType(encoderType string) bool {
+	switch encoderType {
+	case "sflow", "ipfix", "netflowv9", "netflowv5":
+		return true
+	default:
+		return false
+	}
 }
 
 type BuiltinProcessorConfig struct {
@@ -230,7 +298,7 @@ type AggregatorPeriodicConfig struct {
 
 type EncoderConfig struct {
 	Type             string              `yaml:"type"`
-	Workers          int                 `yaml:"workers"`
+	Workers          WorkerCount         `yaml:"workers"`
 	MaxDatagramBytes int                 `yaml:"max_datagram_bytes"`
 	AllowTruncate    *bool               `yaml:"allow_truncate"`
 	Batch            BatchConfig         `yaml:"batch"`
@@ -497,8 +565,10 @@ func (c *Config) setDefaults(configPath string) error {
 	if c.Processor.Type == "" {
 		c.Processor.Type = "builtin"
 	}
-	if c.Processor.Workers <= 0 {
+	if c.Processor.Workers == 0 {
 		c.Processor.Workers = 1
+	} else if c.Processor.Workers < 0 && c.Processor.Workers != AutoWorkers {
+		return fmt.Errorf("processor.workers must be >= 1 or \"auto\"")
 	}
 	if c.Processor.Builtin.TruncatePacketBytes < 0 {
 		return fmt.Errorf("processor.builtin.truncate_packet_bytes must be >= 0")
@@ -529,8 +599,10 @@ func (c *Config) setDefaults(configPath string) error {
 	if c.Encoder.Type == "" {
 		c.Encoder.Type = "json"
 	}
-	if c.Encoder.Workers <= 0 {
+	if c.Encoder.Workers == 0 {
 		c.Encoder.Workers = 1
+	} else if c.Encoder.Workers < 0 && c.Encoder.Workers != AutoWorkers {
+		return fmt.Errorf("encoder.workers must be >= 1 or \"auto\"")
 	}
 	if c.Encoder.MaxDatagramBytes <= 0 {
 		c.Encoder.MaxDatagramBytes = 1400
