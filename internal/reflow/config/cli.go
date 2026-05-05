@@ -135,6 +135,9 @@ func LoadFromFlags(flags *FlagConfig) (*Config, bool, error) {
 	if err := cfg.setDefaults(generatedConfigPath); err != nil {
 		return nil, true, err
 	}
+	if flags.GenConf {
+		cfg.materializeGeneratedYAMLDefaults()
+	}
 	return cfg, true, nil
 }
 
@@ -185,6 +188,29 @@ func (c *FlagConfig) generatedConfig() (*Config, error) {
 		cfg.Aggregators = generatedAggregators()
 	}
 	return cfg, nil
+}
+
+func (c *Config) materializeGeneratedYAMLDefaults() {
+	defaultFalse(&c.Processor.Builtin.PacketDecoder.DecodeBeyondL4)
+	defaultFalse(&c.Processor.Builtin.PacketDecoder.Encapsulations.GRE.Enabled)
+	defaultFalse(&c.Processor.Builtin.PacketDecoder.Encapsulations.IPIP.Enabled)
+	defaultFalse(&c.Processor.Builtin.PacketDecoder.Encapsulations.VXLAN.Enabled)
+	defaultFalse(&c.Processor.Builtin.PacketDecoder.Encapsulations.Geneve.Enabled)
+	defaultFalse(&c.Processor.Builtin.PacketDecoder.Encapsulations.L2TP.Enabled)
+	defaultFalse(&c.Processor.Builtin.PacketDecoder.Encapsulations.GTPU.Enabled)
+	defaultFalse(&c.Processor.Builtin.PacketDecoder.Encapsulations.PPPoE.Enabled)
+	if c.Encoder.TemplatedFlow.TemplateBaseID == 0 {
+		c.Encoder.TemplatedFlow.TemplateBaseID = 256
+	}
+	if c.Encoder.TemplatedFlow.OptionsTemplateBaseID == 0 {
+		c.Encoder.TemplatedFlow.OptionsTemplateBaseID = 1024
+	}
+	if c.Encoder.TemplatedFlow.TemplateRefresh == 0 {
+		c.Encoder.TemplatedFlow.TemplateRefresh = 60000
+	}
+	if c.Encoder.TemplatedFlow.OptionsRefresh == 0 {
+		c.Encoder.TemplatedFlow.OptionsRefresh = 30000
+	}
 }
 
 func parseInputSpec(spec string) (SourceConfig, error) {

@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"gopkg.in/yaml.v3"
 )
 
 func TestLoadSetsAggregatorDefaultsAndLoadsFlowDataFields(t *testing.T) {
@@ -854,6 +856,36 @@ func TestHelperOptionsTextListsInputAndOutputExamples(t *testing.T) {
 	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("expected helper options to contain %q, got:\n%s", want, text)
+		}
+	}
+}
+
+func TestGeneratedConfigYAMLUsesFalseForPacketDecoderBooleans(t *testing.T) {
+	cfg, generated, err := LoadFromFlags(&FlagConfig{GenConf: true})
+	if err != nil {
+		t.Fatalf("LoadFromFlags returned error: %v", err)
+	}
+	if !generated {
+		t.Fatalf("expected generated config mode")
+	}
+	raw, err := yaml.Marshal(cfg)
+	if err != nil {
+		t.Fatalf("marshal config: %v", err)
+	}
+	text := string(raw)
+	if strings.Contains(text, ": null") {
+		t.Fatalf("expected generated config to avoid null booleans, got:\n%s", text)
+	}
+	for _, want := range []string{
+		"decode_beyond_l4: false",
+		"enabled: false",
+		"template_base_id: 256",
+		"options_template_base_id: 1024",
+		"template_refresh_ms: 60000",
+		"options_refresh_ms: 30000",
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("expected generated config to contain %q, got:\n%s", want, text)
 		}
 	}
 }

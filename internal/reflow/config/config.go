@@ -676,6 +676,14 @@ func defaultTrue(dst **bool) {
 	*dst = &v
 }
 
+func defaultFalse(dst **bool) {
+	if *dst != nil {
+		return
+	}
+	v := false
+	*dst = &v
+}
+
 // loadFlowDataCatalog resolves the templated flow field catalog. Empty fields_path uses
 // the embedded default catalog; explicit paths are resolved relative to config.
 func (c *Config) loadFlowDataCatalog(configPath string) error {
