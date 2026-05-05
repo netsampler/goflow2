@@ -809,6 +809,49 @@ sink:
 	if !cfg.Encoder.SFlow.UseMetadataSequenceNumber {
 		t.Fatalf("expected sflow.use_metadata_sequence_number=true")
 	}
+	if cfg.Encoder.AllowTruncate == nil || !*cfg.Encoder.AllowTruncate {
+		t.Fatalf("expected sflow allow_truncate to default true")
+	}
+	if cfg.Encoder.SFlow.MaxHeaderBytes != 128 {
+		t.Fatalf("expected sflow.max_header_bytes default 128, got %d", cfg.Encoder.SFlow.MaxHeaderBytes)
+	}
+}
+
+func TestLoadSupportsSFlowTruncationOverrides(t *testing.T) {
+	dir := t.TempDir()
+
+	cfgPath := filepath.Join(dir, "reflow.yaml")
+	if err := os.WriteFile(cfgPath, []byte(`
+sources:
+  - network: udp
+    address: ":18081"
+    type: json
+
+processor:
+  type: builtin
+
+encoder:
+  type: sflow
+  allow_truncate: false
+  sflow:
+    max_header_bytes: 256
+
+sink:
+  type: stdout
+`), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	cfg, err := Load(cfgPath)
+	if err != nil {
+		t.Fatalf("Load returned error: %v", err)
+	}
+	if cfg.Encoder.AllowTruncate == nil || *cfg.Encoder.AllowTruncate {
+		t.Fatalf("expected explicit allow_truncate=false")
+	}
+	if cfg.Encoder.SFlow.MaxHeaderBytes != 256 {
+		t.Fatalf("expected sflow.max_header_bytes=256, got %d", cfg.Encoder.SFlow.MaxHeaderBytes)
+	}
 }
 
 func TestLoadSupportsProtobufFlavor(t *testing.T) {
@@ -929,6 +972,9 @@ func TestHelperOptionsTextListsInputAndOutputExamples(t *testing.T) {
 		"json:stdout",
 		"ipfix:udp:127.0.0.1:4739",
 		"pcap:stdout",
+		"allow_truncate=<bool>",
+		"max_header_bytes=<bytes>",
+		"sflow:udp:127.0.0.1:6343?allow_truncate=true&max_header_bytes=128",
 		"stream:<path-or-stdin>:json",
 		"encoders: json, protobuf, sflow, ipfix, netflowv9, netflowv5, pcap, pcapng",
 	} {
@@ -953,8 +999,43 @@ func TestGeneratedSFlowOutputAllowsTruncate(t *testing.T) {
 	if cfg.Encoder.Type != "sflow" {
 		t.Fatalf("expected sflow encoder, got %q", cfg.Encoder.Type)
 	}
-	if !cfg.Encoder.AllowTruncate {
+	if cfg.Encoder.AllowTruncate == nil || !*cfg.Encoder.AllowTruncate {
 		t.Fatalf("expected helper sflow output to enable allow_truncate")
+	}
+	if cfg.Encoder.SFlow.MaxHeaderBytes != 128 {
+		t.Fatalf("expected helper sflow output to default max_header_bytes=128, got %d", cfg.Encoder.SFlow.MaxHeaderBytes)
+	}
+}
+
+func TestGeneratedSFlowOutputParsesAllowTruncateParam(t *testing.T) {
+	cfg, generated, err := LoadFromFlags(&FlagConfig{
+		Output:    "sflow:udp:127.0.0.1:6343?allow_truncate=false&max_header_bytes=256",
+		OutputSet: true,
+	})
+	if err != nil {
+		t.Fatalf("LoadFromFlags returned error: %v", err)
+	}
+	if !generated {
+		t.Fatalf("expected generated config")
+	}
+	if cfg.Encoder.AllowTruncate == nil || *cfg.Encoder.AllowTruncate {
+		t.Fatalf("expected explicit allow_truncate=false to override helper default")
+	}
+	if cfg.Encoder.SFlow.MaxHeaderBytes != 256 {
+		t.Fatalf("expected explicit max_header_bytes=256, got %d", cfg.Encoder.SFlow.MaxHeaderBytes)
+	}
+}
+
+func TestGeneratedOutputRejectsUnsupportedParams(t *testing.T) {
+	_, _, err := LoadFromFlags(&FlagConfig{
+		Output:    "json:stdout?allow_truncate=true",
+		OutputSet: true,
+	})
+	if err == nil {
+		t.Fatalf("expected json output to reject allow_truncate")
+	}
+	if !strings.Contains(err.Error(), "only supported for sflow") {
+		t.Fatalf("expected sflow-only error, got %v", err)
 	}
 }
 

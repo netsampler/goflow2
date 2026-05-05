@@ -22,13 +22,15 @@ encoder:
   type: sflow
   workers: 1
   max_datagram_bytes: 1400
-  # If an encoded sFlow datagram exceeds max_datagram_bytes, ReFlow truncates
-  # the last sample payload just enough to fit. Small packets are not truncated
-  # unless they are the sample that pushes a datagram over the size limit.
+  # If an encoded sFlow datagram exceeds max_datagram_bytes, ReFlow truncates.
+  # This defaults to true for sFlow and can be disabled explicitly.
   allow_truncate: true
   sflow:
     # If set, this overrides the outgoing sFlow agent address.
     # agent_ip: "192.0.2.10"
+    # Cap sampled raw-header bytes per sample so large captured packets can
+    # still share one sFlow datagram. frame_length keeps the packet size.
+    max_header_bytes: 128
     # By default ReFlow uses encoder-owned sequence numbers for outgoing
     # datagrams. Set this true only when replaying source packet sequence
     # metadata verbatim is desired.

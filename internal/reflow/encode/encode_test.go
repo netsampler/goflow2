@@ -417,7 +417,7 @@ func TestSFlowEncoderTruncatesOversizedSampleWhenEnabled(t *testing.T) {
 	enc := NewSFlowEncoder(config.EncoderConfig{
 		Type:             "sflow",
 		MaxDatagramBytes: 96,
-		AllowTruncate:    true,
+		AllowTruncate:    testBoolPtr(true),
 	})
 
 	originalHeader := bytes.Repeat([]byte{0xaa}, 200)
@@ -445,6 +445,70 @@ func TestSFlowEncoderTruncatesOversizedSampleWhenEnabled(t *testing.T) {
 	}
 	if int(header.OriginalLength) != len(header.HeaderData) {
 		t.Fatalf("expected OriginalLength=%d to match truncated header_data length, got %d", len(header.HeaderData), header.OriginalLength)
+	}
+}
+
+func TestSFlowEncoderCapsHeadersBeforeBatching(t *testing.T) {
+	enc := NewSFlowEncoder(config.EncoderConfig{
+		Type:             "sflow",
+		MaxDatagramBytes: 400,
+		AllowTruncate:    testBoolPtr(true),
+		Batch: config.BatchConfig{
+			Enabled:    true,
+			MaxRecords: 2,
+		},
+		SFlow: config.SFlowConfig{
+			MaxHeaderBytes: 64,
+		},
+	})
+
+	first, err := enc.Encode(&event.Event{
+		Fields: map[string]any{
+			"agent_ip":        "192.0.2.1",
+			"protocol":        uint32(1),
+			"frame_length":    uint32(200),
+			"original_length": uint32(200),
+			"header_data":     bytes.Repeat([]byte{0xaa}, 200),
+		},
+	})
+	if err != nil {
+		t.Fatalf("Encode(first) returned error: %v", err)
+	}
+	if len(first) != 0 {
+		t.Fatalf("expected first batched event to stay buffered, got %d payloads", len(first))
+	}
+	second, err := enc.Encode(&event.Event{
+		Fields: map[string]any{
+			"agent_ip":        "192.0.2.1",
+			"protocol":        uint32(1),
+			"frame_length":    uint32(200),
+			"original_length": uint32(200),
+			"header_data":     bytes.Repeat([]byte{0xbb}, 200),
+		},
+	})
+	if err != nil {
+		t.Fatalf("Encode(second) returned error: %v", err)
+	}
+	if len(second) != 1 {
+		t.Fatalf("expected one batched payload, got %d", len(second))
+	}
+
+	packet := decodeSFlowPacket(t, second[0])
+	if len(packet.Samples) != 2 {
+		t.Fatalf("expected two samples in one datagram, got %d", len(packet.Samples))
+	}
+	for i, raw := range packet.Samples {
+		sample := raw.(sflow.FlowSample)
+		header := sample.Records[0].Data.(sflow.SampledHeader)
+		if len(header.HeaderData) != 64 {
+			t.Fatalf("sample %d expected capped header_data length 64, got %d", i, len(header.HeaderData))
+		}
+		if header.OriginalLength != 64 {
+			t.Fatalf("sample %d expected original_length/header_size 64, got %d", i, header.OriginalLength)
+		}
+		if header.FrameLength != 200 {
+			t.Fatalf("sample %d expected frame_length 200, got %d", i, header.FrameLength)
+		}
 	}
 }
 
@@ -1604,6 +1668,10 @@ func decodeFlowMessage(t *testing.T, payload []byte) *flowpb.FlowMessage {
 		t.Fatalf("unmarshal flow message: %v", err)
 	}
 	return msg
+}
+
+func testBoolPtr(v bool) *bool {
+	return &v
 }
 
 func testTFlowEncoderConfig(typ string) config.EncoderConfig {

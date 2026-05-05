@@ -38,6 +38,7 @@ type SFlowEncoder struct {
 	started          time.Time
 	maxDatagramBytes int
 	allowTruncate    bool
+	maxHeaderBytes   int
 	batch            config.BatchConfig
 	cfg              config.SFlowConfig
 	events           []*event.Event
@@ -50,7 +51,8 @@ func NewSFlowEncoder(cfg config.EncoderConfig) *SFlowEncoder {
 	return &SFlowEncoder{
 		started:          time.Now(),
 		maxDatagramBytes: cfg.MaxDatagramBytes,
-		allowTruncate:    cfg.AllowTruncate,
+		allowTruncate:    cfg.AllowTruncate != nil && *cfg.AllowTruncate,
+		maxHeaderBytes:   cfg.SFlow.MaxHeaderBytes,
 		batch:            cfg.Batch,
 		cfg:              cfg.SFlow,
 	}
@@ -327,6 +329,10 @@ func (e *SFlowEncoder) sampledHeaderFields(evt *event.Event, fields map[string]a
 				originalLength = uint32(len(headerData))
 			}
 		}
+	}
+	if e.allowTruncate && e.maxHeaderBytes > 0 && len(headerData) > e.maxHeaderBytes {
+		headerData = append([]byte(nil), headerData[:e.maxHeaderBytes]...)
+		originalLength = uint32(len(headerData))
 	}
 	return headerData, protocol, frameLength, originalLength
 }

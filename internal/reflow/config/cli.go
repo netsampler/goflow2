@@ -44,6 +44,9 @@ var (
 		"unixgram:<socket-path>",
 		"socket:<socket-path>",
 	}
+	outputHelperOptions = []string{
+		"sflow:*[?allow_truncate=<bool>&max_header_bytes=<bytes>]",
+	}
 	inputHelperExamples = []string{
 		"udp::6343:flow",
 		"udp:127.0.0.1:2055:flow",
@@ -56,6 +59,7 @@ var (
 		"ipfix:udp:127.0.0.1:4739",
 		"protobuf:file:/tmp/reflow.pb",
 		"pcap:stdout",
+		"'sflow:udp:127.0.0.1:6343?allow_truncate=true&max_header_bytes=128'",
 	}
 	aggregateHelperOptions = []string{
 		"-agg",
@@ -92,6 +96,10 @@ func HelperOptionsText() string {
 	b.WriteString(strings.Join(outputEncoderOptions, ", "))
 	b.WriteString("\n  sinks:\n")
 	for _, option := range outputSinkOptions {
+		fmt.Fprintf(&b, "    %s\n", option)
+	}
+	b.WriteString("  parameters:\n")
+	for _, option := range outputHelperOptions {
 		fmt.Fprintf(&b, "    %s\n", option)
 	}
 	b.WriteString("\nOutput examples:\n")
@@ -486,6 +494,22 @@ func parseOutputSpec(spec string) (EncoderConfig, SinkConfig, error) {
 		return EncoderConfig{}, SinkConfig{}, fmt.Errorf("invalid -output %q: unsupported encoder %q", spec, encoderType)
 	}
 
+	var params url.Values
+	if before, rawParams, ok := strings.Cut(rest, "?"); ok {
+		if rawParams == "" {
+			return EncoderConfig{}, SinkConfig{}, fmt.Errorf("invalid -output %q: output parameters cannot be empty", spec)
+		}
+		parsed, err := parseCommaQueryParams(rawParams)
+		if err != nil {
+			return EncoderConfig{}, SinkConfig{}, fmt.Errorf("invalid -output %q: %w", spec, err)
+		}
+		rest = before
+		params = parsed
+	}
+	if rest == "" {
+		return EncoderConfig{}, SinkConfig{}, fmt.Errorf("invalid -output %q: expected encoder:sink[:target]", spec)
+	}
+
 	sinkType := rest
 	target := ""
 	if first, tail, ok := strings.Cut(rest, ":"); ok {
@@ -521,9 +545,51 @@ func parseOutputSpec(spec string) (EncoderConfig, SinkConfig, error) {
 
 	encoder := EncoderConfig{Type: encoderType}
 	if encoderType == "sflow" {
-		encoder.AllowTruncate = true
+		encoder.AllowTruncate = boolPtr(true)
+	}
+	if err := applyOutputParams(spec, encoderType, params, &encoder); err != nil {
+		return EncoderConfig{}, SinkConfig{}, err
 	}
 	return encoder, sink, nil
+}
+
+func applyOutputParams(spec, encoderType string, params url.Values, encoder *EncoderConfig) error {
+	for key, values := range params {
+		if len(values) == 0 {
+			return fmt.Errorf("invalid -output %q: output parameter %q cannot be empty", spec, key)
+		}
+		value := values[len(values)-1]
+		switch key {
+		case "allow_truncate":
+			if encoderType != "sflow" {
+				return fmt.Errorf("invalid -output %q: output parameter %q is only supported for sflow", spec, key)
+			}
+			parsed, err := strconv.ParseBool(value)
+			if err != nil {
+				return fmt.Errorf("invalid -output %q: output parameter %q must be a boolean", spec, key)
+			}
+			encoder.AllowTruncate = boolPtr(parsed)
+		case "max_header_bytes":
+			if encoderType != "sflow" {
+				return fmt.Errorf("invalid -output %q: output parameter %q is only supported for sflow", spec, key)
+			}
+			parsed, err := strconv.Atoi(value)
+			if err != nil {
+				return fmt.Errorf("invalid -output %q: output parameter %q must be an integer", spec, key)
+			}
+			if parsed < 0 {
+				return fmt.Errorf("invalid -output %q: output parameter %q must be >= 0", spec, key)
+			}
+			encoder.SFlow.MaxHeaderBytes = parsed
+		default:
+			return fmt.Errorf("invalid -output %q: unsupported output parameter %q", spec, key)
+		}
+	}
+	return nil
+}
+
+func boolPtr(v bool) *bool {
+	return &v
 }
 
 func validateSocketSourceType(sourceType string) error {

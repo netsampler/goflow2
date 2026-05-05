@@ -232,7 +232,7 @@ type EncoderConfig struct {
 	Type             string              `yaml:"type"`
 	Workers          int                 `yaml:"workers"`
 	MaxDatagramBytes int                 `yaml:"max_datagram_bytes"`
-	AllowTruncate    bool                `yaml:"allow_truncate"`
+	AllowTruncate    *bool               `yaml:"allow_truncate"`
 	Batch            BatchConfig         `yaml:"batch"`
 	TemplatedFlow    TemplatedFlowConfig `yaml:"templated_flow"`
 	JSON             JSONConfig          `yaml:"json"`
@@ -271,6 +271,7 @@ type SFlowConfig struct {
 	AgentIP                   string               `yaml:"agent_ip"`
 	CounterFormat             string               `yaml:"counter_format"`
 	UseMetadataSequenceNumber bool                 `yaml:"use_metadata_sequence_number"`
+	MaxHeaderBytes            int                  `yaml:"max_header_bytes"`
 	BatchOver                 SFlowBatchOverConfig `yaml:"batch_over"`
 }
 
@@ -530,6 +531,10 @@ func (c *Config) setDefaults(configPath string) error {
 	if c.Encoder.MaxDatagramBytes <= 0 {
 		c.Encoder.MaxDatagramBytes = 1400
 	}
+	if c.Encoder.AllowTruncate == nil {
+		v := c.Encoder.Type == "sflow"
+		c.Encoder.AllowTruncate = &v
+	}
 	if (c.Encoder.Type == "ipfix" || c.Encoder.Type == "netflowv9") && c.Encoder.TemplatedFlow.TemplateBaseID == 0 {
 		c.Encoder.TemplatedFlow.TemplateBaseID = 256
 	}
@@ -552,6 +557,12 @@ func (c *Config) setDefaults(configPath string) error {
 	defaultTrue(&c.Encoder.SFlow.BatchOver.SubAgentID)
 	defaultTrue(&c.Encoder.SFlow.BatchOver.SequenceNumber)
 	defaultTrue(&c.Encoder.SFlow.BatchOver.Uptime)
+	if c.Encoder.SFlow.MaxHeaderBytes < 0 {
+		return fmt.Errorf("encoder.sflow.max_header_bytes must be >= 0")
+	}
+	if c.Encoder.Type == "sflow" && c.Encoder.SFlow.MaxHeaderBytes == 0 {
+		c.Encoder.SFlow.MaxHeaderBytes = 128
+	}
 	switch c.Encoder.SFlow.CounterFormat {
 	case "", "standard":
 		c.Encoder.SFlow.CounterFormat = "standard"
