@@ -10,6 +10,7 @@ type PacketModel struct {
 type LayerSpec struct {
 	Kind     string                  `json:"kind"`
 	Name     string                  `json:"name,omitempty"`
+	Length   uint32                  `json:"length,omitempty"`
 	Ethernet *EthernetLayer          `json:"ethernet,omitempty"`
 	VLAN     *VLANLayer              `json:"vlan,omitempty"`
 	MPLS     *MPLSLayer              `json:"mpls,omitempty"`

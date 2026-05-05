@@ -37,6 +37,15 @@ func TestNormalizeEventParsesDirectIPv4SampledHeader(t *testing.T) {
 	if got := evt.Fields["bytes"]; got != int64(74) {
 		t.Fatalf("expected bytes to use frame_length=74, got %#v", got)
 	}
+	if evt.Packet == nil || len(evt.Packet.Layers) != 2 {
+		t.Fatalf("expected ipv4/tcp packet model, got %#v", evt.Packet)
+	}
+	if got := evt.Packet.Layers[0].Length; got != 20 {
+		t.Fatalf("expected ipv4 layer length 20, got %d", got)
+	}
+	if got := evt.Packet.Layers[1].Length; got != 20 {
+		t.Fatalf("expected tcp layer length 20, got %d", got)
+	}
 }
 
 func TestNormalizeEventParsesDirectIPv6SampledHeader(t *testing.T) {

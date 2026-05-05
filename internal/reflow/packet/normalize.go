@@ -210,6 +210,7 @@ func BuildPseudoHeader(evt *event.Event, fields map[string]any) ([]byte, bool) {
 	if model == nil || len(model.Layers) == 0 {
 		return nil, false
 	}
+	ensurePacketModelLayerLengths(model)
 	data, err := encodePacketModel(model)
 	if err != nil || len(data) == 0 {
 		return nil, false
@@ -869,11 +870,66 @@ type packetView struct {
 }
 
 func (v *packetView) appendLayer(layer event.LayerSpec) {
+	ensureLayerLength(&layer)
 	v.Layers = append(v.Layers, layer.Kind)
 	if v.Model == nil {
 		v.Model = &event.PacketModel{}
 	}
 	v.Model.Layers = append(v.Model.Layers, layer)
+}
+
+func ensurePacketModelLayerLengths(model *event.PacketModel) {
+	if model == nil {
+		return
+	}
+	for i := range model.Layers {
+		ensureLayerLength(&model.Layers[i])
+	}
+}
+
+func ensureLayerLength(layer *event.LayerSpec) {
+	if layer == nil || layer.Length != 0 {
+		return
+	}
+	layer.Length = defaultLayerLength(*layer)
+}
+
+func defaultLayerLength(layer event.LayerSpec) uint32 {
+	switch layer.Kind {
+	case "ethernet":
+		return 14
+	case "dot1q", "mpls":
+		return 4
+	case "ipv4":
+		return 20
+	case "ipv6":
+		return 40
+	case "gre":
+		length := uint32(4)
+		if layer.GRE != nil {
+			if layer.GRE.Checksum {
+				length += 4
+			}
+			if layer.GRE.Key {
+				length += 4
+			}
+			if layer.GRE.Sequence {
+				length += 4
+			}
+		}
+		return length
+	case "vxlan", "geneve", "pppoe", "udp", "icmp", "icmpv6":
+		return 8
+	case "tcp":
+		return 20
+	case "sctp":
+		return 12
+	case "payload":
+		if layer.Payload != nil {
+			return layer.Payload.Length
+		}
+	}
+	return 0
 }
 
 func applyPacketViewFields(fields map[string]any, view packetView, helpers AggregationHelperOptions) {
@@ -1154,6 +1210,7 @@ func finalizePacketView(view packetView) packetView {
 	if view.Model == nil {
 		return view
 	}
+	ensurePacketModelLayerLengths(view.Model)
 	if view.Model.Features == nil {
 		view.Model.Features = make(map[string]event.FeatureValue)
 	}
@@ -1239,7 +1296,8 @@ func parsePacketViewWithOptions(data []byte, protocol uint32, opts DecodeOptions
 				return packetView{}, err
 			}
 			view.appendLayer(event.LayerSpec{
-				Kind: "ipv4",
+				Kind:   "ipv4",
+				Length: uint32(nextOffset),
 				IPv4: &event.IPv4Layer{
 					SrcAddr:        tuple.SrcAddr,
 					DstAddr:        tuple.DstAddr,
@@ -1299,7 +1357,7 @@ func parsePacketViewWithOptions(data []byte, protocol uint32, opts DecodeOptions
 					}
 				}
 			}
-			appendTransportLayer(&view, tuple.Proto)
+			appendTransportLayer(&view, tuple.Proto, data[offset+nextOffset:])
 			return finalizePacketView(view), nil
 		case etherType == 0x86dd || data[offset]>>4 == 6:
 			nextOffset, tuple, nextProto, extensionLayers, err := parseIPv6Tuple(data[offset:])
@@ -1307,7 +1365,8 @@ func parsePacketViewWithOptions(data []byte, protocol uint32, opts DecodeOptions
 				return packetView{}, err
 			}
 			view.appendLayer(event.LayerSpec{
-				Kind: "ipv6",
+				Kind:   "ipv6",
+				Length: 40,
 				IPv6: &event.IPv6Layer{
 					SrcAddr:      tuple.SrcAddr,
 					DstAddr:      tuple.DstAddr,
@@ -1367,7 +1426,7 @@ func parsePacketViewWithOptions(data []byte, protocol uint32, opts DecodeOptions
 					}
 				}
 			}
-			appendTransportLayer(&view, tuple.Proto)
+			appendTransportLayer(&view, tuple.Proto, data[offset+nextOffset:])
 			return finalizePacketView(view), nil
 		case etherType == 0x8847 || etherType == 0x8848:
 			innerOffset, innerProto, err := parseMPLS(data[offset:], &view)
@@ -1525,7 +1584,8 @@ func parseIPv6Tuple(data []byte) (int, packetTuple, uint32, []event.LayerSpec, e
 				return 0, packetTuple{}, 0, nil, fmt.Errorf("truncated ipv6 fragment header")
 			}
 			extensionLayers = append(extensionLayers, event.LayerSpec{
-				Kind: "ipv6_fragment",
+				Kind:   "ipv6_fragment",
+				Length: 8,
 				Features: map[string]event.FeatureValue{
 					"next_header": event.FeatureUint64(uint64(data[offset])),
 				},
@@ -1538,7 +1598,8 @@ func parseIPv6Tuple(data []byte) (int, packetTuple, uint32, []event.LayerSpec, e
 				return 0, packetTuple{}, 0, nil, fmt.Errorf("truncated ipv6 authentication header")
 			}
 			extensionLayers = append(extensionLayers, event.LayerSpec{
-				Kind: "ipv6_authentication",
+				Kind:   "ipv6_authentication",
+				Length: uint32(hdrLen),
 				Features: map[string]event.FeatureValue{
 					"next_header": event.FeatureUint64(uint64(data[offset])),
 				},
@@ -1552,7 +1613,8 @@ func parseIPv6Tuple(data []byte) (int, packetTuple, uint32, []event.LayerSpec, e
 			}
 			if nextHeader == 43 {
 				extensionLayers = append(extensionLayers, event.LayerSpec{
-					Kind: "ipv6_routing",
+					Kind:   "ipv6_routing",
+					Length: uint32(hdrLen),
 					Features: map[string]event.FeatureValue{
 						"next_header":  event.FeatureUint64(uint64(data[offset])),
 						"routing_type": event.FeatureUint64(uint64(data[offset+2])),
@@ -1560,7 +1622,8 @@ func parseIPv6Tuple(data []byte) (int, packetTuple, uint32, []event.LayerSpec, e
 				})
 			} else {
 				extensionLayers = append(extensionLayers, event.LayerSpec{
-					Kind: "ipv6_extension",
+					Kind:   "ipv6_extension",
+					Length: uint32(hdrLen),
 					Features: map[string]event.FeatureValue{
 						"header":      event.FeatureUint64(uint64(nextHeader)),
 						"next_header": event.FeatureUint64(uint64(data[offset])),
@@ -1589,15 +1652,6 @@ func parseGRE(data []byte, view *packetView) (int, uint16, error) {
 	}
 	flags := binary.BigEndian.Uint16(data[0:2])
 	proto := binary.BigEndian.Uint16(data[2:4])
-	view.appendLayer(event.LayerSpec{
-		Kind: "gre",
-		GRE: &event.GRELayer{
-			Protocol: proto,
-			Checksum: flags&0x8000 != 0,
-			Key:      flags&0x2000 != 0,
-			Sequence: flags&0x1000 != 0,
-		},
-	})
 	offset := 4
 	if flags&0x8000 != 0 {
 		offset += 4
@@ -1611,6 +1665,16 @@ func parseGRE(data []byte, view *packetView) (int, uint16, error) {
 	if len(data) < offset {
 		return 0, 0, fmt.Errorf("truncated gre optional fields")
 	}
+	view.appendLayer(event.LayerSpec{
+		Kind:   "gre",
+		Length: uint32(offset),
+		GRE: &event.GRELayer{
+			Protocol: proto,
+			Checksum: flags&0x8000 != 0,
+			Key:      flags&0x2000 != 0,
+			Sequence: flags&0x1000 != 0,
+		},
+	})
 	return offset, proto, nil
 }
 
@@ -1624,7 +1688,8 @@ func parseUDPTunnel(data []byte, tuple packetTuple, view *packetView, opts Decod
 			return 0, 0, fmt.Errorf("truncated vxlan header")
 		}
 		view.appendLayer(event.LayerSpec{
-			Kind: "vxlan",
+			Kind:   "vxlan",
+			Length: 8,
 			VXLAN: &event.VXLANLayer{
 				VNI: uint32(data[12])<<16 | uint32(data[13])<<8 | uint32(data[14]),
 			},
@@ -1641,7 +1706,8 @@ func parseUDPTunnel(data []byte, tuple packetTuple, view *packetView, opts Decod
 			return 0, 0, fmt.Errorf("truncated geneve options")
 		}
 		view.appendLayer(event.LayerSpec{
-			Kind: "geneve",
+			Kind:   "geneve",
+			Length: uint32(8 + optLen),
 			Geneve: &event.GeneveLayer{
 				VNI:      uint32(data[12])<<16 | uint32(data[13])<<8 | uint32(data[14]),
 				Protocol: proto,
@@ -1701,7 +1767,8 @@ func parseL2TP(data []byte, view *packetView) (int, uint16, error) {
 	proto := binary.BigEndian.Uint16(data[offset : offset+2])
 	offset += 2
 	view.appendLayer(event.LayerSpec{
-		Kind: "l2tp",
+		Kind:   "l2tp",
+		Length: uint32(offset - 8),
 		Features: map[string]event.FeatureValue{
 			"tunnel_id":  event.FeatureUint64(uint64(tunnelID)),
 			"session_id": event.FeatureUint64(uint64(sessionID)),
@@ -1751,7 +1818,8 @@ func parseGTPU(data []byte, view *packetView) (int, uint16, error) {
 		return 0, 0, fmt.Errorf("missing gtpu payload")
 	}
 	view.appendLayer(event.LayerSpec{
-		Kind: "gtpu",
+		Kind:   "gtpu",
+		Length: uint32(offset - 8),
 		Features: map[string]event.FeatureValue{
 			"teid":         event.FeatureUint64(uint64(teid)),
 			"message_type": event.FeatureUint64(uint64(messageType)),
@@ -1844,10 +1912,10 @@ func parsePPPoE(data []byte, view *packetView) (int, uint16, error) {
 	}
 }
 
-func appendTransportLayer(view *packetView, proto uint32) {
+func appendTransportLayer(view *packetView, proto uint32, data []byte) {
 	switch proto {
 	case 6:
-		layer := event.LayerSpec{Kind: "tcp"}
+		layer := event.LayerSpec{Kind: "tcp", Length: tcpHeaderLength(data)}
 		if len(view.Tuples) > 0 {
 			tuple := view.Tuples[len(view.Tuples)-1]
 			layer.TCP = &event.TCPLayer{
@@ -1857,7 +1925,7 @@ func appendTransportLayer(view *packetView, proto uint32) {
 		}
 		view.appendLayer(layer)
 	case 17:
-		layer := event.LayerSpec{Kind: "udp"}
+		layer := event.LayerSpec{Kind: "udp", Length: 8}
 		if len(view.Tuples) > 0 {
 			tuple := view.Tuples[len(view.Tuples)-1]
 			layer.UDP = &event.UDPLayer{
@@ -1868,22 +1936,36 @@ func appendTransportLayer(view *packetView, proto uint32) {
 		view.appendLayer(layer)
 	case 132:
 		view.appendLayer(event.LayerSpec{
-			Kind: "sctp",
+			Kind:   "sctp",
+			Length: 12,
 			Features: map[string]event.FeatureValue{
 				"transport": event.FeatureString("sctp"),
 			},
 		})
 	case 1:
 		view.appendLayer(event.LayerSpec{
-			Kind: "icmp",
-			ICMP: &event.ICMPLayer{},
+			Kind:   "icmp",
+			Length: 8,
+			ICMP:   &event.ICMPLayer{},
 		})
 	case 58:
 		view.appendLayer(event.LayerSpec{
-			Kind: "icmpv6",
-			ICMP: &event.ICMPLayer{},
+			Kind:   "icmpv6",
+			Length: 8,
+			ICMP:   &event.ICMPLayer{},
 		})
 	}
+}
+
+func tcpHeaderLength(data []byte) uint32 {
+	if len(data) < 13 {
+		return 20
+	}
+	length := uint32(data[12]>>4) * 4
+	if length < 20 {
+		return 20
+	}
+	return length
 }
 
 func formatMAC(data []byte) string {
