@@ -201,7 +201,24 @@ func pcapWireLength(fields map[string]any, captured int) int {
 			return int(value)
 		}
 	}
+	if avg := averagePacketLength(fields); avg > captured {
+		return avg
+	}
 	return captured
+}
+
+func averagePacketLength(fields map[string]any) int {
+	bytes := uint64Field(fields, "bytes")
+	packets := uint64Field(fields, "packets")
+	if bytes == 0 || packets == 0 {
+		return 0
+	}
+	avg := (bytes + packets - 1) / packets
+	maxInt := uint64(^uint(0) >> 1)
+	if avg > maxInt {
+		return int(maxInt)
+	}
+	return int(avg)
 }
 
 func pcapLinkType(name string) (layers.LinkType, error) {

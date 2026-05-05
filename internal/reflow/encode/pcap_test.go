@@ -122,6 +122,49 @@ func TestPcapEncoderUsesPseudoPacket(t *testing.T) {
 	}
 }
 
+func TestPcapEncoderUsesAverageAggregateLengthForPseudoPacket(t *testing.T) {
+	enc, err := NewPcapEncoder(config.EncoderConfig{
+		Pcap: config.PcapConfig{
+			PacketSource: "auto",
+			LinkType:     "ethernet",
+			SnapLen:      65535,
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewPcapEncoder returned error: %v", err)
+	}
+
+	payloads, err := enc.Encode(&event.Event{
+		Fields: map[string]any{
+			"src_addr": "192.0.2.1",
+			"dst_addr": "198.51.100.2",
+			"proto":    uint32(17),
+			"src_port": uint32(12345),
+			"dst_port": uint32(53),
+			"bytes":    uint64(3000),
+			"packets":  uint64(2),
+		},
+	})
+	if err != nil {
+		t.Fatalf("Encode returned error: %v", err)
+	}
+
+	reader, err := pcapgo.NewReader(bytes.NewReader(payloads[0]))
+	if err != nil {
+		t.Fatalf("NewReader returned error: %v", err)
+	}
+	data, ci, err := reader.ReadPacketData()
+	if err != nil {
+		t.Fatalf("ReadPacketData returned error: %v", err)
+	}
+	if len(data) >= ci.Length {
+		t.Fatalf("expected pseudo packet to be captured/truncated, caplen=%d wirelen=%d", len(data), ci.Length)
+	}
+	if ci.Length != 1500 {
+		t.Fatalf("expected average aggregate wire length 1500, got %d", ci.Length)
+	}
+}
+
 func TestPcapEncoderUsesHeaderHexWhenHeaderDataMissing(t *testing.T) {
 	enc, err := NewPcapEncoder(config.EncoderConfig{
 		Pcap: config.PcapConfig{
