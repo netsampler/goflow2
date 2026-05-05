@@ -389,7 +389,6 @@ type SinkConfig struct {
 	Type    string `yaml:"type"`
 	Path    string `yaml:"path"`
 	Address string `yaml:"address"`
-	AgentIP string `yaml:"agent_ip"`
 	Framing string `yaml:"framing"`
 	Mode    string `yaml:"mode"`
 }

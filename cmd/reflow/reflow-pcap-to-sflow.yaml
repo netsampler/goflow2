@@ -27,6 +27,8 @@ encoder:
   # unless they are the sample that pushes a datagram over the size limit.
   allow_truncate: true
   sflow:
+    # If set, this overrides the outgoing sFlow agent address.
+    # agent_ip: "192.0.2.10"
     # By default ReFlow uses encoder-owned sequence numbers for outgoing
     # datagrams. Set this true only when replaying source packet sequence
     # metadata verbatim is desired.
@@ -46,5 +48,3 @@ encoder:
 sink:
   type: udp
   address: "127.0.0.1:6343"
-  # If set, this overrides the outgoing sFlow agent address.
-  # agent_ip: "192.0.2.10"

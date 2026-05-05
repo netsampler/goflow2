@@ -57,10 +57,6 @@ func New(cfg *config.Config) (*App, error) {
 	}
 
 	encoderCfg := cfg.Encoder
-	if cfg.Sink.AgentIP != "" && encoderCfg.Type == "sflow" {
-		// The sink-level agent IP acts as a final override for exported sFlow packets.
-		encoderCfg.SFlow.AgentIP = cfg.Sink.AgentIP
-	}
 	encoderWorkers := cfg.Encoder.Workers
 	// Ordered exporters own protocol sequence numbers and template refresh state.
 	// The effective config is:
