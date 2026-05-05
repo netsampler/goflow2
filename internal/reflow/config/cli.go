@@ -283,6 +283,7 @@ func (c *Config) materializeGeneratedYAMLDefaults() {
 	defaultFalse(&c.Processor.Builtin.PacketDecoder.Encapsulations.L2TP.Enabled)
 	defaultFalse(&c.Processor.Builtin.PacketDecoder.Encapsulations.GTPU.Enabled)
 	defaultFalse(&c.Processor.Builtin.PacketDecoder.Encapsulations.PPPoE.Enabled)
+	defaultFalse(&c.Encoder.Batch.Enabled)
 	if len(c.Processor.Builtin.PacketDecoder.Encapsulations.VXLAN.Ports) == 0 {
 		c.Processor.Builtin.PacketDecoder.Encapsulations.VXLAN.Ports = []uint32{4789}
 	}
@@ -546,6 +547,9 @@ func parseOutputSpec(spec string) (EncoderConfig, SinkConfig, error) {
 	encoder := EncoderConfig{Type: encoderType}
 	if encoderType == "sflow" {
 		encoder.AllowTruncate = boolPtr(true)
+	}
+	if encoderType == "sflow" || encoderType == "ipfix" {
+		encoder.Batch.Enabled = boolPtr(true)
 	}
 	if err := applyOutputParams(spec, encoderType, params, &encoder); err != nil {
 		return EncoderConfig{}, SinkConfig{}, err

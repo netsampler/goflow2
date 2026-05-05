@@ -261,10 +261,14 @@ type ProtobufConfig struct {
 }
 
 type BatchConfig struct {
-	Enabled       bool `yaml:"enabled"`
-	MaxRecords    int  `yaml:"max_records"`
-	MaxBytes      int  `yaml:"max_bytes"`
-	FlushInterval int  `yaml:"flush_interval_ms"`
+	Enabled       *bool `yaml:"enabled"`
+	MaxRecords    int   `yaml:"max_records"`
+	MaxBytes      int   `yaml:"max_bytes"`
+	FlushInterval int   `yaml:"flush_interval_ms"`
+}
+
+func (c BatchConfig) IsEnabled() bool {
+	return c.Enabled != nil && *c.Enabled
 }
 
 type SFlowConfig struct {
@@ -534,6 +538,17 @@ func (c *Config) setDefaults(configPath string) error {
 	if c.Encoder.AllowTruncate == nil {
 		v := c.Encoder.Type == "sflow"
 		c.Encoder.AllowTruncate = &v
+	}
+	if c.Encoder.Batch.IsEnabled() {
+		if c.Encoder.Batch.MaxRecords == 0 {
+			c.Encoder.Batch.MaxRecords = 8
+		}
+		if c.Encoder.Batch.MaxBytes == 0 {
+			c.Encoder.Batch.MaxBytes = 1200
+		}
+		if c.Encoder.Batch.FlushInterval == 0 {
+			c.Encoder.Batch.FlushInterval = 1000
+		}
 	}
 	if (c.Encoder.Type == "ipfix" || c.Encoder.Type == "netflowv9") && c.Encoder.TemplatedFlow.TemplateBaseID == 0 {
 		c.Encoder.TemplatedFlow.TemplateBaseID = 256

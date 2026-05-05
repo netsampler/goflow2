@@ -23,6 +23,8 @@ type IPFIXEncoder struct {
 	sourceOptions   map[string]sourceOptionsState
 	lastTemplateRun time.Time
 	lastOptionsRun  time.Time
+	events          []*event.Event
+	estimatedBytes  int
 }
 
 type NFv9Encoder struct {
@@ -66,6 +68,15 @@ type fallbackTemplatePlan struct {
 	defs     []config.IPFIXFieldDefinition
 }
 
+type ipfixBatchRecord struct {
+	key                 string
+	exportTime          uint32
+	observationDomainID uint32
+	templateID          uint16
+	template            *netflow.TemplateRecord
+	data                netflow.DataRecord
+}
+
 type templatedEncodingContext struct {
 	netflowV9     bool
 	firstSwitched uint32
@@ -83,21 +94,196 @@ func NewIPFIXEncoder(cfg config.EncoderConfig) *IPFIXEncoder {
 
 func (e *IPFIXEncoder) Encode(evt *event.Event) ([][]byte, error) {
 	if evt != nil && evt.Kind == "control" {
-		return e.handleControl(evt)
+		payloads, err := e.flushDataPackets()
+		if err != nil {
+			return nil, err
+		}
+		controlPayloads, err := e.handleControl(evt)
+		if err != nil {
+			return nil, err
+		}
+		return append(payloads, controlPayloads...), nil
 	}
-	packet, err := e.buildPacket(evt)
-	if err != nil {
-		return nil, err
+	if !e.cfg.Batch.IsEnabled() {
+		packet, err := e.buildPacket(evt)
+		if err != nil {
+			return nil, err
+		}
+		data, err := netflow.EncodeMessage(packet)
+		if err != nil {
+			return nil, fmt.Errorf("encode ipfix packet: %w", err)
+		}
+		return [][]byte{data}, nil
 	}
-	data, err := netflow.EncodeMessage(packet)
-	if err != nil {
-		return nil, fmt.Errorf("encode ipfix packet: %w", err)
+	e.appendEvent(evt)
+	if e.shouldFlush() {
+		return e.flushDataPackets()
 	}
-	return [][]byte{data}, nil
+	return nil, nil
 }
 
 func (e *IPFIXEncoder) Flush() ([][]byte, error) {
-	return e.flushControlPackets(time.Now().UTC())
+	payloads, err := e.flushDataPackets()
+	if err != nil {
+		return nil, err
+	}
+	controlPayloads, err := e.flushControlPackets(time.Now().UTC())
+	if err != nil {
+		return nil, err
+	}
+	return append(payloads, controlPayloads...), nil
+}
+
+func (e *IPFIXEncoder) appendEvent(evt *event.Event) {
+	e.events = append(e.events, evt)
+	e.estimatedBytes += estimatedEventSize(evt)
+}
+
+func (e *IPFIXEncoder) shouldFlush() bool {
+	if len(e.events) == 0 {
+		return false
+	}
+	if e.cfg.Batch.MaxRecords > 0 && len(e.events) >= e.cfg.Batch.MaxRecords {
+		return true
+	}
+	if e.cfg.Batch.MaxBytes > 0 && e.estimatedBytes >= e.cfg.Batch.MaxBytes {
+		return true
+	}
+	return false
+}
+
+func (e *IPFIXEncoder) flushDataPackets() ([][]byte, error) {
+	if len(e.events) == 0 {
+		return nil, nil
+	}
+
+	pending := e.events
+	e.events = nil
+	e.estimatedBytes = 0
+
+	var payloads [][]byte
+	for len(pending) > 0 {
+		packet, accepted, err := e.buildBatchedPacket(pending)
+		if err != nil {
+			return nil, err
+		}
+		data, err := netflow.EncodeMessage(packet)
+		if err != nil {
+			return nil, fmt.Errorf("encode ipfix packet: %w", err)
+		}
+		payloads = append(payloads, data)
+		pending = pending[accepted:]
+	}
+	return payloads, nil
+}
+
+func (e *IPFIXEncoder) buildBatchedPacket(events []*event.Event) (*netflow.IPFIXPacket, int, error) {
+	if len(events) == 0 {
+		return nil, 0, fmt.Errorf("empty ipfix packet batch")
+	}
+	first, err := e.ipfixBatchRecord(events[0])
+	if err != nil {
+		return nil, 0, err
+	}
+	records := []netflow.DataRecord{first.data}
+	packet := e.ipfixBatchPacket(first, records)
+	accepted := 1
+
+	for _, evt := range events[1:] {
+		next, err := e.ipfixBatchRecord(evt)
+		if err != nil {
+			return nil, accepted, err
+		}
+		if next.key != first.key || next.observationDomainID != first.observationDomainID || next.templateID != first.templateID {
+			break
+		}
+		records = append(records, next.data)
+		packet = e.ipfixBatchPacket(first, records)
+		if e.cfg.MaxDatagramBytes > 0 {
+			data, err := netflow.EncodeMessage(packet)
+			if err != nil {
+				return nil, accepted, fmt.Errorf("encode ipfix packet: %w", err)
+			}
+			if len(data) > e.cfg.MaxDatagramBytes {
+				records = records[:len(records)-1]
+				packet = e.ipfixBatchPacket(first, records)
+				break
+			}
+		}
+		accepted++
+	}
+
+	e.seq.Add(uint32(accepted))
+	return packet, accepted, nil
+}
+
+func (e *IPFIXEncoder) ipfixBatchPacket(first ipfixBatchRecord, records []netflow.DataRecord) *netflow.IPFIXPacket {
+	flowSets := make([]interface{}, 0, 2)
+	if first.template != nil {
+		flowSets = append(flowSets, netflow.TemplateFlowSet{
+			FlowSetHeader: netflow.FlowSetHeader{Id: 2},
+			Records:       []netflow.TemplateRecord{*first.template},
+		})
+	}
+	flowSets = append(flowSets, netflow.DataFlowSet{
+		FlowSetHeader: netflow.FlowSetHeader{Id: first.templateID},
+		Records:       records,
+	})
+	return &netflow.IPFIXPacket{
+		Version:             10,
+		ExportTime:          first.exportTime,
+		SequenceNumber:      e.seq.Load(),
+		ObservationDomainId: first.observationDomainID,
+		FlowSets:            flowSets,
+	}
+}
+
+func (e *IPFIXEncoder) ipfixBatchRecord(evt *event.Event) (ipfixBatchRecord, error) {
+	if evt == nil {
+		return ipfixBatchRecord{}, fmt.Errorf("nil event")
+	}
+	if evt.Fields == nil {
+		return ipfixBatchRecord{}, fmt.Errorf("event fields are empty")
+	}
+	templateID := uint16Field(evt.Fields, "template_id")
+	if templateID == 0 {
+		templateID = 256
+	}
+	exportTime := uint32(evt.ReceivedAt.Unix())
+	if evt.ReceivedAt.IsZero() {
+		exportTime = uint32(time.Now().Unix())
+	}
+	obsDomainID := e.observationDomainID(evt.Fields)
+
+	stream := eventStream(evt, "flow_data")
+	if schema, ok := e.dataSchemas[stream]; ok {
+		mask := schema.addressVariantMask(evt.Fields)
+		templateRecord := schema.templateForMask(mask)
+		dataRecord, err := buildTemplatedValuesFromSchemaFieldsForMask(e.cfg.TemplatedFlow.Data, evt.Fields, schema.fields, templatedEncodingContext{}, schema.addressGroups, mask)
+		if err != nil {
+			return ipfixBatchRecord{}, err
+		}
+		return ipfixBatchRecord{
+			key:                 fmt.Sprintf("schema:%s:%d", stream, templateRecord.TemplateId),
+			exportTime:          exportTime,
+			observationDomainID: obsDomainID,
+			templateID:          templateRecord.TemplateId,
+			data:                dataRecord,
+		}, nil
+	}
+
+	plan, dataRecord, err := e.fallbackDataRecord(evt.Fields, templateID)
+	if err != nil {
+		return ipfixBatchRecord{}, err
+	}
+	return ipfixBatchRecord{
+		key:                 fmt.Sprintf("fallback:%d:%s", plan.template.TemplateId, strings.Join(plan.names, "\x00")),
+		exportTime:          exportTime,
+		observationDomainID: obsDomainID,
+		templateID:          plan.template.TemplateId,
+		template:            &plan.template,
+		data:                dataRecord,
+	}, nil
 }
 
 func NewNFv9Encoder(cfg config.EncoderConfig) *NFv9Encoder {

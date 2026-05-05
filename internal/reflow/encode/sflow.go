@@ -60,7 +60,7 @@ func NewSFlowEncoder(cfg config.EncoderConfig) *SFlowEncoder {
 
 // Encode appends an event to the encoder-local batch or encodes it immediately.
 func (e *SFlowEncoder) Encode(evt *event.Event) ([][]byte, error) {
-	if !e.batch.Enabled {
+	if !e.batch.IsEnabled() {
 		packet, err := e.buildPacket([]*event.Event{evt})
 		if err != nil {
 			if errors.Is(err, ErrSFlowSampleTooLarge) {

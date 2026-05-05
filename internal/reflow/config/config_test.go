@@ -815,6 +815,9 @@ sink:
 	if cfg.Encoder.SFlow.MaxHeaderBytes != 128 {
 		t.Fatalf("expected sflow.max_header_bytes default 128, got %d", cfg.Encoder.SFlow.MaxHeaderBytes)
 	}
+	if cfg.Encoder.Batch.IsEnabled() {
+		t.Fatalf("expected YAML sflow config not to enable batching by default")
+	}
 }
 
 func TestLoadSupportsSFlowTruncationOverrides(t *testing.T) {
@@ -1004,6 +1007,63 @@ func TestGeneratedSFlowOutputAllowsTruncate(t *testing.T) {
 	}
 	if cfg.Encoder.SFlow.MaxHeaderBytes != 128 {
 		t.Fatalf("expected helper sflow output to default max_header_bytes=128, got %d", cfg.Encoder.SFlow.MaxHeaderBytes)
+	}
+	if !cfg.Encoder.Batch.IsEnabled() {
+		t.Fatalf("expected helper sflow output to enable batching by default")
+	}
+	if cfg.Encoder.Batch.MaxRecords != 8 || cfg.Encoder.Batch.MaxBytes != 1200 || cfg.Encoder.Batch.FlushInterval != 1000 {
+		t.Fatalf("unexpected default sflow batch settings: %#v", cfg.Encoder.Batch)
+	}
+}
+
+func TestGeneratedIPFIXOutputEnablesBatching(t *testing.T) {
+	cfg, generated, err := LoadFromFlags(&FlagConfig{
+		Output:    "ipfix:udp:127.0.0.1:4739",
+		OutputSet: true,
+	})
+	if err != nil {
+		t.Fatalf("LoadFromFlags returned error: %v", err)
+	}
+	if !generated {
+		t.Fatalf("expected generated config")
+	}
+	if !cfg.Encoder.Batch.IsEnabled() {
+		t.Fatalf("expected helper ipfix output to enable batching by default")
+	}
+	if cfg.Encoder.Batch.MaxRecords != 8 || cfg.Encoder.Batch.MaxBytes != 1200 || cfg.Encoder.Batch.FlushInterval != 1000 {
+		t.Fatalf("unexpected default ipfix batch settings: %#v", cfg.Encoder.Batch)
+	}
+}
+
+func TestLoadDoesNotEnableIPFIXBatchingByDefault(t *testing.T) {
+	dir := t.TempDir()
+
+	cfgPath := filepath.Join(dir, "reflow.yaml")
+	if err := os.WriteFile(cfgPath, []byte(`
+sources:
+  - network: udp
+    address: ":18081"
+    type: json
+
+processor:
+  type: builtin
+
+encoder:
+  type: ipfix
+
+sink:
+  type: udp
+  address: "127.0.0.1:4739"
+`), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	cfg, err := Load(cfgPath)
+	if err != nil {
+		t.Fatalf("Load returned error: %v", err)
+	}
+	if cfg.Encoder.Batch.IsEnabled() {
+		t.Fatalf("expected YAML ipfix config not to enable batching by default")
 	}
 }
 

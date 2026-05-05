@@ -346,7 +346,7 @@ func TestSFlowEncoderSplitsBatchByAgentIPWhenConfigured(t *testing.T) {
 	enc := NewSFlowEncoder(config.EncoderConfig{
 		Type: "sflow",
 		Batch: config.BatchConfig{
-			Enabled: true,
+			Enabled: testBoolPtr(true),
 		},
 		SFlow: config.SFlowConfig{
 			BatchOver: config.SFlowBatchOverConfig{
@@ -454,7 +454,7 @@ func TestSFlowEncoderCapsHeadersBeforeBatching(t *testing.T) {
 		MaxDatagramBytes: 400,
 		AllowTruncate:    testBoolPtr(true),
 		Batch: config.BatchConfig{
-			Enabled:    true,
+			Enabled:    testBoolPtr(true),
 			MaxRecords: 2,
 		},
 		SFlow: config.SFlowConfig{
@@ -516,7 +516,7 @@ func TestSFlowEncoderPacketSequenceAdvancesPerDatagram(t *testing.T) {
 	enc := NewSFlowEncoder(config.EncoderConfig{
 		Type: "sflow",
 		Batch: config.BatchConfig{
-			Enabled:    true,
+			Enabled:    testBoolPtr(true),
 			MaxRecords: 2,
 		},
 	})
@@ -1103,6 +1103,74 @@ func TestIPFIXEncoderEmitsTemplateAndDataRecord(t *testing.T) {
 	}
 	if got := dataSet.Records[0].Values[0].Value.([]byte); !bytes.Equal(got, []byte{192, 0, 2, 10}) {
 		t.Fatalf("expected src_addr bytes 192.0.2.10, got %v", got)
+	}
+}
+
+func TestIPFIXEncoderBatchesCompatibleDataRecords(t *testing.T) {
+	cfg := testTFlowEncoderConfig("ipfix")
+	cfg.Batch = config.BatchConfig{
+		Enabled:    testBoolPtr(true),
+		MaxRecords: 2,
+	}
+	enc := NewIPFIXEncoder(cfg)
+
+	firstPayloads, err := enc.Encode(testTemplatedFlowEvent())
+	if err != nil {
+		t.Fatalf("Encode(first) returned error: %v", err)
+	}
+	if len(firstPayloads) != 0 {
+		t.Fatalf("expected first IPFIX record to stay buffered, got %d payloads", len(firstPayloads))
+	}
+	second := testTemplatedFlowEvent()
+	second.Fields["bytes"] = int64(654)
+	secondPayloads, err := enc.Encode(second)
+	if err != nil {
+		t.Fatalf("Encode(second) returned error: %v", err)
+	}
+	if len(secondPayloads) != 1 {
+		t.Fatalf("expected batched IPFIX payload, got %d", len(secondPayloads))
+	}
+
+	store := templates.NewTemplateFlowStore()
+	store.Start()
+	var decoded netflow.IPFIXPacket
+	if err := netflow.DecodeMessageVersion(bytes.NewBuffer(secondPayloads[0]), store, netflow.FlowContext{RouterKey: "test-router"}, nil, &decoded); err != nil {
+		t.Fatalf("decode ipfix payload: %v", err)
+	}
+	if decoded.SequenceNumber != 0 {
+		t.Fatalf("expected first batched packet sequence 0, got %d", decoded.SequenceNumber)
+	}
+	if len(decoded.FlowSets) != 2 {
+		t.Fatalf("expected template and data flow sets, got %d", len(decoded.FlowSets))
+	}
+	dataSet, ok := decoded.FlowSets[1].(netflow.DataFlowSet)
+	if !ok {
+		t.Fatalf("expected second flow set to be DataFlowSet, got %T", decoded.FlowSets[1])
+	}
+	if len(dataSet.Records) != 2 {
+		t.Fatalf("expected two IPFIX data records, got %d", len(dataSet.Records))
+	}
+
+	thirdPayloads, err := enc.Encode(testTemplatedFlowEvent())
+	if err != nil {
+		t.Fatalf("Encode(third) returned error: %v", err)
+	}
+	if len(thirdPayloads) != 0 {
+		t.Fatalf("expected third IPFIX record to stay buffered, got %d payloads", len(thirdPayloads))
+	}
+	flushed, err := enc.Flush()
+	if err != nil {
+		t.Fatalf("Flush returned error: %v", err)
+	}
+	if len(flushed) != 1 {
+		t.Fatalf("expected one flushed IPFIX payload, got %d", len(flushed))
+	}
+	var flushedDecoded netflow.IPFIXPacket
+	if err := netflow.DecodeMessageVersion(bytes.NewBuffer(flushed[0]), store, netflow.FlowContext{RouterKey: "test-router"}, nil, &flushedDecoded); err != nil {
+		t.Fatalf("decode flushed ipfix payload: %v", err)
+	}
+	if flushedDecoded.SequenceNumber != 2 {
+		t.Fatalf("expected flushed packet sequence 2, got %d", flushedDecoded.SequenceNumber)
 	}
 }
 
