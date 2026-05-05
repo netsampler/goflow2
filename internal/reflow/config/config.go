@@ -637,12 +637,12 @@ func applySourceDefaults(src *SourceConfig) error {
 		}
 		return nil
 	}
-	if src.Network != "pcap_live" && src.Address == "" {
+	if src.Network != "pcap_live" && src.Network != "ebpf" && src.Address == "" {
 		src.Address = ":18080"
 	}
-	if src.Network == "pcap_live" {
+	if src.Network == "pcap_live" || src.Network == "ebpf" {
 		if src.Interface == "" {
-			return fmt.Errorf("source.interface is required when source.network=pcap_live")
+			return fmt.Errorf("source.interface is required when source.network=%s", src.Network)
 		}
 		if src.SnapLen <= 0 {
 			src.SnapLen = 65535
@@ -658,6 +658,9 @@ func applySourceDefaults(src *SourceConfig) error {
 		}
 		if src.Type == "" {
 			src.Type = "bytes"
+		}
+		if src.Network == "ebpf" && src.Type != "bytes" {
+			return fmt.Errorf("source.type must be bytes when source.network=ebpf")
 		}
 	}
 	return nil

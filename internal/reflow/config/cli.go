@@ -22,6 +22,7 @@ var (
 		"stream:<path-or-stdin>:pcap",
 		"stream:<path-or-stdin>:pcapng",
 		"stream:<path-or-stdin>:json",
+		"ebpf:<interface>:bytes",
 		"pcap_live:<interface>:bytes",
 	}
 	outputEncoderOptions = []string{
@@ -45,6 +46,7 @@ var (
 		"udp::6343:flow",
 		"udp:127.0.0.1:2055:flow",
 		"stream:-:json",
+		"ebpf:eth0:bytes",
 		"pcap_live:en0:bytes",
 	}
 	outputHelperExamples = []string{
@@ -223,9 +225,9 @@ func parseInputSpec(spec string) (SourceConfig, error) {
 		default:
 			return SourceConfig{}, fmt.Errorf("invalid -input %q: stream source type must be pcap, pcapng, or json", spec)
 		}
-	case "pcap_live":
+	case "pcap_live", "ebpf":
 		if sourceType != "bytes" {
-			return SourceConfig{}, fmt.Errorf("invalid -input %q: pcap_live source type must be bytes", spec)
+			return SourceConfig{}, fmt.Errorf("invalid -input %q: %s source type must be bytes", spec, network)
 		}
 		source.Interface = target
 		source.Address = ""

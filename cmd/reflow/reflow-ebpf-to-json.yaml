@@ -1,0 +1,29 @@
+# Capture packets with a Linux eBPF socket filter and print normalized JSON.
+#
+# Requires Linux and privileges for AF_PACKET plus BPF program loading.
+# Example:
+#   sudo go run ./cmd/reflow -config cmd/reflow/reflow-ebpf-to-json.yaml
+
+sources:
+  - network: ebpf
+    interface: eth0
+    snaplen: 65535
+    sample_every: 1
+    sample_offset: 0
+    type: bytes
+
+processor:
+  type: builtin
+  workers: 2
+  builtin:
+    drop_message: true
+    drop_payload: true
+
+encoder:
+  type: json
+  workers: 1
+  json:
+    flavor: canonical
+
+sink:
+  type: stdout

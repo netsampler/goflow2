@@ -6,6 +6,7 @@ import (
 
 	"github.com/netsampler/goflow2/v3/internal/reflow/config"
 	"github.com/netsampler/goflow2/v3/internal/reflow/event"
+	"github.com/netsampler/goflow2/v3/internal/reflow/source/ebpf"
 	"github.com/netsampler/goflow2/v3/internal/reflow/source/pcap"
 	"github.com/netsampler/goflow2/v3/internal/reflow/source/socket"
 	"github.com/netsampler/goflow2/v3/internal/reflow/source/stream"
@@ -22,6 +23,8 @@ func New(cfg config.SourceConfig) (Source, error) {
 	switch cfg.Network {
 	case "udp", "unixgram":
 		return socket.New(cfg)
+	case "ebpf":
+		return ebpf.New(cfg)
 	case "pcap_live":
 		return pcap.New(cfg)
 	case "stream":

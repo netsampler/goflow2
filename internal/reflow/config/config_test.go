@@ -844,6 +844,7 @@ func TestHelperOptionsTextListsInputAndOutputExamples(t *testing.T) {
 	text := HelperOptionsText()
 	for _, want := range []string{
 		"udp::6343:flow",
+		"ebpf:eth0:bytes",
 		"pcap_live:en0:bytes",
 		"json:stdout",
 		"ipfix:udp:127.0.0.1:4739",
@@ -854,5 +855,53 @@ func TestHelperOptionsTextListsInputAndOutputExamples(t *testing.T) {
 		if !strings.Contains(text, want) {
 			t.Fatalf("expected helper options to contain %q, got:\n%s", want, text)
 		}
+	}
+}
+
+func TestLoadSupportsEBPFSourceDefaults(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "reflow.yaml")
+	if err := os.WriteFile(cfgPath, []byte(`
+sources:
+  - network: ebpf
+    interface: eth0
+
+processor:
+  type: builtin
+
+encoder:
+  type: json
+
+sink:
+  type: stdout
+`), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	cfg, err := Load(cfgPath)
+	if err != nil {
+		t.Fatalf("Load returned error: %v", err)
+	}
+	if cfg.Sources[0].Type != "bytes" {
+		t.Fatalf("expected ebpf source type bytes, got %q", cfg.Sources[0].Type)
+	}
+	if cfg.Sources[0].Address != "eth0" {
+		t.Fatalf("expected ebpf address eth0, got %q", cfg.Sources[0].Address)
+	}
+	if cfg.Sources[0].SnapLen != 65535 {
+		t.Fatalf("expected ebpf snaplen 65535, got %d", cfg.Sources[0].SnapLen)
+	}
+	if cfg.Sources[0].SampleEvery != 1 {
+		t.Fatalf("expected ebpf sample_every 1, got %d", cfg.Sources[0].SampleEvery)
+	}
+}
+
+func TestParseInputSpecSupportsEBPF(t *testing.T) {
+	src, err := parseInputSpec("ebpf:eth0:bytes")
+	if err != nil {
+		t.Fatalf("parseInputSpec returned error: %v", err)
+	}
+	if src.Network != "ebpf" || src.Interface != "eth0" || src.Type != "bytes" || src.Address != "" {
+		t.Fatalf("unexpected ebpf source config: %#v", src)
 	}
 }
