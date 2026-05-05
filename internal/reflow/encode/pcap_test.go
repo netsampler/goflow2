@@ -2,6 +2,7 @@ package encode
 
 import (
 	"bytes"
+	"encoding/hex"
 	"testing"
 	"time"
 
@@ -118,6 +119,43 @@ func TestPcapEncoderUsesPseudoPacket(t *testing.T) {
 	}
 	if len(data) < 14 || data[12] != 0x08 || data[13] != 0x00 {
 		t.Fatalf("expected synthetic ethernet IPv4 frame, got %x", data[:min(len(data), 14)])
+	}
+}
+
+func TestPcapEncoderUsesHeaderHexWhenHeaderDataMissing(t *testing.T) {
+	enc, err := NewPcapEncoder(config.EncoderConfig{
+		Pcap: config.PcapConfig{
+			PacketSource: "auto",
+			LinkType:     "ethernet",
+			SnapLen:      65535,
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewPcapEncoder returned error: %v", err)
+	}
+	frame := ethernetFrame(0x0800)
+
+	payloads, err := enc.Encode(&event.Event{
+		ReceivedAt: time.Unix(20, 0).UTC(),
+		Fields: map[string]any{
+			"header_hex":      " " + hex.EncodeToString(frame[:10]) + ":" + hex.EncodeToString(frame[10:]),
+			"protocol":        uint32(1),
+			"original_length": uint32(len(frame)),
+		},
+	})
+	if err != nil {
+		t.Fatalf("Encode returned error: %v", err)
+	}
+	reader, err := pcapgo.NewReader(bytes.NewReader(payloads[0]))
+	if err != nil {
+		t.Fatalf("NewReader returned error: %v", err)
+	}
+	data, _, err := reader.ReadPacketData()
+	if err != nil {
+		t.Fatalf("ReadPacketData returned error: %v", err)
+	}
+	if !bytes.Equal(data, frame) {
+		t.Fatalf("expected decoded header_hex frame, got %x", data)
 	}
 }
 

@@ -3,6 +3,7 @@ package stream
 import (
 	"bytes"
 	"context"
+	"io"
 	"os"
 	"path/filepath"
 	"testing"
@@ -127,6 +128,32 @@ func TestSourceReadsNDJSON(t *testing.T) {
 	}
 	if !bytes.Contains(events[0].Message, []byte("src_addr")) {
 		t.Fatalf("expected first message to contain src_addr, got %s", events[0].Message)
+	}
+}
+
+func TestSourceReadNDJSONReturnsOnContextCancelWhenReaderBlocks(t *testing.T) {
+	src := &Source{}
+	reader, writer := io.Pipe()
+	defer reader.Close()
+	defer writer.Close()
+	ctx, cancel := context.WithCancel(context.Background())
+
+	done := make(chan error, 1)
+	go func() {
+		done <- src.readNDJSON(ctx, func(*event.Event) error {
+			return nil
+		}, reader)
+	}()
+
+	cancel()
+
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("readNDJSON returned error: %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatalf("readNDJSON did not return after context cancellation")
 	}
 }
 

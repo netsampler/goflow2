@@ -2,7 +2,9 @@ package encode
 
 import (
 	"bytes"
+	"encoding/hex"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/gopacket"
@@ -79,8 +81,8 @@ func (e *PcapEncoder) Flush() ([][]byte, error) {
 func (e *PcapEncoder) packetBytes(evt *event.Event) ([]byte, string, error) {
 	switch e.cfg.PacketSource {
 	case "header_data":
-		if data := bytesField(evt.Fields, "header_data"); len(data) > 0 {
-			return append([]byte(nil), data...), "header_data", nil
+		if data := packetHeaderBytes(evt.Fields); len(data) > 0 {
+			return data, "header_data", nil
 		}
 		if data, ok := packet.BuildPseudoHeader(evt, evt.Fields); ok && len(data) > 0 {
 			return data, "pseudo", nil
@@ -99,8 +101,8 @@ func (e *PcapEncoder) packetBytes(evt *event.Event) ([]byte, string, error) {
 		}
 		return data, "pseudo", nil
 	case "auto":
-		if data := bytesField(evt.Fields, "header_data"); len(data) > 0 {
-			return append([]byte(nil), data...), "header_data", nil
+		if data := packetHeaderBytes(evt.Fields); len(data) > 0 {
+			return data, "header_data", nil
 		}
 		if data, ok := evt.Payload.([]byte); ok && len(data) > 0 {
 			return append([]byte(nil), data...), "payload", nil
@@ -112,6 +114,23 @@ func (e *PcapEncoder) packetBytes(evt *event.Event) ([]byte, string, error) {
 	default:
 		return nil, "", fmt.Errorf("unsupported pcap packet_source %q", e.cfg.PacketSource)
 	}
+}
+
+func packetHeaderBytes(fields map[string]any) []byte {
+	if data := bytesField(fields, "header_data"); len(data) > 0 {
+		return append([]byte(nil), data...)
+	}
+	raw := stringFieldOrZero(fields, "header_hex")
+	if raw == "" {
+		return nil
+	}
+	raw = strings.ReplaceAll(raw, " ", "")
+	raw = strings.ReplaceAll(raw, ":", "")
+	data, err := hex.DecodeString(raw)
+	if err != nil || len(data) == 0 {
+		return nil
+	}
+	return data
 }
 
 func (e *PcapEncoder) adaptPacketBytes(evt *event.Event, data []byte, source string) []byte {

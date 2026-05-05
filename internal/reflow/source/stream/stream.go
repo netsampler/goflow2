@@ -158,13 +158,46 @@ func (s *Source) readPackets(ctx context.Context, emit func(*event.Event) error,
 func (s *Source) readNDJSON(ctx context.Context, emit func(*event.Event) error, r io.Reader) error {
 	scanner := bufio.NewScanner(r)
 	scanner.Buffer(make([]byte, 64*1024), 16*1024*1024)
-	for scanner.Scan() {
+	type scanResult struct {
+		line []byte
+		err  error
+	}
+	lines := make(chan scanResult)
+	go func() {
+		defer close(lines)
+		for scanner.Scan() {
+			line := append([]byte(nil), scanner.Bytes()...)
+			select {
+			case lines <- scanResult{line: line}:
+			case <-ctx.Done():
+				return
+			}
+		}
+		if err := scanner.Err(); err != nil {
+			select {
+			case lines <- scanResult{err: err}:
+			case <-ctx.Done():
+			}
+		}
+	}()
+
+	for {
+		var line []byte
 		select {
 		case <-ctx.Done():
 			return nil
-		default:
+		case result, ok := <-lines:
+			if !ok {
+				return nil
+			}
+			if result.err != nil {
+				if ctx.Err() != nil {
+					return nil
+				}
+				return fmt.Errorf("read ndjson stream: %w", result.err)
+			}
+			line = result.line
 		}
-		line := append([]byte(nil), scanner.Bytes()...)
 		if len(line) == 0 {
 			continue
 		}
@@ -188,13 +221,6 @@ func (s *Source) readNDJSON(ctx context.Context, emit func(*event.Event) error, 
 			return err
 		}
 	}
-	if err := scanner.Err(); err != nil {
-		if ctx.Err() != nil {
-			return nil
-		}
-		return fmt.Errorf("read ndjson stream: %w", err)
-	}
-	return nil
 }
 
 func (s *Source) Close() error {
