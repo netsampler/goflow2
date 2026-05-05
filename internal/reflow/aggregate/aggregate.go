@@ -158,11 +158,23 @@ func schemaInitEvents(cfg config.AggregatorConfig) ([]*event.Event, error) {
 				CurrentFields:  append([]string(nil), cfg.Current...),
 				MinFields:      append([]string(nil), cfg.Min...),
 				MaxFields:      append([]string(nil), cfg.Max...),
+				Match:          cloneStringMap(cfg.Match),
 				StaticFields:   cloneFields(cfg.StaticFields),
 				BaseTemplateID: cfg.TemplateID,
 			},
 		},
 	}, nil
+}
+
+func cloneStringMap(in map[string]string) map[string]string {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(in))
+	for key, val := range in {
+		out[key] = val
+	}
+	return out
 }
 
 // Process adds one event into the keyed aggregation state. Missing key fields

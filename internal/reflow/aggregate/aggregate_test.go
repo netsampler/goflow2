@@ -277,6 +277,7 @@ func TestStatefulInitEventsCarryConfiguredStreamAndTemplateBaseID(t *testing.T) 
 		Periodic: config.AggregatorPeriodicConfig{
 			Every: 1,
 		},
+		Match:      map[string]string{"ip_family": "ipv4"},
 		TemplateID: 512,
 	})
 	if err != nil {
@@ -305,6 +306,9 @@ func TestStatefulInitEventsCarryConfiguredStreamAndTemplateBaseID(t *testing.T) 
 	}
 	if schema.BaseTemplateID != 512 {
 		t.Fatalf("expected base template id 512, got %d", schema.BaseTemplateID)
+	}
+	if schema.Match["ip_family"] != "ipv4" {
+		t.Fatalf("expected schema match ip_family=ipv4, got %#v", schema.Match)
 	}
 }
 

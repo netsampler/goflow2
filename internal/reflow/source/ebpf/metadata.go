@@ -13,10 +13,12 @@ type Source struct {
 	cfg                   config.SourceConfig
 	agentIP               string
 	captureInterfaceIndex int
+	interfaceNames        map[uint32]string
 	seenCount             uint64
 	mu                    sync.Mutex
 	fd                    int
 	progFD                int
+	metadataMapFD         int
 }
 
 // InitEvents emits a source_init control event so template-based encoders can

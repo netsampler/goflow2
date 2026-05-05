@@ -18,9 +18,9 @@ fields:
   sampling_rate: 34:4:u32 # samplingInterval
   src_mac: 56:6:mac # sourceMacAddress
   vlan_id: 58:2:u16 # vlanId
-  mpls_label1: 70:4:u32 # mplsTopLabelStackSection
-  mpls_label2: 71:4:u32 # mplsLabelStackSection2
-  mpls_label3: 72:4:u32 # mplsLabelStackSection3
+  mpls_label_stack_section_1: 70:3:bytes # mplsTopLabelStackSection
+  mpls_label_stack_section_2: 71:3:bytes # mplsLabelStackSection2
+  mpls_label_stack_section_3: 72:3:bytes # mplsLabelStackSection3
   dst_mac: 80:6:mac # destinationMacAddress
   agent_ip: 130:4:ip4 # exporterIPv4Address
   drops: 133:8:u64:delta # droppedPacketDeltaCount

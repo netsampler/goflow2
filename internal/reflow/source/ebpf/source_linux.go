@@ -29,15 +29,48 @@ const (
 	packetKernel    = 7
 
 	bpfProgLoad         = 5
+	bpfMapCreate        = 0
+	bpfMapLookupElem    = 1
+	bpfMapTypeArray     = 2
 	bpfProgTypeSocket   = 1
+	bpfPseudoMapFD      = 1
+	bpfLD               = 0x00
+	bpfLDX              = 0x01
+	bpfST               = 0x02
+	bpfSTX              = 0x03
 	bpfALU64            = 0x07
 	bpfMov              = 0xb0
+	bpfAdd              = 0x00
 	bpfK                = 0x00
+	bpfX                = 0x08
+	bpfDW               = 0x18
+	bpfW                = 0x00
+	bpfMem              = 0x60
+	bpfImm              = 0x00
 	bpfExit             = 0x90
+	bpfCall             = 0x80
+	bpfJEQ              = 0x10
 	bpfJMP              = 0x05
 	bpfReg0             = 0
+	bpfReg1             = 1
+	bpfReg2             = 2
+	bpfReg6             = 6
+	bpfReg10            = 10
+	bpfFuncMapLookup    = 1
 	bpfLogBufferSize    = 16 * 1024
 	defaultPollInterval = 500 * time.Millisecond
+
+	skbLenOffset            = 0
+	skbPacketTypeOffset     = 4
+	skbMarkOffset           = 8
+	skbQueueMappingOffset   = 12
+	skbProtocolOffset       = 16
+	skbPriorityOffset       = 32
+	skbIngressIfindexOffset = 36
+	skbIfindexOffset        = 40
+	skbTCIndexOffset        = 44
+	skbHashOffset           = 68
+	skbTCClassIDOffset      = 72
 )
 
 type bpfInsn struct {
@@ -54,6 +87,50 @@ type packetMetadata struct {
 	outputIf        uint32
 	inputInterface  string
 	outputInterface string
+	skb             skbMetadata
+	hasSKBMetadata  bool
+}
+
+type skbMetadata struct {
+	Len            uint32
+	PacketType     uint32
+	Mark           uint32
+	QueueMapping   uint32
+	Protocol       uint32
+	Priority       uint32
+	IngressIfindex uint32
+	Ifindex        uint32
+	TCIndex        uint32
+	Hash           uint32
+	TCClassID      uint32
+}
+
+type bpfMapCreateAttr struct {
+	MapType    uint32
+	KeySize    uint32
+	ValueSize  uint32
+	MaxEntries uint32
+	MapFlags   uint32
+	InnerMapFD uint32
+	NumaNode   uint32
+	MapName    [16]byte
+	MapIfindex uint32
+	BTFFD      uint32
+	BTFKeyType uint32
+	BTFValType uint32
+	BTFVMLinux uint32
+}
+
+type bpfMapElemAttr struct {
+	MapFD uint32
+	Pad   uint32
+	Key   uint64
+	Value uint64
+}
+
+type socketFilterHandles struct {
+	progFD        int
+	metadataMapFD int
 }
 
 type bpfProgLoadAttr struct {
@@ -110,8 +187,12 @@ func New(cfg config.SourceConfig) (*Source, error) {
 		cfg:                   cfg,
 		agentIP:               firstInterfaceIP(iface),
 		captureInterfaceIndex: iface.Index,
-		fd:                    -1,
-		progFD:                -1,
+		interfaceNames: map[uint32]string{
+			uint32(iface.Index): iface.Name,
+		},
+		fd:            -1,
+		progFD:        -1,
+		metadataMapFD: -1,
 	}, nil
 }
 
@@ -140,13 +221,14 @@ func (s *Source) Start(ctx context.Context, emit func(*event.Event) error) error
 		return fmt.Errorf("set ebpf packet socket timeout: %w", err)
 	}
 
-	progFD, err := attachSocketFilter(fd, s.cfg.SnapLen)
+	filter, err := attachSocketFilter(fd, s.cfg.SnapLen)
 	if err != nil {
 		return fmt.Errorf("attach packet socket filter: %w", err)
 	}
-	if progFD >= 0 {
+	if filter.progFD >= 0 || filter.metadataMapFD >= 0 {
 		s.mu.Lock()
-		s.progFD = progFD
+		s.progFD = filter.progFD
+		s.metadataMapFD = filter.metadataMapFD
 		s.mu.Unlock()
 	}
 
@@ -177,7 +259,11 @@ func (s *Source) Start(ctx context.Context, emit func(*event.Event) error) error
 		if !s.shouldEmitCurrentPacket() {
 			continue
 		}
-		if err := emit(s.packetEvent(buf[:n], s.packetMetadata(from))); err != nil {
+		meta := s.packetMetadata(from)
+		if skb, ok := s.readSKBMetadata(); ok {
+			meta = s.mergeSKBMetadata(meta, skb)
+		}
+		if err := emit(s.packetEvent(buf[:n], meta)); err != nil {
 			return err
 		}
 	}
@@ -256,6 +342,58 @@ func (s *Source) packetMetadata(from unix.Sockaddr) packetMetadata {
 	return meta
 }
 
+func (s *Source) mergeSKBMetadata(meta packetMetadata, skb skbMetadata) packetMetadata {
+	meta.skb = skb
+	meta.hasSKBMetadata = true
+	if skb.PacketType != 0 {
+		meta.packetType = packetTypeName(uint8(skb.PacketType))
+	}
+	if skb.IngressIfindex != 0 && meta.inputIf == 0 {
+		meta.inputIf = skb.IngressIfindex
+		meta.inputInterface = s.interfaceName(skb.IngressIfindex)
+	}
+	if skb.Ifindex != 0 {
+		switch meta.direction {
+		case "out":
+			meta.outputIf = skb.Ifindex
+			meta.outputInterface = s.interfaceName(skb.Ifindex)
+		case "in", "loopback":
+			if meta.inputIf == 0 {
+				meta.inputIf = skb.Ifindex
+				meta.inputInterface = s.interfaceName(skb.Ifindex)
+			}
+		default:
+			meta.outputIf = skb.Ifindex
+			meta.outputInterface = s.interfaceName(skb.Ifindex)
+		}
+	}
+	if meta.inputInterface == "" && meta.inputIf != 0 {
+		meta.inputInterface = s.interfaceName(meta.inputIf)
+	}
+	if meta.outputInterface == "" && meta.outputIf != 0 {
+		meta.outputInterface = s.interfaceName(meta.outputIf)
+	}
+	return meta
+}
+
+func (s *Source) interfaceName(ifindex uint32) string {
+	if ifindex == 0 {
+		return ""
+	}
+	if name := s.interfaceNames[ifindex]; name != "" {
+		return name
+	}
+	iface, err := net.InterfaceByIndex(int(ifindex))
+	if err != nil || iface == nil {
+		return ""
+	}
+	if s.interfaceNames == nil {
+		s.interfaceNames = make(map[uint32]string)
+	}
+	s.interfaceNames[ifindex] = iface.Name
+	return iface.Name
+}
+
 func packetTypeName(packetType uint8) string {
 	switch packetType {
 	case packetHost:
@@ -300,6 +438,26 @@ func applyPacketMetadataFields(fields map[string]any, meta packetMetadata) {
 		fields["output_interface"] = meta.outputInterface
 		fields["dst_interface"] = meta.outputInterface
 	}
+	if meta.hasSKBMetadata {
+		fields["skb_len"] = meta.skb.Len
+		fields["skb_packet_type"] = meta.skb.PacketType
+		fields["skb_mark"] = meta.skb.Mark
+		fields["firewall_mark"] = meta.skb.Mark
+		fields["skb_queue_mapping"] = meta.skb.QueueMapping
+		fields["skb_protocol"] = meta.skb.Protocol
+		fields["skb_priority"] = meta.skb.Priority
+		fields["skb_ingress_ifindex"] = meta.skb.IngressIfindex
+		fields["skb_ifindex"] = meta.skb.Ifindex
+		fields["skb_tc_index"] = meta.skb.TCIndex
+		fields["skb_hash"] = meta.skb.Hash
+		fields["skb_tc_classid"] = meta.skb.TCClassID
+		if meta.skb.IngressIfindex != 0 {
+			fields["route_input_if"] = meta.skb.IngressIfindex
+		}
+		if meta.skb.Ifindex != 0 {
+			fields["route_output_if"] = meta.skb.Ifindex
+		}
+	}
 }
 
 func (s *Source) Close() error {
@@ -318,23 +476,34 @@ func (s *Source) Close() error {
 		}
 		s.progFD = -1
 	}
+	if s.metadataMapFD >= 0 {
+		if err := unix.Close(s.metadataMapFD); err != nil && err != unix.EBADF && firstErr == nil {
+			firstErr = err
+		}
+		s.metadataMapFD = -1
+	}
 	return firstErr
 }
 
-func loadSocketFilterProgram(snapLen int) (int, error) {
+func (s *Source) readSKBMetadata() (skbMetadata, bool) {
+	s.mu.Lock()
+	mapFD := s.metadataMapFD
+	s.mu.Unlock()
+	if mapFD < 0 {
+		return skbMetadata{}, false
+	}
+	meta, err := lookupSKBMetadata(mapFD)
+	if err != nil {
+		return skbMetadata{}, false
+	}
+	return meta, true
+}
+
+func loadSocketFilterProgram(snapLen, metadataMapFD int, fullMetadata bool) (int, error) {
 	if snapLen <= 0 {
 		return -1, fmt.Errorf("snaplen must be > 0")
 	}
-	insns := []bpfInsn{
-		{
-			Code:   bpfALU64 | bpfMov | bpfK,
-			DstSrc: bpfReg0,
-			Imm:    int32(snapLen),
-		},
-		{
-			Code: bpfJMP | bpfExit,
-		},
-	}
+	insns := socketFilterInstructions(snapLen, metadataMapFD, fullMetadata)
 	license := []byte("GPL\x00")
 	attr := bpfProgLoadAttr{
 		ProgType: bpfProgTypeSocket,
@@ -363,6 +532,107 @@ func loadSocketFilterProgram(snapLen int) (int, error) {
 	return -1, errno
 }
 
+func socketFilterInstructions(snapLen, metadataMapFD int, fullMetadata bool) []bpfInsn {
+	if metadataMapFD < 0 {
+		return []bpfInsn{
+			mov64Imm(bpfReg0, int32(snapLen)),
+			exitInsn(),
+		}
+	}
+	insns := []bpfInsn{
+		mov64Reg(bpfReg6, bpfReg1),
+		storeImm(bpfReg10, -4, 0),
+		mov64Reg(bpfReg2, bpfReg10),
+		add64Imm(bpfReg2, -4),
+	}
+	fields := []struct {
+		skbOffset int16
+		mapOffset int16
+	}{
+		{skbLenOffset, 0},
+		{skbPacketTypeOffset, 4},
+		{skbMarkOffset, 8},
+		{skbQueueMappingOffset, 12},
+		{skbProtocolOffset, 16},
+		{skbPriorityOffset, 20},
+		{skbIngressIfindexOffset, 24},
+		{skbIfindexOffset, 28},
+		{skbHashOffset, 36},
+	}
+	if fullMetadata {
+		fields = append(fields,
+			struct {
+				skbOffset int16
+				mapOffset int16
+			}{skbTCIndexOffset, 32},
+			struct {
+				skbOffset int16
+				mapOffset int16
+			}{skbTCClassIDOffset, 40},
+		)
+	}
+	insns = append(insns, loadMapFD(bpfReg1, metadataMapFD)...)
+	insns = append(insns,
+		callInsn(bpfFuncMapLookup),
+		jumpImm(bpfJEQ, bpfReg0, 0, int16(2*len(fields))),
+	)
+	for _, field := range fields {
+		insns = append(insns,
+			loadMem(bpfReg1, bpfReg6, field.skbOffset),
+			storeReg(bpfReg0, bpfReg1, field.mapOffset),
+		)
+	}
+	insns = append(insns, mov64Imm(bpfReg0, int32(snapLen)), exitInsn())
+	return insns
+}
+
+func reg(dst, src uint8) uint8 {
+	return dst | src<<4
+}
+
+func mov64Imm(dst uint8, imm int32) bpfInsn {
+	return bpfInsn{Code: bpfALU64 | bpfMov | bpfK, DstSrc: reg(dst, 0), Imm: imm}
+}
+
+func mov64Reg(dst, src uint8) bpfInsn {
+	return bpfInsn{Code: bpfALU64 | bpfMov | bpfX, DstSrc: reg(dst, src)}
+}
+
+func add64Imm(dst uint8, imm int32) bpfInsn {
+	return bpfInsn{Code: bpfALU64 | bpfAdd | bpfK, DstSrc: reg(dst, 0), Imm: imm}
+}
+
+func loadMem(dst, src uint8, off int16) bpfInsn {
+	return bpfInsn{Code: bpfLDX | bpfMem | bpfW, DstSrc: reg(dst, src), Off: off}
+}
+
+func storeImm(dst uint8, off int16, imm int32) bpfInsn {
+	return bpfInsn{Code: bpfST | bpfMem | bpfW, DstSrc: reg(dst, 0), Off: off, Imm: imm}
+}
+
+func storeReg(dst, src uint8, off int16) bpfInsn {
+	return bpfInsn{Code: bpfSTX | bpfMem | bpfW, DstSrc: reg(dst, src), Off: off}
+}
+
+func loadMapFD(dst uint8, mapFD int) []bpfInsn {
+	return []bpfInsn{
+		{Code: bpfLD | bpfDW | bpfImm, DstSrc: reg(dst, bpfPseudoMapFD), Imm: int32(mapFD)},
+		{},
+	}
+}
+
+func callInsn(helper int32) bpfInsn {
+	return bpfInsn{Code: bpfJMP | bpfCall, Imm: helper}
+}
+
+func jumpImm(op uint8, dst uint8, imm int32, off int16) bpfInsn {
+	return bpfInsn{Code: bpfJMP | op | bpfK, DstSrc: reg(dst, 0), Off: off, Imm: imm}
+}
+
+func exitInsn() bpfInsn {
+	return bpfInsn{Code: bpfJMP | bpfExit}
+}
+
 func bpfProgLoadProgram(attr bpfProgLoadAttr) (int, unix.Errno) {
 	fd, _, errno := unix.Syscall(unix.SYS_BPF, uintptr(bpfProgLoad), uintptr(unsafe.Pointer(&attr)), unsafe.Sizeof(attr))
 	if errno != 0 {
@@ -371,19 +641,71 @@ func bpfProgLoadProgram(attr bpfProgLoadAttr) (int, unix.Errno) {
 	return int(fd), 0
 }
 
-func attachSocketFilter(fd, snapLen int) (int, error) {
-	progFD, err := loadSocketFilterProgram(snapLen)
+func attachSocketFilter(fd, snapLen int) (socketFilterHandles, error) {
+	metadataMapFD, mapErr := createSKBMetadataMap()
+	if mapErr != nil {
+		metadataMapFD = -1
+	}
+	progFD, err := loadSocketFilterProgram(snapLen, metadataMapFD, true)
+	if err != nil && metadataMapFD >= 0 {
+		progFD, err = loadSocketFilterProgram(snapLen, metadataMapFD, false)
+	}
 	if err == nil {
 		if attachErr := unix.SetsockoptInt(fd, unix.SOL_SOCKET, unix.SO_ATTACH_BPF, progFD); attachErr != nil {
 			_ = unix.Close(progFD)
-			return -1, fmt.Errorf("attach ebpf socket filter: %w", attachErr)
+			if metadataMapFD >= 0 {
+				_ = unix.Close(metadataMapFD)
+			}
+			return socketFilterHandles{}, fmt.Errorf("attach ebpf socket filter: %w", attachErr)
 		}
-		return progFD, nil
+		return socketFilterHandles{progFD: progFD, metadataMapFD: metadataMapFD}, nil
+	}
+	metadataErr := err
+	if metadataMapFD >= 0 {
+		_ = unix.Close(metadataMapFD)
+	}
+	progFD, err = loadSocketFilterProgram(snapLen, -1, false)
+	if err == nil {
+		if attachErr := unix.SetsockoptInt(fd, unix.SOL_SOCKET, unix.SO_ATTACH_BPF, progFD); attachErr != nil {
+			_ = unix.Close(progFD)
+			return socketFilterHandles{}, fmt.Errorf("attach ebpf socket filter: %w", attachErr)
+		}
+		return socketFilterHandles{progFD: progFD, metadataMapFD: -1}, nil
 	}
 	if fallbackErr := attachClassicSocketFilter(fd, snapLen); fallbackErr != nil {
-		return -1, fmt.Errorf("load ebpf socket filter: %w; attach classic socket filter fallback: %v", err, fallbackErr)
+		return socketFilterHandles{}, fmt.Errorf("load ebpf socket filter: %w; load metadata filter: %v; attach classic socket filter fallback: %v", err, metadataErr, fallbackErr)
 	}
-	return -1, nil
+	return socketFilterHandles{progFD: -1, metadataMapFD: -1}, nil
+}
+
+func createSKBMetadataMap() (int, error) {
+	attr := bpfMapCreateAttr{
+		MapType:    bpfMapTypeArray,
+		KeySize:    4,
+		ValueSize:  uint32(unsafe.Sizeof(skbMetadata{})),
+		MaxEntries: 1,
+	}
+	copy(attr.MapName[:], "reflow_skb_meta")
+	fd, _, errno := unix.Syscall(unix.SYS_BPF, uintptr(bpfMapCreate), uintptr(unsafe.Pointer(&attr)), unsafe.Sizeof(attr))
+	if errno != 0 {
+		return -1, errno
+	}
+	return int(fd), nil
+}
+
+func lookupSKBMetadata(mapFD int) (skbMetadata, error) {
+	key := uint32(0)
+	var meta skbMetadata
+	attr := bpfMapElemAttr{
+		MapFD: uint32(mapFD),
+		Key:   uint64(uintptr(unsafe.Pointer(&key))),
+		Value: uint64(uintptr(unsafe.Pointer(&meta))),
+	}
+	_, _, errno := unix.Syscall(unix.SYS_BPF, uintptr(bpfMapLookupElem), uintptr(unsafe.Pointer(&attr)), unsafe.Sizeof(attr))
+	if errno != 0 {
+		return skbMetadata{}, errno
+	}
+	return meta, nil
 }
 
 func attachClassicSocketFilter(fd, snapLen int) error {

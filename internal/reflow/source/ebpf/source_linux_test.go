@@ -77,3 +77,53 @@ func TestPacketMetadataMarksIncomingCapture(t *testing.T) {
 		t.Fatalf("expected src_interface=br-lan, got %#v", got)
 	}
 }
+
+func TestPacketMetadataAddsSKBFields(t *testing.T) {
+	source := &Source{
+		cfg:                   config.SourceConfig{Network: "ebpf", Interface: "br-lan", Type: "bytes", SampleEvery: 1},
+		agentIP:               "192.0.2.10",
+		captureInterfaceIndex: 7,
+		interfaceNames: map[uint32]string{
+			7: "br-lan",
+			9: "wan",
+		},
+		seenCount: 1,
+	}
+
+	meta := source.packetMetadata(&unix.SockaddrLinklayer{
+		Ifindex: 7,
+		Pkttype: packetOutgoing,
+	})
+	meta = source.mergeSKBMetadata(meta, skbMetadata{
+		Len:            1514,
+		Mark:           42,
+		QueueMapping:   3,
+		Protocol:       0x0800,
+		Priority:       5,
+		IngressIfindex: 7,
+		Ifindex:        9,
+		TCIndex:        11,
+		Hash:           0x12345678,
+		TCClassID:      0x10002,
+	})
+	evt := source.packetEvent([]byte{0, 1, 2, 3}, meta)
+
+	if got := evt.Fields["firewall_mark"]; got != uint32(42) {
+		t.Fatalf("expected firewall_mark=42, got %#v", got)
+	}
+	if got := evt.Fields["skb_len"]; got != uint32(1514) {
+		t.Fatalf("expected skb_len=1514, got %#v", got)
+	}
+	if got := evt.Fields["skb_hash"]; got != uint32(0x12345678) {
+		t.Fatalf("expected skb_hash=0x12345678, got %#v", got)
+	}
+	if got := evt.Fields["route_input_if"]; got != uint32(7) {
+		t.Fatalf("expected route_input_if=7, got %#v", got)
+	}
+	if got := evt.Fields["route_output_if"]; got != uint32(9) {
+		t.Fatalf("expected route_output_if=9, got %#v", got)
+	}
+	if got := evt.Fields["dst_interface"]; got != "wan" {
+		t.Fatalf("expected dst_interface=wan, got %#v", got)
+	}
+}

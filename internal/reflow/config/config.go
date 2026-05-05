@@ -604,9 +604,6 @@ func (c *Config) setDefaults(configPath string) error {
 	} else if c.Encoder.Workers < 0 && c.Encoder.Workers != AutoWorkers {
 		return fmt.Errorf("encoder.workers must be >= 1 or \"auto\"")
 	}
-	if c.Encoder.MaxDatagramBytes <= 0 {
-		c.Encoder.MaxDatagramBytes = 1400
-	}
 	if c.Encoder.AllowTruncate == nil {
 		v := c.Encoder.Type == "sflow"
 		c.Encoder.AllowTruncate = &v
@@ -620,6 +617,12 @@ func (c *Config) setDefaults(configPath string) error {
 		}
 		if c.Encoder.Batch.FlushInterval == 0 {
 			c.Encoder.Batch.FlushInterval = 1000
+		}
+	}
+	if c.Encoder.MaxDatagramBytes <= 0 {
+		c.Encoder.MaxDatagramBytes = 1400
+		if c.Encoder.Batch.IsEnabled() && c.Encoder.Batch.MaxBytes > 0 {
+			c.Encoder.MaxDatagramBytes = c.Encoder.Batch.MaxBytes
 		}
 	}
 	if (c.Encoder.Type == "ipfix" || c.Encoder.Type == "netflowv9") && c.Encoder.TemplatedFlow.TemplateBaseID == 0 {

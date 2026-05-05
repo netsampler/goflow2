@@ -959,6 +959,17 @@ func buildSchemaStateWithBase(cfg config.TemplatedFlowDataConfig, schema event.A
 	if len(state.addressGroups) > 8 {
 		return templatedSchemaState{}, fmt.Errorf("schema has %d address groups; maximum is 8", len(state.addressGroups))
 	}
+	if mask, ok := fixedAddressMask(schema, len(state.addressGroups)); ok {
+		template, err := buildTemplateRecordFromSchemaFieldsForMask(cfg, state.fields, baseTemplateID, netflowV9, state.addressGroups, mask)
+		if err != nil {
+			return templatedSchemaState{}, err
+		}
+		state.templateVariants = map[uint64]netflow.TemplateRecord{mask: template}
+		state.ipv4Template = template
+		state.ipv6Template = template
+		state.hasIPv6Variant = mask != 0
+		return state, nil
+	}
 	variantCount := uint64(1)
 	if len(state.addressGroups) > 0 {
 		variantCount = 1 << len(state.addressGroups)
@@ -982,6 +993,20 @@ func buildSchemaStateWithBase(cfg config.TemplatedFlowDataConfig, schema event.A
 	}
 	state.hasIPv6Variant = variantCount > 1
 	return state, nil
+}
+
+func fixedAddressMask(schema event.AggregationSchema, groupCount int) (uint64, bool) {
+	if groupCount == 0 || len(schema.Match) == 0 {
+		return 0, false
+	}
+	switch strings.ToLower(schema.Match["ip_family"]) {
+	case "ipv4", "4":
+		return 0, true
+	case "ipv6", "6":
+		return (uint64(1) << groupCount) - 1, true
+	default:
+		return 0, false
+	}
 }
 
 func schemaFieldsOrNames(schema event.AggregationSchema) []event.SchemaField {

@@ -206,8 +206,9 @@ sink:
 	if cfg.Encoder.TemplatedFlow.Data.Catalog["bytes"].ID != 1 {
 		t.Fatalf("expected bytes field from embedded catalog, got %#v", cfg.Encoder.TemplatedFlow.Data.Catalog["bytes"])
 	}
-	if cfg.Encoder.TemplatedFlow.Data.Catalog["mpls_label3"].ID != 72 {
-		t.Fatalf("expected mpls_label3 field from embedded catalog, got %#v", cfg.Encoder.TemplatedFlow.Data.Catalog["mpls_label3"])
+	mpls := cfg.Encoder.TemplatedFlow.Data.Catalog["mpls_label_stack_section_3"]
+	if mpls.ID != 72 || mpls.Length != 3 || mpls.Type != "bytes" {
+		t.Fatalf("expected mpls_label_stack_section_3 bytes/3 field from embedded catalog, got %#v", mpls)
 	}
 	if cfg.Encoder.TemplatedFlow.Data.Catalog["agent_ip"].ID != 130 {
 		t.Fatalf("expected agent_ip field from embedded catalog, got %#v", cfg.Encoder.TemplatedFlow.Data.Catalog["agent_ip"])
@@ -680,6 +681,7 @@ func TestGeneratedAggregateConfigUsesFieldDSL(t *testing.T) {
 		"- sum:bytes",
 		"- first:agent_ip",
 		"- current:end_time_unix",
+		"- current:mpls_label_stack_section_1",
 		"template_id: 258",
 	} {
 		if !strings.Contains(out, want) {
@@ -1120,6 +1122,23 @@ func TestGeneratedOutputParsesBatchParams(t *testing.T) {
 	}
 	if cfg.Encoder.Batch.FlushInterval != 250 {
 		t.Fatalf("expected batch flush_interval_ms=250, got %d", cfg.Encoder.Batch.FlushInterval)
+	}
+	if cfg.Encoder.MaxDatagramBytes != 4096 {
+		t.Fatalf("expected batch_max_bytes to set default max_datagram_bytes=4096, got %d", cfg.Encoder.MaxDatagramBytes)
+	}
+
+	sflowCfg, generated, err := LoadFromFlags(&FlagConfig{
+		Output:    "sflow:udp:127.0.0.1:6343?batch=true&batch_max_records=32&batch_max_bytes=4096&batch_flush_interval_ms=250",
+		OutputSet: true,
+	})
+	if err != nil {
+		t.Fatalf("LoadFromFlags sflow returned error: %v", err)
+	}
+	if !generated {
+		t.Fatalf("expected generated sflow config")
+	}
+	if sflowCfg.Encoder.Batch.MaxBytes != 4096 || sflowCfg.Encoder.MaxDatagramBytes != 4096 {
+		t.Fatalf("expected sflow batch/max datagram bytes 4096, got batch=%d max_datagram=%d", sflowCfg.Encoder.Batch.MaxBytes, sflowCfg.Encoder.MaxDatagramBytes)
 	}
 }
 

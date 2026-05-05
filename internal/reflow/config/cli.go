@@ -734,9 +734,9 @@ func generatedAggregators(flags *FlagConfig) []AggregatorConfig {
 				{Role: "current", Name: "sample_pool"},
 				{Role: "current", Name: "drops"},
 				{Role: "current", Name: "end_time_unix"},
-				{Role: "current", Name: "mpls_label1"},
-				{Role: "current", Name: "mpls_label2"},
-				{Role: "current", Name: "mpls_label3"},
+				{Role: "current", Name: "mpls_label_stack_section_1"},
+				{Role: "current", Name: "mpls_label_stack_section_2"},
+				{Role: "current", Name: "mpls_label_stack_section_3"},
 			},
 			TemplateID: templateID,
 		}

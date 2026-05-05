@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"encoding/json"
+	"fmt"
 	"net/netip"
 	"os"
 	"path/filepath"
@@ -509,6 +510,48 @@ func TestSFlowEncoderCapsHeadersBeforeBatching(t *testing.T) {
 		if header.FrameLength != 200 {
 			t.Fatalf("sample %d expected frame_length 200, got %d", i, header.FrameLength)
 		}
+	}
+}
+
+func TestSFlowEncoderBatchMaxBytesDoesNotUseFieldEstimate(t *testing.T) {
+	enc := NewSFlowEncoder(config.EncoderConfig{
+		Type:             "sflow",
+		MaxDatagramBytes: 4096,
+		AllowTruncate:    testBoolPtr(true),
+		Batch: config.BatchConfig{
+			Enabled:    testBoolPtr(true),
+			MaxRecords: 32,
+			MaxBytes:   4096,
+		},
+		SFlow: config.SFlowConfig{
+			MaxHeaderBytes: 128,
+		},
+	})
+
+	for i := 0; i < 3; i++ {
+		evt := testSFlowEvent("198.51.100.10")
+		for j := 0; j < 128; j++ {
+			evt.Fields[fmt.Sprintf("unused_%03d", j)] = "this field is not encoded into sflow"
+		}
+		payloads, err := enc.Encode(evt)
+		if err != nil {
+			t.Fatalf("Encode(%d) returned error: %v", i, err)
+		}
+		if len(payloads) != 0 {
+			t.Fatalf("expected event %d to stay buffered, got %d payloads", i, len(payloads))
+		}
+	}
+
+	payloads, err := enc.Flush()
+	if err != nil {
+		t.Fatalf("Flush returned error: %v", err)
+	}
+	if len(payloads) != 1 {
+		t.Fatalf("expected one flushed sflow packet, got %d", len(payloads))
+	}
+	packet := decodeSFlowPacket(t, payloads[0])
+	if len(packet.Samples) != 3 {
+		t.Fatalf("expected three samples after timer-style flush, got %d", len(packet.Samples))
 	}
 }
 
@@ -1574,6 +1617,84 @@ func TestIPFIXSchemaDrivenLayerAddressFieldsUseIndependentFamilies(t *testing.T)
 	}
 	if _, err := enc.Encode(evt); err != nil {
 		t.Fatalf("data Encode returned error: %v", err)
+	}
+}
+
+func TestIPFIXSchemaDrivenFixedFamilyEmitsSingleTemplate(t *testing.T) {
+	cfg := testTFlowEncoderConfig("ipfix")
+	enc := NewIPFIXEncoder(cfg)
+
+	ipv4Templates, err := enc.Encode(&event.Event{
+		Kind: "control",
+		Control: &event.ControlMetadata{
+			Type:   "schema",
+			Stream: "flow_data_ipv4",
+		},
+		Payload: event.AggregationSchema{
+			Stream:         "flow_data_ipv4",
+			FieldNames:     []string{"src_addr", "dst_addr", "bytes"},
+			Match:          map[string]string{"ip_family": "ipv4"},
+			BaseTemplateID: 256,
+		},
+	})
+	if err != nil {
+		t.Fatalf("ipv4 schema Encode returned error: %v", err)
+	}
+	if len(ipv4Templates) != 1 {
+		t.Fatalf("expected one ipv4 template, got %d", len(ipv4Templates))
+	}
+
+	ipv6Templates, err := enc.Encode(&event.Event{
+		Kind: "control",
+		Control: &event.ControlMetadata{
+			Type:   "schema",
+			Stream: "flow_data_ipv6",
+		},
+		Payload: event.AggregationSchema{
+			Stream:         "flow_data_ipv6",
+			FieldNames:     []string{"src_addr", "dst_addr", "bytes"},
+			Match:          map[string]string{"ip_family": "ipv6"},
+			BaseTemplateID: 258,
+		},
+	})
+	if err != nil {
+		t.Fatalf("ipv6 schema Encode returned error: %v", err)
+	}
+	if len(ipv6Templates) != 1 {
+		t.Fatalf("expected one ipv6 template, got %d", len(ipv6Templates))
+	}
+
+	if template := enc.dataSchemas["flow_data_ipv4"].templates()[0]; template.TemplateId != 256 {
+		t.Fatalf("expected ipv4 template id 256, got %d", template.TemplateId)
+	}
+	if template := enc.dataSchemas["flow_data_ipv6"].templates()[0]; template.TemplateId != 258 {
+		t.Fatalf("expected ipv6 template id 258, got %d", template.TemplateId)
+	}
+}
+
+func TestIPFIXDefaultMPLSStackSectionUsesThreeByteField(t *testing.T) {
+	cfg := testTFlowEncoderConfig("ipfix")
+	cfg.TemplatedFlow.Data.Catalog["mpls_label_stack_section_1"] = config.IPFIXFieldDefinition{ID: 70, Length: 3, Type: "bytes"}
+	def := cfg.TemplatedFlow.Data.Catalog["mpls_label_stack_section_1"]
+	if def.ID != 70 || def.Length != 3 || def.Type != "bytes" {
+		t.Fatalf("expected MPLS stack section IE 70 length 3 bytes, got %#v", def)
+	}
+
+	template, record, err := buildTemplatedDataRecordWithNames(
+		cfg.TemplatedFlow.Data,
+		map[string]any{"mpls_label_stack_section_1": []byte{0x00, 0x01, 0x31}},
+		[]string{"mpls_label_stack_section_1"},
+		256,
+		templatedEncodingContext{},
+	)
+	if err != nil {
+		t.Fatalf("buildTemplatedDataRecordWithNames returned error: %v", err)
+	}
+	if template.Fields[0].Type != 70 || template.Fields[0].Length != 3 {
+		t.Fatalf("expected template field IE 70 length 3, got %#v", template.Fields[0])
+	}
+	if got, ok := record.Values[0].Value.([]byte); !ok || !bytes.Equal(got, []byte{0x00, 0x01, 0x31}) {
+		t.Fatalf("expected three MPLS stack-section bytes, got %#v", got)
 	}
 }
 

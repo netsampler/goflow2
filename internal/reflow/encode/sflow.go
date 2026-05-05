@@ -42,7 +42,6 @@ type SFlowEncoder struct {
 	batch            config.BatchConfig
 	cfg              config.SFlowConfig
 	events           []*event.Event
-	estimatedBytes   int
 }
 
 // NewSFlowEncoder builds one encoder instance per runtime worker. Each instance
@@ -104,7 +103,6 @@ func (e *SFlowEncoder) Flush() ([][]byte, error) {
 	var payloads [][]byte
 	pending := e.events
 	e.events = nil
-	e.estimatedBytes = 0
 
 	for len(pending) > 0 {
 		packet, accepted, err := e.buildPacketWithLimit(pending)
@@ -135,15 +133,11 @@ func (e *SFlowEncoder) shouldFlush() bool {
 	if e.batch.MaxRecords > 0 && len(e.events) >= e.batch.MaxRecords {
 		return true
 	}
-	if e.batch.MaxBytes > 0 && e.estimatedBytes >= e.batch.MaxBytes {
-		return true
-	}
 	return false
 }
 
 func (e *SFlowEncoder) appendEvent(evt *event.Event) {
 	e.events = append(e.events, evt)
-	e.estimatedBytes += estimatedEventSize(evt)
 }
 
 func estimatedEventSize(evt *event.Event) int {
@@ -227,13 +221,13 @@ func (e *SFlowEncoder) buildPacketWithLimit(events []*event.Event) (*sflow.Packe
 		}
 		packet.Samples = append(packet.Samples, sample)
 		lastSize := 0
-		if e.maxDatagramBytes > 0 {
+		if limit := e.batchDatagramLimit(); limit > 0 {
 			data, err := sflow.EncodeMessage(packet)
 			if err != nil {
 				return nil, accepted, fmt.Errorf("encode sflow packet: %w", err)
 			}
 			lastSize = len(data)
-			if len(data) > e.maxDatagramBytes {
+			if len(data) > limit {
 				if e.allowTruncate {
 					truncated, ok, err := e.truncateLastSampleToFit(packet)
 					if err != nil {
@@ -248,7 +242,7 @@ func (e *SFlowEncoder) buildPacketWithLimit(events []*event.Event) (*sflow.Packe
 				packet.Samples = packet.Samples[:len(packet.Samples)-1]
 				if accepted == 0 {
 					return nil, 0, &sflowSampleTooLargeError{
-						MaxDatagramBytes: e.maxDatagramBytes,
+						MaxDatagramBytes: limit,
 						CurrentSize:      lastSize,
 					}
 				}
@@ -260,13 +254,21 @@ func (e *SFlowEncoder) buildPacketWithLimit(events []*event.Event) (*sflow.Packe
 
 	if accepted == 0 {
 		return nil, 0, &sflowSampleTooLargeError{
-			MaxDatagramBytes: e.maxDatagramBytes,
+			MaxDatagramBytes: e.batchDatagramLimit(),
 			CurrentSize:      0,
 		}
 	}
 
 	packet.SamplesCount = uint32(len(packet.Samples))
 	return packet, accepted, nil
+}
+
+func (e *SFlowEncoder) batchDatagramLimit() int {
+	limit := e.maxDatagramBytes
+	if e.batch.IsEnabled() && e.batch.MaxBytes > 0 && (limit <= 0 || e.batch.MaxBytes < limit) {
+		limit = e.batch.MaxBytes
+	}
+	return limit
 }
 
 // buildSample dispatches between flow-sample and counter-sample output.
