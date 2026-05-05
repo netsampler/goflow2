@@ -19,9 +19,9 @@ var (
 		"socket:<socket-path>:flow",
 		"socket:<socket-path>:bytes",
 		"socket:<socket-path>:json",
-		"stream:<path-or->:pcap",
-		"stream:<path-or->:pcapng",
-		"stream:<path-or->:json",
+		"stream:<path-or-stdin>:pcap",
+		"stream:<path-or-stdin>:pcapng",
+		"stream:<path-or-stdin>:json",
 		"pcap_live:<interface>:bytes",
 	}
 	outputEncoderOptions = []string{

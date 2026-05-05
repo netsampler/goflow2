@@ -848,6 +848,7 @@ func TestHelperOptionsTextListsInputAndOutputExamples(t *testing.T) {
 		"json:stdout",
 		"ipfix:udp:127.0.0.1:4739",
 		"pcap:stdout",
+		"stream:<path-or-stdin>:json",
 		"encoders: json, protobuf, sflow, ipfix, netflowv9, netflowv5, pcap, pcapng",
 	} {
 		if !strings.Contains(text, want) {
