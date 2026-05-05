@@ -281,7 +281,6 @@ func (e *SFlowEncoder) buildFlowSample(evt *event.Event) (sflow.FlowSample, erro
 	if fields == nil {
 		return sflow.FlowSample{}, fmt.Errorf("event fields are empty")
 	}
-	sf := evt.SFlow
 	headerData, protocol, frameLength, originalLength := e.sampledHeaderFields(evt, fields)
 
 	return sflow.FlowSample{
@@ -289,11 +288,11 @@ func (e *SFlowEncoder) buildFlowSample(evt *event.Event) (sflow.FlowSample, erro
 			Format:               sflow.SAMPLE_FORMAT_FLOW,
 			SampleSequenceNumber: e.sampleSequence(evt),
 			SourceIdType:         0,
-			SourceIdValue:        sflowSourceID(sf, fields),
+			SourceIdValue:        sflowSourceID(evt, fields),
 		},
-		SamplingRate: sflowSamplingRate(sf, fields),
-		SamplePool:   sflowSamplePool(sf, fields),
-		Drops:        sflowDrops(sf, fields),
+		SamplingRate: sflowSamplingRate(evt, fields),
+		SamplePool:   sflowSamplePool(evt, fields),
+		Drops:        sflowDrops(evt, fields),
 		Input:        uint32Field(fields, "input_if"),
 		Output:       uint32Field(fields, "output_if"),
 		Records: []sflow.FlowRecord{
@@ -359,7 +358,6 @@ func (e *SFlowEncoder) buildCounterSample(evt *event.Event) (sflow.CounterSample
 	if fields == nil {
 		return sflow.CounterSample{}, fmt.Errorf("event fields are empty")
 	}
-	sf := evt.SFlow
 	format, sourceIDType := e.counterSampleFormat(fields)
 
 	return sflow.CounterSample{
@@ -367,7 +365,7 @@ func (e *SFlowEncoder) buildCounterSample(evt *event.Event) (sflow.CounterSample
 			Format:               format,
 			SampleSequenceNumber: e.sampleSequence(evt),
 			SourceIdType:         sourceIDType,
-			SourceIdValue:        sflowSourceID(sf, fields),
+			SourceIdValue:        sflowSourceID(evt, fields),
 		},
 		CounterRecordsCount: 1,
 		Records: []sflow.CounterRecord{
@@ -445,10 +443,7 @@ func (e *SFlowEncoder) sflowAgentIP(evt *event.Event) string {
 	if e.cfg.AgentIP != "" {
 		return e.cfg.AgentIP
 	}
-	if evt.SFlow != nil && evt.SFlow.AgentIP != "" {
-		return evt.SFlow.AgentIP
-	}
-	if agentIP := stringFieldOrZero(evt.Fields, "agent_ip"); agentIP != "" {
+	if agentIP := eventAgentIP(evt); agentIP != "" {
 		return agentIP
 	}
 	return "127.0.0.1"
@@ -569,34 +564,34 @@ func sflowUptime(sf *event.SFlowMetadata) uint32 {
 	return sf.Uptime
 }
 
-// sflowSourceID prefers explicit event metadata over generic fields.
-func sflowSourceID(sf *event.SFlowMetadata, fields map[string]any) uint32 {
-	if sf != nil && sf.SourceID != 0 {
-		return sf.SourceID
+// sflowSourceID prefers decoded sFlow metadata, then source metadata, then generic fields.
+func sflowSourceID(evt *event.Event, fields map[string]any) uint32 {
+	if sourceID := eventSourceID(evt); sourceID != 0 {
+		return sourceID
 	}
 	return uint32Field(fields, "source_id")
 }
 
-// sflowSamplingRate prefers explicit event metadata over generic fields.
-func sflowSamplingRate(sf *event.SFlowMetadata, fields map[string]any) uint32 {
-	if sf != nil && sf.SamplingRate != 0 {
-		return sf.SamplingRate
+// sflowSamplingRate prefers decoded sFlow metadata, then source metadata, then generic fields.
+func sflowSamplingRate(evt *event.Event, fields map[string]any) uint32 {
+	if rate := eventSamplingRate(evt); rate != 0 {
+		return rate
 	}
 	return uint32Field(fields, "sampling_rate")
 }
 
-// sflowSamplePool prefers explicit event metadata over generic fields.
-func sflowSamplePool(sf *event.SFlowMetadata, fields map[string]any) uint32 {
-	if sf != nil && sf.SamplePool != 0 {
-		return sf.SamplePool
+// sflowSamplePool prefers decoded sFlow metadata, then source metadata, then generic fields.
+func sflowSamplePool(evt *event.Event, fields map[string]any) uint32 {
+	if samplePool := eventSamplePool(evt); samplePool != 0 {
+		return samplePool
 	}
 	return uint32Field(fields, "sample_pool")
 }
 
-// sflowDrops prefers explicit event metadata over generic fields.
-func sflowDrops(sf *event.SFlowMetadata, fields map[string]any) uint32 {
-	if sf != nil && sf.Drops != 0 {
-		return sf.Drops
+// sflowDrops prefers decoded sFlow metadata, then source metadata, then generic fields.
+func sflowDrops(evt *event.Event, fields map[string]any) uint32 {
+	if drops := eventDrops(evt); drops != 0 {
+		return drops
 	}
 	return uint32Field(fields, "drops")
 }

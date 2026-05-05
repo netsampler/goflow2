@@ -938,6 +938,26 @@ func TestHelperOptionsTextListsInputAndOutputExamples(t *testing.T) {
 	}
 }
 
+func TestGeneratedSFlowOutputAllowsTruncate(t *testing.T) {
+	cfg, generated, err := LoadFromFlags(&FlagConfig{
+		Inputs:    []string{"ebpf:br-lan:bytes?snaplen=65535&sample_every=1"},
+		Output:    "sflow:udp:127.0.0.1:6343",
+		OutputSet: true,
+	})
+	if err != nil {
+		t.Fatalf("LoadFromFlags returned error: %v", err)
+	}
+	if !generated {
+		t.Fatalf("expected generated config")
+	}
+	if cfg.Encoder.Type != "sflow" {
+		t.Fatalf("expected sflow encoder, got %q", cfg.Encoder.Type)
+	}
+	if !cfg.Encoder.AllowTruncate {
+		t.Fatalf("expected helper sflow output to enable allow_truncate")
+	}
+}
+
 func TestGeneratedConfigYAMLUsesFalseForPacketDecoderBooleans(t *testing.T) {
 	cfg, generated, err := LoadFromFlags(&FlagConfig{GenConf: true})
 	if err != nil {

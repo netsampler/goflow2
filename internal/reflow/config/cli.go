@@ -519,7 +519,11 @@ func parseOutputSpec(spec string) (EncoderConfig, SinkConfig, error) {
 		return EncoderConfig{}, SinkConfig{}, fmt.Errorf("invalid -output %q: unsupported sink %q", spec, sinkType)
 	}
 
-	return EncoderConfig{Type: encoderType}, sink, nil
+	encoder := EncoderConfig{Type: encoderType}
+	if encoderType == "sflow" {
+		encoder.AllowTruncate = true
+	}
+	return encoder, sink, nil
 }
 
 func validateSocketSourceType(sourceType string) error {

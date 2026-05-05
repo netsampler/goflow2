@@ -32,6 +32,13 @@ func (s *Source) InitEvents() ([]*event.Event, error) {
 				Type:                  s.cfg.Type,
 				CaptureInterface:      s.cfg.Interface,
 				CaptureInterfaceIndex: s.captureInterfaceIndex,
+				AgentIP:               s.agentIP,
+				SourceID:              uint32(s.captureInterfaceIndex),
+				Sampling: &event.SamplingMetadata{
+					Rate:       uint32(s.cfg.SampleEvery),
+					SamplePool: 0,
+					Drops:      0,
+				},
 			},
 			Control: &event.ControlMetadata{
 				Type:   "source_init",

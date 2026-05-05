@@ -67,6 +67,13 @@ func (s *Source) InitEvents() ([]*event.Event, error) {
 				Type:                  s.cfg.Type,
 				CaptureInterface:      s.cfg.Interface,
 				CaptureInterfaceIndex: s.captureInterfaceIndex,
+				AgentIP:               s.agentIP,
+				SourceID:              uint32(s.captureInterfaceIndex),
+				Sampling: &event.SamplingMetadata{
+					Rate:       uint32(s.cfg.SampleEvery),
+					SamplePool: 0,
+					Drops:      0,
+				},
 			},
 			Control: &event.ControlMetadata{
 				Type:   "source_init",
@@ -150,15 +157,16 @@ func (s *Source) Start(ctx context.Context, emit func(*event.Event) error) error
 				Type:                  s.cfg.Type,
 				CaptureInterface:      s.cfg.Interface,
 				CaptureInterfaceIndex: s.captureInterfaceIndex,
+				AgentIP:               s.agentIP,
+				SourceID:              uint32(s.captureInterfaceIndex),
+				Sampling: &event.SamplingMetadata{
+					Rate:       uint32(s.cfg.SampleEvery),
+					SamplePool: uint32(s.seenCount),
+					Drops:      drops,
+				},
 				JSON: event.JSONMetadata{
 					Flavor: s.cfg.JSON.Flavor,
 				},
-			},
-			SFlow: &event.SFlowMetadata{
-				AgentIP:      s.agentIP,
-				SamplingRate: uint32(s.cfg.SampleEvery),
-				SamplePool:   uint32(s.seenCount),
-				Drops:        drops,
 			},
 			Payload: append([]byte(nil), data...),
 			Fields: map[string]any{

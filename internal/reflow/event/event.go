@@ -56,17 +56,26 @@ type SourceInit struct {
 }
 
 type SourceMetadata struct {
-	Network               string       `json:"network"`
-	Address               string       `json:"address"`
-	Remote                string       `json:"remote,omitempty"`
-	Type                  string       `json:"type,omitempty"`
-	CaptureInterface      string       `json:"capture_interface,omitempty"`
-	CaptureInterfaceIndex int          `json:"capture_interface_index,omitempty"`
-	JSON                  JSONMetadata `json:"json,omitempty"`
+	Network               string            `json:"network"`
+	Address               string            `json:"address"`
+	Remote                string            `json:"remote,omitempty"`
+	Type                  string            `json:"type,omitempty"`
+	CaptureInterface      string            `json:"capture_interface,omitempty"`
+	CaptureInterfaceIndex int               `json:"capture_interface_index,omitempty"`
+	AgentIP               string            `json:"agent_ip,omitempty"`
+	SourceID              uint32            `json:"source_id,omitempty"`
+	Sampling              *SamplingMetadata `json:"sampling,omitempty"`
+	JSON                  JSONMetadata      `json:"json,omitempty"`
 }
 
 type JSONMetadata struct {
 	Flavor string `json:"flavor,omitempty"`
+}
+
+type SamplingMetadata struct {
+	Rate       uint32 `json:"rate,omitempty"`
+	SamplePool uint32 `json:"sample_pool,omitempty"`
+	Drops      uint32 `json:"drops,omitempty"`
 }
 
 type SFlowMetadata struct {

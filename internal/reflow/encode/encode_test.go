@@ -120,6 +120,48 @@ func TestJSONEncoderGoFlow2V2PrefersNanosecondTimeFields(t *testing.T) {
 	}
 }
 
+func TestJSONEncoderGoFlow2V2UsesSourceSamplingMetadata(t *testing.T) {
+	enc := NewJSONEncoder(config.EncoderConfig{
+		Type: "json",
+		JSON: config.JSONConfig{
+			Flavor: "goflow2v2",
+		},
+	})
+
+	payloads, err := enc.Encode(&event.Event{
+		Source: event.SourceMetadata{
+			AgentIP: "198.51.100.99",
+			Sampling: &event.SamplingMetadata{
+				Rate: 250,
+			},
+		},
+		Fields: map[string]any{
+			"agent_ip":      "192.0.2.1",
+			"sampling_rate": uint32(100),
+		},
+	})
+	if err != nil {
+		t.Fatalf("Encode returned error: %v", err)
+	}
+
+	dec := json.NewDecoder(bytes.NewReader(payloads[0]))
+	dec.UseNumber()
+	var decoded map[string]any
+	if err := dec.Decode(&decoded); err != nil {
+		t.Fatalf("unmarshal payload: %v", err)
+	}
+	if decoded["sampler_address"] != encodeIPBytes("198.51.100.99") {
+		t.Fatalf("expected source sampler_address, got %#v", decoded["sampler_address"])
+	}
+	rate, ok := decoded["sampling_rate"].(json.Number)
+	if !ok {
+		t.Fatalf("expected sampling_rate json.Number, got %T", decoded["sampling_rate"])
+	}
+	if got, _ := rate.Int64(); got != 250 {
+		t.Fatalf("expected source sampling_rate 250, got %d", got)
+	}
+}
+
 func TestProtobufEncoderEncodesCanonicalFlowMessage(t *testing.T) {
 	enc, err := New(config.EncoderConfig{
 		Type: "protobuf",
@@ -177,6 +219,42 @@ func TestProtobufEncoderEncodesCanonicalFlowMessage(t *testing.T) {
 	}
 	if msg.SrcPort != 1234 || msg.DstPort != 4321 {
 		t.Fatalf("expected ports 1234/4321, got %d/%d", msg.SrcPort, msg.DstPort)
+	}
+}
+
+func TestProtobufEncoderUsesSourceSamplingMetadata(t *testing.T) {
+	enc, err := New(config.EncoderConfig{
+		Type: "protobuf",
+		Protobuf: config.ProtobufConfig{
+			Flavor: "canonical",
+		},
+	})
+	if err != nil {
+		t.Fatalf("New returned error: %v", err)
+	}
+
+	payloads, err := enc.Encode(&event.Event{
+		Source: event.SourceMetadata{
+			AgentIP: "198.51.100.99",
+			Sampling: &event.SamplingMetadata{
+				Rate: 250,
+			},
+		},
+		Fields: map[string]any{
+			"agent_ip":      "192.0.2.1",
+			"sampling_rate": uint32(100),
+		},
+	})
+	if err != nil {
+		t.Fatalf("Encode returned error: %v", err)
+	}
+
+	msg := decodeFlowMessage(t, payloads[0])
+	if msg.SamplingRate != 250 {
+		t.Fatalf("expected source sampling_rate 250, got %d", msg.SamplingRate)
+	}
+	if !bytes.Equal(msg.SamplerAddress, []byte{198, 51, 100, 99}) {
+		t.Fatalf("expected source sampler_address 198.51.100.99, got %v", msg.SamplerAddress)
 	}
 }
 
@@ -496,6 +574,51 @@ func TestSFlowEncoderUsesEventSamplingRate(t *testing.T) {
 	}
 	if sample.SamplePool != 12345 {
 		t.Fatalf("expected sample_pool 12345, got %d", sample.SamplePool)
+	}
+}
+
+func TestSFlowEncoderUsesSourceSamplingMetadata(t *testing.T) {
+	enc := NewSFlowEncoder(config.EncoderConfig{
+		Type: "sflow",
+	})
+
+	evt := testSFlowEvent("198.51.100.10")
+	evt.SFlow = nil
+	evt.Source.AgentIP = "198.51.100.99"
+	evt.Source.SourceID = 42
+	evt.Source.Sampling = &event.SamplingMetadata{
+		Rate:       250,
+		SamplePool: 54321,
+		Drops:      7,
+	}
+	evt.Fields["agent_ip"] = "192.0.2.1"
+	evt.Fields["source_id"] = uint32(9)
+	evt.Fields["sampling_rate"] = uint32(100)
+	evt.Fields["sample_pool"] = uint32(12345)
+	evt.Fields["drops"] = uint32(3)
+
+	payloads, err := enc.Encode(evt)
+	if err != nil {
+		t.Fatalf("Encode returned error: %v", err)
+	}
+
+	packet := decodeSFlowPacket(t, payloads[0])
+	gotAgent, ok := netip.AddrFromSlice(packet.AgentIP)
+	if !ok || gotAgent.String() != "198.51.100.99" {
+		t.Fatalf("expected source agent_ip 198.51.100.99, got %s", gotAgent.String())
+	}
+	sample := packet.Samples[0].(sflow.FlowSample)
+	if sample.Header.SourceIdValue != 42 {
+		t.Fatalf("expected source_id 42, got %d", sample.Header.SourceIdValue)
+	}
+	if sample.SamplingRate != 250 {
+		t.Fatalf("expected source sampling_rate 250, got %d", sample.SamplingRate)
+	}
+	if sample.SamplePool != 54321 {
+		t.Fatalf("expected source sample_pool 54321, got %d", sample.SamplePool)
+	}
+	if sample.Drops != 7 {
+		t.Fatalf("expected source drops 7, got %d", sample.Drops)
 	}
 }
 
@@ -1102,6 +1225,43 @@ func TestNFv5EncoderEmitsRecord(t *testing.T) {
 	}
 	if decoded.Records[0].DOctets != 321 {
 		t.Fatalf("expected bytes 321, got %d", decoded.Records[0].DOctets)
+	}
+}
+
+func TestSourceOptionsUseSourceSamplingMetadata(t *testing.T) {
+	state := sourceOptionsFromEvent(&event.Event{
+		Source: event.SourceMetadata{
+			AgentIP:  "198.51.100.99",
+			SourceID: 42,
+			Sampling: &event.SamplingMetadata{
+				Rate:       250,
+				SamplePool: 54321,
+				Drops:      7,
+			},
+		},
+		Fields: map[string]any{
+			"agent_ip":      "192.0.2.1",
+			"source_id":     uint32(9),
+			"sampling_rate": uint32(100),
+			"sample_pool":   uint32(12345),
+			"drops":         uint32(3),
+		},
+	})
+
+	if state.agentIP != "198.51.100.99" {
+		t.Fatalf("expected source agent_ip 198.51.100.99, got %q", state.agentIP)
+	}
+	if state.sourceID != 42 {
+		t.Fatalf("expected source_id 42, got %d", state.sourceID)
+	}
+	if state.samplingRate != 250 {
+		t.Fatalf("expected source sampling_rate 250, got %d", state.samplingRate)
+	}
+	if state.samplePool != 54321 {
+		t.Fatalf("expected source sample_pool 54321, got %d", state.samplePool)
+	}
+	if state.drops != 7 {
+		t.Fatalf("expected source drops 7, got %d", state.drops)
 	}
 }
 

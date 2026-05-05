@@ -902,12 +902,12 @@ func (s templatedSchemaState) addressVariantMask(fields map[string]any) uint64 {
 func sourceOptionsFromEvent(evt *event.Event) sourceOptionsState {
 	state := sourceOptionsState{
 		stream:              eventStream(evt, "options_data"),
-		agentIP:             stringFieldOrZero(evt.Fields, "agent_ip"),
-		sourceID:            uint32Field(evt.Fields, "source_id"),
+		agentIP:             eventAgentIP(evt),
+		sourceID:            eventSourceID(evt),
 		observationDomainID: uint32Field(evt.Fields, "observation_domain_id"),
-		samplingRate:        uint32Field(evt.Fields, "sampling_rate"),
-		samplePool:          uint32Field(evt.Fields, "sample_pool"),
-		drops:               uint32Field(evt.Fields, "drops"),
+		samplingRate:        eventSamplingRate(evt),
+		samplePool:          eventSamplePool(evt),
+		drops:               eventDrops(evt),
 		inputIf:             uint32Field(evt.Fields, "input_if"),
 		outputIf:            uint32Field(evt.Fields, "output_if"),
 	}

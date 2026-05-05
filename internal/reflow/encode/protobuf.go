@@ -77,16 +77,10 @@ func compileProtobufFieldPlan(flavor string) ([]protobufFieldSpec, error) {
 				return uint32Field(evt.Fields, "sequence_num")
 			}),
 			protobufUint64Field("sampling_rate", 3, func(evt *event.Event) uint64 {
-				if evt != nil && evt.SFlow != nil && evt.SFlow.SamplingRate != 0 {
-					return uint64(evt.SFlow.SamplingRate)
-				}
-				return uint64(uint32Field(evt.Fields, "sampling_rate"))
+				return uint64(eventSamplingRate(evt))
 			}),
 			protobufIPField("sampler_address", 11, func(evt *event.Event) string {
-				if evt != nil && evt.SFlow != nil && evt.SFlow.AgentIP != "" {
-					return evt.SFlow.AgentIP
-				}
-				return stringFieldOrZero(evt.Fields, "agent_ip")
+				return eventAgentIP(evt)
 			}),
 			protobufUint64Field("time_flow_start_ns", 111, func(evt *event.Event) uint64 {
 				startNS := timeFlowNS(evt.Fields, "time_flow_start_ns", "start_time_unix")

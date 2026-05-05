@@ -65,7 +65,7 @@ func (e JSONEncoder) formatEvent(evt *event.Event) any {
 		})
 	case "goflow2v2":
 		out := map[string]any{
-			"sampler_address":    encodeIPBytes(stringFieldOrZero(evt.Fields, "agent_ip")),
+			"sampler_address":    encodeIPBytes(eventAgentIP(evt)),
 			"src_addr":           encodeIPBytes(stringFieldOrZero(evt.Fields, "src_addr")),
 			"dst_addr":           encodeIPBytes(stringFieldOrZero(evt.Fields, "dst_addr")),
 			"src_port":           uint32Field(evt.Fields, "src_port"),
@@ -75,7 +75,7 @@ func (e JSONEncoder) formatEvent(evt *event.Event) any {
 			"packets":            int64Field(evt.Fields, "packets"),
 			"time_flow_start_ns": timeFlowNS(evt.Fields, "time_flow_start_ns", "start_time_unix"),
 			"time_flow_end_ns":   timeFlowNS(evt.Fields, "time_flow_end_ns", "end_time_unix"),
-			"sampling_rate":      uint32Field(evt.Fields, "sampling_rate"),
+			"sampling_rate":      eventSamplingRate(evt),
 			"in_if":              uint32Field(evt.Fields, "input_if"),
 			"out_if":             uint32Field(evt.Fields, "output_if"),
 			"type":               flowTypeField(evt.Fields),

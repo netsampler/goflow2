@@ -177,15 +177,16 @@ func (s *Source) packetEvent(data []byte) *event.Event {
 			Type:                  s.cfg.Type,
 			CaptureInterface:      s.cfg.Interface,
 			CaptureInterfaceIndex: s.captureInterfaceIndex,
+			AgentIP:               s.agentIP,
+			SourceID:              uint32(s.captureInterfaceIndex),
+			Sampling: &event.SamplingMetadata{
+				Rate:       uint32(s.cfg.SampleEvery),
+				SamplePool: samplePool,
+				Drops:      0,
+			},
 			JSON: event.JSONMetadata{
 				Flavor: s.cfg.JSON.Flavor,
 			},
-		},
-		SFlow: &event.SFlowMetadata{
-			AgentIP:      s.agentIP,
-			SamplingRate: uint32(s.cfg.SampleEvery),
-			SamplePool:   samplePool,
-			Drops:        0,
 		},
 		Payload: payload,
 		Fields: map[string]any{
