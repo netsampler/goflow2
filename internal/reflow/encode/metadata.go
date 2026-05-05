@@ -12,7 +12,7 @@ func eventAgentIP(evt *event.Event) string {
 	if evt.Source.AgentIP != "" {
 		return evt.Source.AgentIP
 	}
-	return stringFieldOrZero(evt.Fields, "agent_ip")
+	return ""
 }
 
 func eventSamplingRate(evt *event.Event) uint32 {
@@ -25,7 +25,7 @@ func eventSamplingRate(evt *event.Event) uint32 {
 	if evt.Source.Sampling != nil && evt.Source.Sampling.Rate != 0 {
 		return evt.Source.Sampling.Rate
 	}
-	return uint32Field(evt.Fields, "sampling_rate")
+	return 0
 }
 
 func eventSourceID(evt *event.Event) uint32 {
@@ -38,7 +38,7 @@ func eventSourceID(evt *event.Event) uint32 {
 	if evt.Source.SourceID != 0 {
 		return evt.Source.SourceID
 	}
-	return uint32Field(evt.Fields, "source_id")
+	return 0
 }
 
 func eventSamplePool(evt *event.Event) uint32 {
@@ -51,7 +51,7 @@ func eventSamplePool(evt *event.Event) uint32 {
 	if evt.Source.Sampling != nil && evt.Source.Sampling.SamplePool != 0 {
 		return evt.Source.Sampling.SamplePool
 	}
-	return uint32Field(evt.Fields, "sample_pool")
+	return 0
 }
 
 func eventDrops(evt *event.Event) uint32 {
@@ -64,5 +64,74 @@ func eventDrops(evt *event.Event) uint32 {
 	if evt.Source.Sampling != nil && evt.Source.Sampling.Drops != 0 {
 		return evt.Source.Sampling.Drops
 	}
-	return uint32Field(evt.Fields, "drops")
+	return 0
+}
+
+func eventFieldsWithMetadata(evt *event.Event) map[string]any {
+	if evt == nil {
+		return nil
+	}
+	fields := cloneFieldMap(evt.Fields)
+	addEventMetadataFields(fields, evt, nil)
+	return fields
+}
+
+func eventFieldsWithMetadataForSchema(evt *event.Event, schemaFields []event.SchemaField) map[string]any {
+	if evt == nil {
+		return nil
+	}
+	fields := cloneFieldMap(evt.Fields)
+	names := make(map[string]struct{}, len(schemaFields))
+	for _, field := range schemaFields {
+		names[field.Name] = struct{}{}
+	}
+	addEventMetadataFields(fields, evt, names)
+	return fields
+}
+
+func cloneFieldMap(in map[string]any) map[string]any {
+	if len(in) == 0 {
+		return make(map[string]any)
+	}
+	out := make(map[string]any, len(in)+6)
+	for key, val := range in {
+		out[key] = val
+	}
+	return out
+}
+
+func addEventMetadataFields(fields map[string]any, evt *event.Event, names map[string]struct{}) {
+	add := func(name string, val any, present bool) {
+		if !present {
+			return
+		}
+		if names != nil {
+			if _, ok := names[name]; !ok {
+				return
+			}
+		}
+		fields[name] = val
+	}
+	agentIP := eventAgentIP(evt)
+	sourceID := eventSourceID(evt)
+	samplingRate := eventSamplingRate(evt)
+	samplePool := eventSamplePool(evt)
+	drops := eventDrops(evt)
+	add("agent_ip", agentIP, agentIP != "")
+	add("source_id", sourceID, sourceID != 0)
+	add("sampling_rate", samplingRate, hasSamplingMetadata(evt))
+	add("sample_pool", samplePool, hasSamplePoolMetadata(evt))
+	add("drops", drops, hasDropsMetadata(evt))
+}
+
+func hasSamplingMetadata(evt *event.Event) bool {
+	return evt != nil && ((evt.SFlow != nil && evt.SFlow.SamplingRate != 0) || evt.Source.Sampling != nil)
+}
+
+func hasSamplePoolMetadata(evt *event.Event) bool {
+	return evt != nil && ((evt.SFlow != nil && evt.SFlow.SamplePool != 0) || evt.Source.Sampling != nil)
+}
+
+func hasDropsMetadata(evt *event.Event) bool {
+	return evt != nil && ((evt.SFlow != nil && evt.SFlow.Drops != 0) || evt.Source.Sampling != nil)
 }

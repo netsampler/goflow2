@@ -54,6 +54,25 @@ type SourceConfig struct {
 	SampleOffset int        `yaml:"sample_offset"`
 	Type         string     `yaml:"type"`
 	JSON         JSONConfig `yaml:"json"`
+	EBPF         EBPFConfig `yaml:"ebpf,omitempty"`
+}
+
+type EBPFConfig struct {
+	SKBMetadata   *bool  `yaml:"skb_metadata,omitempty"`
+	Conntrack     *bool  `yaml:"conntrack,omitempty"`
+	ConntrackPath string `yaml:"conntrack_path,omitempty"`
+}
+
+func (c EBPFConfig) IsZero() bool {
+	return c.SKBMetadata == nil && c.Conntrack == nil && c.ConntrackPath == ""
+}
+
+func (c EBPFConfig) SKBMetadataEnabled() bool {
+	return c.SKBMetadata == nil || *c.SKBMetadata
+}
+
+func (c EBPFConfig) ConntrackEnabled() bool {
+	return c.Conntrack == nil || *c.Conntrack
 }
 
 type ProcessorConfig struct {

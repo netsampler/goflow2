@@ -176,10 +176,14 @@ func TestProtobufEncoderEncodesCanonicalFlowMessage(t *testing.T) {
 
 	payloads, err := enc.Encode(&event.Event{
 		ReceivedAt: time.Unix(1, 200).UTC(),
+		Source: event.SourceMetadata{
+			AgentIP: "192.0.2.1",
+			Sampling: &event.SamplingMetadata{
+				Rate: 100,
+			},
+		},
 		Fields: map[string]any{
 			"flow_type":          "sflow",
-			"agent_ip":           "192.0.2.1",
-			"sampling_rate":      uint32(100),
 			"start_time_unix":    int64(1700000000100),
 			"end_time_unix":      int64(1700000000900),
 			"time_flow_start_ns": int64(1_700_000_000_100_123_456),
@@ -1111,7 +1115,9 @@ func TestSFlowCounterEventOverridesConfiguredFormat(t *testing.T) {
 }
 
 func TestIPFIXEncoderEmitsTemplateAndDataRecord(t *testing.T) {
-	enc := NewIPFIXEncoder(testTFlowEncoderConfig("ipfix"))
+	cfg := testTFlowEncoderConfig("ipfix")
+	cfg.TemplatedFlow.ObservationDomainID = 42
+	enc := NewIPFIXEncoder(cfg)
 	evt := testTemplatedFlowEvent()
 	evt.Fields["observation_domain_id"] = uint32(42)
 
@@ -1217,7 +1223,7 @@ func TestIPFIXEncoderBatchesCompatibleDataRecords(t *testing.T) {
 	}
 }
 
-func TestIPFIXEncoderUsesEventObservationDomainID(t *testing.T) {
+func TestIPFIXEncoderIgnoresEventObservationDomainID(t *testing.T) {
 	enc := NewIPFIXEncoder(testTFlowEncoderConfig("ipfix"))
 	evt := testTemplatedFlowEvent()
 	evt.Fields["observation_domain_id"] = uint32(777)
@@ -1233,8 +1239,8 @@ func TestIPFIXEncoderUsesEventObservationDomainID(t *testing.T) {
 	if err := netflow.DecodeMessageVersion(bytes.NewBuffer(payloads[0]), store, netflow.FlowContext{RouterKey: "test-router"}, nil, &decoded); err != nil {
 		t.Fatalf("decode ipfix payload: %v", err)
 	}
-	if decoded.ObservationDomainId != 777 {
-		t.Fatalf("expected observation domain 777, got %d", decoded.ObservationDomainId)
+	if decoded.ObservationDomainId != 0 {
+		t.Fatalf("expected exporter observation domain 0, got %d", decoded.ObservationDomainId)
 	}
 }
 
@@ -1262,8 +1268,69 @@ func TestIPFIXEncoderConfigObservationDomainIDOverridesEvent(t *testing.T) {
 	}
 }
 
+func TestIPFIXSourceOptionsUseExporterObservationDomain(t *testing.T) {
+	cfg := testTFlowEncoderConfig("ipfix")
+	cfg.TemplatedFlow.ObservationDomainID = 888
+	enc := NewIPFIXEncoder(cfg)
+
+	payloads, err := enc.Encode(&event.Event{
+		Kind: "control",
+		Control: &event.ControlMetadata{
+			Type: "source_init",
+		},
+		Source: event.SourceMetadata{
+			AgentIP:  "198.51.100.99",
+			SourceID: 42,
+			Sampling: &event.SamplingMetadata{
+				Rate: 250,
+			},
+		},
+		Fields: map[string]any{
+			"observation_domain_id": uint32(777),
+		},
+		Payload: event.SourceInit{
+			ObservationDomainID: 777,
+			SourceID:            42,
+			SamplingRate:        100,
+		},
+	})
+	if err != nil {
+		t.Fatalf("Encode returned error: %v", err)
+	}
+	if len(payloads) != 1 {
+		t.Fatalf("expected one options payload, got %d", len(payloads))
+	}
+
+	store := templates.NewTemplateFlowStore()
+	store.Start()
+	var decoded netflow.IPFIXPacket
+	if err := netflow.DecodeMessageVersion(bytes.NewBuffer(payloads[0]), store, netflow.FlowContext{RouterKey: "test-router"}, nil, &decoded); err != nil {
+		t.Fatalf("decode ipfix source options payload: %v", err)
+	}
+	if decoded.ObservationDomainId != 888 {
+		t.Fatalf("expected packet observation domain 888, got %d", decoded.ObservationDomainId)
+	}
+	optionsData, ok := decoded.FlowSets[1].(netflow.OptionsDataFlowSet)
+	if !ok {
+		t.Fatalf("expected options data flow set, got %T", decoded.FlowSets[1])
+	}
+	scope := optionsData.Records[0].ScopesValues[0]
+	if scope.Type != netflow.IPFIX_FIELD_observationDomainId {
+		t.Fatalf("expected observationDomainId scope, got %d", scope.Type)
+	}
+	if got := scope.Value.([]byte); !bytes.Equal(got, encodeU32(888)) {
+		t.Fatalf("expected options observation domain scope 888, got %v", got)
+	}
+	option := optionsData.Records[0].OptionsValues[0]
+	if got := option.Value.([]byte); !bytes.Equal(got, encodeU32(250)) {
+		t.Fatalf("expected source metadata sampling rate 250, got %v", got)
+	}
+}
+
 func TestNFv9EncoderEmitsTemplateAndDataRecord(t *testing.T) {
-	enc := NewNFv9Encoder(testTFlowEncoderConfig("netflowv9"))
+	cfg := testTFlowEncoderConfig("netflowv9")
+	cfg.TemplatedFlow.ObservationDomainID = 42
+	enc := NewNFv9Encoder(cfg)
 
 	payloads, err := enc.Encode(testTemplatedFlowEvent())
 	if err != nil {
@@ -1421,6 +1488,13 @@ func TestSourceOptionsUseSourceSamplingMetadata(t *testing.T) {
 			"sample_pool":   uint32(12345),
 			"drops":         uint32(3),
 		},
+		Payload: event.SourceInit{
+			AgentIP:      "192.0.2.2",
+			SourceID:     10,
+			SamplingRate: 101,
+			SamplePool:   12346,
+			Drops:        4,
+		},
 	})
 
 	if state.agentIP != "198.51.100.99" {
@@ -1437,6 +1511,62 @@ func TestSourceOptionsUseSourceSamplingMetadata(t *testing.T) {
 	}
 	if state.drops != 7 {
 		t.Fatalf("expected source drops 7, got %d", state.drops)
+	}
+}
+
+func TestIPFIXSchemaDataUsesSourceSamplingMetadata(t *testing.T) {
+	cfg := testTFlowEncoderConfig("ipfix")
+	cfg.TemplatedFlow.Data.Catalog["sampling_rate"] = config.IPFIXFieldDefinition{ID: 34, Length: 4, Type: "unsigned32"}
+	cfg.TemplatedFlow.Data.Catalog["sample_pool"] = config.IPFIXFieldDefinition{ID: 310, Length: 8, Type: "unsigned64"}
+	cfg.TemplatedFlow.Data.Catalog["drops"] = config.IPFIXFieldDefinition{ID: 133, Length: 8, Type: "unsigned64"}
+	enc := NewIPFIXEncoder(cfg)
+
+	if _, err := enc.Encode(&event.Event{
+		Kind: "control",
+		Control: &event.ControlMetadata{
+			Type:   "schema",
+			Stream: "flow_data",
+		},
+		Payload: event.AggregationSchema{
+			Stream:         "flow_data",
+			FieldNames:     []string{"sampling_rate", "sample_pool", "drops"},
+			BaseTemplateID: 300,
+		},
+	}); err != nil {
+		t.Fatalf("schema Encode returned error: %v", err)
+	}
+
+	evt := &event.Event{
+		ReceivedAt: testEventTime(),
+		Stream:     "flow_data",
+		Source: event.SourceMetadata{
+			Sampling: &event.SamplingMetadata{
+				Rate:       250,
+				SamplePool: 54321,
+				Drops:      7,
+			},
+		},
+		Fields: map[string]any{
+			"bytes":         uint64(64),
+			"sampling_rate": uint32(100),
+			"sample_pool":   uint32(12345),
+			"drops":         uint32(3),
+		},
+	}
+	fields := eventFieldsWithMetadataForSchema(evt, enc.dataSchemas["flow_data"].fields)
+	if fields["sampling_rate"] != uint32(250) || fields["sample_pool"] != uint32(54321) || fields["drops"] != uint32(7) {
+		t.Fatalf("expected source sampling metadata to materialize for schema, got %#v", fields)
+	}
+	payloads, err := enc.Encode(evt)
+	if err != nil {
+		t.Fatalf("data Encode returned error: %v", err)
+	}
+	if len(payloads) != 1 {
+		t.Fatalf("expected one data payload, got %d", len(payloads))
+	}
+	record := enc.dataSchemas["flow_data"].templateForFields(nil)
+	if record.Fields[0].Type != 34 || record.Fields[1].Type != 310 || record.Fields[2].Type != 133 {
+		t.Fatalf("unexpected metadata template fields: %#v", record.Fields)
 	}
 }
 
@@ -1867,6 +1997,7 @@ func testTFlowEncoderConfig(typ string) config.EncoderConfig {
 	return config.EncoderConfig{
 		Type: typ,
 		TemplatedFlow: config.TemplatedFlowConfig{
+			OptionsTemplateBaseID: 1024,
 			Data: config.TemplatedFlowDataConfig{
 				Select: []string{"src_addr", "dst_addr", "src_port", "dst_port", "proto", "bytes", "packets"},
 				Catalog: map[string]config.IPFIXFieldDefinition{

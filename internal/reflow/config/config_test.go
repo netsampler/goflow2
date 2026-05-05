@@ -679,7 +679,7 @@ func TestGeneratedAggregateConfigUsesFieldDSL(t *testing.T) {
 		"fields:",
 		"- key:src_addr",
 		"- sum:bytes",
-		"- first:agent_ip",
+		"- first:source_id",
 		"- current:end_time_unix",
 		"- current:mpls_label_stack_section_1",
 		"template_id: 258",
@@ -690,6 +690,11 @@ func TestGeneratedAggregateConfigUsesFieldDSL(t *testing.T) {
 	}
 	for _, unwanted := range []string{
 		"key_fields:",
+		"- first:agent_ip",
+		"- current:agent_ip",
+		"- current:sampling_rate",
+		"- current:sample_pool",
+		"- current:drops",
 		"static_fields:",
 		"reset_interval_ms:",
 		"periodic_interval_ms:",
@@ -732,6 +737,12 @@ func TestGeneratedAggregateConfigSupportsCLIParams(t *testing.T) {
 		}
 		if !agg.Periodic.ResetBuckets {
 			t.Fatalf("aggregators[%d] expected reset_buckets=true", i)
+		}
+		for _, field := range agg.Fields {
+			switch field.Name {
+			case "agent_ip", "sampling_rate", "sample_pool", "drops":
+				t.Fatalf("aggregators[%d] should not export %s by default: %#v", i, field.Name, agg.Fields)
+			}
 		}
 	}
 }
@@ -1275,6 +1286,33 @@ func TestGeneratedConfigYAMLUsesFalseForPacketDecoderBooleans(t *testing.T) {
 	}
 }
 
+func TestGeneratedEBPFConfigMaterializesFeatureDefaults(t *testing.T) {
+	cfg, generated, err := LoadFromFlags(&FlagConfig{
+		Inputs:  []string{"ebpf:br-lan:bytes"},
+		GenConf: true,
+	})
+	if err != nil {
+		t.Fatalf("LoadFromFlags returned error: %v", err)
+	}
+	if !generated {
+		t.Fatalf("expected generated config mode")
+	}
+	raw, err := yaml.Marshal(cfg)
+	if err != nil {
+		t.Fatalf("marshal config: %v", err)
+	}
+	text := string(raw)
+	for _, want := range []string{
+		"ebpf:",
+		"skb_metadata: true",
+		"conntrack: true",
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("expected generated ebpf config to contain %q, got:\n%s", want, text)
+		}
+	}
+}
+
 func TestLoadSupportsEBPFSourceDefaults(t *testing.T) {
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, "reflow.yaml")
@@ -1333,6 +1371,22 @@ func TestParseInputSpecSupportsCaptureParams(t *testing.T) {
 	}
 	if src.SnapLen != 262144 || src.SampleEvery != 10 || src.SampleOffset != 3 {
 		t.Fatalf("unexpected capture params: snaplen=%d sample_every=%d sample_offset=%d", src.SnapLen, src.SampleEvery, src.SampleOffset)
+	}
+}
+
+func TestParseInputSpecSupportsEBPFFeatureParams(t *testing.T) {
+	src, err := parseInputSpec("ebpf:br-lan:bytes?skb_metadata=false&conntrack=false&conntrack_path=/tmp/nf_conntrack")
+	if err != nil {
+		t.Fatalf("parseInputSpec returned error: %v", err)
+	}
+	if src.EBPF.SKBMetadata == nil || *src.EBPF.SKBMetadata {
+		t.Fatalf("expected skb_metadata=false, got %#v", src.EBPF.SKBMetadata)
+	}
+	if src.EBPF.Conntrack == nil || *src.EBPF.Conntrack {
+		t.Fatalf("expected conntrack=false, got %#v", src.EBPF.Conntrack)
+	}
+	if src.EBPF.ConntrackPath != "/tmp/nf_conntrack" {
+		t.Fatalf("expected conntrack path, got %q", src.EBPF.ConntrackPath)
 	}
 }
 

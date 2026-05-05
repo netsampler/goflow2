@@ -371,6 +371,40 @@ func TestSchemaPassthroughEmitsSchemaAndForwardsEvents(t *testing.T) {
 	}
 }
 
+func TestSchemaFieldsDeduplicateConfiguredNames(t *testing.T) {
+	agg, err := New(config.AggregatorConfig{
+		Passthrough:      true,
+		Stream:           "flow_data",
+		FieldsConfigured: true,
+		Fields: []config.AggregatorField{
+			{Role: "first", Name: "agent_ip"},
+			{Role: "current", Name: "agent_ip"},
+			{Role: "sum", Name: "bytes"},
+		},
+		First:   []string{"agent_ip"},
+		Current: []string{"agent_ip"},
+		Sum:     []string{"bytes"},
+	})
+	if err != nil {
+		t.Fatalf("New returned error: %v", err)
+	}
+
+	initEvents, err := agg.InitEvents()
+	if err != nil {
+		t.Fatalf("InitEvents returned error: %v", err)
+	}
+	schema, ok := initEvents[0].Payload.(event.AggregationSchema)
+	if !ok {
+		t.Fatalf("expected aggregation schema payload, got %T", initEvents[0].Payload)
+	}
+	if len(schema.Fields) != 2 {
+		t.Fatalf("expected deduplicated schema fields, got %#v", schema.Fields)
+	}
+	if schema.Fields[0].Name != "agent_ip" || schema.Fields[1].Name != "bytes" {
+		t.Fatalf("unexpected schema field order: %#v", schema.Fields)
+	}
+}
+
 func TestStatefulInitEventsSortStaticFieldsDeterministically(t *testing.T) {
 	agg, err := New(config.AggregatorConfig{
 		Stream: "agg_packets",
@@ -602,6 +636,60 @@ func TestStatefulOnlySumsConfiguredSumFields(t *testing.T) {
 	}
 	if got := out[0].Fields["packets"]; got != int64(2) {
 		t.Fatalf("expected packets=2, got %#v", got)
+	}
+}
+
+func TestStatefulReadsSourceMetadataFields(t *testing.T) {
+	agg, err := New(config.AggregatorConfig{
+		Periodic: config.AggregatorPeriodicConfig{
+			Every: 1,
+		},
+		KeyFields: []string{"source_id"},
+		Current:   []string{"agent_ip", "sampling_rate", "sample_pool", "drops"},
+	})
+	if err != nil {
+		t.Fatalf("New returned error: %v", err)
+	}
+
+	_, err = agg.Process(&event.Event{
+		Source: event.SourceMetadata{
+			AgentIP:  "198.51.100.99",
+			SourceID: 42,
+			Sampling: &event.SamplingMetadata{
+				Rate:       250,
+				SamplePool: 54321,
+				Drops:      7,
+			},
+		},
+		Fields: map[string]any{
+			"bytes":         uint64(64),
+			"agent_ip":      "192.0.2.1",
+			"source_id":     uint32(9),
+			"sampling_rate": uint32(100),
+			"sample_pool":   uint32(12345),
+			"drops":         uint32(3),
+		},
+	})
+	if err != nil {
+		t.Fatalf("Process returned error: %v", err)
+	}
+
+	out, err := agg.Close()
+	if err != nil {
+		t.Fatalf("Close returned error: %v", err)
+	}
+	if len(out) != 1 {
+		t.Fatalf("expected one aggregate, got %d", len(out))
+	}
+	fields := out[0].Fields
+	if fields["agent_ip"] != "198.51.100.99" {
+		t.Fatalf("expected agent_ip from metadata, got %#v", fields["agent_ip"])
+	}
+	if fields["source_id"] != uint32(42) {
+		t.Fatalf("expected source_id from metadata, got %#v", fields["source_id"])
+	}
+	if fields["sampling_rate"] != uint32(250) || fields["sample_pool"] != uint32(54321) || fields["drops"] != uint32(7) {
+		t.Fatalf("expected sampling metadata fields, got %#v", fields)
 	}
 }
 

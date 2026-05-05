@@ -89,6 +89,8 @@ type packetMetadata struct {
 	outputInterface string
 	skb             skbMetadata
 	hasSKBMetadata  bool
+	conntrack       conntrackMetadata
+	hasConntrack    bool
 }
 
 type skbMetadata struct {
@@ -183,6 +185,10 @@ func New(cfg config.SourceConfig) (*Source, error) {
 	if err != nil {
 		return nil, fmt.Errorf("lookup capture interface %s: %w", cfg.Interface, err)
 	}
+	var conntrack *conntrackTracker
+	if cfg.EBPF.ConntrackEnabled() {
+		conntrack = newConntrackTracker(cfg.EBPF.ConntrackPath)
+	}
 	return &Source{
 		cfg:                   cfg,
 		agentIP:               firstInterfaceIP(iface),
@@ -193,6 +199,7 @@ func New(cfg config.SourceConfig) (*Source, error) {
 		fd:            -1,
 		progFD:        -1,
 		metadataMapFD: -1,
+		conntrack:     conntrack,
 	}, nil
 }
 
@@ -260,8 +267,16 @@ func (s *Source) Start(ctx context.Context, emit func(*event.Event) error) error
 			continue
 		}
 		meta := s.packetMetadata(from)
-		if skb, ok := s.readSKBMetadata(); ok {
-			meta = s.mergeSKBMetadata(meta, skb)
+		if s.cfg.EBPF.SKBMetadataEnabled() {
+			if skb, ok := s.readSKBMetadata(); ok {
+				meta = s.mergeSKBMetadata(meta, skb)
+			}
+		}
+		if s.conntrack != nil {
+			if ct, ok := s.conntrack.Lookup(buf[:n]); ok {
+				meta.conntrack = ct
+				meta.hasConntrack = true
+			}
 		}
 		if err := emit(s.packetEvent(buf[:n], meta)); err != nil {
 			return err
@@ -296,10 +311,6 @@ func (s *Source) packetEvent(data []byte, meta packetMetadata) *event.Event {
 		},
 		Payload: payload,
 		Fields: map[string]any{
-			"agent_ip":       s.agentIP,
-			"sampling_rate":  uint32(s.cfg.SampleEvery),
-			"sample_pool":    samplePool,
-			"drops":          uint32(0),
 			"capture_length": len(payload),
 			"wire_length":    len(payload),
 		},
@@ -457,6 +468,9 @@ func applyPacketMetadataFields(fields map[string]any, meta packetMetadata) {
 		if meta.skb.Ifindex != 0 {
 			fields["route_output_if"] = meta.skb.Ifindex
 		}
+	}
+	if meta.hasConntrack {
+		applyConntrackFields(fields, meta.conntrack)
 	}
 }
 

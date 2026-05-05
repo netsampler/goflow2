@@ -19,6 +19,7 @@ type Source struct {
 	fd                    int
 	progFD                int
 	metadataMapFD         int
+	conntrack             *conntrackTracker
 }
 
 // InitEvents emits a source_init control event so template-based encoders can
@@ -47,13 +48,8 @@ func (s *Source) InitEvents() ([]*event.Event, error) {
 				Stream: "options_data",
 			},
 			Fields: map[string]any{
-				"agent_ip":      s.agentIP,
-				"source_id":     uint32(s.captureInterfaceIndex),
-				"sampling_rate": uint32(s.cfg.SampleEvery),
-				"sample_pool":   uint32(0),
-				"drops":         uint32(0),
-				"input_if":      uint32(s.captureInterfaceIndex),
-				"output_if":     uint32(s.captureInterfaceIndex),
+				"input_if":  uint32(s.captureInterfaceIndex),
+				"output_if": uint32(s.captureInterfaceIndex),
 			},
 			Payload: event.SourceInit{
 				Stream:       "options_data",

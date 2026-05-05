@@ -37,16 +37,11 @@ aggregators:
       - packets
     # `first` keeps the first observed value for the lifetime of the bucket.
     first:
-      - agent_ip
       - start_time_unix
     # `current` replaces the stored value on every bucket update.
     current:
-      - agent_ip
       - input_if
       - output_if
-      - sampling_rate
-      - sample_pool
-      - drops
       - end_time_unix
 
 encoder:

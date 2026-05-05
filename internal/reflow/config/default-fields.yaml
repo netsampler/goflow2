@@ -30,5 +30,9 @@ fields:
   observation_domain_id: 149:4:u32 # observationDomainId
   start_time_unix: 152:8:u64 # flowStartMilliseconds
   end_time_unix: 153:8:u64 # flowEndMilliseconds
+  nat_src_addr: 225:4:ip4 # postNATSourceIPv4Address
+  nat_dst_addr: 226:4:ip4 # postNATDestinationIPv4Address
+  nat_src_port: 227:2:u16 # postNAPTSourceTransportPort
+  nat_dst_port: 228:2:u16 # postNAPTDestinationTransportPort
   ether_type: 256:2:u16 # ethernetType
   sample_pool: 310:8:u64 # samplingPopulation

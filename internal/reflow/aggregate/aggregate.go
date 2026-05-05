@@ -267,7 +267,15 @@ func orderedSchemaFields(cfg config.AggregatorConfig) []string {
 func schemaFields(cfg config.AggregatorConfig) []event.SchemaField {
 	if cfg.FieldsConfigured {
 		out := make([]event.SchemaField, 0, len(cfg.Fields))
+		seen := make(map[string]struct{}, len(cfg.Fields))
 		for _, field := range cfg.Fields {
+			if field.Name == "" {
+				continue
+			}
+			if _, ok := seen[field.Name]; ok {
+				continue
+			}
+			seen[field.Name] = struct{}{}
 			out = append(out, event.SchemaField{
 				Role:  field.Role,
 				Name:  field.Name,
@@ -455,7 +463,7 @@ func aggregateFromEvent(cfg config.AggregatorConfig, recordCapacity int, evt *ev
 		return "", aggregateRecord{}, fmt.Errorf("event fields are empty")
 	}
 
-	key, err := buildKey(fields, cfg.KeyFields)
+	key, err := buildKey(evt, cfg.KeyFields)
 	if err != nil {
 		return "", aggregateRecord{}, err
 	}
@@ -473,30 +481,30 @@ func aggregateFromEvent(cfg config.AggregatorConfig, recordCapacity int, evt *ev
 		recordFields[key] = val
 	}
 	for _, keyField := range cfg.KeyFields {
-		if val, ok := fieldValue(fields, keyField); ok {
+		if val, ok := eventFieldValue(evt, keyField); ok {
 			recordFields[keyField] = val
 		}
 	}
 	for _, sumField := range cfg.Sum {
-		recordFields[sumField] = sumValue{Value: int64Field(fields, sumField)}
+		recordFields[sumField] = sumValue{Value: int64EventField(evt, sumField)}
 	}
 	for _, firstField := range cfg.First {
-		if val, ok := fieldValue(fields, firstField); ok {
+		if val, ok := eventFieldValue(evt, firstField); ok {
 			recordFields[firstField] = firstValue{Value: val}
 		}
 	}
 	for _, currentField := range cfg.Current {
-		if val, ok := fieldValue(fields, currentField); ok {
+		if val, ok := eventFieldValue(evt, currentField); ok {
 			recordFields[currentField] = currentValue{Value: val}
 		}
 	}
 	for _, minField := range cfg.Min {
-		if val, ok := fieldValue(fields, minField); ok {
+		if val, ok := eventFieldValue(evt, minField); ok {
 			recordFields[minField] = minValue{Value: val}
 		}
 	}
 	for _, maxField := range cfg.Max {
-		if val, ok := fieldValue(fields, maxField); ok {
+		if val, ok := eventFieldValue(evt, maxField); ok {
 			recordFields[maxField] = maxValue{Value: val}
 		}
 	}
@@ -523,14 +531,14 @@ func seedTimestamps(dst, src map[string]any, now time.Time) {
 }
 
 // buildKey joins the configured key fields into one stable bucket identifier.
-func buildKey(fields map[string]any, keyFields []string) (string, error) {
+func buildKey(evt *event.Event, keyFields []string) (string, error) {
 	if len(keyFields) == 0 {
 		return "__global__", nil
 	}
 	var b strings.Builder
 	b.Grow(len(keyFields) * 16)
 	for i, key := range keyFields {
-		val, ok := fieldValue(fields, key)
+		val, ok := eventFieldValue(evt, key)
 		if !ok {
 			return "", &missingAggregationKeyError{Key: key}
 		}
@@ -717,13 +725,57 @@ func maxTimestamp(a, b int64) int64 {
 	return b
 }
 
-// int64Field reads one numeric field from the generic field map.
-func int64Field(fields map[string]any, key string) int64 {
-	val, ok := fieldValue(fields, key)
+// int64EventField reads one numeric field from the event field map or metadata.
+func int64EventField(evt *event.Event, key string) int64 {
+	val, ok := eventFieldValue(evt, key)
 	if !ok {
 		return 0
 	}
 	return int64FromAny(val)
+}
+
+func eventFieldValue(evt *event.Event, key string) (any, bool) {
+	if evt == nil {
+		return nil, false
+	}
+	switch key {
+	case "agent_ip":
+		if evt.SFlow != nil && evt.SFlow.AgentIP != "" {
+			return evt.SFlow.AgentIP, true
+		}
+		if evt.Source.AgentIP != "" {
+			return evt.Source.AgentIP, true
+		}
+	case "source_id":
+		if evt.SFlow != nil && evt.SFlow.SourceID != 0 {
+			return evt.SFlow.SourceID, true
+		}
+		if evt.Source.SourceID != 0 {
+			return evt.Source.SourceID, true
+		}
+	case "sampling_rate":
+		if evt.SFlow != nil && evt.SFlow.SamplingRate != 0 {
+			return evt.SFlow.SamplingRate, true
+		}
+		if evt.Source.Sampling != nil {
+			return evt.Source.Sampling.Rate, true
+		}
+	case "sample_pool":
+		if evt.SFlow != nil && evt.SFlow.SamplePool != 0 {
+			return evt.SFlow.SamplePool, true
+		}
+		if evt.Source.Sampling != nil {
+			return evt.Source.Sampling.SamplePool, true
+		}
+	case "drops":
+		if evt.SFlow != nil && evt.SFlow.Drops != 0 {
+			return evt.SFlow.Drops, true
+		}
+		if evt.Source.Sampling != nil {
+			return evt.Source.Sampling.Drops, true
+		}
+	}
+	return fieldValue(evt.Fields, key)
 }
 
 // fieldValue reads flat field names first, then dotted paths through nested

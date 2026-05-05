@@ -3,6 +3,7 @@
 package ebpf
 
 import (
+	"net/netip"
 	"testing"
 
 	"golang.org/x/sys/unix"
@@ -42,6 +43,121 @@ func TestPacketMetadataMarksOutgoingCapture(t *testing.T) {
 	if got := evt.Fields["dst_interface"]; got != "br-lan" {
 		t.Fatalf("expected dst_interface=br-lan, got %#v", got)
 	}
+	for _, key := range []string{"agent_ip", "sampling_rate", "sample_pool", "drops"} {
+		if _, ok := evt.Fields[key]; ok {
+			t.Fatalf("expected %s to stay in source metadata, got field value %#v", key, evt.Fields[key])
+		}
+	}
+}
+
+func TestConntrackLineExtractsNATMetadata(t *testing.T) {
+	line := "ipv4 2 tcp 6 431999 ESTABLISHED src=192.168.1.10 dst=198.51.100.20 sport=12345 dport=443 packets=10 bytes=1000 src=198.51.100.20 dst=203.0.113.9 sport=443 dport=54321 packets=8 bytes=900 [ASSURED] mark=0 use=1"
+	meta, ok := parseConntrackLine(line)
+	if !ok {
+		t.Fatalf("expected conntrack line to parse")
+	}
+	if !meta.hasSNAT {
+		t.Fatalf("expected SNAT metadata: %#v", meta)
+	}
+	if meta.natSrc.String() != "203.0.113.9" || meta.natSPort != 54321 {
+		t.Fatalf("unexpected SNAT endpoint %s:%d", meta.natSrc, meta.natSPort)
+	}
+	if meta.hasDNAT {
+		t.Fatalf("did not expect DNAT metadata: %#v", meta)
+	}
+	if meta.state != "established" || meta.status != "assured" {
+		t.Fatalf("unexpected state/status: %q/%q", meta.state, meta.status)
+	}
+}
+
+func TestPacketConntrackTupleParsesIPv4TCP(t *testing.T) {
+	frame := testIPv4TCPFrame("192.168.1.10", "198.51.100.20", 12345, 443)
+	tuple, ok := packetConntrackTuple(frame)
+	if !ok {
+		t.Fatalf("expected packet tuple")
+	}
+	if tuple.family != "ipv4" || tuple.proto != "tcp" {
+		t.Fatalf("unexpected tuple family/proto: %#v", tuple)
+	}
+	if tuple.src.String() != "192.168.1.10" || tuple.dst.String() != "198.51.100.20" {
+		t.Fatalf("unexpected tuple addresses: %#v", tuple)
+	}
+	if tuple.srcPort != 12345 || tuple.dstPort != 443 {
+		t.Fatalf("unexpected tuple ports: %#v", tuple)
+	}
+}
+
+func TestPacketEventAddsConntrackFields(t *testing.T) {
+	source := &Source{
+		cfg:                   config.SourceConfig{Network: "ebpf", Interface: "br-lan", Type: "bytes", SampleEvery: 1},
+		agentIP:               "192.0.2.10",
+		captureInterfaceIndex: 7,
+		seenCount:             1,
+	}
+	meta := packetMetadata{
+		packetType:   "host",
+		direction:    "in",
+		hasConntrack: true,
+		conntrack: conntrackMetadata{
+			direction: "original",
+			family:    "ipv4",
+			proto:     "tcp",
+			state:     "established",
+			status:    "assured",
+			original: conntrackTuple{
+				family:  "ipv4",
+				proto:   "tcp",
+				src:     netip.MustParseAddr("192.168.1.10"),
+				dst:     netip.MustParseAddr("198.51.100.20"),
+				srcPort: 12345,
+				dstPort: 443,
+			},
+			reply: conntrackTuple{
+				family:  "ipv4",
+				proto:   "tcp",
+				src:     netip.MustParseAddr("198.51.100.20"),
+				dst:     netip.MustParseAddr("203.0.113.9"),
+				srcPort: 443,
+				dstPort: 54321,
+			},
+			hasSNAT:  true,
+			natSrc:   netip.MustParseAddr("203.0.113.9"),
+			natSPort: 54321,
+		},
+	}
+
+	evt := source.packetEvent([]byte{0, 1, 2, 3}, meta)
+	if got := evt.Fields["conntrack_state"]; got != "established" {
+		t.Fatalf("expected conntrack_state=established, got %#v", got)
+	}
+	if got := evt.Fields["conntrack_status"]; got != "assured" {
+		t.Fatalf("expected conntrack_status=assured, got %#v", got)
+	}
+	if got := evt.Fields["nat_src_addr"]; got != "203.0.113.9" {
+		t.Fatalf("expected nat_src_addr, got %#v", got)
+	}
+	if got := evt.Fields["nat_src_port"]; got != uint32(54321) {
+		t.Fatalf("expected nat_src_port=54321, got %#v", got)
+	}
+}
+
+func testIPv4TCPFrame(src, dst string, sport, dport uint16) []byte {
+	frame := make([]byte, 14+20+20)
+	frame[12] = 0x08
+	frame[13] = 0x00
+	ip := frame[14:]
+	ip[0] = 0x45
+	ip[9] = 6
+	srcAddr := netip.MustParseAddr(src).As4()
+	dstAddr := netip.MustParseAddr(dst).As4()
+	copy(ip[12:16], srcAddr[:])
+	copy(ip[16:20], dstAddr[:])
+	tcp := ip[20:]
+	tcp[0] = byte(sport >> 8)
+	tcp[1] = byte(sport)
+	tcp[2] = byte(dport >> 8)
+	tcp[3] = byte(dport)
+	return frame
 }
 
 func TestPacketMetadataMarksIncomingCapture(t *testing.T) {

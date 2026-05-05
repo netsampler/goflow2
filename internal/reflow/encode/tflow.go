@@ -245,7 +245,8 @@ func (e *IPFIXEncoder) ipfixBatchRecord(evt *event.Event) (ipfixBatchRecord, err
 	if evt.Fields == nil {
 		return ipfixBatchRecord{}, fmt.Errorf("event fields are empty")
 	}
-	templateID := uint16Field(evt.Fields, "template_id")
+	fieldMap := eventFieldsWithMetadata(evt)
+	templateID := uint16Field(fieldMap, "template_id")
 	if templateID == 0 {
 		templateID = 256
 	}
@@ -253,13 +254,14 @@ func (e *IPFIXEncoder) ipfixBatchRecord(evt *event.Event) (ipfixBatchRecord, err
 	if evt.ReceivedAt.IsZero() {
 		exportTime = uint32(time.Now().Unix())
 	}
-	obsDomainID := e.observationDomainID(evt.Fields)
+	obsDomainID := e.observationDomainID()
 
 	stream := eventStream(evt, "flow_data")
 	if schema, ok := e.dataSchemas[stream]; ok {
-		mask := schema.addressVariantMask(evt.Fields)
+		fieldMap = eventFieldsWithMetadataForSchema(evt, schema.fields)
+		mask := schema.addressVariantMask(fieldMap)
 		templateRecord := schema.templateForMask(mask)
-		dataRecord, err := buildTemplatedValuesFromSchemaFieldsForMask(e.cfg.TemplatedFlow.Data, evt.Fields, schema.fields, templatedEncodingContext{}, schema.addressGroups, mask)
+		dataRecord, err := buildTemplatedValuesFromSchemaFieldsForMask(e.cfg.TemplatedFlow.Data, fieldMap, schema.fields, templatedEncodingContext{}, schema.addressGroups, mask)
 		if err != nil {
 			return ipfixBatchRecord{}, err
 		}
@@ -272,7 +274,7 @@ func (e *IPFIXEncoder) ipfixBatchRecord(evt *event.Event) (ipfixBatchRecord, err
 		}, nil
 	}
 
-	plan, dataRecord, err := e.fallbackDataRecord(evt.Fields, templateID)
+	plan, dataRecord, err := e.fallbackDataRecord(fieldMap, templateID)
 	if err != nil {
 		return ipfixBatchRecord{}, err
 	}
@@ -324,11 +326,12 @@ func (e *IPFIXEncoder) buildPacket(evt *event.Event) (*netflow.IPFIXPacket, erro
 		return nil, fmt.Errorf("event fields are empty")
 	}
 
-	templateID := uint16Field(evt.Fields, "template_id")
+	fieldMap := eventFieldsWithMetadata(evt)
+	templateID := uint16Field(fieldMap, "template_id")
 	if templateID == 0 {
 		templateID = 256
 	}
-	obsDomainID := e.observationDomainID(evt.Fields)
+	obsDomainID := e.observationDomainID()
 	exportTime := uint32(evt.ReceivedAt.Unix())
 	if evt.ReceivedAt.IsZero() {
 		exportTime = uint32(time.Now().Unix())
@@ -399,9 +402,10 @@ func (e *IPFIXEncoder) buildPacket(evt *event.Event) (*netflow.IPFIXPacket, erro
 
 	stream := eventStream(evt, "flow_data")
 	if schema, ok := e.dataSchemas[stream]; ok {
-		mask := schema.addressVariantMask(evt.Fields)
+		fieldMap = eventFieldsWithMetadataForSchema(evt, schema.fields)
+		mask := schema.addressVariantMask(fieldMap)
 		templateRecord := schema.templateForMask(mask)
-		dataRecord, err := buildTemplatedValuesFromSchemaFieldsForMask(e.cfg.TemplatedFlow.Data, evt.Fields, schema.fields, templatedEncodingContext{}, schema.addressGroups, mask)
+		dataRecord, err := buildTemplatedValuesFromSchemaFieldsForMask(e.cfg.TemplatedFlow.Data, fieldMap, schema.fields, templatedEncodingContext{}, schema.addressGroups, mask)
 		if err != nil {
 			return nil, err
 		}
@@ -421,7 +425,7 @@ func (e *IPFIXEncoder) buildPacket(evt *event.Event) (*netflow.IPFIXPacket, erro
 		return packet, nil
 	}
 
-	plan, dataRecord, err := e.fallbackDataRecord(evt.Fields, templateID)
+	plan, dataRecord, err := e.fallbackDataRecord(fieldMap, templateID)
 	if err != nil {
 		return nil, err
 	}
@@ -453,11 +457,12 @@ func (e *NFv9Encoder) buildPacket(evt *event.Event) (*netflow.NFv9Packet, error)
 		return nil, fmt.Errorf("event fields are empty")
 	}
 
-	templateID := uint16Field(evt.Fields, "template_id")
+	fieldMap := eventFieldsWithMetadata(evt)
+	templateID := uint16Field(fieldMap, "template_id")
 	if templateID == 0 {
 		templateID = 256
 	}
-	sourceID := uint32Field(evt.Fields, "source_id")
+	sourceID := e.sourceID()
 	exportMS := exportUnixMilliseconds(evt.ReceivedAt, evt.Fields)
 	unixSeconds := uint32((exportMS + 999) / 1000)
 	sysUptime, firstSwitched, lastSwitched := uptimeWindow(exportMS, int64Field(evt.Fields, "start_time_unix"), int64Field(evt.Fields, "end_time_unix"))
@@ -532,9 +537,10 @@ func (e *NFv9Encoder) buildPacket(evt *event.Event) (*netflow.NFv9Packet, error)
 
 	stream := eventStream(evt, "flow_data")
 	if schema, ok := e.dataSchemas[stream]; ok {
-		mask := schema.addressVariantMask(evt.Fields)
+		fieldMap = eventFieldsWithMetadataForSchema(evt, schema.fields)
+		mask := schema.addressVariantMask(fieldMap)
 		templateRecord := schema.templateForMask(mask)
-		dataRecord, err := buildTemplatedValuesFromSchemaFieldsForMask(e.cfg.TemplatedFlow.Data, evt.Fields, schema.fields, encodingCtx, schema.addressGroups, mask)
+		dataRecord, err := buildTemplatedValuesFromSchemaFieldsForMask(e.cfg.TemplatedFlow.Data, fieldMap, schema.fields, encodingCtx, schema.addressGroups, mask)
 		if err != nil {
 			return nil, err
 		}
@@ -556,7 +562,7 @@ func (e *NFv9Encoder) buildPacket(evt *event.Event) (*netflow.NFv9Packet, error)
 		return packet, nil
 	}
 
-	plan, dataRecord, err := e.fallbackDataRecord(evt.Fields, templateID, encodingCtx)
+	plan, dataRecord, err := e.fallbackDataRecord(fieldMap, templateID, encodingCtx)
 	if err != nil {
 		return nil, err
 	}
@@ -582,20 +588,16 @@ func (e *NFv9Encoder) buildPacket(evt *event.Event) (*netflow.NFv9Packet, error)
 	return packet, nil
 }
 
-// observationDomainID resolves the IPFIX observation domain from event fields or config.
-func (e *IPFIXEncoder) observationDomainID(fields map[string]any) uint32 {
-	if e.cfg.TemplatedFlow.ObservationDomainID != 0 {
-		return e.cfg.TemplatedFlow.ObservationDomainID
-	}
-	return uint32Field(fields, "observation_domain_id")
+// observationDomainID is exporter-scoped. Per-interface IDs stay in data fields
+// such as source_id/observationPointId, not in the IPFIX packet header.
+func (e *IPFIXEncoder) observationDomainID() uint32 {
+	return e.cfg.TemplatedFlow.ObservationDomainID
 }
 
-// observationDomainID resolves the NetFlow v9 source ID from event fields or config.
-func (e *NFv9Encoder) observationDomainID(fields map[string]any) uint32 {
-	if e.cfg.TemplatedFlow.ObservationDomainID != 0 {
-		return e.cfg.TemplatedFlow.ObservationDomainID
-	}
-	return uint32Field(fields, "observation_domain_id")
+// sourceID is the NetFlow v9 exporter source ID, equivalent to the configured
+// exporter observation domain.
+func (e *NFv9Encoder) sourceID() uint32 {
+	return e.cfg.TemplatedFlow.ObservationDomainID
 }
 
 // handleControl routes control events into encoder-specific schema/source registration.
@@ -695,9 +697,7 @@ func (e *IPFIXEncoder) registerSourceInit(evt *event.Event) ([][]byte, error) {
 	if state.templateID == 0 {
 		state.templateID = e.cfg.TemplatedFlow.OptionsTemplateBaseID
 	}
-	if e.cfg.TemplatedFlow.ObservationDomainID != 0 {
-		state.observationDomainID = e.cfg.TemplatedFlow.ObservationDomainID
-	}
+	state.observationDomainID = e.observationDomainID()
 	e.sourceOptions[state.stream] = state
 	payloads, err := e.encodeSourceOptions(state)
 	if err != nil {
@@ -716,9 +716,7 @@ func (e *NFv9Encoder) registerSourceInit(evt *event.Event) ([][]byte, error) {
 	if state.templateID == 0 {
 		state.templateID = e.cfg.TemplatedFlow.OptionsTemplateBaseID
 	}
-	if e.cfg.TemplatedFlow.ObservationDomainID != 0 {
-		state.observationDomainID = e.cfg.TemplatedFlow.ObservationDomainID
-	}
+	state.observationDomainID = e.sourceID()
 	e.sourceOptions[state.stream] = state
 	payloads, err := e.encodeSourceOptions(state)
 	if err != nil {
@@ -864,7 +862,7 @@ func (e *IPFIXEncoder) encodeSourceOptions(state sourceOptionsState) ([][]byte, 
 				Records: []netflow.OptionsDataRecord{
 					{
 						ScopesValues: []netflow.DataField{
-							{Type: netflow.IPFIX_FIELD_observationDomainId, Value: encodeU32(state.sourceID)},
+							{Type: netflow.IPFIX_FIELD_observationDomainId, Value: encodeU32(state.observationDomainID)},
 						},
 						OptionsValues: []netflow.DataField{
 							{Type: netflow.IPFIX_FIELD_samplingInterval, Value: encodeU32(state.samplingRate)},
@@ -1108,41 +1106,23 @@ func (s templatedSchemaState) addressVariantMask(fields map[string]any) uint64 {
 	return mask
 }
 
-// sourceOptionsFromEvent extracts source-level exporter metadata from either the
-// event payload or its normalized fields.
+// sourceOptionsFromEvent extracts source-level exporter metadata from event
+// metadata, with payload/field values used only for exporter control knobs that
+// are not represented in SourceMetadata.
 func sourceOptionsFromEvent(evt *event.Event) sourceOptionsState {
 	state := sourceOptionsState{
-		stream:              eventStream(evt, "options_data"),
-		agentIP:             eventAgentIP(evt),
-		sourceID:            eventSourceID(evt),
-		observationDomainID: uint32Field(evt.Fields, "observation_domain_id"),
-		samplingRate:        eventSamplingRate(evt),
-		samplePool:          eventSamplePool(evt),
-		drops:               eventDrops(evt),
-		inputIf:             uint32Field(evt.Fields, "input_if"),
-		outputIf:            uint32Field(evt.Fields, "output_if"),
+		stream:       eventStream(evt, "options_data"),
+		agentIP:      eventAgentIP(evt),
+		sourceID:     eventSourceID(evt),
+		samplingRate: eventSamplingRate(evt),
+		samplePool:   eventSamplePool(evt),
+		drops:        eventDrops(evt),
+		inputIf:      uint32Field(evt.Fields, "input_if"),
+		outputIf:     uint32Field(evt.Fields, "output_if"),
 	}
 	if payload, ok := evt.Payload.(event.SourceInit); ok {
 		if payload.Stream != "" {
 			state.stream = payload.Stream
-		}
-		if payload.AgentIP != "" {
-			state.agentIP = payload.AgentIP
-		}
-		if payload.SourceID != 0 {
-			state.sourceID = payload.SourceID
-		}
-		if payload.ObservationDomainID != 0 {
-			state.observationDomainID = payload.ObservationDomainID
-		}
-		if payload.SamplingRate != 0 {
-			state.samplingRate = payload.SamplingRate
-		}
-		if payload.SamplePool != 0 {
-			state.samplePool = payload.SamplePool
-		}
-		if payload.Drops != 0 {
-			state.drops = payload.Drops
 		}
 		if payload.InputIf != 0 {
 			state.inputIf = payload.InputIf
@@ -1634,6 +1614,20 @@ func resolvedFieldDefinition(name string, def config.IPFIXFieldDefinition, val a
 		def.ID = netflow.IPFIX_FIELD_exporterIPv6Address
 		def.Length = 16
 		def.Type = "ipv6Address"
+	case name == "nat_src_addr" && isPostNATSourceIPv4Definition(def):
+		if addr.Is6() {
+			def.Name = "postNATSourceIPv6Address"
+			def.ID = netflow.IPFIX_FIELD_postNATSourceIPv6Address
+			def.Length = 16
+			def.Type = "ipv6Address"
+		}
+	case name == "nat_dst_addr" && isPostNATDestinationIPv4Definition(def):
+		if addr.Is6() {
+			def.Name = "postNATDestinationIPv6Address"
+			def.ID = netflow.IPFIX_FIELD_postNATDestinationIPv6Address
+			def.Length = 16
+			def.Type = "ipv6Address"
+		}
 	case isSourceAddressField(name) && isStandardSourceIPv4Definition(def):
 		if addr.Is6() {
 			def.Name = "sourceIPv6Address"
@@ -1662,6 +1656,16 @@ func resolvedFieldDefinitionForFamily(name string, def config.IPFIXFieldDefiniti
 	case name == "agent_ip":
 		def.Name = "exporterIPv6Address"
 		def.ID = netflow.IPFIX_FIELD_exporterIPv6Address
+		def.Length = 16
+		def.Type = "ipv6Address"
+	case name == "nat_src_addr" && isPostNATSourceIPv4Definition(def):
+		def.Name = "postNATSourceIPv6Address"
+		def.ID = netflow.IPFIX_FIELD_postNATSourceIPv6Address
+		def.Length = 16
+		def.Type = "ipv6Address"
+	case name == "nat_dst_addr" && isPostNATDestinationIPv4Definition(def):
+		def.Name = "postNATDestinationIPv6Address"
+		def.ID = netflow.IPFIX_FIELD_postNATDestinationIPv6Address
 		def.Length = 16
 		def.Type = "ipv6Address"
 	case isSourceAddressField(name) && isStandardSourceIPv4Definition(def):
@@ -1709,6 +1713,14 @@ func isStandardDestinationIPv4Definition(def config.IPFIXFieldDefinition) bool {
 	return def.Type == "ipv4Address" && (def.ID == netflow.IPFIX_FIELD_destinationIPv4Address || def.Name == "destinationIPv4Address")
 }
 
+func isPostNATSourceIPv4Definition(def config.IPFIXFieldDefinition) bool {
+	return def.Type == "ipv4Address" && (def.ID == netflow.IPFIX_FIELD_postNATSourceIPv4Address || def.Name == "postNATSourceIPv4Address")
+}
+
+func isPostNATDestinationIPv4Definition(def config.IPFIXFieldDefinition) bool {
+	return def.Type == "ipv4Address" && (def.ID == netflow.IPFIX_FIELD_postNATDestinationIPv4Address || def.Name == "postNATDestinationIPv4Address")
+}
+
 func addressFieldGroup(name string) (string, bool) {
 	switch {
 	case name == "src_addr" || name == "dst_addr":
@@ -1730,7 +1742,7 @@ func schemaAddressGroups(cfg config.TemplatedFlowDataConfig, fields []event.Sche
 		if !ok {
 			continue
 		}
-		if !isStandardSourceIPv4Definition(def) && !isStandardDestinationIPv4Definition(def) {
+		if !isStandardSourceIPv4Definition(def) && !isStandardDestinationIPv4Definition(def) && !isPostNATSourceIPv4Definition(def) && !isPostNATDestinationIPv4Definition(def) {
 			continue
 		}
 		group, ok := addressFieldGroup(field.Name)

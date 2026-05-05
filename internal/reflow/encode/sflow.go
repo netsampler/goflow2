@@ -292,11 +292,11 @@ func (e *SFlowEncoder) buildFlowSample(evt *event.Event) (sflow.FlowSample, erro
 			Format:               sflow.SAMPLE_FORMAT_FLOW,
 			SampleSequenceNumber: e.sampleSequence(evt),
 			SourceIdType:         0,
-			SourceIdValue:        sflowSourceID(evt, fields),
+			SourceIdValue:        sflowSourceID(evt),
 		},
-		SamplingRate: sflowSamplingRate(evt, fields),
-		SamplePool:   sflowSamplePool(evt, fields),
-		Drops:        sflowDrops(evt, fields),
+		SamplingRate: sflowSamplingRate(evt),
+		SamplePool:   sflowSamplePool(evt),
+		Drops:        sflowDrops(evt),
 		Input:        uint32Field(fields, "input_if"),
 		Output:       uint32Field(fields, "output_if"),
 		Records: []sflow.FlowRecord{
@@ -373,7 +373,7 @@ func (e *SFlowEncoder) buildCounterSample(evt *event.Event) (sflow.CounterSample
 			Format:               format,
 			SampleSequenceNumber: e.sampleSequence(evt),
 			SourceIdType:         sourceIDType,
-			SourceIdValue:        sflowSourceID(evt, fields),
+			SourceIdValue:        sflowSourceID(evt),
 		},
 		CounterRecordsCount: 1,
 		Records: []sflow.CounterRecord{
@@ -572,36 +572,24 @@ func sflowUptime(sf *event.SFlowMetadata) uint32 {
 	return sf.Uptime
 }
 
-// sflowSourceID prefers decoded sFlow metadata, then source metadata, then generic fields.
-func sflowSourceID(evt *event.Event, fields map[string]any) uint32 {
-	if sourceID := eventSourceID(evt); sourceID != 0 {
-		return sourceID
-	}
-	return uint32Field(fields, "source_id")
+// sflowSourceID comes from decoded sFlow metadata or source metadata.
+func sflowSourceID(evt *event.Event) uint32 {
+	return eventSourceID(evt)
 }
 
-// sflowSamplingRate prefers decoded sFlow metadata, then source metadata, then generic fields.
-func sflowSamplingRate(evt *event.Event, fields map[string]any) uint32 {
-	if rate := eventSamplingRate(evt); rate != 0 {
-		return rate
-	}
-	return uint32Field(fields, "sampling_rate")
+// sflowSamplingRate comes from decoded sFlow metadata or source metadata.
+func sflowSamplingRate(evt *event.Event) uint32 {
+	return eventSamplingRate(evt)
 }
 
-// sflowSamplePool prefers decoded sFlow metadata, then source metadata, then generic fields.
-func sflowSamplePool(evt *event.Event, fields map[string]any) uint32 {
-	if samplePool := eventSamplePool(evt); samplePool != 0 {
-		return samplePool
-	}
-	return uint32Field(fields, "sample_pool")
+// sflowSamplePool comes from decoded sFlow metadata or source metadata.
+func sflowSamplePool(evt *event.Event) uint32 {
+	return eventSamplePool(evt)
 }
 
-// sflowDrops prefers decoded sFlow metadata, then source metadata, then generic fields.
-func sflowDrops(evt *event.Event, fields map[string]any) uint32 {
-	if drops := eventDrops(evt); drops != 0 {
-		return drops
-	}
-	return uint32Field(fields, "drops")
+// sflowDrops comes from decoded sFlow metadata or source metadata.
+func sflowDrops(evt *event.Event) uint32 {
+	return eventDrops(evt)
 }
 
 // batchOverEnabled defaults unset batch-over toggles to true.

@@ -24,7 +24,7 @@ var (
 		"stream:<path-or-stdin>:pcap",
 		"stream:<path-or-stdin>:pcapng",
 		"stream:<path-or-stdin>:json",
-		"ebpf:<interface>:bytes[?snaplen=<bytes>&sample_every=<n>&sample_offset=<n>]",
+		"ebpf:<interface>:bytes[?snaplen=<bytes>&sample_every=<n>&sample_offset=<n>&skb_metadata=<bool>&conntrack=<bool>]",
 		"pcap_live:<interface>:bytes[?snaplen=<bytes>&sample_every=<n>&sample_offset=<n>]",
 	}
 	outputEncoderOptions = []string{
@@ -276,6 +276,10 @@ func (c *Config) materializeGeneratedYAMLDefaults() {
 		if c.Sources[i].SampleEvery == 0 {
 			c.Sources[i].SampleEvery = 1
 		}
+		if c.Sources[i].Network == "ebpf" {
+			defaultTrue(&c.Sources[i].EBPF.SKBMetadata)
+			defaultTrue(&c.Sources[i].EBPF.Conntrack)
+		}
 	}
 	defaultFalse(&c.Processor.Builtin.PacketDecoder.DecodeBeyondL4)
 	defaultFalse(&c.Processor.Builtin.PacketDecoder.Encapsulations.GRE.Enabled)
@@ -403,6 +407,32 @@ func applyInputParams(source *SourceConfig, rawParams string) error {
 				return err
 			}
 			source.SampleOffset = parsed
+		case "skb_metadata":
+			if source.Network != "ebpf" {
+				return fmt.Errorf("source parameter %q is only supported for ebpf inputs", key)
+			}
+			parsed, err := strconv.ParseBool(value)
+			if err != nil {
+				return fmt.Errorf("source parameter %q must be a boolean", key)
+			}
+			source.EBPF.SKBMetadata = &parsed
+		case "conntrack":
+			if source.Network != "ebpf" {
+				return fmt.Errorf("source parameter %q is only supported for ebpf inputs", key)
+			}
+			parsed, err := strconv.ParseBool(value)
+			if err != nil {
+				return fmt.Errorf("source parameter %q must be a boolean", key)
+			}
+			source.EBPF.Conntrack = &parsed
+		case "conntrack_path":
+			if source.Network != "ebpf" {
+				return fmt.Errorf("source parameter %q is only supported for ebpf inputs", key)
+			}
+			if value == "" {
+				return fmt.Errorf("source parameter %q cannot be empty", key)
+			}
+			source.EBPF.ConntrackPath = value
 		default:
 			return fmt.Errorf("unsupported source parameter %q", key)
 		}
@@ -721,18 +751,13 @@ func generatedAggregators(flags *FlagConfig) []AggregatorConfig {
 				{Role: "key", Name: "dst_port"},
 				{Role: "sum", Name: "bytes"},
 				{Role: "sum", Name: "packets"},
-				{Role: "first", Name: "agent_ip"},
 				{Role: "first", Name: "sub_agent_id"},
 				{Role: "first", Name: "source_id"},
 				{Role: "first", Name: "start_time_unix"},
-				{Role: "current", Name: "agent_ip"},
 				{Role: "current", Name: "sub_agent_id"},
 				{Role: "current", Name: "source_id"},
 				{Role: "current", Name: "input_if"},
 				{Role: "current", Name: "output_if"},
-				{Role: "current", Name: "sampling_rate"},
-				{Role: "current", Name: "sample_pool"},
-				{Role: "current", Name: "drops"},
 				{Role: "current", Name: "end_time_unix"},
 				{Role: "current", Name: "mpls_label_stack_section_1"},
 				{Role: "current", Name: "mpls_label_stack_section_2"},
