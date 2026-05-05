@@ -57,6 +57,15 @@ var (
 		"protobuf:file:/tmp/reflow.pb",
 		"pcap:stdout",
 	}
+	aggregateHelperOptions = []string{
+		"-agg",
+		"-agg=idle_flush_after_ms=<ms>,periodic_every_ms=<ms>",
+		"-agg=max_flush_after_ms=<ms>,idle_erase_after_ms=<ms>,reset_buckets=<bool>",
+	}
+	aggregateHelperExamples = []string{
+		"-agg=idle_flush_after_ms=5000,periodic_every_ms=30000",
+		"-agg=periodic_every_ms=10000,reset_buckets=true",
+	}
 )
 
 type inputFlags []string
@@ -89,6 +98,14 @@ func HelperOptionsText() string {
 	for _, example := range outputHelperExamples {
 		fmt.Fprintf(&b, "  -output %s\n", example)
 	}
+	b.WriteString("\nAggregation helper specs:\n")
+	for _, option := range aggregateHelperOptions {
+		fmt.Fprintf(&b, "  %s\n", option)
+	}
+	b.WriteString("\nAggregation examples:\n")
+	for _, example := range aggregateHelperExamples {
+		fmt.Fprintf(&b, "  %s\n", example)
+	}
 	return b.String()
 }
 
@@ -116,6 +133,55 @@ func (f outputFlag) Set(value string) error {
 	f.cfg.OutputSet = true
 	return nil
 }
+
+type aggregateFlag struct {
+	cfg *FlagConfig
+}
+
+func (f aggregateFlag) String() string {
+	if f.cfg == nil || !f.cfg.Aggregate {
+		return "false"
+	}
+	var parts []string
+	if f.cfg.AggIdleFlushAfter != nil {
+		parts = append(parts, fmt.Sprintf("idle_flush_after_ms=%d", *f.cfg.AggIdleFlushAfter))
+	}
+	if f.cfg.AggMaxFlushAfter != nil {
+		parts = append(parts, fmt.Sprintf("max_flush_after_ms=%d", *f.cfg.AggMaxFlushAfter))
+	}
+	if f.cfg.AggIdleEraseAfter != nil {
+		parts = append(parts, fmt.Sprintf("idle_erase_after_ms=%d", *f.cfg.AggIdleEraseAfter))
+	}
+	if f.cfg.AggPeriodicEvery != nil {
+		parts = append(parts, fmt.Sprintf("periodic_every_ms=%d", *f.cfg.AggPeriodicEvery))
+	}
+	if f.cfg.AggResetBuckets != nil {
+		parts = append(parts, fmt.Sprintf("reset_buckets=%t", *f.cfg.AggResetBuckets))
+	}
+	if len(parts) == 0 {
+		return "true"
+	}
+	return strings.Join(parts, ",")
+}
+
+func (f aggregateFlag) Set(value string) error {
+	if f.cfg == nil {
+		return fmt.Errorf("missing aggregate flag config")
+	}
+	value = strings.TrimSpace(value)
+	switch value {
+	case "", "true":
+		f.cfg.Aggregate = true
+		return nil
+	case "false":
+		f.cfg.Aggregate = false
+		return nil
+	}
+	f.cfg.Aggregate = true
+	return parseAggregateParams(f.cfg, value)
+}
+
+func (aggregateFlag) IsBoolFlag() bool { return true }
 
 // LoadFromFlags resolves either explicit YAML mode or generated-helper mode.
 func LoadFromFlags(flags *FlagConfig) (*Config, bool, error) {
@@ -187,7 +253,7 @@ func (c *FlagConfig) generatedConfig() (*Config, error) {
 		Sink:    sink,
 	}
 	if c.Aggregate {
-		cfg.Aggregators = generatedAggregators()
+		cfg.Aggregators = generatedAggregators(c)
 	}
 	return cfg, nil
 }
@@ -344,6 +410,73 @@ func parseNonNegativeInputParam(name, value string) (int, error) {
 	return parsed, nil
 }
 
+func parseAggregateParams(cfg *FlagConfig, rawParams string) error {
+	params, err := parseCommaQueryParams(rawParams)
+	if err != nil {
+		return fmt.Errorf("parse aggregate parameters: %w", err)
+	}
+	for key, values := range params {
+		if len(values) != 1 {
+			return fmt.Errorf("aggregate parameter %q must be set once", key)
+		}
+		value := values[0]
+		switch key {
+		case "idle_flush_after_ms":
+			parsed, err := parseNonNegativeAggregateParam(key, value)
+			if err != nil {
+				return err
+			}
+			cfg.AggIdleFlushAfter = &parsed
+		case "max_flush_after_ms":
+			parsed, err := parseNonNegativeAggregateParam(key, value)
+			if err != nil {
+				return err
+			}
+			cfg.AggMaxFlushAfter = &parsed
+		case "idle_erase_after_ms":
+			parsed, err := parseNonNegativeAggregateParam(key, value)
+			if err != nil {
+				return err
+			}
+			cfg.AggIdleEraseAfter = &parsed
+		case "periodic_every_ms", "every_ms":
+			parsed, err := parseNonNegativeAggregateParam(key, value)
+			if err != nil {
+				return err
+			}
+			cfg.AggPeriodicEvery = &parsed
+		case "reset_buckets":
+			parsed, err := strconv.ParseBool(value)
+			if err != nil {
+				return fmt.Errorf("aggregate parameter %q must be a boolean", key)
+			}
+			cfg.AggResetBuckets = &parsed
+		default:
+			return fmt.Errorf("unsupported aggregate parameter %q", key)
+		}
+	}
+	return nil
+}
+
+func parseCommaQueryParams(rawParams string) (url.Values, error) {
+	rawParams = strings.TrimPrefix(strings.TrimSpace(rawParams), "?")
+	if rawParams == "" {
+		return nil, fmt.Errorf("parameters cannot be empty")
+	}
+	return url.ParseQuery(strings.ReplaceAll(rawParams, ",", "&"))
+}
+
+func parseNonNegativeAggregateParam(name, value string) (int, error) {
+	parsed, err := strconv.Atoi(value)
+	if err != nil {
+		return 0, fmt.Errorf("aggregate parameter %q must be an integer", name)
+	}
+	if parsed < 0 {
+		return 0, fmt.Errorf("aggregate parameter %q must be >= 0", name)
+	}
+	return parsed, nil
+}
+
 func parseOutputSpec(spec string) (EncoderConfig, SinkConfig, error) {
 	encoderType, rest, ok := strings.Cut(spec, ":")
 	if !ok || encoderType == "" || rest == "" {
@@ -435,9 +568,9 @@ func cutLast(s, sep string) (string, string, bool) {
 	return s[:idx], s[idx+len(sep):], true
 }
 
-func generatedAggregators() []AggregatorConfig {
+func generatedAggregators(flags *FlagConfig) []AggregatorConfig {
 	base := func(family string, templateID uint16) AggregatorConfig {
-		return AggregatorConfig{
+		cfg := AggregatorConfig{
 			Stream: "flow_data_" + family,
 			Match: map[string]string{
 				"ip_family": family,
@@ -475,9 +608,32 @@ func generatedAggregators() []AggregatorConfig {
 			},
 			TemplateID: templateID,
 		}
+		applyGeneratedAggregatorOverrides(&cfg, flags)
+		return cfg
 	}
 	return []AggregatorConfig{
 		base("ipv4", 256),
 		base("ipv6", 258),
+	}
+}
+
+func applyGeneratedAggregatorOverrides(cfg *AggregatorConfig, flags *FlagConfig) {
+	if cfg == nil || flags == nil {
+		return
+	}
+	if flags.AggIdleFlushAfter != nil {
+		cfg.Window.IdleFlushAfter = *flags.AggIdleFlushAfter
+	}
+	if flags.AggMaxFlushAfter != nil {
+		cfg.Window.MaxFlushAfter = *flags.AggMaxFlushAfter
+	}
+	if flags.AggIdleEraseAfter != nil {
+		cfg.Window.IdleEraseAfter = *flags.AggIdleEraseAfter
+	}
+	if flags.AggPeriodicEvery != nil {
+		cfg.Periodic.Every = *flags.AggPeriodicEvery
+	}
+	if flags.AggResetBuckets != nil {
+		cfg.Periodic.ResetBuckets = *flags.AggResetBuckets
 	}
 }

@@ -1,6 +1,7 @@
 package config
 
 import (
+	"flag"
 	"os"
 	"path/filepath"
 	"strings"
@@ -692,6 +693,42 @@ func TestGeneratedAggregateConfigUsesFieldDSL(t *testing.T) {
 	} {
 		if strings.Contains(out, unwanted) {
 			t.Fatalf("expected generated config not to contain %q:\n%s", unwanted, out)
+		}
+	}
+}
+
+func TestGeneratedAggregateConfigSupportsCLIParams(t *testing.T) {
+	fs := flag.NewFlagSet("test", flag.ContinueOnError)
+	flags, _ := BindFlags(fs)
+	if err := fs.Parse([]string{
+		"-agg=idle_flush_after_ms=0,max_flush_after_ms=45000,periodic_every_ms=15000,reset_buckets=true",
+		"-genconf",
+	}); err != nil {
+		t.Fatalf("Parse returned error: %v", err)
+	}
+
+	cfg, generated, err := LoadFromFlags(flags)
+	if err != nil {
+		t.Fatalf("LoadFromFlags returned error: %v", err)
+	}
+	if !generated {
+		t.Fatalf("expected generated config")
+	}
+	if len(cfg.Aggregators) != 2 {
+		t.Fatalf("expected generated aggregators, got %d", len(cfg.Aggregators))
+	}
+	for i, agg := range cfg.Aggregators {
+		if agg.Window.IdleFlushAfter != 0 {
+			t.Fatalf("aggregators[%d] idle flush = %d", i, agg.Window.IdleFlushAfter)
+		}
+		if agg.Window.MaxFlushAfter != 45000 {
+			t.Fatalf("aggregators[%d] max flush = %d", i, agg.Window.MaxFlushAfter)
+		}
+		if agg.Periodic.Every != 15000 {
+			t.Fatalf("aggregators[%d] periodic every = %d", i, agg.Periodic.Every)
+		}
+		if !agg.Periodic.ResetBuckets {
+			t.Fatalf("aggregators[%d] expected reset_buckets=true", i)
 		}
 	}
 }

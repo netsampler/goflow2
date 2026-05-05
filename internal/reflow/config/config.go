@@ -18,15 +18,20 @@ import (
 var defaultFlowFields []byte
 
 type FlagConfig struct {
-	ConfigPath  string
-	LogLevel    string
-	LogFormat   string
-	Inputs      []string
-	Output      string
-	OutputSet   bool
-	Aggregate   bool
-	GenConf     bool
-	ListOptions bool
+	ConfigPath        string
+	LogLevel          string
+	LogFormat         string
+	Inputs            []string
+	Output            string
+	OutputSet         bool
+	Aggregate         bool
+	AggIdleFlushAfter *int
+	AggMaxFlushAfter  *int
+	AggIdleEraseAfter *int
+	AggPeriodicEvery  *int
+	AggResetBuckets   *bool
+	GenConf           bool
+	ListOptions       bool
 }
 
 type Config struct {
@@ -451,7 +456,7 @@ func BindFlags(fs *flag.FlagSet) (*FlagConfig, *bool) {
 	out := outputFlag{cfg: cfg}
 	fs.Var(out, "output", "Output helper spec encoder:sink[:target]")
 	fs.Var(out, "o", "Output helper spec encoder:sink[:target]")
-	fs.BoolVar(&cfg.Aggregate, "agg", false, "Generate packet aggregation config")
+	fs.Var(aggregateFlag{cfg: cfg}, "agg", "Generate packet aggregation config")
 	fs.BoolVar(&cfg.GenConf, "genconf", false, "Print generated config and exit")
 	fs.BoolVar(&cfg.ListOptions, "list-options", false, "List helper -input/-output options and exit")
 	return cfg, version
