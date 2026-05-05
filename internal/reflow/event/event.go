@@ -62,6 +62,8 @@ type SourceMetadata struct {
 	Type                  string            `json:"type,omitempty"`
 	CaptureInterface      string            `json:"capture_interface,omitempty"`
 	CaptureInterfaceIndex int               `json:"capture_interface_index,omitempty"`
+	CaptureDirection      string            `json:"capture_direction,omitempty"`
+	CapturePacketType     string            `json:"capture_packet_type,omitempty"`
 	AgentIP               string            `json:"agent_ip,omitempty"`
 	SourceID              uint32            `json:"source_id,omitempty"`
 	Sampling              *SamplingMetadata `json:"sampling,omitempty"`

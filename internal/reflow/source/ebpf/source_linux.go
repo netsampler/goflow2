@@ -19,6 +19,15 @@ import (
 const (
 	ethPAll = 0x0003
 
+	packetHost      = 0
+	packetBroadcast = 1
+	packetMulticast = 2
+	packetOtherHost = 3
+	packetOutgoing  = 4
+	packetLoopback  = 5
+	packetUser      = 6
+	packetKernel    = 7
+
 	bpfProgLoad         = 5
 	bpfProgTypeSocket   = 1
 	bpfALU64            = 0x07
@@ -36,6 +45,15 @@ type bpfInsn struct {
 	DstSrc uint8
 	Off    int16
 	Imm    int32
+}
+
+type packetMetadata struct {
+	packetType      string
+	direction       string
+	inputIf         uint32
+	outputIf        uint32
+	inputInterface  string
+	outputInterface string
 }
 
 type bpfProgLoadAttr struct {
@@ -139,7 +157,7 @@ func (s *Source) Start(ctx context.Context, emit func(*event.Event) error) error
 
 	buf := make([]byte, s.cfg.SnapLen)
 	for {
-		n, _, err := unix.Recvfrom(fd, buf, 0)
+		n, from, err := unix.Recvfrom(fd, buf, 0)
 		if err != nil {
 			if err == unix.EAGAIN || err == unix.EWOULDBLOCK || err == unix.EINTR {
 				if ctx.Err() != nil {
@@ -159,17 +177,17 @@ func (s *Source) Start(ctx context.Context, emit func(*event.Event) error) error
 		if !s.shouldEmitCurrentPacket() {
 			continue
 		}
-		if err := emit(s.packetEvent(buf[:n])); err != nil {
+		if err := emit(s.packetEvent(buf[:n], s.packetMetadata(from))); err != nil {
 			return err
 		}
 	}
 }
 
-func (s *Source) packetEvent(data []byte) *event.Event {
+func (s *Source) packetEvent(data []byte, meta packetMetadata) *event.Event {
 	now := time.Now().UTC()
 	samplePool := uint32(s.seenCount)
 	payload := append([]byte(nil), data...)
-	return &event.Event{
+	evt := &event.Event{
 		ReceivedAt: now,
 		Source: event.SourceMetadata{
 			Network:               s.cfg.Network,
@@ -177,6 +195,8 @@ func (s *Source) packetEvent(data []byte) *event.Event {
 			Type:                  s.cfg.Type,
 			CaptureInterface:      s.cfg.Interface,
 			CaptureInterfaceIndex: s.captureInterfaceIndex,
+			CaptureDirection:      meta.direction,
+			CapturePacketType:     meta.packetType,
 			AgentIP:               s.agentIP,
 			SourceID:              uint32(s.captureInterfaceIndex),
 			Sampling: &event.SamplingMetadata{
@@ -197,6 +217,88 @@ func (s *Source) packetEvent(data []byte) *event.Event {
 			"capture_length": len(payload),
 			"wire_length":    len(payload),
 		},
+	}
+	applyPacketMetadataFields(evt.Fields, meta)
+	return evt
+}
+
+func (s *Source) packetMetadata(from unix.Sockaddr) packetMetadata {
+	meta := packetMetadata{
+		packetType: "unknown",
+		direction:  "unknown",
+	}
+	link, ok := from.(*unix.SockaddrLinklayer)
+	if !ok || link == nil {
+		return meta
+	}
+
+	ifIndex := uint32(s.captureInterfaceIndex)
+	if link.Ifindex > 0 {
+		ifIndex = uint32(link.Ifindex)
+	}
+	meta.packetType = packetTypeName(link.Pkttype)
+	switch link.Pkttype {
+	case packetOutgoing:
+		meta.direction = "out"
+		meta.outputIf = ifIndex
+		meta.outputInterface = s.cfg.Interface
+	case packetHost, packetBroadcast, packetMulticast, packetOtherHost:
+		meta.direction = "in"
+		meta.inputIf = ifIndex
+		meta.inputInterface = s.cfg.Interface
+	case packetLoopback:
+		meta.direction = "loopback"
+		meta.inputIf = ifIndex
+		meta.outputIf = ifIndex
+		meta.inputInterface = s.cfg.Interface
+		meta.outputInterface = s.cfg.Interface
+	}
+	return meta
+}
+
+func packetTypeName(packetType uint8) string {
+	switch packetType {
+	case packetHost:
+		return "host"
+	case packetBroadcast:
+		return "broadcast"
+	case packetMulticast:
+		return "multicast"
+	case packetOtherHost:
+		return "otherhost"
+	case packetOutgoing:
+		return "outgoing"
+	case packetLoopback:
+		return "loopback"
+	case packetUser:
+		return "user"
+	case packetKernel:
+		return "kernel"
+	default:
+		return "unknown"
+	}
+}
+
+func applyPacketMetadataFields(fields map[string]any, meta packetMetadata) {
+	if meta.packetType != "" {
+		fields["capture_packet_type"] = meta.packetType
+	}
+	if meta.direction != "" {
+		fields["capture_direction"] = meta.direction
+	}
+	if meta.inputIf != 0 {
+		fields["input_if"] = meta.inputIf
+	}
+	if meta.outputIf != 0 {
+		fields["output_if"] = meta.outputIf
+	}
+	if meta.inputInterface != "" {
+		fields["input_interface"] = meta.inputInterface
+		fields["src_interface"] = meta.inputInterface
+	}
+	if meta.outputInterface != "" {
+		fields["output_interface"] = meta.outputInterface
+		fields["dst_interface"] = meta.outputInterface
 	}
 }
 
