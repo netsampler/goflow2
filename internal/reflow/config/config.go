@@ -18,14 +18,15 @@ import (
 var defaultFlowFields []byte
 
 type FlagConfig struct {
-	ConfigPath string
-	LogLevel   string
-	LogFormat  string
-	Inputs     []string
-	Output     string
-	OutputSet  bool
-	Aggregate  bool
-	GenConf    bool
+	ConfigPath  string
+	LogLevel    string
+	LogFormat   string
+	Inputs      []string
+	Output      string
+	OutputSet   bool
+	Aggregate   bool
+	GenConf     bool
+	ListOptions bool
 }
 
 type Config struct {
@@ -407,6 +408,7 @@ func BindFlags(fs *flag.FlagSet) (*FlagConfig, *bool) {
 	fs.Var(out, "o", "Output helper spec encoder:sink[:target]")
 	fs.BoolVar(&cfg.Aggregate, "agg", false, "Generate packet aggregation config")
 	fs.BoolVar(&cfg.GenConf, "genconf", false, "Print generated config and exit")
+	fs.BoolVar(&cfg.ListOptions, "list-options", false, "List helper -input/-output options and exit")
 	return cfg, version
 }
 

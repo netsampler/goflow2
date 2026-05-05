@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -836,5 +837,21 @@ sink:
 
 	if _, err := Load(cfgPath); err == nil {
 		t.Fatalf("expected Load to reject missing sources")
+	}
+}
+
+func TestHelperOptionsTextListsInputAndOutputExamples(t *testing.T) {
+	text := HelperOptionsText()
+	for _, want := range []string{
+		"udp::6343:flow",
+		"pcap_live:en0:bytes",
+		"json:stdout",
+		"ipfix:udp:127.0.0.1:4739",
+		"pcap:stdout",
+		"encoders: json, protobuf, sflow, ipfix, netflowv9, netflowv5, pcap, pcapng",
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("expected helper options to contain %q, got:\n%s", want, text)
+		}
 	}
 }

@@ -29,6 +29,10 @@ func main() {
 		fmt.Println(appVersion)
 		os.Exit(0)
 	}
+	if cfg.ListOptions {
+		fmt.Print(config.HelperOptionsText())
+		return
+	}
 
 	loadedCfg, generated, err := config.LoadFromFlags(cfg)
 	if err != nil {

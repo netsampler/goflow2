@@ -8,6 +8,53 @@ import (
 
 const generatedConfigPath = "cmd/reflow/reflow.yaml"
 
+var (
+	inputHelperOptions = []string{
+		"udp:<listen-address>:flow",
+		"udp:<listen-address>:bytes",
+		"udp:<listen-address>:json",
+		"unixgram:<socket-path>:flow",
+		"unixgram:<socket-path>:bytes",
+		"unixgram:<socket-path>:json",
+		"socket:<socket-path>:flow",
+		"socket:<socket-path>:bytes",
+		"socket:<socket-path>:json",
+		"stream:<path-or->:pcap",
+		"stream:<path-or->:pcapng",
+		"stream:<path-or->:json",
+		"pcap_live:<interface>:bytes",
+	}
+	outputEncoderOptions = []string{
+		"json",
+		"protobuf",
+		"sflow",
+		"ipfix",
+		"netflowv9",
+		"netflowv5",
+		"pcap",
+		"pcapng",
+	}
+	outputSinkOptions = []string{
+		"stdout",
+		"file:<path>",
+		"udp:<address>",
+		"unixgram:<socket-path>",
+		"socket:<socket-path>",
+	}
+	inputHelperExamples = []string{
+		"udp::6343:flow",
+		"udp:127.0.0.1:2055:flow",
+		"stream:-:json",
+		"pcap_live:en0:bytes",
+	}
+	outputHelperExamples = []string{
+		"json:stdout",
+		"ipfix:udp:127.0.0.1:4739",
+		"protobuf:file:/tmp/reflow.pb",
+		"pcap:stdout",
+	}
+)
+
 type inputFlags []string
 
 func (f *inputFlags) String() string {
@@ -15,6 +62,30 @@ func (f *inputFlags) String() string {
 		return ""
 	}
 	return strings.Join(*f, ",")
+}
+
+func HelperOptionsText() string {
+	var b strings.Builder
+	b.WriteString("Input helper specs (-input network:target:type):\n")
+	for _, option := range inputHelperOptions {
+		fmt.Fprintf(&b, "  %s\n", option)
+	}
+	b.WriteString("\nInput examples:\n")
+	for _, example := range inputHelperExamples {
+		fmt.Fprintf(&b, "  -input %s\n", example)
+	}
+	b.WriteString("\nOutput helper specs (-output encoder:sink[:target]):\n")
+	b.WriteString("  encoders: ")
+	b.WriteString(strings.Join(outputEncoderOptions, ", "))
+	b.WriteString("\n  sinks:\n")
+	for _, option := range outputSinkOptions {
+		fmt.Fprintf(&b, "    %s\n", option)
+	}
+	b.WriteString("\nOutput examples:\n")
+	for _, example := range outputHelperExamples {
+		fmt.Fprintf(&b, "  -output %s\n", example)
+	}
+	return b.String()
 }
 
 func (f *inputFlags) Set(value string) error {
