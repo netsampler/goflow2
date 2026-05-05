@@ -655,6 +655,47 @@ sink:
 	}
 }
 
+func TestGeneratedAggregateConfigUsesFieldDSL(t *testing.T) {
+	cfg, generated, err := LoadFromFlags(&FlagConfig{
+		Aggregate: true,
+		GenConf:   true,
+	})
+	if err != nil {
+		t.Fatalf("LoadFromFlags returned error: %v", err)
+	}
+	if !generated {
+		t.Fatalf("expected generated config")
+	}
+
+	raw, err := yaml.Marshal(cfg)
+	if err != nil {
+		t.Fatalf("marshal config: %v", err)
+	}
+	out := string(raw)
+	for _, want := range []string{
+		"fields:",
+		"- key:src_addr",
+		"- sum:bytes",
+		"- first:agent_ip",
+		"- current:end_time_unix",
+		"template_id: 258",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("expected generated config to contain %q:\n%s", want, out)
+		}
+	}
+	for _, unwanted := range []string{
+		"key_fields:",
+		"static_fields:",
+		"reset_interval_ms:",
+		"periodic_interval_ms:",
+	} {
+		if strings.Contains(out, unwanted) {
+			t.Fatalf("expected generated config not to contain %q:\n%s", unwanted, out)
+		}
+	}
+}
+
 func TestLoadSupportsJSONDropFields(t *testing.T) {
 	dir := t.TempDir()
 

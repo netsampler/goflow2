@@ -126,6 +126,28 @@ type AggregatorConfig struct {
 	PeriodicInterval int `yaml:"periodic_interval_ms"`
 }
 
+func (cfg AggregatorConfig) MarshalYAML() (any, error) {
+	if len(cfg.Fields) == 0 {
+		type rawAggregatorConfig AggregatorConfig
+		return rawAggregatorConfig(cfg), nil
+	}
+	return struct {
+		Stream     string                   `yaml:"stream,omitempty"`
+		Window     AggregatorWindowConfig   `yaml:"window,omitempty"`
+		Periodic   AggregatorPeriodicConfig `yaml:"periodic,omitempty"`
+		Fields     []AggregatorField        `yaml:"fields"`
+		Match      map[string]string        `yaml:"match,omitempty"`
+		TemplateID uint16                   `yaml:"template_id,omitempty"`
+	}{
+		Stream:     cfg.Stream,
+		Window:     cfg.Window,
+		Periodic:   cfg.Periodic,
+		Fields:     cfg.Fields,
+		Match:      cfg.Match,
+		TemplateID: cfg.TemplateID,
+	}, nil
+}
+
 type AggregatorField struct {
 	Role  string `yaml:"role"`
 	Name  string `yaml:"name"`
@@ -133,6 +155,30 @@ type AggregatorField struct {
 
 	// Path is accepted as a compatibility alias for mapping-style entries.
 	Path string `yaml:"path,omitempty"`
+}
+
+func (f AggregatorField) MarshalYAML() (any, error) {
+	if f.Name == "" {
+		f.Name = f.Path
+	}
+	if err := validateAggregatorField(f); err != nil {
+		return nil, err
+	}
+	if f.Role == "static" {
+		if value, ok := f.Value.(string); ok {
+			return "static:" + f.Name + ":" + value, nil
+		}
+		return struct {
+			Role  string `yaml:"role"`
+			Name  string `yaml:"name"`
+			Value any    `yaml:"value,omitempty"`
+		}{
+			Role:  f.Role,
+			Name:  f.Name,
+			Value: f.Value,
+		}, nil
+	}
+	return f.Role + ":" + f.Name, nil
 }
 
 func (f *AggregatorField) UnmarshalYAML(value *yaml.Node) error {
