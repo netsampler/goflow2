@@ -122,15 +122,14 @@ func (s *Source) Start(ctx context.Context, emit func(*event.Event) error) error
 		return fmt.Errorf("set ebpf packet socket timeout: %w", err)
 	}
 
-	progFD, err := loadSocketFilterProgram(s.cfg.SnapLen)
+	progFD, err := attachSocketFilter(fd, s.cfg.SnapLen)
 	if err != nil {
-		return fmt.Errorf("load ebpf socket filter: %w", err)
+		return fmt.Errorf("attach packet socket filter: %w", err)
 	}
-	s.mu.Lock()
-	s.progFD = progFD
-	s.mu.Unlock()
-	if err := unix.SetsockoptInt(fd, unix.SOL_SOCKET, unix.SO_ATTACH_BPF, progFD); err != nil {
-		return fmt.Errorf("attach ebpf socket filter to %s: %w", s.cfg.Interface, err)
+	if progFD >= 0 {
+		s.mu.Lock()
+		s.progFD = progFD
+		s.mu.Unlock()
 	}
 
 	go func() {
@@ -234,27 +233,70 @@ func loadSocketFilterProgram(snapLen int) (int, error) {
 		},
 	}
 	license := []byte("GPL\x00")
-	logBuf := make([]byte, bpfLogBufferSize)
 	attr := bpfProgLoadAttr{
 		ProgType: bpfProgTypeSocket,
 		InsnCnt:  uint32(len(insns)),
 		Insns:    uint64(uintptr(unsafe.Pointer(&insns[0]))),
 		License:  uint64(uintptr(unsafe.Pointer(&license[0]))),
-		LogLevel: 1,
-		LogSize:  uint32(len(logBuf)),
-		LogBuf:   uint64(uintptr(unsafe.Pointer(&logBuf[0]))),
 	}
 	copy(attr.ProgName[:], "reflow_capture")
 
+	fd, errno := bpfProgLoadProgram(attr)
+	if errno == 0 {
+		return fd, nil
+	}
+
+	logBuf := make([]byte, bpfLogBufferSize)
+	attr.LogLevel = 1
+	attr.LogSize = uint32(len(logBuf))
+	attr.LogBuf = uint64(uintptr(unsafe.Pointer(&logBuf[0])))
+	fd, loggedErrno := bpfProgLoadProgram(attr)
+	if loggedErrno == 0 {
+		return fd, nil
+	}
+	if msg := strings.TrimRight(string(logBuf), "\x00"); msg != "" {
+		return -1, fmt.Errorf("%w: %s", loggedErrno, msg)
+	}
+	return -1, errno
+}
+
+func bpfProgLoadProgram(attr bpfProgLoadAttr) (int, unix.Errno) {
 	fd, _, errno := unix.Syscall(unix.SYS_BPF, uintptr(bpfProgLoad), uintptr(unsafe.Pointer(&attr)), unsafe.Sizeof(attr))
 	if errno != 0 {
-		msg := strings.TrimRight(string(logBuf), "\x00")
-		if msg != "" {
-			return -1, fmt.Errorf("%w: %s", errno, msg)
-		}
 		return -1, errno
 	}
-	return int(fd), nil
+	return int(fd), 0
+}
+
+func attachSocketFilter(fd, snapLen int) (int, error) {
+	progFD, err := loadSocketFilterProgram(snapLen)
+	if err == nil {
+		if attachErr := unix.SetsockoptInt(fd, unix.SOL_SOCKET, unix.SO_ATTACH_BPF, progFD); attachErr != nil {
+			_ = unix.Close(progFD)
+			return -1, fmt.Errorf("attach ebpf socket filter: %w", attachErr)
+		}
+		return progFD, nil
+	}
+	if fallbackErr := attachClassicSocketFilter(fd, snapLen); fallbackErr != nil {
+		return -1, fmt.Errorf("load ebpf socket filter: %w; attach classic socket filter fallback: %v", err, fallbackErr)
+	}
+	return -1, nil
+}
+
+func attachClassicSocketFilter(fd, snapLen int) error {
+	if snapLen <= 0 {
+		return fmt.Errorf("snaplen must be > 0")
+	}
+	filter := []unix.SockFilter{
+		{
+			Code: uint16(unix.BPF_RET | unix.BPF_K),
+			K:    uint32(snapLen),
+		},
+	}
+	return unix.SetsockoptSockFprog(fd, unix.SOL_SOCKET, unix.SO_ATTACH_FILTER, &unix.SockFprog{
+		Len:    uint16(len(filter)),
+		Filter: &filter[0],
+	})
 }
 
 func htons(v uint16) uint16 {

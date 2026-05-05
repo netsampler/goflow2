@@ -1,3 +1,5 @@
+//go:build !reflow_nopcap
+
 package pcap
 
 import (
