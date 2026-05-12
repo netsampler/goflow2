@@ -170,6 +170,44 @@ func TestSFlowDecodeDropExtendedACL(t *testing.T) {
 	assert.Equal(t, ExtendedACL{Number: 42, Name: "foo!", Direction: 2}, sample.Records[0].Data)
 }
 
+func TestSFlowDecodeSampledEthernet(t *testing.T) {
+	// Regression test for the SampledEthernet (flow data format 2) decoder.
+	// Per sFlow v5 (RFC 3176), each MAC address is encoded as XDR opaque
+	// fixed-length padded to a multiple of 4 bytes — so a 6-byte MAC is
+	// transmitted as 8 bytes (6 bytes of address + 2 zero pad bytes).
+	// Prior to the fix, DstMac was returned as 00:00:11:22:33:44 instead
+	// of 11:22:33:44:55:66 because the decoder treated SrcMac/DstMac as
+	// 6-byte fields with no padding.
+	//
+	// Wire format (24 bytes for SampledEthernet):
+	//   Length (u32, 4)
+	//   SrcMac (6 bytes + 2 pad = 8)
+	//   DstMac (6 bytes + 2 pad = 8)
+	//   EthType (u32, 4)
+	payload := bytes.NewBuffer(nil)
+	// Length = 1500
+	payload.Write([]byte{0x00, 0x00, 0x05, 0xdc})
+	// SrcMac with XDR pad
+	payload.Write([]byte{0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff, 0x00, 0x00})
+	// DstMac with XDR pad
+	payload.Write([]byte{0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x00, 0x00})
+	// EthType = 0x0800 (IPv4)
+	payload.Write([]byte{0x00, 0x00, 0x08, 0x00})
+
+	header := &RecordHeader{DataFormat: FLOW_TYPE_ETH}
+	flowRecord, err := DecodeFlowRecord(header, payload)
+	assert.NoError(t, err)
+
+	eth, ok := flowRecord.Data.(SampledEthernet)
+	assert.True(t, ok)
+	assert.Equal(t, uint32(1500), eth.Length)
+	assert.Equal(t, []byte{0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff}, []byte(eth.SrcMac))
+	assert.Equal(t, []byte{0x11, 0x22, 0x33, 0x44, 0x55, 0x66}, []byte(eth.DstMac))
+	assert.Equal(t, uint32(0x0800), eth.EthType)
+	// Payload must be fully consumed.
+	assert.Equal(t, 0, payload.Len())
+}
+
 func TestSFlowDecodeDropExtendedFunction(t *testing.T) {
 	data := []byte{
 		0x00, 0x00, 0x00, 0x05, 0x00, 0x00, 0x00, 0x01, 0xc0, 0xa8, 0x77, 0xb8, 0x00, 0x01, 0x86, 0xa0,
