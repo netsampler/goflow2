@@ -203,21 +203,21 @@ func DecodeFlowRecord(header *RecordHeader, payload *bytes.Buffer) (FlowRecord, 
 		// Per sFlow v5 (RFC 3176), MAC addresses are encoded as XDR opaque
 		// fixed-length and padded to a multiple of 4 bytes. A 6-byte MAC is
 		// transmitted as 8 bytes (6 bytes of address + 2 zero pad bytes).
-		var srcMacPadded, dstMacPadded [8]byte
 		sampledEth := SampledEthernet{
 			SrcMac: make([]byte, 6),
 			DstMac: make([]byte, 6),
 		}
+		var srcMacPad, dstMacPad uint16
 		if err := utils.BinaryDecoder(payload,
 			&sampledEth.Length,
-			srcMacPadded[:],
-			dstMacPadded[:],
+			sampledEth.SrcMac,
+			&srcMacPad,
+			sampledEth.DstMac,
+			&dstMacPad,
 			&sampledEth.EthType,
 		); err != nil {
 			return flowRecord, &RecordError{header.DataFormat, err}
 		}
-		copy(sampledEth.SrcMac, srcMacPadded[:6])
-		copy(sampledEth.DstMac, dstMacPadded[:6])
 		flowRecord.Data = sampledEth
 	case FLOW_TYPE_IPV4:
 		sampledIP := SampledIPv4{

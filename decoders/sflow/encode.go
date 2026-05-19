@@ -383,10 +383,16 @@ func encodeFlowRecord(buf *bytes.Buffer, record *FlowRecord) error {
 			return err
 		}
 		// MAC addresses are XDR-padded to 8 bytes (6 bytes + 2 zero pad bytes).
-		if _, err := payload.Write(append(append([]byte{}, data.SrcMac...), 0, 0)); err != nil {
+		if _, err := payload.Write(data.SrcMac); err != nil {
 			return err
 		}
-		if _, err := payload.Write(append(append([]byte{}, data.DstMac...), 0, 0)); err != nil {
+		if err := utils.WriteU16(payload, 0); err != nil {
+			return err
+		}
+		if _, err := payload.Write(data.DstMac); err != nil {
+			return err
+		}
+		if err := utils.WriteU16(payload, 0); err != nil {
 			return err
 		}
 		if err := utils.WriteU32(payload, data.EthType); err != nil {
@@ -403,10 +409,16 @@ func encodeFlowRecord(buf *bytes.Buffer, record *FlowRecord) error {
 			return err
 		}
 		// MAC addresses are XDR-padded to 8 bytes (6 bytes + 2 zero pad bytes).
-		if _, err := payload.Write(append(append([]byte{}, data.SrcMac...), 0, 0)); err != nil {
+		if _, err := payload.Write(data.SrcMac); err != nil {
 			return err
 		}
-		if _, err := payload.Write(append(append([]byte{}, data.DstMac...), 0, 0)); err != nil {
+		if err := utils.WriteU16(payload, 0); err != nil {
+			return err
+		}
+		if _, err := payload.Write(data.DstMac); err != nil {
+			return err
+		}
+		if err := utils.WriteU16(payload, 0); err != nil {
 			return err
 		}
 		if err := utils.WriteU32(payload, data.EthType); err != nil {
