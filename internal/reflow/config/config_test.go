@@ -257,6 +257,115 @@ sink:
 	}
 }
 
+func TestLoadSupportsSharedTemplatedFieldsCatalog(t *testing.T) {
+	dir := t.TempDir()
+	fieldsPath := filepath.Join(dir, "shared-fields.yaml")
+	if err := os.WriteFile(fieldsPath, []byte(`
+fields:
+  bytes: 1:8:u64:delta
+  custom_counter:
+    name: customCounter
+    id: 1000
+    pen: 32473
+    enterprise_scoped: true
+    length: 8
+    type: unsigned64
+`), 0o644); err != nil {
+		t.Fatalf("write fields: %v", err)
+	}
+	cfgPath := filepath.Join(dir, "reflow.yaml")
+	if err := os.WriteFile(cfgPath, []byte(`
+sources:
+  - network: udp
+    address: ":18081"
+    type: flow
+
+processor:
+  type: builtin
+
+templated_fields:
+  fields_path: shared-fields.yaml
+  overrides:
+    custom_counter:
+      id: 1001
+      pen: 32473
+      enterprise_scoped: true
+      length: 8
+      type: unsigned64
+
+encoder:
+  type: ipfix
+  templated_flow:
+    data:
+      fields:
+        - bytes
+      overrides:
+        export_only:
+          id: 2000
+          length: 4
+          type: unsigned32
+
+sink:
+  type: stdout
+`), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	cfg, err := Load(cfgPath)
+	if err != nil {
+		t.Fatalf("Load returned error: %v", err)
+	}
+	if cfg.TemplatedFields.FieldsPath != fieldsPath {
+		t.Fatalf("expected shared fields_path to resolve relative to config, got %q", cfg.TemplatedFields.FieldsPath)
+	}
+	shared := cfg.TemplatedFields.Catalog["custom_counter"]
+	if shared.ID != 1001 || shared.PEN != 32473 {
+		t.Fatalf("expected top-level override to apply to shared catalog, got %#v", shared)
+	}
+	if _, ok := cfg.TemplatedFields.Catalog["export_only"]; ok {
+		t.Fatalf("expected encoder-only override not to change shared decode catalog")
+	}
+	if cfg.Encoder.TemplatedFlow.Data.Catalog["export_only"].ID != 2000 {
+		t.Fatalf("expected encoder-only override in export catalog, got %#v", cfg.Encoder.TemplatedFlow.Data.Catalog["export_only"])
+	}
+	if len(cfg.Encoder.TemplatedFlow.Data.Select) != 1 || cfg.Encoder.TemplatedFlow.Data.Select[0] != "bytes" {
+		t.Fatalf("expected export field selection to remain export-only, got %#v", cfg.Encoder.TemplatedFlow.Data.Select)
+	}
+}
+
+func TestLoadRejectsDuplicateTemplatedDecodeFields(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "reflow.yaml")
+	if err := os.WriteFile(cfgPath, []byte(`
+sources:
+  - network: udp
+    address: ":18081"
+    type: flow
+
+processor:
+  type: builtin
+
+templated_fields:
+  overrides:
+    custom_bytes:
+      id: 1
+      length: 8
+      type: unsigned64
+
+encoder:
+  type: ipfix
+
+sink:
+  type: stdout
+`), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	if _, err := Load(cfgPath); err == nil || !strings.Contains(err.Error(), "duplicate IPFIX decode mapping") {
+		t.Fatalf("expected duplicate IPFIX decode mapping error, got %v", err)
+	}
+}
+
 func TestLoadSupportsAccumulativeAggregatorWithExplicitFields(t *testing.T) {
 	dir := t.TempDir()
 

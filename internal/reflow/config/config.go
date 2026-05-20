@@ -36,13 +36,14 @@ type FlagConfig struct {
 }
 
 type Config struct {
-	LogLevel    string             `yaml:"-"`
-	LogFormat   string             `yaml:"-"`
-	Sources     []SourceConfig     `yaml:"sources"`
-	Processor   ProcessorConfig    `yaml:"processor"`
-	Aggregators []AggregatorConfig `yaml:"aggregators"`
-	Encoder     EncoderConfig      `yaml:"encoder"`
-	Sink        SinkConfig         `yaml:"sink"`
+	LogLevel        string                `yaml:"-"`
+	LogFormat       string                `yaml:"-"`
+	Sources         []SourceConfig        `yaml:"sources"`
+	Processor       ProcessorConfig       `yaml:"processor"`
+	Aggregators     []AggregatorConfig    `yaml:"aggregators"`
+	TemplatedFields TemplatedFieldsConfig `yaml:"templated_fields,omitempty"`
+	Encoder         EncoderConfig         `yaml:"encoder"`
+	Sink            SinkConfig            `yaml:"sink"`
 }
 
 type SourceConfig struct {
@@ -384,6 +385,16 @@ type TemplatedFlowDataConfig struct {
 	FieldsPath string                          `yaml:"fields_path"`
 	Catalog    map[string]IPFIXFieldDefinition `yaml:"-"`
 	Overrides  map[string]IPFIXFieldDefinition `yaml:"overrides"`
+}
+
+type TemplatedFieldsConfig struct {
+	FieldsPath string                          `yaml:"fields_path"`
+	Catalog    map[string]IPFIXFieldDefinition `yaml:"-"`
+	Overrides  map[string]IPFIXFieldDefinition `yaml:"overrides"`
+}
+
+func (c TemplatedFieldsConfig) IsZero() bool {
+	return c.FieldsPath == "" && len(c.Overrides) == 0
 }
 
 type IPFIXFieldDefinition struct {
@@ -854,24 +865,55 @@ func defaultFalse(dst **bool) {
 	*dst = &v
 }
 
-// loadFlowDataCatalog resolves the templated flow field catalog. Empty fields_path uses
-// the embedded default catalog; explicit paths are resolved relative to config.
+// loadFlowDataCatalog resolves the shared templated flow field catalog. Empty
+// fields_path uses the embedded default catalog; explicit paths are resolved
+// relative to config. Legacy encoder.templated_flow.data catalog settings keep
+// their previous behavior when the top-level shared catalog is not configured.
 func (c *Config) loadFlowDataCatalog(configPath string) error {
+	sharedConfigured := c.TemplatedFields.FieldsPath != "" || len(c.TemplatedFields.Overrides) > 0 || len(c.TemplatedFields.Catalog) > 0
+	if sharedConfigured {
+		fields, err := loadIPFIXFieldCatalog(configPath, &c.TemplatedFields.FieldsPath, "templated_fields")
+		if err != nil {
+			return err
+		}
+		shared := mergeIPFIXFields(fields, c.TemplatedFields.Catalog, c.TemplatedFields.Overrides)
+		if err := validateTemplatedDecodeCatalog(shared); err != nil {
+			return fmt.Errorf("templated_fields: %w", err)
+		}
+		c.TemplatedFields.Catalog = shared
+		c.Encoder.TemplatedFlow.Data.Catalog = mergeIPFIXFields(shared, c.Encoder.TemplatedFlow.Data.Catalog, c.Encoder.TemplatedFlow.Data.Overrides)
+		return nil
+	}
+
+	fields, err := loadIPFIXFieldCatalog(configPath, &c.Encoder.TemplatedFlow.Data.FieldsPath, "encoder.templated_flow.data")
+	if err != nil {
+		return err
+	}
+	legacy := mergeIPFIXFields(fields, c.Encoder.TemplatedFlow.Data.Catalog, c.Encoder.TemplatedFlow.Data.Overrides)
+	if err := validateTemplatedDecodeCatalog(legacy); err != nil {
+		return fmt.Errorf("encoder.templated_flow.data: %w", err)
+	}
+	c.TemplatedFields.Catalog = legacy
+	c.Encoder.TemplatedFlow.Data.Catalog = legacy
+	return nil
+}
+
+func loadIPFIXFieldCatalog(configPath string, fieldsPath *string, label string) (map[string]IPFIXFieldDefinition, error) {
 	type ipfixCatalog struct {
 		Fields map[string]IPFIXFieldDefinition `yaml:"fields"`
 	}
 
 	raw := defaultFlowFields
 	source := "embedded default flow fields"
-	if c.Encoder.TemplatedFlow.Data.FieldsPath != "" {
-		if !filepath.IsAbs(c.Encoder.TemplatedFlow.Data.FieldsPath) {
-			c.Encoder.TemplatedFlow.Data.FieldsPath = filepath.Join(filepath.Dir(configPath), c.Encoder.TemplatedFlow.Data.FieldsPath)
+	if fieldsPath != nil && *fieldsPath != "" {
+		if !filepath.IsAbs(*fieldsPath) {
+			*fieldsPath = filepath.Join(filepath.Dir(configPath), *fieldsPath)
 		}
-		source = c.Encoder.TemplatedFlow.Data.FieldsPath
+		source = *fieldsPath
 		var err error
-		raw, err = os.ReadFile(c.Encoder.TemplatedFlow.Data.FieldsPath)
+		raw, err = os.ReadFile(*fieldsPath)
 		if err != nil {
-			return fmt.Errorf("load templated_flow.data fields %s: %w", source, err)
+			return nil, fmt.Errorf("load %s fields %s: %w", label, source, err)
 		}
 		if len(bytes.TrimSpace(raw)) == 0 {
 			raw = defaultFlowFields
@@ -881,11 +923,9 @@ func (c *Config) loadFlowDataCatalog(configPath string) error {
 
 	catalog := ipfixCatalog{}
 	if err := yaml.Unmarshal(raw, &catalog); err != nil {
-		return fmt.Errorf("decode templated_flow.data fields %s: %w", source, err)
+		return nil, fmt.Errorf("decode %s fields %s: %w", label, source, err)
 	}
-
-	c.Encoder.TemplatedFlow.Data.Catalog = mergeIPFIXFields(catalog.Fields, c.Encoder.TemplatedFlow.Data.Catalog, c.Encoder.TemplatedFlow.Data.Overrides)
-	return nil
+	return catalog.Fields, nil
 }
 
 // mergeIPFIXFields applies later catalogs over earlier ones.
@@ -897,6 +937,67 @@ func mergeIPFIXFields(sources ...map[string]IPFIXFieldDefinition) map[string]IPF
 		}
 	}
 	return merged
+}
+
+type decodeIPFIXKey struct {
+	id  uint16
+	pen uint32
+}
+
+func validateTemplatedDecodeCatalog(catalog map[string]IPFIXFieldDefinition) error {
+	ipfix := make(map[decodeIPFIXKey]string)
+	netflowV9 := make(map[uint16]string)
+	for name, def := range catalog {
+		for _, key := range ipfixDecodeKeys(name, def) {
+			if existing, ok := ipfix[key]; ok && existing != name {
+				return fmt.Errorf("duplicate IPFIX decode mapping id=%d pen=%d for %q and %q", key.id, key.pen, existing, name)
+			}
+			ipfix[key] = name
+		}
+		for _, id := range netflowV9DecodeIDs(name, def) {
+			if existing, ok := netflowV9[id]; ok && existing != name {
+				return fmt.Errorf("duplicate NetFlow v9 decode mapping id=%d for %q and %q", id, existing, name)
+			}
+			netflowV9[id] = name
+		}
+	}
+	return nil
+}
+
+func ipfixDecodeKeys(name string, def IPFIXFieldDefinition) []decodeIPFIXKey {
+	if def.ID == 0 {
+		return nil
+	}
+	pen := uint32(0)
+	if def.EnterpriseScoped || def.PEN != 0 {
+		pen = def.PEN
+	}
+	keys := []decodeIPFIXKey{{id: def.ID, pen: pen}}
+	switch name {
+	case "src_addr":
+		keys = append(keys, decodeIPFIXKey{id: 27})
+	case "dst_addr":
+		keys = append(keys, decodeIPFIXKey{id: 28})
+	}
+	return keys
+}
+
+func netflowV9DecodeIDs(name string, def IPFIXFieldDefinition) []uint16 {
+	ids := make([]uint16, 0, 2)
+	if def.ID != 0 && def.PEN == 0 && !def.EnterpriseScoped {
+		ids = append(ids, def.ID)
+	}
+	switch name {
+	case "src_addr":
+		ids = append(ids, 27)
+	case "dst_addr":
+		ids = append(ids, 28)
+	case "start_time_unix":
+		ids = append(ids, 21)
+	case "end_time_unix":
+		ids = append(ids, 22)
+	}
+	return ids
 }
 
 // normalizeAggregatorConfig applies defaults that do not change aggregation

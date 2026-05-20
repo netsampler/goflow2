@@ -72,7 +72,7 @@ func (d *builtIn) decodeNetFlowV9(evt *event.Event, payload []byte) ([]*event.Ev
 			fields := ensureFields(item, 16)
 			fields["flow_type"] = "netflowv9"
 			fields["flow_version"] = packet.Version
-			mapDataFields(fields, record.Values, packet.SystemUptime, packet.UnixSeconds)
+			d.mapDataFields(fields, record.Values, packet.SystemUptime, packet.UnixSeconds, true)
 			if fieldUint32(fields, "sampling_rate") == 0 && samplingRate != 0 {
 				fields["sampling_rate"] = samplingRate
 			}
@@ -116,7 +116,7 @@ func (d *builtIn) decodeIPFIX(evt *event.Event, payload []byte) ([]*event.Event,
 			fields := ensureFields(item, 16)
 			fields["flow_type"] = "ipfix"
 			fields["flow_version"] = packet.Version
-			mapDataFields(fields, record.Values, 0, 0)
+			d.mapDataFields(fields, record.Values, 0, 0, false)
 			if fieldUint32(fields, "sampling_rate") == 0 && samplingRate != 0 {
 				fields["sampling_rate"] = samplingRate
 			}
@@ -298,8 +298,14 @@ func (d *builtIn) optionsEvents(base *event.Event, flowType string, version uint
 
 // mapDataFields keeps the first cut of canonical field mapping close to the
 // decode boundary so later stages can remain protocol-agnostic.
-func mapDataFields(fields map[string]any, values []netflow.DataField, sysUptime, unixSeconds uint32) {
+func (d *builtIn) mapDataFields(fields map[string]any, values []netflow.DataField, sysUptime, unixSeconds uint32, netflowV9 bool) {
 	for _, field := range values {
+		if d != nil && !d.catalog.empty() {
+			if catalogField, ok := d.catalog.lookup(field, netflowV9); ok {
+				applyCatalogDataField(fields, field, catalogField, sysUptime, unixSeconds, netflowV9)
+			}
+			continue
+		}
 		switch field.Type {
 		case 4:
 			fields["proto"] = decodeUint32(field.Value)

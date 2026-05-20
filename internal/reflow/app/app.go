@@ -77,7 +77,7 @@ func New(cfg *config.Config) (*App, error) {
 	return &App{
 		logger:           logger,
 		sources:          sources,
-		decoder:          decode.New(),
+		decoder:          decode.NewWithCatalog(cfg.TemplatedFields.Catalog),
 		processor:        proc,
 		processorWorkers: processorWorkers,
 		aggregatorCfgs:   cfg.Aggregators,

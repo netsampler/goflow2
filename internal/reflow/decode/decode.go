@@ -3,6 +3,7 @@ package decode
 import (
 	"fmt"
 
+	"github.com/netsampler/goflow2/v3/internal/reflow/config"
 	"github.com/netsampler/goflow2/v3/internal/reflow/event"
 	"github.com/netsampler/goflow2/v3/utils/store/samplingrate"
 	"github.com/netsampler/goflow2/v3/utils/store/templates"
@@ -16,6 +17,12 @@ type Decoder interface {
 
 // New returns the built-in decoder used by the current runtime.
 func New() Decoder {
+	return NewWithCatalog(nil)
+}
+
+// NewWithCatalog returns a decoder that uses the shared templated field catalog
+// for IPFIX and NetFlow v9 data record expansion.
+func NewWithCatalog(catalog map[string]config.IPFIXFieldDefinition) Decoder {
 	store := templates.NewTemplateFlowStore()
 	store.Start()
 	sampling := samplingrate.NewSamplingRateFlowStore()
@@ -23,12 +30,14 @@ func New() Decoder {
 	return &builtIn{
 		templates: store,
 		sampling:  sampling,
+		catalog:   newDecodeCatalog(catalog),
 	}
 }
 
 type builtIn struct {
 	templates *templates.TemplateFlowStore
 	sampling  samplingrate.Store
+	catalog   decodeCatalog
 }
 
 // Close stops decoder-owned stores and their background sweepers.
