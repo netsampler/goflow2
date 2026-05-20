@@ -381,20 +381,56 @@ type PcapConfig struct {
 }
 
 type TemplatedFlowDataConfig struct {
-	Select     []string                        `yaml:"fields"`
-	FieldsPath string                          `yaml:"fields_path"`
-	Catalog    map[string]IPFIXFieldDefinition `yaml:"-"`
-	Overrides  map[string]IPFIXFieldDefinition `yaml:"overrides"`
+	Select        []string                        `yaml:"fields"`
+	FieldsPath    string                          `yaml:"fields_path"`
+	Catalog       map[string]IPFIXFieldDefinition `yaml:"-"`
+	Overrides     map[string]IPFIXFieldDefinition `yaml:"overrides"`
+	fieldsPathSet bool
 }
 
 type TemplatedFieldsConfig struct {
-	FieldsPath string                          `yaml:"fields_path"`
-	Catalog    map[string]IPFIXFieldDefinition `yaml:"-"`
-	Overrides  map[string]IPFIXFieldDefinition `yaml:"overrides"`
+	FieldsPath    string                          `yaml:"fields_path"`
+	Catalog       map[string]IPFIXFieldDefinition `yaml:"-"`
+	Overrides     map[string]IPFIXFieldDefinition `yaml:"overrides"`
+	fieldsPathSet bool
 }
 
 func (c TemplatedFieldsConfig) IsZero() bool {
-	return c.FieldsPath == "" && len(c.Overrides) == 0
+	return !c.fieldsPathSet && c.FieldsPath == "" && len(c.Overrides) == 0
+}
+
+func (c *TemplatedFlowDataConfig) UnmarshalYAML(value *yaml.Node) error {
+	type rawConfig TemplatedFlowDataConfig
+	var raw rawConfig
+	if err := value.Decode(&raw); err != nil {
+		return err
+	}
+	*c = TemplatedFlowDataConfig(raw)
+	c.fieldsPathSet = yamlMappingHasKey(value, "fields_path")
+	return nil
+}
+
+func (c *TemplatedFieldsConfig) UnmarshalYAML(value *yaml.Node) error {
+	type rawConfig TemplatedFieldsConfig
+	var raw rawConfig
+	if err := value.Decode(&raw); err != nil {
+		return err
+	}
+	*c = TemplatedFieldsConfig(raw)
+	c.fieldsPathSet = yamlMappingHasKey(value, "fields_path")
+	return nil
+}
+
+func yamlMappingHasKey(value *yaml.Node, key string) bool {
+	if value == nil || value.Kind != yaml.MappingNode {
+		return false
+	}
+	for i := 0; i+1 < len(value.Content); i += 2 {
+		if value.Content[i].Value == key {
+			return true
+		}
+	}
+	return false
 }
 
 type IPFIXFieldDefinition struct {
@@ -870,9 +906,9 @@ func defaultFalse(dst **bool) {
 // relative to config. Legacy encoder.templated_flow.data catalog settings keep
 // their previous behavior when the top-level shared catalog is not configured.
 func (c *Config) loadFlowDataCatalog(configPath string) error {
-	sharedConfigured := c.TemplatedFields.FieldsPath != "" || len(c.TemplatedFields.Overrides) > 0 || len(c.TemplatedFields.Catalog) > 0
+	sharedConfigured := c.TemplatedFields.fieldsPathSet || c.TemplatedFields.FieldsPath != "" || len(c.TemplatedFields.Overrides) > 0 || len(c.TemplatedFields.Catalog) > 0
 	if sharedConfigured {
-		fields, err := loadIPFIXFieldCatalog(configPath, &c.TemplatedFields.FieldsPath, "templated_fields")
+		fields, err := loadIPFIXFieldCatalog(configPath, &c.TemplatedFields.FieldsPath, "templated_fields", !c.TemplatedFields.fieldsPathSet)
 		if err != nil {
 			return err
 		}
@@ -880,12 +916,19 @@ func (c *Config) loadFlowDataCatalog(configPath string) error {
 		if err := validateTemplatedDecodeCatalog(shared); err != nil {
 			return fmt.Errorf("templated_fields: %w", err)
 		}
+		var exportFields map[string]IPFIXFieldDefinition
+		if c.Encoder.TemplatedFlow.Data.fieldsPathSet {
+			exportFields, err = loadIPFIXFieldCatalog(configPath, &c.Encoder.TemplatedFlow.Data.FieldsPath, "encoder.templated_flow.data", false)
+			if err != nil {
+				return err
+			}
+		}
 		c.TemplatedFields.Catalog = shared
-		c.Encoder.TemplatedFlow.Data.Catalog = mergeIPFIXFields(shared, c.Encoder.TemplatedFlow.Data.Catalog, c.Encoder.TemplatedFlow.Data.Overrides)
+		c.Encoder.TemplatedFlow.Data.Catalog = mergeIPFIXFields(shared, exportFields, c.Encoder.TemplatedFlow.Data.Catalog, c.Encoder.TemplatedFlow.Data.Overrides)
 		return nil
 	}
 
-	fields, err := loadIPFIXFieldCatalog(configPath, &c.Encoder.TemplatedFlow.Data.FieldsPath, "encoder.templated_flow.data")
+	fields, err := loadIPFIXFieldCatalog(configPath, &c.Encoder.TemplatedFlow.Data.FieldsPath, "encoder.templated_flow.data", true)
 	if err != nil {
 		return err
 	}
@@ -898,13 +941,16 @@ func (c *Config) loadFlowDataCatalog(configPath string) error {
 	return nil
 }
 
-func loadIPFIXFieldCatalog(configPath string, fieldsPath *string, label string) (map[string]IPFIXFieldDefinition, error) {
+func loadIPFIXFieldCatalog(configPath string, fieldsPath *string, label string, emptyPathDefault bool) (map[string]IPFIXFieldDefinition, error) {
 	type ipfixCatalog struct {
 		Fields map[string]IPFIXFieldDefinition `yaml:"fields"`
 	}
 
 	raw := defaultFlowFields
 	source := "embedded default flow fields"
+	if (fieldsPath == nil || *fieldsPath == "") && !emptyPathDefault {
+		return map[string]IPFIXFieldDefinition{}, nil
+	}
 	if fieldsPath != nil && *fieldsPath != "" {
 		if !filepath.IsAbs(*fieldsPath) {
 			*fieldsPath = filepath.Join(filepath.Dir(configPath), *fieldsPath)

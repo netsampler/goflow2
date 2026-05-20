@@ -273,6 +273,16 @@ fields:
 `), 0o644); err != nil {
 		t.Fatalf("write fields: %v", err)
 	}
+	exportFieldsPath := filepath.Join(dir, "export-fields.yaml")
+	if err := os.WriteFile(exportFieldsPath, []byte(`
+fields:
+  file_export_only:
+    id: 3000
+    length: 4
+    type: unsigned32
+`), 0o644); err != nil {
+		t.Fatalf("write export fields: %v", err)
+	}
 	cfgPath := filepath.Join(dir, "reflow.yaml")
 	if err := os.WriteFile(cfgPath, []byte(`
 sources:
@@ -297,6 +307,7 @@ encoder:
   type: ipfix
   templated_flow:
     data:
+      fields_path: export-fields.yaml
       fields:
         - bytes
       overrides:
@@ -318,6 +329,9 @@ sink:
 	if cfg.TemplatedFields.FieldsPath != fieldsPath {
 		t.Fatalf("expected shared fields_path to resolve relative to config, got %q", cfg.TemplatedFields.FieldsPath)
 	}
+	if cfg.Encoder.TemplatedFlow.Data.FieldsPath != exportFieldsPath {
+		t.Fatalf("expected encoder fields_path to resolve relative to config, got %q", cfg.Encoder.TemplatedFlow.Data.FieldsPath)
+	}
 	shared := cfg.TemplatedFields.Catalog["custom_counter"]
 	if shared.ID != 1001 || shared.PEN != 32473 {
 		t.Fatalf("expected top-level override to apply to shared catalog, got %#v", shared)
@@ -325,11 +339,60 @@ sink:
 	if _, ok := cfg.TemplatedFields.Catalog["export_only"]; ok {
 		t.Fatalf("expected encoder-only override not to change shared decode catalog")
 	}
+	if _, ok := cfg.TemplatedFields.Catalog["file_export_only"]; ok {
+		t.Fatalf("expected encoder-only fields_path not to change shared decode catalog")
+	}
+	if cfg.Encoder.TemplatedFlow.Data.Catalog["file_export_only"].ID != 3000 {
+		t.Fatalf("expected encoder-only fields_path in export catalog, got %#v", cfg.Encoder.TemplatedFlow.Data.Catalog["file_export_only"])
+	}
 	if cfg.Encoder.TemplatedFlow.Data.Catalog["export_only"].ID != 2000 {
 		t.Fatalf("expected encoder-only override in export catalog, got %#v", cfg.Encoder.TemplatedFlow.Data.Catalog["export_only"])
 	}
 	if len(cfg.Encoder.TemplatedFlow.Data.Select) != 1 || cfg.Encoder.TemplatedFlow.Data.Select[0] != "bytes" {
 		t.Fatalf("expected export field selection to remain export-only, got %#v", cfg.Encoder.TemplatedFlow.Data.Select)
+	}
+}
+
+func TestLoadTreatsExplicitEmptySharedTemplatedFieldsPathAsEmptyCatalog(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "reflow.yaml")
+	if err := os.WriteFile(cfgPath, []byte(`
+sources:
+  - network: udp
+    address: ":18081"
+    type: flow
+
+processor:
+  type: builtin
+
+templated_fields:
+  fields_path: ""
+  overrides:
+    custom_counter:
+      id: 1000
+      pen: 32473
+      enterprise_scoped: true
+      length: 8
+      type: unsigned64
+
+encoder:
+  type: ipfix
+
+sink:
+  type: stdout
+`), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	cfg, err := Load(cfgPath)
+	if err != nil {
+		t.Fatalf("Load returned error: %v", err)
+	}
+	if _, ok := cfg.TemplatedFields.Catalog["bytes"]; ok {
+		t.Fatalf("expected explicit empty templated_fields.fields_path not to load embedded defaults")
+	}
+	if cfg.TemplatedFields.Catalog["custom_counter"].ID != 1000 {
+		t.Fatalf("expected override to remain in shared catalog, got %#v", cfg.TemplatedFields.Catalog["custom_counter"])
 	}
 }
 
