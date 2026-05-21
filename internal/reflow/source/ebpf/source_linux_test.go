@@ -230,6 +230,12 @@ func TestPacketMetadataAddsSKBFields(t *testing.T) {
 	if got := evt.Fields["skb_len"]; got != uint32(1514) {
 		t.Fatalf("expected skb_len=1514, got %#v", got)
 	}
+	if got := evt.Fields["capture_length"]; got != 4 {
+		t.Fatalf("expected capture_length=4, got %#v", got)
+	}
+	if got := evt.Fields["wire_length"]; got != 1514 {
+		t.Fatalf("expected wire_length=1514, got %#v", got)
+	}
 	if got := evt.Fields["skb_hash"]; got != uint32(0x12345678) {
 		t.Fatalf("expected skb_hash=0x12345678, got %#v", got)
 	}

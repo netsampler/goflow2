@@ -288,6 +288,10 @@ func (s *Source) packetEvent(data []byte, meta packetMetadata) *event.Event {
 	now := time.Now().UTC()
 	samplePool := uint32(s.seenCount)
 	payload := append([]byte(nil), data...)
+	wireLength := len(payload)
+	if meta.hasSKBMetadata && meta.skb.Len > uint32(wireLength) {
+		wireLength = int(meta.skb.Len)
+	}
 	evt := &event.Event{
 		ReceivedAt: now,
 		Source: event.SourceMetadata{
@@ -312,7 +316,7 @@ func (s *Source) packetEvent(data []byte, meta packetMetadata) *event.Event {
 		Payload: payload,
 		Fields: map[string]any{
 			"capture_length": len(payload),
-			"wire_length":    len(payload),
+			"wire_length":    wireLength,
 		},
 	}
 	applyPacketMetadataFields(evt.Fields, meta)
