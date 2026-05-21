@@ -16,6 +16,11 @@ fields:
     type: unsigned64
     format: delta
     netflow_v9_id: 2
+  frame_length:
+    name: dataLinkFrameSize
+    id: 312
+    length: 2
+    type: unsigned16
   src_addr:
     name: sourceIPv4Address
     id: 8
