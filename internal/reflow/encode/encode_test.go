@@ -1325,6 +1325,21 @@ func TestIPFIXSourceOptionsUseExporterObservationDomain(t *testing.T) {
 	if got := option.Value.([]byte); !bytes.Equal(got, encodeU32(250)) {
 		t.Fatalf("expected source metadata sampling rate 250, got %v", got)
 	}
+
+	dataPayloads, err := enc.Encode(testTemplatedFlowEvent())
+	if err != nil {
+		t.Fatalf("Encode data returned error: %v", err)
+	}
+	if len(dataPayloads) != 1 {
+		t.Fatalf("expected one data payload, got %d", len(dataPayloads))
+	}
+	var dataDecoded netflow.IPFIXPacket
+	if err := netflow.DecodeMessageVersion(bytes.NewBuffer(dataPayloads[0]), store, netflow.FlowContext{RouterKey: "test-router"}, nil, &dataDecoded); err != nil {
+		t.Fatalf("decode ipfix data payload: %v", err)
+	}
+	if dataDecoded.SequenceNumber != 1 {
+		t.Fatalf("expected first data packet after options sequence 1, got %d", dataDecoded.SequenceNumber)
+	}
 }
 
 func TestNFv9EncoderEmitsTemplateAndDataRecord(t *testing.T) {

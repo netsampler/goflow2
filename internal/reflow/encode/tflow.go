@@ -876,6 +876,7 @@ func (e *IPFIXEncoder) encodeSourceOptions(state sourceOptionsState) ([][]byte, 
 	if err != nil {
 		return nil, fmt.Errorf("encode ipfix source options: %w", err)
 	}
+	e.seq.Add(1)
 	return [][]byte{data}, nil
 }
 
