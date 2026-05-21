@@ -1223,6 +1223,46 @@ func TestIPFIXEncoderBatchesCompatibleDataRecords(t *testing.T) {
 	}
 }
 
+func TestIPFIXEncoderPreservesBufferedEventsOnBatchError(t *testing.T) {
+	cfg := testTFlowEncoderConfig("ipfix")
+	cfg.Batch = config.BatchConfig{
+		Enabled:    testBoolPtr(true),
+		MaxRecords: 2,
+	}
+	enc := NewIPFIXEncoder(cfg)
+	first := testTemplatedFlowEvent()
+	bad := &event.Event{
+		ReceivedAt: time.Unix(1, 0).UTC(),
+		Fields: map[string]any{
+			"unmapped_field": uint32(1),
+		},
+	}
+
+	payloads, err := enc.Encode(first)
+	if err != nil {
+		t.Fatalf("Encode(first) returned error: %v", err)
+	}
+	if len(payloads) != 0 {
+		t.Fatalf("expected first record to stay buffered, got %d payloads", len(payloads))
+	}
+	payloads, err = enc.Encode(bad)
+	if err == nil {
+		t.Fatalf("expected bad batch event to return error")
+	}
+	if len(payloads) != 0 {
+		t.Fatalf("expected no payloads from failed batch, got %d", len(payloads))
+	}
+	if len(enc.events) != 2 {
+		t.Fatalf("expected failed batch to preserve 2 buffered events, got %d", len(enc.events))
+	}
+	if enc.events[0] != first || enc.events[1] != bad {
+		t.Fatalf("expected buffered events to remain in original order")
+	}
+	if enc.estimatedBytes == 0 {
+		t.Fatalf("expected estimated byte count to be preserved")
+	}
+}
+
 func TestIPFIXEncoderIgnoresEventObservationDomainID(t *testing.T) {
 	enc := NewIPFIXEncoder(testTFlowEncoderConfig("ipfix"))
 	evt := testTemplatedFlowEvent()

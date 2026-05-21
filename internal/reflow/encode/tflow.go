@@ -158,23 +158,37 @@ func (e *IPFIXEncoder) flushDataPackets() ([][]byte, error) {
 	}
 
 	pending := e.events
-	e.events = nil
-	e.estimatedBytes = 0
 
 	var payloads [][]byte
 	for len(pending) > 0 {
 		packet, accepted, err := e.buildBatchedPacket(pending)
 		if err != nil {
-			return nil, err
+			e.events = pending
+			e.estimatedBytes = estimatedEventsSize(pending)
+			return payloads, err
 		}
 		data, err := netflow.EncodeMessage(packet)
 		if err != nil {
-			return nil, fmt.Errorf("encode ipfix packet: %w", err)
+			e.events = pending
+			e.estimatedBytes = estimatedEventsSize(pending)
+			return payloads, fmt.Errorf("encode ipfix packet: %w", err)
 		}
 		payloads = append(payloads, data)
 		pending = pending[accepted:]
+		e.events = pending
+		e.estimatedBytes = estimatedEventsSize(pending)
 	}
+	e.events = nil
+	e.estimatedBytes = 0
 	return payloads, nil
+}
+
+func estimatedEventsSize(events []*event.Event) int {
+	var total int
+	for _, evt := range events {
+		total += estimatedEventSize(evt)
+	}
+	return total
 }
 
 func (e *IPFIXEncoder) buildBatchedPacket(events []*event.Event) (*netflow.IPFIXPacket, int, error) {
