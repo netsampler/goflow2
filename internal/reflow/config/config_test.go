@@ -854,7 +854,8 @@ func TestGeneratedAggregateConfigUsesFieldDSL(t *testing.T) {
 		"- first:source_id",
 		"- current:end_time_unix",
 		"- current:mpls_label_stack_section_1",
-		"template_id: 258",
+		"record_kind: packet",
+		"template_id: 256",
 	} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("expected generated config to contain %q:\n%s", want, out)
@@ -868,6 +869,9 @@ func TestGeneratedAggregateConfigUsesFieldDSL(t *testing.T) {
 		"- current:sample_pool",
 		"- current:drops",
 		"static_fields:",
+		"ip_family:",
+		"flow_data_ipv4",
+		"flow_data_ipv6",
 		"reset_interval_ms:",
 		"periodic_interval_ms:",
 	} {
@@ -894,10 +898,13 @@ func TestGeneratedAggregateConfigSupportsCLIParams(t *testing.T) {
 	if !generated {
 		t.Fatalf("expected generated config")
 	}
-	if len(cfg.Aggregators) != 2 {
+	if len(cfg.Aggregators) != 1 {
 		t.Fatalf("expected generated aggregators, got %d", len(cfg.Aggregators))
 	}
 	for i, agg := range cfg.Aggregators {
+		if agg.Match["record_kind"] != "packet" {
+			t.Fatalf("aggregators[%d] match = %#v, want record_kind=packet", i, agg.Match)
+		}
 		if agg.Window.IdleFlushAfter != 0 {
 			t.Fatalf("aggregators[%d] idle flush = %d", i, agg.Window.IdleFlushAfter)
 		}

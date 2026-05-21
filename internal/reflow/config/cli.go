@@ -731,47 +731,41 @@ func cutLast(s, sep string) (string, string, bool) {
 }
 
 func generatedAggregators(flags *FlagConfig) []AggregatorConfig {
-	base := func(family string, templateID uint16) AggregatorConfig {
-		cfg := AggregatorConfig{
-			Stream: "flow_data_" + family,
-			Match: map[string]string{
-				"ip_family": family,
-			},
-			Window: AggregatorWindowConfig{
-				IdleFlushAfter: 10000,
-			},
-			Periodic: AggregatorPeriodicConfig{
-				Every: 60000,
-			},
-			Fields: []AggregatorField{
-				{Role: "key", Name: "src_addr"},
-				{Role: "key", Name: "dst_addr"},
-				{Role: "key", Name: "proto"},
-				{Role: "key", Name: "src_port"},
-				{Role: "key", Name: "dst_port"},
-				{Role: "sum", Name: "bytes"},
-				{Role: "sum", Name: "packets"},
-				{Role: "first", Name: "sub_agent_id"},
-				{Role: "first", Name: "source_id"},
-				{Role: "first", Name: "start_time_unix"},
-				{Role: "current", Name: "sub_agent_id"},
-				{Role: "current", Name: "source_id"},
-				{Role: "current", Name: "input_if"},
-				{Role: "current", Name: "output_if"},
-				{Role: "current", Name: "end_time_unix"},
-				{Role: "current", Name: "mpls_label_stack_section_1"},
-				{Role: "current", Name: "mpls_label_stack_section_2"},
-				{Role: "current", Name: "mpls_label_stack_section_3"},
-			},
-			TemplateID: templateID,
-		}
-		applyGeneratedAggregatorOverrides(&cfg, flags)
-		return cfg
+	cfg := AggregatorConfig{
+		Stream: "flow_data",
+		Match: map[string]string{
+			"record_kind": "packet",
+		},
+		Window: AggregatorWindowConfig{
+			IdleFlushAfter: 10000,
+		},
+		Periodic: AggregatorPeriodicConfig{
+			Every: 60000,
+		},
+		Fields: []AggregatorField{
+			{Role: "key", Name: "src_addr"},
+			{Role: "key", Name: "dst_addr"},
+			{Role: "key", Name: "proto"},
+			{Role: "key", Name: "src_port"},
+			{Role: "key", Name: "dst_port"},
+			{Role: "sum", Name: "bytes"},
+			{Role: "sum", Name: "packets"},
+			{Role: "first", Name: "sub_agent_id"},
+			{Role: "first", Name: "source_id"},
+			{Role: "first", Name: "start_time_unix"},
+			{Role: "current", Name: "sub_agent_id"},
+			{Role: "current", Name: "source_id"},
+			{Role: "current", Name: "input_if"},
+			{Role: "current", Name: "output_if"},
+			{Role: "current", Name: "end_time_unix"},
+			{Role: "current", Name: "mpls_label_stack_section_1"},
+			{Role: "current", Name: "mpls_label_stack_section_2"},
+			{Role: "current", Name: "mpls_label_stack_section_3"},
+		},
+		TemplateID: 256,
 	}
-	return []AggregatorConfig{
-		base("ipv4", 256),
-		base("ipv6", 258),
-	}
+	applyGeneratedAggregatorOverrides(&cfg, flags)
+	return []AggregatorConfig{cfg}
 }
 
 func applyGeneratedAggregatorOverrides(cfg *AggregatorConfig, flags *FlagConfig) {
