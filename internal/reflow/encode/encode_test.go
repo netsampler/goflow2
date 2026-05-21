@@ -1572,7 +1572,7 @@ func TestSourceOptionsUseSourceSamplingMetadata(t *testing.T) {
 func TestIPFIXSchemaDataUsesSourceSamplingMetadata(t *testing.T) {
 	cfg := testTFlowEncoderConfig("ipfix")
 	cfg.TemplatedFlow.Data.Catalog["sampling_rate"] = config.IPFIXFieldDefinition{ID: 34, Length: 4, Type: "unsigned32"}
-	cfg.TemplatedFlow.Data.Catalog["sample_pool"] = config.IPFIXFieldDefinition{ID: 310, Length: 8, Type: "unsigned64"}
+	cfg.TemplatedFlow.Data.Catalog["sample_pool"] = config.IPFIXFieldDefinition{ID: 310, Length: 4, Type: "unsigned32"}
 	cfg.TemplatedFlow.Data.Catalog["drops"] = config.IPFIXFieldDefinition{ID: 133, Length: 8, Type: "unsigned64"}
 	enc := NewIPFIXEncoder(cfg)
 

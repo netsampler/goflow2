@@ -213,8 +213,9 @@ sink:
 	if cfg.Encoder.TemplatedFlow.Data.Catalog["agent_ip"].ID != 130 {
 		t.Fatalf("expected agent_ip field from embedded catalog, got %#v", cfg.Encoder.TemplatedFlow.Data.Catalog["agent_ip"])
 	}
-	if cfg.Encoder.TemplatedFlow.Data.Catalog["sample_pool"].ID != 310 {
-		t.Fatalf("expected sample_pool field from embedded catalog, got %#v", cfg.Encoder.TemplatedFlow.Data.Catalog["sample_pool"])
+	samplePool := cfg.Encoder.TemplatedFlow.Data.Catalog["sample_pool"]
+	if samplePool.ID != 310 || samplePool.Length != 4 || samplePool.Type != "unsigned32" {
+		t.Fatalf("expected sample_pool unsigned32/4 field from embedded catalog, got %#v", samplePool)
 	}
 	if cfg.Encoder.TemplatedFlow.Data.Catalog["src_mac"].Type != "macAddress" {
 		t.Fatalf("expected src_mac macAddress field from embedded catalog, got %#v", cfg.Encoder.TemplatedFlow.Data.Catalog["src_mac"])
