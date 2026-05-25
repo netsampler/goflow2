@@ -21,6 +21,11 @@ fields:
     id: 312
     length: 2
     type: unsigned16
+  header_data:
+    name: dataLinkFrameSection
+    id: 315
+    length: 65535
+    type: octetArray
   src_addr:
     name: sourceIPv4Address
     id: 8

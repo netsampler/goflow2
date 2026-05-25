@@ -27,6 +27,9 @@ func New(cfg config.AggregatorConfig) (Aggregator, error) {
 	if !cfg.Enabled {
 		return passthrough{}, nil
 	}
+	if cfg.Passthrough {
+		return schemaPassthrough{cfg: cfg}, nil
+	}
 	return NewStateful(cfg), nil
 }
 
@@ -37,6 +40,46 @@ func (passthrough) Process(evt *event.Event) ([]*event.Event, error) { return []
 func (passthrough) Flush() ([]*event.Event, error)                   { return nil, nil }
 func (passthrough) Close() ([]*event.Event, error)                   { return nil, nil }
 func (passthrough) Interval() time.Duration                          { return 0 }
+
+type schemaPassthrough struct {
+	cfg config.AggregatorConfig
+}
+
+func (p schemaPassthrough) InitEvents() ([]*event.Event, error) {
+	fieldNames := orderedSchemaFields(p.cfg)
+	return []*event.Event{
+		{
+			ReceivedAt: time.Now().UTC(),
+			Kind:       "control",
+			Stream:     p.cfg.Stream,
+			Source: event.SourceMetadata{
+				Type: "aggregator",
+			},
+			Control: &event.ControlMetadata{
+				Type:   "schema",
+				Stream: p.cfg.Stream,
+			},
+			Payload: event.AggregationSchema{
+				Stream:         p.cfg.Stream,
+				FieldNames:     fieldNames,
+				KeyFields:      append([]string(nil), p.cfg.KeyFields...),
+				SumFields:      nil,
+				FirstFields:    append([]string(nil), p.cfg.First...),
+				CurrentFields:  append([]string(nil), p.cfg.Current...),
+				StaticFields:   cloneFields(p.cfg.StaticFields),
+				BaseTemplateID: p.cfg.TemplateID,
+			},
+		},
+	}, nil
+}
+
+func (schemaPassthrough) Process(evt *event.Event) ([]*event.Event, error) {
+	return []*event.Event{evt}, nil
+}
+
+func (schemaPassthrough) Flush() ([]*event.Event, error) { return nil, nil }
+func (schemaPassthrough) Close() ([]*event.Event, error) { return nil, nil }
+func (schemaPassthrough) Interval() time.Duration        { return 0 }
 
 type aggregateRecord struct {
 	Fields    map[string]any

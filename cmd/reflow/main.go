@@ -35,6 +35,9 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	if err := loadedCfg.ApplyAggregationPresets(cfg.AggregationPresets); err != nil {
+		log.Fatal(err)
+	}
 	loadedCfg.LogLevel = cfg.LogLevel
 	loadedCfg.LogFormat = cfg.LogFormat
 

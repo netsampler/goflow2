@@ -165,6 +165,42 @@ events, and encoder state. For example, IPFIX output reads
 from `fields`, while schema and source initialization control events drive
 template and options output.
 
+Aggregator field policies are explicit. `first` and `current` default to empty
+lists, and `sum` is special: omitting `sum` puts the enabled aggregator entry in
+schema pass-through mode, where matching events are forwarded without bucket
+state but a schema control event is still emitted for templated encoders. Use
+`sum: []` when the entry should aggregate but has no additive fields.
+
+The preferred aggregator field-list form is one colon-separated entry per field:
+
+```text
+role:path[:modifier[:field_id[:pen[:length]]]]
+static:path:value
+```
+
+`role` is one of `key`, `field`, `sum`, `first`, `current`, `min`, `max`, or
+`static`. `path` is the event field name, such as `src_addr`, `dst_addr`,
+`outer_src_addr`, `mpls_label`, or `bytes`. `modifier` is an optional
+selector/helper, such as `4`, `6`, or a zero-based stack/index value.
+`field_id` optionally overrides the IPFIX/NetFlow v9 field ID, `pen` optionally
+sets the enterprise number for that field ID, and `length` optionally overrides
+the encoded byte length. Use an empty `pen` segment when setting `length`
+without an enterprise number. Static entries use the third colon-separated part
+as the value.
+
+```yaml
+fields:
+  - key:src_addr:4
+  - key:dst_addr:4
+  - key:outer_src_addr:4
+  - field:mpls_label:0
+  - sum:bytes
+  - current:end_time_unix
+  - field:tenant_id::50001:32473:4
+  - field:site_id::50002::4
+  - static:exporter_name:edge-a
+```
+
 Canonical JSON output preserves the event envelope, including `source`,
 `sflow`, `fields`, and `packet`. Vendor and GoFlow2-compatible JSON flavors
 flatten or select fields and do not preserve the full metadata envelope.

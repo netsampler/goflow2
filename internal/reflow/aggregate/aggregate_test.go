@@ -311,6 +311,57 @@ func TestStatefulInitEventsCarryConfiguredStreamAndTemplateBaseID(t *testing.T) 
 	}
 }
 
+func TestSchemaPassthroughEmitsSchemaAndForwardsEvents(t *testing.T) {
+	agg, err := New(config.AggregatorConfig{
+		Enabled:     true,
+		Passthrough: true,
+		Stream:      "flow_data",
+		TemplateID:  256,
+		KeyFields:   []string{"src_addr", "dst_addr"},
+		Current:     []string{"bytes"},
+	})
+	if err != nil {
+		t.Fatalf("New returned error: %v", err)
+	}
+
+	initEvents, err := agg.InitEvents()
+	if err != nil {
+		t.Fatalf("InitEvents returned error: %v", err)
+	}
+	if len(initEvents) != 1 {
+		t.Fatalf("expected 1 init event, got %d", len(initEvents))
+	}
+	schema, ok := initEvents[0].Payload.(event.AggregationSchema)
+	if !ok {
+		t.Fatalf("expected aggregation schema payload, got %T", initEvents[0].Payload)
+	}
+	if len(schema.SumFields) != 0 {
+		t.Fatalf("expected no sum fields in pass-through schema, got %#v", schema.SumFields)
+	}
+	if len(schema.FieldNames) != 5 {
+		t.Fatalf("expected key/current/timestamp fields, got %#v", schema.FieldNames)
+	}
+
+	evt := &event.Event{
+		Stream: "flow_data",
+		Fields: map[string]any{
+			"src_addr": "192.0.2.1",
+			"dst_addr": "198.51.100.1",
+			"bytes":    uint64(64),
+		},
+	}
+	out, err := agg.Process(evt)
+	if err != nil {
+		t.Fatalf("Process returned error: %v", err)
+	}
+	if len(out) != 1 || out[0] != evt {
+		t.Fatalf("expected pass-through to forward original event, got %#v", out)
+	}
+	if flushed, err := agg.Flush(); err != nil || len(flushed) != 0 {
+		t.Fatalf("expected no pass-through flush output, got out=%d err=%v", len(flushed), err)
+	}
+}
+
 func TestStatefulInitEventsSortStaticFieldsDeterministically(t *testing.T) {
 	agg, err := New(config.AggregatorConfig{
 		Enabled: true,

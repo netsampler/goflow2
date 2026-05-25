@@ -5,14 +5,16 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
 
 type FlagConfig struct {
-	ConfigPath string
-	LogLevel   string
-	LogFormat  string
+	ConfigPath         string
+	LogLevel           string
+	LogFormat          string
+	AggregationPresets string
 }
 
 type Config struct {
@@ -83,22 +85,45 @@ type ToggleEncapsulationConfig struct {
 type AggregatorConfig struct {
 	Enabled bool   `yaml:"enabled"`
 	Stream  string `yaml:"stream"`
+	// Passthrough is derived from config: when sum is omitted, the stage emits
+	// schema control events and forwards matching events without bucket state.
+	// Use sum: [] to request aggregation with no additive fields.
+	Passthrough bool `yaml:"-"`
 	// Window controls bucket closure based on activity and age.
 	Window AggregatorWindowConfig `yaml:"window"`
 	// Periodic controls snapshot-style exports of current bucket state.
-	Periodic     AggregatorPeriodicConfig `yaml:"periodic"`
-	KeyFields    []string                 `yaml:"key_fields"`
-	Sum          []string                 `yaml:"sum"`
-	First        []string                 `yaml:"first"`
-	Current      []string                 `yaml:"current"`
-	Match        map[string]string        `yaml:"match"`
-	TemplateID   uint16                   `yaml:"template_id"`
-	StaticFields map[string]any           `yaml:"static_fields"`
+	Periodic  AggregatorPeriodicConfig `yaml:"periodic"`
+	KeyFields []string                 `yaml:"key_fields"`
+	// Sum is explicit. Missing sum means pass-through/schema-filter mode; sum: []
+	// means aggregate mode with no additive fields.
+	Sum []string `yaml:"sum"`
+	// First defaults to empty. List fields here only when aggregate buckets should
+	// preserve the value seen when the bucket was created.
+	First []string `yaml:"first"`
+	// Current defaults to empty. List fields here only when aggregate buckets
+	// should keep the latest value seen.
+	Current      []string          `yaml:"current"`
+	Match        map[string]string `yaml:"match"`
+	TemplateID   uint16            `yaml:"template_id"`
+	StaticFields map[string]any    `yaml:"static_fields"`
 
 	// Deprecated compatibility knobs. They are still parsed so older configs keep
 	// loading, then mapped into the explicit window/periodic sections.
 	ResetInterval    int `yaml:"reset_interval_ms"`
 	PeriodicInterval int `yaml:"periodic_interval_ms"`
+
+	sumConfigured bool
+}
+
+func (c *AggregatorConfig) UnmarshalYAML(value *yaml.Node) error {
+	type rawAggregatorConfig AggregatorConfig
+	var raw rawAggregatorConfig
+	if err := value.Decode(&raw); err != nil {
+		return err
+	}
+	*c = AggregatorConfig(raw)
+	c.sumConfigured = yamlMappingHasKey(value, "sum")
+	return nil
 }
 
 type AggregatorWindowConfig struct {
@@ -206,6 +231,7 @@ func BindFlags(fs *flag.FlagSet) (*FlagConfig, *bool) {
 	fs.StringVar(&cfg.ConfigPath, "config", "cmd/reflow/reflow.yaml", "Path to ReFlow YAML config")
 	fs.StringVar(&cfg.LogLevel, "loglevel", "info", "Log level")
 	fs.StringVar(&cfg.LogFormat, "logfmt", "text", "Log format (text or json)")
+	fs.StringVar(&cfg.AggregationPresets, "agg", "", "Comma-separated aggregation presets (passthrough,payload,none)")
 	return cfg, version
 }
 
@@ -251,10 +277,10 @@ func (c *Config) setDefaults(configPath string) error {
 	if len(c.Aggregators) > 0 {
 		for i := range c.Aggregators {
 			applyAggregatorCompatibility(&c.Aggregators[i])
+			defaultAggregatorFields(&c.Aggregators[i])
 			if err := validateAggregatorConfig(c.Aggregators[i]); err != nil {
 				return fmt.Errorf("aggregators[%d]: %w", i, err)
 			}
-			defaultAggregateFields(&c.Aggregators[i])
 		}
 	}
 	if err := c.loadFlowDataCatalog(configPath); err != nil {
@@ -522,36 +548,107 @@ func mergeIPFIXFields(sources ...map[string]IPFIXFieldDefinition) map[string]IPF
 	return merged
 }
 
-// defaultAggregateFields fills the commonly expected aggregation field policies
-// so simple configs do not need to repeat them.
-func defaultAggregateFields(cfg *AggregatorConfig) {
+// ApplyAggregationPresets overlays named CLI aggregation presets on top of the
+// loaded YAML configuration. Presets are applied left-to-right.
+func (c *Config) ApplyAggregationPresets(spec string) error {
+	spec = strings.TrimSpace(spec)
+	if spec == "" {
+		return nil
+	}
+	for _, raw := range strings.Split(spec, ",") {
+		preset := strings.TrimSpace(raw)
+		if preset == "" {
+			continue
+		}
+		switch preset {
+		case "none", "off", "false":
+			c.Aggregators = nil
+		case "passthrough":
+			agg := c.ensureCLIPrimaryAggregator()
+			agg.Enabled = true
+			agg.Passthrough = true
+			agg.Sum = nil
+			agg.sumConfigured = false
+		case "payload", "header", "packet-header":
+			agg := c.ensureCLIPrimaryAggregator()
+			agg.Enabled = true
+			appendUniqueString(&agg.Current, "frame_length")
+			appendUniqueString(&agg.Current, "header_data")
+			c.ensureTFlowFieldsSelected("frame_length", "header_data")
+		default:
+			return fmt.Errorf("unsupported -agg preset %q", preset)
+		}
+	}
+	for i := range c.Aggregators {
+		if err := validateAggregatorConfig(c.Aggregators[i]); err != nil {
+			return fmt.Errorf("aggregators[%d]: %w", i, err)
+		}
+	}
+	return nil
+}
+
+func (c *Config) ensureCLIPrimaryAggregator() *AggregatorConfig {
+	for i := range c.Aggregators {
+		if c.Aggregators[i].Enabled {
+			return &c.Aggregators[i]
+		}
+	}
+	if len(c.Aggregators) > 0 {
+		c.Aggregators[0].Enabled = true
+		return &c.Aggregators[0]
+	}
+	c.Aggregators = append(c.Aggregators, defaultCLIFlowAggregator())
+	return &c.Aggregators[0]
+}
+
+func defaultCLIFlowAggregator() AggregatorConfig {
+	return AggregatorConfig{
+		Enabled: true,
+		Stream:  "flow_data",
+		Match: map[string]string{
+			"record_kind": "packet",
+		},
+		Window: AggregatorWindowConfig{
+			IdleFlushAfter: 10000,
+		},
+		Periodic: AggregatorPeriodicConfig{
+			Every: 60000,
+		},
+		KeyFields:     []string{"src_addr", "dst_addr", "proto", "src_port", "dst_port"},
+		Sum:           []string{"bytes", "packets"},
+		First:         []string{"agent_ip", "sub_agent_id", "source_id", "start_time_unix"},
+		Current:       []string{"agent_ip", "sub_agent_id", "source_id", "input_if", "output_if", "sampling_rate", "sample_pool", "drops", "end_time_unix"},
+		TemplateID:    256,
+		sumConfigured: true,
+	}
+}
+
+func (c *Config) ensureTFlowFieldsSelected(names ...string) {
+	if len(c.Encoder.TFlowData.Select) == 0 {
+		return
+	}
+	for _, name := range names {
+		appendUniqueString(&c.Encoder.TFlowData.Select, name)
+	}
+}
+
+func appendUniqueString(dst *[]string, value string) {
+	for _, existing := range *dst {
+		if existing == value {
+			return
+		}
+	}
+	*dst = append(*dst, value)
+}
+
+// defaultAggregatorFields applies defaults that do not change aggregation
+// semantics. Field policy lists intentionally default to empty; operators must
+// declare sum/first/current explicitly.
+func defaultAggregatorFields(cfg *AggregatorConfig) {
 	if cfg.Stream == "" {
 		cfg.Stream = "flow_data"
 	}
-	if len(cfg.Sum) == 0 {
-		cfg.Sum = []string{"bytes", "packets"}
-	}
-	if len(cfg.First) == 0 {
-		cfg.First = []string{
-			"agent_ip",
-			"sub_agent_id",
-			"source_id",
-			"start_time_unix",
-		}
-	}
-	if len(cfg.Current) == 0 {
-		cfg.Current = []string{
-			"agent_ip",
-			"sub_agent_id",
-			"source_id",
-			"input_if",
-			"output_if",
-			"sampling_rate",
-			"sample_pool",
-			"drops",
-			"end_time_unix",
-		}
-	}
+	cfg.Passthrough = cfg.Enabled && !cfg.sumConfigured
 }
 
 // applyAggregatorCompatibility maps legacy knobs into the explicit window and
@@ -583,6 +680,9 @@ func validateAggregatorConfig(cfg AggregatorConfig) error {
 	if !cfg.Enabled {
 		return nil
 	}
+	if cfg.Passthrough {
+		return nil
+	}
 	if cfg.Periodic.ResetBuckets && cfg.Periodic.Every == 0 {
 		return fmt.Errorf("aggregator.periodic.reset_buckets requires aggregator.periodic.every_ms > 0")
 	}
@@ -590,4 +690,16 @@ func validateAggregatorConfig(cfg AggregatorConfig) error {
 		return fmt.Errorf("aggregator requires at least one export trigger: window.idle_flush_after_ms, window.max_flush_after_ms, or periodic.every_ms")
 	}
 	return nil
+}
+
+func yamlMappingHasKey(value *yaml.Node, key string) bool {
+	if value == nil || value.Kind != yaml.MappingNode {
+		return false
+	}
+	for i := 0; i+1 < len(value.Content); i += 2 {
+		if value.Content[i].Value == key {
+			return true
+		}
+	}
+	return false
 }

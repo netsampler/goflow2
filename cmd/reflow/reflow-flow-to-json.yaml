@@ -59,6 +59,9 @@ aggregators:
       - agent_ip
       - source_id
       - if_index
+    # sum is deliberately empty: this is still an aggregate bucket, but counters
+    # are gauges/current metadata rather than additive flow deltas.
+    sum: []
     first:
       - agent_ip
       - sub_agent_id

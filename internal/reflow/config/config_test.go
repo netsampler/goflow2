@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-func TestLoadSetsAggregatorDefaultsAndLoadsFlowDataFields(t *testing.T) {
+func TestLoadLeavesAggregatorFieldsExplicitAndLoadsFlowDataFields(t *testing.T) {
 	dir := t.TempDir()
 
 	ipfixPath := filepath.Join(dir, "ipfix-fields.yaml")
@@ -143,14 +143,17 @@ sink:
 	if cfg.Aggregators[0].Window.IdleFlushAfter != 5000 {
 		t.Fatalf("expected aggregators[0].window.idle_flush_after_ms=5000, got %d", cfg.Aggregators[0].Window.IdleFlushAfter)
 	}
-	if len(cfg.Aggregators[0].Sum) == 0 || cfg.Aggregators[0].Sum[0] != "bytes" {
-		t.Fatalf("expected default sum fields to include bytes, got %#v", cfg.Aggregators[0].Sum)
+	if !cfg.Aggregators[0].Passthrough {
+		t.Fatalf("expected aggregators[0] without sum to use pass-through schema mode")
 	}
-	if len(cfg.Aggregators[0].First) == 0 || cfg.Aggregators[0].First[0] != "agent_ip" {
-		t.Fatalf("expected default first fields to include agent_ip, got %#v", cfg.Aggregators[0].First)
+	if len(cfg.Aggregators[0].Sum) != 0 {
+		t.Fatalf("expected sum fields to default empty, got %#v", cfg.Aggregators[0].Sum)
 	}
-	if len(cfg.Aggregators[0].Current) == 0 || cfg.Aggregators[0].Current[0] != "agent_ip" {
-		t.Fatalf("expected default current fields to include agent_ip, got %#v", cfg.Aggregators[0].Current)
+	if len(cfg.Aggregators[0].First) != 0 {
+		t.Fatalf("expected first fields to default empty, got %#v", cfg.Aggregators[0].First)
+	}
+	if len(cfg.Aggregators[0].Current) != 0 {
+		t.Fatalf("expected current fields to default empty, got %#v", cfg.Aggregators[0].Current)
 	}
 	custom := cfg.Encoder.TFlowData.Catalog["custom_counter"]
 	if custom.ID != 2000 || custom.PEN != 64512 {
@@ -167,7 +170,7 @@ sink:
 	}
 }
 
-func TestLoadSupportsAccumulativeAggregatorDefaults(t *testing.T) {
+func TestLoadSupportsAccumulativeAggregatorWithExplicitEmptySum(t *testing.T) {
 	dir := t.TempDir()
 
 	cfgPath := filepath.Join(dir, "reflow.yaml")
@@ -186,6 +189,9 @@ aggregators:
   - enabled: true
     periodic:
       every_ms: 60000
+    sum: []
+    current:
+      - sampling_rate
 
 encoder:
   type: json
@@ -207,11 +213,87 @@ sink:
 	if cfg.Aggregators[0].Periodic.Every != 60000 {
 		t.Fatalf("expected periodic.every_ms=60000, got %d", cfg.Aggregators[0].Periodic.Every)
 	}
-	if len(cfg.Aggregators[0].Sum) == 0 || len(cfg.Aggregators[0].First) == 0 || len(cfg.Aggregators[0].Current) == 0 {
-		t.Fatalf("expected aggregation defaults to be populated, got sum=%#v first=%#v current=%#v", cfg.Aggregators[0].Sum, cfg.Aggregators[0].First, cfg.Aggregators[0].Current)
+	if cfg.Aggregators[0].Passthrough {
+		t.Fatalf("expected explicit sum: [] to force aggregate mode")
+	}
+	if len(cfg.Aggregators[0].Sum) != 0 {
+		t.Fatalf("expected explicit empty sum fields, got %#v", cfg.Aggregators[0].Sum)
+	}
+	if len(cfg.Aggregators[0].First) != 0 {
+		t.Fatalf("expected first fields to default empty, got %#v", cfg.Aggregators[0].First)
+	}
+	if len(cfg.Aggregators[0].Current) != 1 || cfg.Aggregators[0].Current[0] != "sampling_rate" {
+		t.Fatalf("expected configured current fields, got %#v", cfg.Aggregators[0].Current)
 	}
 	if cfg.Aggregators[0].Stream != "flow_data" {
 		t.Fatalf("expected default stream=flow_data, got %q", cfg.Aggregators[0].Stream)
+	}
+}
+
+func TestApplyAggregationPresetsPayloadCreatesDefaultAggregator(t *testing.T) {
+	cfg := &Config{}
+
+	if err := cfg.ApplyAggregationPresets("payload"); err != nil {
+		t.Fatalf("ApplyAggregationPresets returned error: %v", err)
+	}
+
+	if len(cfg.Aggregators) != 1 {
+		t.Fatalf("expected one generated aggregator, got %d", len(cfg.Aggregators))
+	}
+	agg := cfg.Aggregators[0]
+	if !agg.Enabled {
+		t.Fatalf("expected generated aggregator to be enabled")
+	}
+	if agg.Passthrough {
+		t.Fatalf("expected payload alone to keep stateful aggregation")
+	}
+	if len(agg.Sum) != 2 || agg.Sum[0] != "bytes" || agg.Sum[1] != "packets" {
+		t.Fatalf("expected default byte/packet sums, got %#v", agg.Sum)
+	}
+	if !hasString(agg.Current, "frame_length") || !hasString(agg.Current, "header_data") {
+		t.Fatalf("expected payload preset to add frame_length and header_data, got %#v", agg.Current)
+	}
+	if agg.Match["record_kind"] != "packet" {
+		t.Fatalf("expected generated aggregator to match packet records, got %#v", agg.Match)
+	}
+}
+
+func TestApplyAggregationPresetsPassthroughPayload(t *testing.T) {
+	cfg := &Config{
+		Encoder: EncoderConfig{
+			TFlowData: TFlowDataConfig{
+				Select: []string{"bytes"},
+			},
+		},
+	}
+
+	if err := cfg.ApplyAggregationPresets("passthrough,payload"); err != nil {
+		t.Fatalf("ApplyAggregationPresets returned error: %v", err)
+	}
+
+	if len(cfg.Aggregators) != 1 {
+		t.Fatalf("expected one generated aggregator, got %d", len(cfg.Aggregators))
+	}
+	agg := cfg.Aggregators[0]
+	if !agg.Passthrough {
+		t.Fatalf("expected passthrough preset to enable schema passthrough")
+	}
+	if len(agg.Sum) != 0 {
+		t.Fatalf("expected passthrough preset to clear sum fields, got %#v", agg.Sum)
+	}
+	if !hasString(agg.Current, "frame_length") || !hasString(agg.Current, "header_data") {
+		t.Fatalf("expected payload preset to add frame_length and header_data, got %#v", agg.Current)
+	}
+	if !hasString(cfg.Encoder.TFlowData.Select, "frame_length") || !hasString(cfg.Encoder.TFlowData.Select, "header_data") {
+		t.Fatalf("expected selected IPFIX fields to include payload fields, got %#v", cfg.Encoder.TFlowData.Select)
+	}
+}
+
+func TestApplyAggregationPresetsRejectsUnknownPreset(t *testing.T) {
+	cfg := &Config{}
+
+	if err := cfg.ApplyAggregationPresets("payload,nope"); err == nil {
+		t.Fatalf("expected unsupported preset to return an error")
 	}
 }
 
@@ -367,6 +449,7 @@ processor:
 
 aggregators:
   - enabled: true
+    sum: []
 
 encoder:
   type: json
@@ -379,6 +462,46 @@ sink:
 
 	if _, err := Load(cfgPath); err == nil {
 		t.Fatalf("expected Load to reject aggregator without export trigger")
+	}
+}
+
+func TestLoadAllowsPassthroughAggregatorWithoutExportTrigger(t *testing.T) {
+	dir := t.TempDir()
+
+	cfgPath := filepath.Join(dir, "reflow.yaml")
+	if err := os.WriteFile(cfgPath, []byte(`
+sources:
+  - network: udp
+    address: ":18081"
+    type: json
+
+processor:
+  type: builtin
+
+aggregators:
+  - enabled: true
+    key_fields:
+      - src_addr
+      - dst_addr
+
+encoder:
+  type: json
+
+sink:
+  type: stdout
+`), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	cfg, err := Load(cfgPath)
+	if err != nil {
+		t.Fatalf("Load returned error: %v", err)
+	}
+	if len(cfg.Aggregators) != 1 {
+		t.Fatalf("expected 1 aggregator, got %d", len(cfg.Aggregators))
+	}
+	if !cfg.Aggregators[0].Passthrough {
+		t.Fatalf("expected aggregator without sum to use pass-through schema mode")
 	}
 }
 
@@ -439,12 +562,16 @@ aggregators:
       every_ms: 1000
     match:
       record_kind: packet
+    sum:
+      - bytes
+      - packets
   - enabled: true
     stream: agg_counters
     periodic:
       every_ms: 1000
     match:
       record_kind: interface_counter
+    sum: []
     current:
       - if_in_octets
 
@@ -615,4 +742,13 @@ sink:
 	if _, err := Load(cfgPath); err == nil {
 		t.Fatalf("expected Load to reject missing sources")
 	}
+}
+
+func hasString(values []string, want string) bool {
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+	return false
 }
