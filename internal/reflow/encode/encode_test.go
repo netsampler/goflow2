@@ -319,6 +319,41 @@ func TestSFlowEncoderUsesConfiguredAgentIPOverride(t *testing.T) {
 	}
 }
 
+func TestSFlowEncoderIgnoresControlEvents(t *testing.T) {
+	enc := NewSFlowEncoder(config.EncoderConfig{Type: "sflow"})
+
+	payloads, err := enc.Encode(&event.Event{
+		Kind: "control",
+		Control: &event.ControlMetadata{
+			Type:   "source_init",
+			Stream: "options_data",
+		},
+		Fields: map[string]any{
+			"agent_ip":      "192.0.2.1",
+			"source_id":     uint32(4),
+			"sampling_rate": uint32(1),
+			"sample_pool":   uint32(0),
+			"drops":         uint32(0),
+			"input_if":      uint32(4),
+			"output_if":     uint32(4),
+		},
+	})
+	if err != nil {
+		t.Fatalf("Encode returned error: %v", err)
+	}
+	if len(payloads) != 0 {
+		t.Fatalf("expected control event to be ignored, got %d payloads", len(payloads))
+	}
+
+	payloads, err = enc.Encode(testSFlowEvent("198.51.100.10"))
+	if err != nil {
+		t.Fatalf("Encode(data) returned error: %v", err)
+	}
+	if len(payloads) != 1 {
+		t.Fatalf("expected data event to still encode, got %d payloads", len(payloads))
+	}
+}
+
 func TestSFlowEncoderFallsBackToLoopbackAgentIP(t *testing.T) {
 	enc := NewSFlowEncoder(config.EncoderConfig{
 		Type: "sflow",
