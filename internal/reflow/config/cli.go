@@ -65,11 +65,15 @@ var (
 	}
 	aggregateHelperOptions = []string{
 		"-agg",
+		"-agg=payload",
+		"-agg=nat",
 		"-agg=passthrough",
 		"-agg=idle_flush_after_ms=<ms>,periodic_every_ms=<ms>",
 		"-agg=max_flush_after_ms=<ms>,idle_erase_after_ms=<ms>,reset_buckets=<bool>",
 	}
 	aggregateHelperExamples = []string{
+		"-agg=payload",
+		"-agg=nat",
 		"-agg=passthrough",
 		"-agg=idle_flush_after_ms=5000,periodic_every_ms=30000",
 		"-agg=periodic_every_ms=10000,reset_buckets=true",
@@ -85,7 +89,6 @@ var (
 		"dst_port",
 		"dst_addr",
 		"output_if",
-		"sampling_rate",
 		"src_mac",
 		"vlan_id",
 		"mpls_label_stack_section_1",
@@ -93,19 +96,16 @@ var (
 		"mpls_label_stack_section_3",
 		"dst_mac",
 		"agent_ip",
-		"drops",
-		"source_id",
-		"sub_agent_id",
 		"template_id",
-		"observation_domain_id",
 		"start_time_unix",
 		"end_time_unix",
+		"ether_type",
+	}
+	generatedTemplatedFlowNATFields = []string{
 		"nat_src_addr",
 		"nat_dst_addr",
 		"nat_src_port",
 		"nat_dst_port",
-		"ether_type",
-		"sample_pool",
 	}
 )
 
@@ -313,6 +313,12 @@ func (c *FlagConfig) generatedConfig() (*Config, error) {
 	}
 	if c.Aggregate {
 		cfg.Aggregators = generatedAggregators(c)
+		if lastAggregatePreset(c) != "none" && aggregatePresetRequested(c, "payload") {
+			cfg.ensureTemplatedFlowFieldsSelected("frame_length", "header_data")
+		}
+		if lastAggregatePreset(c) != "none" && aggregatePresetRequested(c, "nat") {
+			cfg.ensureTemplatedFlowFieldsSelected(generatedTemplatedFlowNATFields...)
+		}
 	}
 	return cfg, nil
 }
@@ -563,6 +569,8 @@ func parseAggregatePreset(cfg *FlagConfig, raw string) error {
 	switch preset {
 	case "payload", "header", "packet-header":
 		cfg.AggPresets = append(cfg.AggPresets, "payload")
+	case "nat":
+		cfg.AggPresets = append(cfg.AggPresets, "nat")
 	case "passthrough":
 		cfg.AggPresets = append(cfg.AggPresets, "passthrough")
 	case "none", "off":
@@ -847,24 +855,27 @@ func defaultGeneratedAggregator() AggregatorConfig {
 			Every: 60000,
 		},
 		Fields: []AggregatorField{
-			{Role: "key", Name: "src_addr"},
-			{Role: "key", Name: "dst_addr"},
-			{Role: "key", Name: "proto"},
-			{Role: "key", Name: "src_port"},
-			{Role: "key", Name: "dst_port"},
 			{Role: "sum", Name: "bytes"},
 			{Role: "sum", Name: "packets"},
-			{Role: "first", Name: "sub_agent_id"},
-			{Role: "first", Name: "source_id"},
-			{Role: "first", Name: "start_time_unix"},
-			{Role: "current", Name: "sub_agent_id"},
-			{Role: "current", Name: "source_id"},
+			{Role: "key", Name: "proto"},
+			{Role: "current", Name: "tcp_flags"},
+			{Role: "key", Name: "src_port"},
+			{Role: "key", Name: "src_addr"},
 			{Role: "current", Name: "input_if"},
+			{Role: "key", Name: "dst_port"},
+			{Role: "key", Name: "dst_addr"},
 			{Role: "current", Name: "output_if"},
-			{Role: "current", Name: "end_time_unix"},
+			{Role: "current", Name: "src_mac"},
+			{Role: "current", Name: "vlan_id"},
 			{Role: "current", Name: "mpls_label_stack_section_1"},
 			{Role: "current", Name: "mpls_label_stack_section_2"},
 			{Role: "current", Name: "mpls_label_stack_section_3"},
+			{Role: "current", Name: "dst_mac"},
+			{Role: "current", Name: "agent_ip"},
+			{Role: "current", Name: "template_id"},
+			{Role: "first", Name: "start_time_unix"},
+			{Role: "current", Name: "end_time_unix"},
+			{Role: "current", Name: "ether_type"},
 		},
 		TemplateID: 256,
 	}
@@ -908,9 +919,15 @@ func (c *Config) ApplyAggregationFlags(flags *FlagConfig) error {
 		switch preset {
 		case "none":
 			c.Aggregators = nil
-		case "passthrough", "payload":
+		case "passthrough", "payload", "nat":
 			agg := c.ensurePrimaryAggregator()
 			applyAggregationPresetsToAggregator(agg, []string{preset})
+			if preset == "payload" {
+				c.ensureTemplatedFlowFieldsSelected("frame_length", "header_data")
+			}
+			if preset == "nat" {
+				c.ensureTemplatedFlowFieldsSelected(generatedTemplatedFlowNATFields...)
+			}
 		}
 	}
 	for i := range c.Aggregators {
@@ -943,8 +960,9 @@ func applyAggregationPresetsToAggregator(cfg *AggregatorConfig, presets []string
 		case "passthrough":
 			makeAggregatorPassthrough(cfg)
 		case "payload":
-			// Kept as a compatibility alias; data-link frames are exported only
-			// by schema passthrough aggregation.
+			addPayloadFields(cfg)
+		case "nat":
+			addNATFields(cfg)
 		}
 	}
 }
@@ -971,7 +989,6 @@ func makeAggregatorPassthrough(cfg *AggregatorConfig) {
 		}
 		cfg.Fields = out
 	}
-	addPayloadFields(cfg)
 }
 
 func addPayloadFields(cfg *AggregatorConfig) {
@@ -982,6 +999,16 @@ func addPayloadFields(cfg *AggregatorConfig) {
 	appendUniqueAggregatorField(cfg, AggregatorField{Role: "current", Name: "header_data"})
 	appendUniqueString(&cfg.Current, "frame_length")
 	appendUniqueString(&cfg.Current, "header_data")
+}
+
+func addNATFields(cfg *AggregatorConfig) {
+	if cfg == nil {
+		return
+	}
+	for _, name := range generatedTemplatedFlowNATFields {
+		appendUniqueAggregatorField(cfg, AggregatorField{Role: "current", Name: name})
+		appendUniqueString(&cfg.Current, name)
+	}
 }
 
 func appendUniqueAggregatorField(cfg *AggregatorConfig, field AggregatorField) {
@@ -1000,6 +1027,15 @@ func appendUniqueString(values *[]string, value string) {
 		}
 	}
 	*values = append(*values, value)
+}
+
+func (c *Config) ensureTemplatedFlowFieldsSelected(names ...string) {
+	if c == nil || (c.Encoder.Type != "ipfix" && c.Encoder.Type != "netflowv9") || len(c.Encoder.TemplatedFlow.Data.Select) == 0 {
+		return
+	}
+	for _, name := range names {
+		appendUniqueString(&c.Encoder.TemplatedFlow.Data.Select, name)
+	}
 }
 
 func aggregatePresets(flags *FlagConfig) []string {

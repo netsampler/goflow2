@@ -861,8 +861,11 @@ func TestGeneratedAggregateConfigUsesFieldDSL(t *testing.T) {
 		"fields:",
 		"- key:src_addr",
 		"- sum:bytes",
-		"- first:source_id",
+		"- current:tcp_flags",
+		"- current:src_mac",
+		"- current:dst_mac",
 		"- current:end_time_unix",
+		"- current:ether_type",
 		"- current:mpls_label_stack_section_1",
 		"record_kind: packet",
 		"template_id: 256",
@@ -874,10 +877,16 @@ func TestGeneratedAggregateConfigUsesFieldDSL(t *testing.T) {
 	for _, unwanted := range []string{
 		"key_fields:",
 		"- first:agent_ip",
-		"- current:agent_ip",
+		"- first:source_id",
+		"- current:source_id",
+		"- current:sub_agent_id",
 		"- current:sampling_rate",
 		"- current:sample_pool",
 		"- current:drops",
+		"- current:nat_src_addr",
+		"- current:nat_dst_addr",
+		"- current:nat_src_port",
+		"- current:nat_dst_port",
 		"static_fields:",
 		"ip_family:",
 		"flow_data_ipv4",
@@ -929,7 +938,7 @@ func TestGeneratedAggregateConfigSupportsCLIParams(t *testing.T) {
 		}
 		for _, field := range agg.Fields {
 			switch field.Name {
-			case "agent_ip", "sampling_rate", "sample_pool", "drops":
+			case "sampling_rate", "sample_pool", "drops", "sub_agent_id", "observation_domain_id", "nat_src_addr", "nat_dst_addr", "nat_src_port", "nat_dst_port":
 				t.Fatalf("aggregators[%d] should not export %s by default: %#v", i, field.Name, agg.Fields)
 			}
 		}
@@ -1036,22 +1045,22 @@ func TestGeneratedIPFIXConfigExcludesDataLinkFrameByDefault(t *testing.T) {
 	if len(fields) == 0 {
 		t.Fatalf("expected generated ipfix config to select explicit fields")
 	}
-	for _, name := range []string{"frame_length", "header_data"} {
+	for _, name := range []string{"frame_length", "header_data", "sampling_rate", "source_id", "sample_pool", "sub_agent_id", "observation_domain_id", "drops", "nat_src_addr", "nat_dst_addr", "nat_src_port", "nat_dst_port"} {
 		if slices.Contains(fields, name) {
 			t.Fatalf("expected generated ipfix config not to export %s by default: %#v", name, fields)
 		}
 	}
-	for _, name := range []string{"src_addr", "dst_addr", "bytes", "packets"} {
+	for _, name := range []string{"src_addr", "dst_addr", "bytes", "packets", "src_mac", "dst_mac", "ether_type"} {
 		if !slices.Contains(fields, name) {
 			t.Fatalf("expected generated ipfix config to export %s: %#v", name, fields)
 		}
 	}
 }
 
-func TestGeneratedAggregateConfigPayloadPresetDoesNotEnableDataLinkFrame(t *testing.T) {
+func TestGeneratedAggregateConfigPayloadPresetEnablesDataLinkFrame(t *testing.T) {
 	fs := flag.NewFlagSet("test", flag.ContinueOnError)
 	flags, _ := BindFlags(fs)
-	if err := fs.Parse([]string{"-agg=payload", "-genconf"}); err != nil {
+	if err := fs.Parse([]string{"-output=ipfix:udp:127.0.0.1:4739", "-agg=payload", "-genconf"}); err != nil {
 		t.Fatalf("Parse returned error: %v", err)
 	}
 
@@ -1072,8 +1081,49 @@ func TestGeneratedAggregateConfigPayloadPresetDoesNotEnableDataLinkFrame(t *test
 	if !aggregatorHasField(agg, "sum", "bytes") || !aggregatorHasField(agg, "sum", "packets") {
 		t.Fatalf("expected generated aggregate sums, got %#v", agg.Fields)
 	}
+	if !aggregatorHasField(agg, "current", "frame_length") || !aggregatorHasField(agg, "current", "header_data") {
+		t.Fatalf("expected payload preset to enable data-link fields, got %#v", agg.Fields)
+	}
+	fields := cfg.Encoder.TemplatedFlow.Data.Select
+	if !slices.Contains(fields, "frame_length") || !slices.Contains(fields, "header_data") {
+		t.Fatalf("expected payload preset to select data-link fields for IPFIX, got %#v", fields)
+	}
+	for _, name := range generatedTemplatedFlowNATFields {
+		if aggregatorHasField(agg, "current", name) || slices.Contains(fields, name) {
+			t.Fatalf("expected payload preset not to select NAT field %s, agg=%#v fields=%#v", name, agg.Fields, fields)
+		}
+	}
+}
+
+func TestGeneratedAggregateConfigNATPresetEnablesNATFields(t *testing.T) {
+	fs := flag.NewFlagSet("test", flag.ContinueOnError)
+	flags, _ := BindFlags(fs)
+	if err := fs.Parse([]string{"-output=ipfix:udp:127.0.0.1:4739", "-agg=nat", "-genconf"}); err != nil {
+		t.Fatalf("Parse returned error: %v", err)
+	}
+
+	cfg, generated, err := LoadFromFlags(flags)
+	if err != nil {
+		t.Fatalf("LoadFromFlags returned error: %v", err)
+	}
+	if !generated {
+		t.Fatalf("expected generated config")
+	}
+	if len(cfg.Aggregators) != 1 {
+		t.Fatalf("expected generated aggregator, got %d", len(cfg.Aggregators))
+	}
+	agg := cfg.Aggregators[0]
+	fields := cfg.Encoder.TemplatedFlow.Data.Select
+	for _, name := range generatedTemplatedFlowNATFields {
+		if !aggregatorHasField(agg, "current", name) {
+			t.Fatalf("expected nat preset to add aggregate field %s, got %#v", name, agg.Fields)
+		}
+		if !slices.Contains(fields, name) {
+			t.Fatalf("expected nat preset to select IPFIX field %s, got %#v", name, fields)
+		}
+	}
 	if aggregatorHasField(agg, "current", "frame_length") || aggregatorHasField(agg, "current", "header_data") {
-		t.Fatalf("expected payload preset not to enable data-link fields, got %#v", agg.Fields)
+		t.Fatalf("expected nat preset not to enable payload fields, got %#v", agg.Fields)
 	}
 }
 
@@ -1104,8 +1154,8 @@ func TestGeneratedAggregateConfigSupportsPassthroughPreset(t *testing.T) {
 	if agg.Window.IdleFlushAfter != 0 || agg.Periodic.Every != 0 {
 		t.Fatalf("expected passthrough preset to remove export timers, got window=%#v periodic=%#v", agg.Window, agg.Periodic)
 	}
-	if !aggregatorHasField(agg, "current", "frame_length") || !aggregatorHasField(agg, "current", "header_data") {
-		t.Fatalf("expected payload fields, got %#v", agg.Fields)
+	if aggregatorHasField(agg, "current", "frame_length") || aggregatorHasField(agg, "current", "header_data") {
+		t.Fatalf("expected passthrough preset not to enable payload fields without payload preset, got %#v", agg.Fields)
 	}
 }
 
