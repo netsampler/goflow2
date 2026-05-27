@@ -36,3 +36,5 @@ fields:
   nat_dst_port: 228:2:u16 # postNAPTDestinationTransportPort
   ether_type: 256:2:u16 # ethernetType
   sample_pool: 310:4:u32 # samplingPopulation
+  frame_length: 312:2:u16 # dataLinkFrameSize
+  header_data: 315:65535:bytes # dataLinkFrameSection

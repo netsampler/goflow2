@@ -103,6 +103,32 @@ func TestNormalizeEventDoesNotTreatProtocolFieldAsHeaderProtocol(t *testing.T) {
 	}
 }
 
+func TestNormalizeEventDoesNotParseUnsupportedEtherTypePayloadAsIP(t *testing.T) {
+	ipHeader := mustDecodeHex(t, "450000281234400040060000c0000201c6336401303901bb00000001000000005002200000000000")
+	header := append([]byte{
+		0x00, 0x11, 0x22, 0x33, 0x44, 0x55,
+		0x66, 0x77, 0x88, 0x99, 0xaa, 0xbb,
+		0x88, 0xb5,
+	}, ipHeader...)
+	evt := &event.Event{
+		Fields: map[string]any{
+			"frame_length":    uint32(len(header)),
+			"original_length": uint32(len(header)),
+			"header_data":     header,
+		},
+	}
+
+	if err := NormalizeEvent(evt, NormalizeOptions{}); err != nil {
+		t.Fatalf("NormalizeEvent returned error: %v", err)
+	}
+	if got := evt.Fields["src_addr"]; got != nil {
+		t.Fatalf("did not expect unsupported EtherType payload to drive packet parsing, got src_addr=%#v", got)
+	}
+	if evt.Packet != nil {
+		t.Fatalf("did not expect packet model for unsupported EtherType, got %#v", evt.Packet)
+	}
+}
+
 func mustDecodeHex(t *testing.T, raw string) []byte {
 	t.Helper()
 	out, err := hex.DecodeString(raw)

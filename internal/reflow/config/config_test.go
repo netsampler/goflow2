@@ -217,6 +217,14 @@ sink:
 	if samplePool.ID != 310 || samplePool.Length != 4 || samplePool.Type != "unsigned32" {
 		t.Fatalf("expected sample_pool unsigned32/4 field from embedded catalog, got %#v", samplePool)
 	}
+	frameLength := cfg.Encoder.TemplatedFlow.Data.Catalog["frame_length"]
+	if frameLength.ID != 312 || frameLength.Length != 2 || frameLength.Type != "unsigned16" {
+		t.Fatalf("expected frame_length dataLinkFrameSize field from embedded catalog, got %#v", frameLength)
+	}
+	headerData := cfg.Encoder.TemplatedFlow.Data.Catalog["header_data"]
+	if headerData.ID != 315 || headerData.Length != 65535 || headerData.Type != "bytes" {
+		t.Fatalf("expected header_data variable dataLinkFrameSection field from embedded catalog, got %#v", headerData)
+	}
 	if cfg.Encoder.TemplatedFlow.Data.Catalog["src_mac"].Type != "macAddress" {
 		t.Fatalf("expected src_mac macAddress field from embedded catalog, got %#v", cfg.Encoder.TemplatedFlow.Data.Catalog["src_mac"])
 	}

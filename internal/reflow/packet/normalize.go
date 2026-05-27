@@ -1259,6 +1259,7 @@ func parsePacketViewWithOptions(data []byte, protocol uint32, opts DecodeOptions
 	}
 	offset := 0
 	etherType := uint16(0)
+	directIP := false
 	switch protocol {
 	case 1:
 		var err error
@@ -1268,8 +1269,10 @@ func parsePacketViewWithOptions(data []byte, protocol uint32, opts DecodeOptions
 		}
 	case 11:
 		etherType = 0x0800
+		directIP = true
 	case 12:
 		etherType = 0x86dd
+		directIP = true
 	default:
 		if len(data) >= 14 {
 			var err error
@@ -1281,6 +1284,7 @@ func parsePacketViewWithOptions(data []byte, protocol uint32, opts DecodeOptions
 		}
 		switch data[0] >> 4 {
 		case 4, 6:
+			directIP = true
 		default:
 			return packetView{}, fmt.Errorf("truncated packet header")
 		}
@@ -1290,7 +1294,8 @@ func parsePacketViewWithOptions(data []byte, protocol uint32, opts DecodeOptions
 	}
 	for {
 		switch {
-		case etherType == 0x0800 || data[offset]>>4 == 4:
+		case etherType == 0x0800 || (directIP && data[offset]>>4 == 4):
+			directIP = false
 			nextOffset, tuple, nextProto, err := parseIPv4Tuple(data[offset:])
 			if err != nil {
 				return packetView{}, err
@@ -1359,7 +1364,8 @@ func parsePacketViewWithOptions(data []byte, protocol uint32, opts DecodeOptions
 			}
 			appendTransportLayer(&view, tuple.Proto, data[offset+nextOffset:])
 			return finalizePacketView(view), nil
-		case etherType == 0x86dd || data[offset]>>4 == 6:
+		case etherType == 0x86dd || (directIP && data[offset]>>4 == 6):
+			directIP = false
 			nextOffset, tuple, nextProto, extensionLayers, err := parseIPv6Tuple(data[offset:])
 			if err != nil {
 				return packetView{}, err
