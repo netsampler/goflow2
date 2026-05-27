@@ -1223,6 +1223,42 @@ func TestIPFIXEncoderBatchesCompatibleDataRecords(t *testing.T) {
 	}
 }
 
+func TestIPFIXEncoderDoesNotBatchFallbackRecordsAcrossAddressFamilies(t *testing.T) {
+	cfg := testTFlowEncoderConfig("ipfix")
+	cfg.Batch = config.BatchConfig{
+		Enabled:    testBoolPtr(true),
+		MaxRecords: 2,
+	}
+	enc := NewIPFIXEncoder(cfg)
+
+	if payloads, err := enc.Encode(testTemplatedFlowEvent()); err != nil {
+		t.Fatalf("Encode(first) returned error: %v", err)
+	} else if len(payloads) != 0 {
+		t.Fatalf("expected first IPFIX record to stay buffered, got %d payloads", len(payloads))
+	}
+
+	second := testTemplatedFlowEvent()
+	second.Fields["src_addr"] = "2001:db8::10"
+	second.Fields["dst_addr"] = "2001:db8::20"
+	payloads, err := enc.Encode(second)
+	if err != nil {
+		t.Fatalf("Encode(second) returned error: %v", err)
+	}
+	if len(payloads) != 2 {
+		t.Fatalf("expected separate IPv4 and IPv6 payloads, got %d", len(payloads))
+	}
+
+	store := templates.NewTemplateFlowStore()
+	store.Start()
+	ctx := netflow.FlowContext{RouterKey: "test-router"}
+	for i, payload := range payloads {
+		var decoded netflow.IPFIXPacket
+		if err := netflow.DecodeMessageVersion(bytes.NewBuffer(payload), store, ctx, nil, &decoded); err != nil {
+			t.Fatalf("decode ipfix payload %d: %v", i, err)
+		}
+	}
+}
+
 func TestIPFIXEncoderPreservesBufferedEventsOnBatchError(t *testing.T) {
 	cfg := testTFlowEncoderConfig("ipfix")
 	cfg.Batch = config.BatchConfig{

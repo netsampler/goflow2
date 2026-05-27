@@ -293,7 +293,7 @@ func (e *IPFIXEncoder) ipfixBatchRecord(evt *event.Event) (ipfixBatchRecord, err
 		return ipfixBatchRecord{}, err
 	}
 	return ipfixBatchRecord{
-		key:                 fmt.Sprintf("fallback:%d:%s", plan.template.TemplateId, strings.Join(plan.names, "\x00")),
+		key:                 fallbackPlanKey(e.cfg.TemplatedFlow.Data, fieldMap, templateID, false),
 		exportTime:          exportTime,
 		observationDomainID: obsDomainID,
 		templateID:          plan.template.TemplateId,
