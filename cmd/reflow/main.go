@@ -23,7 +23,9 @@ var (
 
 func main() {
 	cfg, versionFlag := config.BindFlags(flag.CommandLine)
-	flag.Parse()
+	if err := flag.CommandLine.Parse(config.NormalizeAggregateArgs(os.Args[1:])); err != nil {
+		log.Fatal(err)
+	}
 
 	if *versionFlag {
 		fmt.Println(appVersion)

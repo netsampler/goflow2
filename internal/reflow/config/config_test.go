@@ -936,6 +936,88 @@ func TestGeneratedAggregateConfigSupportsCLIParams(t *testing.T) {
 	}
 }
 
+func TestNormalizeAggregateArgsSupportsSpaceSeparatedValue(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+		want []string
+	}{
+		{
+			name: "space separated aggregate preset",
+			args: []string{"-agg", "passthrough,payload", "-genconf"},
+			want: []string{"-agg=passthrough,payload", "-genconf"},
+		},
+		{
+			name: "bare aggregate remains boolean shorthand",
+			args: []string{"-agg", "-genconf"},
+			want: []string{"-agg", "-genconf"},
+		},
+		{
+			name: "equals form remains unchanged",
+			args: []string{"-agg=payload", "-genconf"},
+			want: []string{"-agg=payload", "-genconf"},
+		},
+		{
+			name: "double dash aggregate",
+			args: []string{"--agg", "none", "-genconf"},
+			want: []string{"--agg=none", "-genconf"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := NormalizeAggregateArgs(tt.args)
+			if !slices.Equal(got, tt.want) {
+				t.Fatalf("NormalizeAggregateArgs() = %#v, want %#v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestGeneratedAggregateConfigSupportsSpaceSeparatedPreset(t *testing.T) {
+	fs := flag.NewFlagSet("test", flag.ContinueOnError)
+	flags, _ := BindFlags(fs)
+	if err := fs.Parse(NormalizeAggregateArgs([]string{"-agg", "passthrough,payload", "-genconf"})); err != nil {
+		t.Fatalf("Parse returned error: %v", err)
+	}
+
+	cfg, generated, err := LoadFromFlags(flags)
+	if err != nil {
+		t.Fatalf("LoadFromFlags returned error: %v", err)
+	}
+	if !generated {
+		t.Fatalf("expected generated config")
+	}
+	if len(cfg.Aggregators) != 1 {
+		t.Fatalf("expected generated aggregator, got %d", len(cfg.Aggregators))
+	}
+	agg := cfg.Aggregators[0]
+	if !agg.Passthrough {
+		t.Fatalf("expected passthrough preset to use schema passthrough")
+	}
+	if !aggregatorHasField(agg, "current", "frame_length") || !aggregatorHasField(agg, "current", "header_data") {
+		t.Fatalf("expected payload fields, got %#v", agg.Fields)
+	}
+}
+
+func TestGeneratedAggregateConfigSupportsSpaceSeparatedNonePreset(t *testing.T) {
+	fs := flag.NewFlagSet("test", flag.ContinueOnError)
+	flags, _ := BindFlags(fs)
+	if err := fs.Parse(NormalizeAggregateArgs([]string{"-agg", "none", "-genconf"})); err != nil {
+		t.Fatalf("Parse returned error: %v", err)
+	}
+
+	cfg, generated, err := LoadFromFlags(flags)
+	if err != nil {
+		t.Fatalf("LoadFromFlags returned error: %v", err)
+	}
+	if !generated {
+		t.Fatalf("expected generated config")
+	}
+	if len(cfg.Aggregators) != 0 {
+		t.Fatalf("expected no generated aggregators, got %d", len(cfg.Aggregators))
+	}
+}
+
 func TestGeneratedIPFIXConfigExcludesDataLinkFrameByDefault(t *testing.T) {
 	fs := flag.NewFlagSet("test", flag.ContinueOnError)
 	flags, _ := BindFlags(fs)

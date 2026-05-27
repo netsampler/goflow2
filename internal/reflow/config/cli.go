@@ -577,6 +577,22 @@ func parseAggregatePreset(cfg *FlagConfig, raw string) error {
 	return nil
 }
 
+// NormalizeAggregateArgs lets -agg accept either -agg=value or -agg value while
+// keeping bare -agg as the existing boolean shorthand.
+func NormalizeAggregateArgs(args []string) []string {
+	out := make([]string, 0, len(args))
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		if (arg == "-agg" || arg == "--agg") && i+1 < len(args) && !strings.HasPrefix(args[i+1], "-") {
+			out = append(out, arg+"="+args[i+1])
+			i++
+			continue
+		}
+		out = append(out, arg)
+	}
+	return out
+}
+
 func parseCommaQueryParams(rawParams string) (url.Values, error) {
 	rawParams = strings.TrimPrefix(strings.TrimSpace(rawParams), "?")
 	if rawParams == "" {
