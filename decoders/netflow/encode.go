@@ -477,7 +477,11 @@ func encodeDataFieldValue(buf *bytes.Buffer, field DataField, template *Field) e
 		return fmt.Errorf("netflow: encode field %d: %w", field.Type, err)
 	}
 
-	if template != nil && template.Length == 0xffff {
+	length := field.Length
+	if template != nil {
+		length = template.Length
+	}
+	if length == 0xffff {
 		if len(value) < 255 {
 			if err := utils.WriteU8(buf, uint8(len(value))); err != nil {
 				return err
@@ -490,8 +494,8 @@ func encodeDataFieldValue(buf *bytes.Buffer, field DataField, template *Field) e
 				return err
 			}
 		}
-	} else if template != nil && template.Length != 0 && int(template.Length) != len(value) {
-		return fmt.Errorf("length mismatch header:%d value:%d", template.Length, len(value))
+	} else if length != 0 && int(length) != len(value) {
+		return fmt.Errorf("length mismatch header:%d value:%d", length, len(value))
 	}
 
 	_, err = buf.Write(value)

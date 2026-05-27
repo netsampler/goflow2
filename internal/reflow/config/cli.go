@@ -65,16 +65,47 @@ var (
 	}
 	aggregateHelperOptions = []string{
 		"-agg",
-		"-agg=payload",
-		"-agg=passthrough,payload",
+		"-agg=passthrough",
 		"-agg=idle_flush_after_ms=<ms>,periodic_every_ms=<ms>",
 		"-agg=max_flush_after_ms=<ms>,idle_erase_after_ms=<ms>,reset_buckets=<bool>",
 	}
 	aggregateHelperExamples = []string{
-		"-agg=payload",
-		"-agg=passthrough,payload",
+		"-agg=passthrough",
 		"-agg=idle_flush_after_ms=5000,periodic_every_ms=30000",
 		"-agg=periodic_every_ms=10000,reset_buckets=true",
+	}
+	generatedTemplatedFlowFields = []string{
+		"bytes",
+		"packets",
+		"proto",
+		"tcp_flags",
+		"src_port",
+		"src_addr",
+		"input_if",
+		"dst_port",
+		"dst_addr",
+		"output_if",
+		"sampling_rate",
+		"src_mac",
+		"vlan_id",
+		"mpls_label_stack_section_1",
+		"mpls_label_stack_section_2",
+		"mpls_label_stack_section_3",
+		"dst_mac",
+		"agent_ip",
+		"drops",
+		"source_id",
+		"sub_agent_id",
+		"template_id",
+		"observation_domain_id",
+		"start_time_unix",
+		"end_time_unix",
+		"nat_src_addr",
+		"nat_dst_addr",
+		"nat_src_port",
+		"nat_dst_port",
+		"ether_type",
+		"sample_pool",
 	}
 )
 
@@ -276,6 +307,9 @@ func (c *FlagConfig) generatedConfig() (*Config, error) {
 		},
 		Encoder: encoder,
 		Sink:    sink,
+	}
+	if encoder.Type == "ipfix" || encoder.Type == "netflowv9" {
+		cfg.Encoder.TemplatedFlow.Data.Select = append([]string(nil), generatedTemplatedFlowFields...)
 	}
 	if c.Aggregate {
 		cfg.Aggregators = generatedAggregators(c)
@@ -893,7 +927,8 @@ func applyAggregationPresetsToAggregator(cfg *AggregatorConfig, presets []string
 		case "passthrough":
 			makeAggregatorPassthrough(cfg)
 		case "payload":
-			addPayloadFields(cfg)
+			// Kept as a compatibility alias; data-link frames are exported only
+			// by schema passthrough aggregation.
 		}
 	}
 }
@@ -920,6 +955,7 @@ func makeAggregatorPassthrough(cfg *AggregatorConfig) {
 		}
 		cfg.Fields = out
 	}
+	addPayloadFields(cfg)
 }
 
 func addPayloadFields(cfg *AggregatorConfig) {

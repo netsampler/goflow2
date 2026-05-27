@@ -1825,6 +1825,77 @@ func TestIPFIXSchemaDrivenDataRecordKeepsTemplateWidth(t *testing.T) {
 	}
 }
 
+func TestIPFIXSchemaDrivenVariableLengthDataIsLengthPrefixed(t *testing.T) {
+	cfg := testTFlowEncoderConfig("ipfix")
+	cfg.TemplatedFlow.Data.Catalog["header_data"] = config.IPFIXFieldDefinition{ID: 315, Length: 0xffff, Type: "bytes"}
+	enc := NewIPFIXEncoder(cfg)
+
+	_, err := enc.Encode(&event.Event{
+		Kind: "control",
+		Control: &event.ControlMetadata{
+			Type:   "schema",
+			Stream: "flow_data",
+		},
+		Payload: event.AggregationSchema{
+			Stream:         "flow_data",
+			FieldNames:     []string{"header_data", "bytes"},
+			BaseTemplateID: 256,
+		},
+	})
+	if err != nil {
+		t.Fatalf("schema Encode returned error: %v", err)
+	}
+
+	headerData := append([]byte{0x01}, bytes.Repeat([]byte{0xab}, 299)...)
+	payloads, err := enc.Encode(&event.Event{
+		ReceivedAt: testEventTime(),
+		Stream:     "flow_data",
+		Fields: map[string]any{
+			"header_data": headerData,
+			"bytes":       uint64(300),
+		},
+	})
+	if err != nil {
+		t.Fatalf("data Encode returned error: %v", err)
+	}
+	if len(payloads) != 1 {
+		t.Fatalf("expected one data payload, got %d", len(payloads))
+	}
+
+	store := templates.NewTemplateFlowStore()
+	store.Start()
+	ctx := netflow.FlowContext{RouterKey: "test-router"}
+	templatePayloads, err := enc.encodeSchemaTemplates(enc.dataSchemas["flow_data"])
+	if err != nil {
+		t.Fatalf("encodeSchemaTemplates returned error: %v", err)
+	}
+	for _, payload := range templatePayloads {
+		var templatePacket netflow.IPFIXPacket
+		if err := netflow.DecodeMessageVersion(bytes.NewBuffer(payload), store, ctx, nil, &templatePacket); err != nil {
+			t.Fatalf("decode schema template payload: %v", err)
+		}
+	}
+
+	var decoded netflow.IPFIXPacket
+	if err := netflow.DecodeMessageVersion(bytes.NewBuffer(payloads[0]), store, ctx, nil, &decoded); err != nil {
+		t.Fatalf("decode ipfix data payload: %v", err)
+	}
+	dataSet := decoded.FlowSets[0].(netflow.DataFlowSet)
+	if len(dataSet.Records) != 1 {
+		t.Fatalf("expected one data record, got %d", len(dataSet.Records))
+	}
+	values := dataSet.Records[0].Values
+	if len(values) != 2 {
+		t.Fatalf("expected two values, got %d", len(values))
+	}
+	if got := values[0].Value.([]byte); !bytes.Equal(got, headerData) {
+		t.Fatalf("expected decoded header_data length %d, got %d", len(headerData), len(got))
+	}
+	if got := values[1].Value.([]byte); !bytes.Equal(got, []byte{0, 0, 0, 0, 0, 0, 0x01, 0x2c}) {
+		t.Fatalf("expected decoded bytes value 300, got %v", got)
+	}
+}
+
 func TestIPFIXSchemaDrivenLayerAddressFieldsUseIndependentFamilies(t *testing.T) {
 	cfg := testTFlowEncoderConfig("ipfix")
 	cfg.TemplatedFlow.Data.Catalog["ip_1_src_addr"] = config.IPFIXFieldDefinition{ID: 8, Length: 4, Type: "ipv4Address"}

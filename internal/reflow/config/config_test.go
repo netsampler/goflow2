@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 
@@ -935,7 +936,37 @@ func TestGeneratedAggregateConfigSupportsCLIParams(t *testing.T) {
 	}
 }
 
-func TestGeneratedAggregateConfigSupportsPayloadPreset(t *testing.T) {
+func TestGeneratedIPFIXConfigExcludesDataLinkFrameByDefault(t *testing.T) {
+	fs := flag.NewFlagSet("test", flag.ContinueOnError)
+	flags, _ := BindFlags(fs)
+	if err := fs.Parse([]string{"-output=ipfix:udp:127.0.0.1:4739", "-genconf"}); err != nil {
+		t.Fatalf("Parse returned error: %v", err)
+	}
+
+	cfg, generated, err := LoadFromFlags(flags)
+	if err != nil {
+		t.Fatalf("LoadFromFlags returned error: %v", err)
+	}
+	if !generated {
+		t.Fatalf("expected generated config")
+	}
+	fields := cfg.Encoder.TemplatedFlow.Data.Select
+	if len(fields) == 0 {
+		t.Fatalf("expected generated ipfix config to select explicit fields")
+	}
+	for _, name := range []string{"frame_length", "header_data"} {
+		if slices.Contains(fields, name) {
+			t.Fatalf("expected generated ipfix config not to export %s by default: %#v", name, fields)
+		}
+	}
+	for _, name := range []string{"src_addr", "dst_addr", "bytes", "packets"} {
+		if !slices.Contains(fields, name) {
+			t.Fatalf("expected generated ipfix config to export %s: %#v", name, fields)
+		}
+	}
+}
+
+func TestGeneratedAggregateConfigPayloadPresetDoesNotEnableDataLinkFrame(t *testing.T) {
 	fs := flag.NewFlagSet("test", flag.ContinueOnError)
 	flags, _ := BindFlags(fs)
 	if err := fs.Parse([]string{"-agg=payload", "-genconf"}); err != nil {
@@ -959,15 +990,15 @@ func TestGeneratedAggregateConfigSupportsPayloadPreset(t *testing.T) {
 	if !aggregatorHasField(agg, "sum", "bytes") || !aggregatorHasField(agg, "sum", "packets") {
 		t.Fatalf("expected generated aggregate sums, got %#v", agg.Fields)
 	}
-	if !aggregatorHasField(agg, "current", "frame_length") || !aggregatorHasField(agg, "current", "header_data") {
-		t.Fatalf("expected payload fields, got %#v", agg.Fields)
+	if aggregatorHasField(agg, "current", "frame_length") || aggregatorHasField(agg, "current", "header_data") {
+		t.Fatalf("expected payload preset not to enable data-link fields, got %#v", agg.Fields)
 	}
 }
 
-func TestGeneratedAggregateConfigSupportsPassthroughPayloadPreset(t *testing.T) {
+func TestGeneratedAggregateConfigSupportsPassthroughPreset(t *testing.T) {
 	fs := flag.NewFlagSet("test", flag.ContinueOnError)
 	flags, _ := BindFlags(fs)
-	if err := fs.Parse([]string{"-agg=passthrough,payload", "-genconf"}); err != nil {
+	if err := fs.Parse([]string{"-agg=passthrough", "-genconf"}); err != nil {
 		t.Fatalf("Parse returned error: %v", err)
 	}
 
@@ -983,7 +1014,7 @@ func TestGeneratedAggregateConfigSupportsPassthroughPayloadPreset(t *testing.T) 
 	}
 	agg := cfg.Aggregators[0]
 	if !agg.Passthrough {
-		t.Fatalf("expected passthrough,payload to use schema passthrough")
+		t.Fatalf("expected passthrough preset to use schema passthrough")
 	}
 	if len(agg.Sum) != 0 || aggregatorHasRole(agg, "sum") {
 		t.Fatalf("expected passthrough preset to remove sum fields, got sum=%#v fields=%#v", agg.Sum, agg.Fields)
@@ -1340,8 +1371,7 @@ func TestHelperOptionsTextListsInputOutputAndAggregationExamples(t *testing.T) {
 		"sflow:udp:127.0.0.1:6343?allow_truncate=true&max_header_bytes=128",
 		"ipfix:udp:127.0.0.1:4739?batch=true&batch_max_records=32&batch_max_bytes=4096&batch_flush_interval_ms=250",
 		"-agg",
-		"-agg=payload",
-		"-agg=passthrough,payload",
+		"-agg=passthrough",
 		"-agg=idle_flush_after_ms=<ms>,periodic_every_ms=<ms>",
 		"-agg=max_flush_after_ms=<ms>,idle_erase_after_ms=<ms>,reset_buckets=<bool>",
 		"-agg=idle_flush_after_ms=5000,periodic_every_ms=30000",

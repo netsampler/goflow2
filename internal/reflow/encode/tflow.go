@@ -1253,6 +1253,7 @@ func buildFallbackValues(plan fallbackTemplatePlan, fieldMap map[string]any, enc
 		values = append(values, netflow.DataField{
 			PenProvided: def.EnterpriseScoped || def.PEN != 0,
 			Type:        plan.template.Fields[i].Type,
+			Length:      plan.template.Fields[i].Length,
 			Pen:         def.PEN,
 			Value:       encoded,
 		})
@@ -1322,6 +1323,7 @@ func buildTemplatedDataRecordWithNames(cfg config.TemplatedFlowDataConfig, field
 		values = append(values, netflow.DataField{
 			PenProvided: def.EnterpriseScoped || def.PEN != 0,
 			Type:        def.ID,
+			Length:      ipfixFieldLength(def, encoded),
 			Pen:         def.PEN,
 			Value:       encoded,
 		})
@@ -1409,6 +1411,7 @@ func buildTemplatedValuesFromSchemaFieldsForMask(cfg config.TemplatedFlowDataCon
 		values = append(values, netflow.DataField{
 			PenProvided: def.EnterpriseScoped || def.PEN != 0,
 			Type:        def.ID,
+			Length:      def.Length,
 			Pen:         def.PEN,
 			Value:       encoded,
 		})
