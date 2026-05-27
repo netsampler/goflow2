@@ -67,6 +67,7 @@ var (
 		"-agg",
 		"-agg payload",
 		"-agg nat",
+		"-agg mpls",
 		"-agg passthrough",
 		"-agg idle_flush_after_ms=<ms>,periodic_every_ms=<ms>",
 		"-agg max_flush_after_ms=<ms>,idle_erase_after_ms=<ms>,reset_buckets=<bool>",
@@ -74,6 +75,7 @@ var (
 	aggregateHelperExamples = []string{
 		"-agg payload",
 		"-agg nat",
+		"-agg mpls",
 		"-agg passthrough",
 		"-agg idle_flush_after_ms=5000,periodic_every_ms=30000",
 		"-agg periodic_every_ms=10000,reset_buckets=true",
@@ -100,6 +102,11 @@ var (
 		"start_time_unix",
 		"end_time_unix",
 		"ether_type",
+	}
+	generatedTemplatedFlowMPLSFields = []string{
+		"mpls_label_stack_section_1",
+		"mpls_label_stack_section_2",
+		"mpls_label_stack_section_3",
 	}
 	generatedTemplatedFlowNATFields = []string{
 		"nat_src_addr",
@@ -318,6 +325,10 @@ func (c *FlagConfig) generatedConfig() (*Config, error) {
 		}
 		if lastAggregatePreset(c) != "none" && aggregatePresetRequested(c, "nat") {
 			cfg.ensureTemplatedFlowFieldsSelected(generatedTemplatedFlowNATFields...)
+		}
+		if lastAggregatePreset(c) != "none" && aggregatePresetRequested(c, "mpls") {
+			cfg.enableMPLSAggregationHelpers()
+			cfg.ensureTemplatedFlowFieldsSelected(generatedTemplatedFlowMPLSFields...)
 		}
 	}
 	return cfg, nil
@@ -571,6 +582,8 @@ func parseAggregatePreset(cfg *FlagConfig, raw string) error {
 		cfg.AggPresets = append(cfg.AggPresets, "payload")
 	case "nat":
 		cfg.AggPresets = append(cfg.AggPresets, "nat")
+	case "mpls":
+		cfg.AggPresets = append(cfg.AggPresets, "mpls")
 	case "passthrough":
 		cfg.AggPresets = append(cfg.AggPresets, "passthrough")
 	case "none", "off":
@@ -919,7 +932,7 @@ func (c *Config) ApplyAggregationFlags(flags *FlagConfig) error {
 		switch preset {
 		case "none":
 			c.Aggregators = nil
-		case "passthrough", "payload", "nat":
+		case "passthrough", "payload", "nat", "mpls":
 			agg := c.ensurePrimaryAggregator()
 			applyAggregationPresetsToAggregator(agg, []string{preset})
 			if preset == "payload" {
@@ -927,6 +940,10 @@ func (c *Config) ApplyAggregationFlags(flags *FlagConfig) error {
 			}
 			if preset == "nat" {
 				c.ensureTemplatedFlowFieldsSelected(generatedTemplatedFlowNATFields...)
+			}
+			if preset == "mpls" {
+				c.enableMPLSAggregationHelpers()
+				c.ensureTemplatedFlowFieldsSelected(generatedTemplatedFlowMPLSFields...)
 			}
 		}
 	}
@@ -963,6 +980,8 @@ func applyAggregationPresetsToAggregator(cfg *AggregatorConfig, presets []string
 			addPayloadFields(cfg)
 		case "nat":
 			addNATFields(cfg)
+		case "mpls":
+			addMPLSFields(cfg)
 		}
 	}
 }
@@ -1011,6 +1030,16 @@ func addNATFields(cfg *AggregatorConfig) {
 	}
 }
 
+func addMPLSFields(cfg *AggregatorConfig) {
+	if cfg == nil {
+		return
+	}
+	for _, name := range generatedTemplatedFlowMPLSFields {
+		appendUniqueAggregatorField(cfg, AggregatorField{Role: "current", Name: name})
+		appendUniqueString(&cfg.Current, name)
+	}
+}
+
 func appendUniqueAggregatorField(cfg *AggregatorConfig, field AggregatorField) {
 	for _, existing := range cfg.Fields {
 		if existing.Role == field.Role && existing.Name == field.Name {
@@ -1027,6 +1056,15 @@ func appendUniqueString(values *[]string, value string) {
 		}
 	}
 	*values = append(*values, value)
+}
+
+func (c *Config) enableMPLSAggregationHelpers() {
+	if c == nil {
+		return
+	}
+	if c.Processor.Builtin.AggregationHelpers.MPLSLabels < len(generatedTemplatedFlowMPLSFields) {
+		c.Processor.Builtin.AggregationHelpers.MPLSLabels = len(generatedTemplatedFlowMPLSFields)
+	}
 }
 
 func (c *Config) ensureTemplatedFlowFieldsSelected(names ...string) {

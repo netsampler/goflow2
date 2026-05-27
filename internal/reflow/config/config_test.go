@@ -1127,6 +1127,38 @@ func TestGeneratedAggregateConfigNATPresetEnablesNATFields(t *testing.T) {
 	}
 }
 
+func TestGeneratedAggregateConfigMPLSPresetEnablesMPLSFields(t *testing.T) {
+	fs := flag.NewFlagSet("test", flag.ContinueOnError)
+	flags, _ := BindFlags(fs)
+	if err := fs.Parse([]string{"-output=ipfix:udp:127.0.0.1:4739", "-agg=mpls", "-genconf"}); err != nil {
+		t.Fatalf("Parse returned error: %v", err)
+	}
+
+	cfg, generated, err := LoadFromFlags(flags)
+	if err != nil {
+		t.Fatalf("LoadFromFlags returned error: %v", err)
+	}
+	if !generated {
+		t.Fatalf("expected generated config")
+	}
+	if len(cfg.Aggregators) != 1 {
+		t.Fatalf("expected generated aggregator, got %d", len(cfg.Aggregators))
+	}
+	if cfg.Processor.Builtin.AggregationHelpers.MPLSLabels != len(generatedTemplatedFlowMPLSFields) {
+		t.Fatalf("expected mpls aggregation helpers to be enabled, got %d", cfg.Processor.Builtin.AggregationHelpers.MPLSLabels)
+	}
+	agg := cfg.Aggregators[0]
+	fields := cfg.Encoder.TemplatedFlow.Data.Select
+	for _, name := range generatedTemplatedFlowMPLSFields {
+		if !aggregatorHasField(agg, "current", name) {
+			t.Fatalf("expected mpls preset to add aggregate field %s, got %#v", name, agg.Fields)
+		}
+		if !slices.Contains(fields, name) {
+			t.Fatalf("expected mpls preset to select IPFIX field %s, got %#v", name, fields)
+		}
+	}
+}
+
 func TestGeneratedAggregateConfigSupportsPassthroughPreset(t *testing.T) {
 	fs := flag.NewFlagSet("test", flag.ContinueOnError)
 	flags, _ := BindFlags(fs)
@@ -1202,6 +1234,57 @@ sink:
 	}
 	if !aggregatorHasField(agg, "current", "frame_length") || !aggregatorHasField(agg, "current", "header_data") {
 		t.Fatalf("expected payload fields, got %#v", agg.Fields)
+	}
+}
+
+func TestConfigModeMPLSPresetAddsMPLSFields(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "reflow.yaml")
+	if err := os.WriteFile(cfgPath, []byte(`
+sources:
+  - network: udp
+    address: ":18081"
+    type: json
+
+processor:
+  type: builtin
+
+aggregators:
+  - fields:
+      - key:src_addr
+
+encoder:
+  type: json
+
+sink:
+  type: stdout
+`), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	fs := flag.NewFlagSet("test", flag.ContinueOnError)
+	flags, _ := BindFlags(fs)
+	if err := fs.Parse([]string{"-config", cfgPath, "-agg=mpls"}); err != nil {
+		t.Fatalf("Parse returned error: %v", err)
+	}
+	cfg, generated, err := LoadFromFlags(flags)
+	if err != nil {
+		t.Fatalf("LoadFromFlags returned error: %v", err)
+	}
+	if generated {
+		t.Fatalf("expected explicit config mode")
+	}
+	if cfg.Processor.Builtin.AggregationHelpers.MPLSLabels != len(generatedTemplatedFlowMPLSFields) {
+		t.Fatalf("expected mpls aggregation helpers to be enabled, got %d", cfg.Processor.Builtin.AggregationHelpers.MPLSLabels)
+	}
+	if len(cfg.Aggregators) != 1 {
+		t.Fatalf("expected one overlay aggregator, got %d", len(cfg.Aggregators))
+	}
+	agg := cfg.Aggregators[0]
+	for _, name := range generatedTemplatedFlowMPLSFields {
+		if !aggregatorHasField(agg, "current", name) {
+			t.Fatalf("expected mpls preset to add aggregate field %s, got %#v", name, agg.Fields)
+		}
 	}
 }
 
@@ -1504,6 +1587,7 @@ func TestHelperOptionsTextListsInputOutputAndAggregationExamples(t *testing.T) {
 		"ipfix:udp:127.0.0.1:4739?batch=true&batch_max_records=32&batch_max_bytes=4096&batch_flush_interval_ms=250",
 		"-agg",
 		"-agg passthrough",
+		"-agg mpls",
 		"-agg idle_flush_after_ms=<ms>,periodic_every_ms=<ms>",
 		"-agg max_flush_after_ms=<ms>,idle_erase_after_ms=<ms>,reset_buckets=<bool>",
 		"-agg idle_flush_after_ms=5000,periodic_every_ms=30000",
