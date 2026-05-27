@@ -65,10 +65,14 @@ var (
 	}
 	aggregateHelperOptions = []string{
 		"-agg",
+		"-agg=payload",
+		"-agg=passthrough,payload",
 		"-agg=idle_flush_after_ms=<ms>,periodic_every_ms=<ms>",
 		"-agg=max_flush_after_ms=<ms>,idle_erase_after_ms=<ms>,reset_buckets=<bool>",
 	}
 	aggregateHelperExamples = []string{
+		"-agg=payload",
+		"-agg=passthrough,payload",
 		"-agg=idle_flush_after_ms=5000,periodic_every_ms=30000",
 		"-agg=periodic_every_ms=10000,reset_buckets=true",
 	}
@@ -168,6 +172,7 @@ func (f aggregateFlag) String() string {
 	if f.cfg.AggResetBuckets != nil {
 		parts = append(parts, fmt.Sprintf("reset_buckets=%t", *f.cfg.AggResetBuckets))
 	}
+	parts = append(parts, f.cfg.AggPresets...)
 	if len(parts) == 0 {
 		return "true"
 	}
@@ -199,11 +204,17 @@ func LoadFromFlags(flags *FlagConfig) (*Config, bool, error) {
 		flags = &FlagConfig{}
 	}
 	if flags.ConfigPath != "" {
-		if flags.usesGeneratedHelpers() {
-			return nil, false, fmt.Errorf("-config cannot be combined with -input, -output/-o, -agg, or -genconf")
+		if flags.usesGeneratedHelpersWithConfig() {
+			return nil, false, fmt.Errorf("-config cannot be combined with -input, -output/-o, or -genconf")
 		}
 		cfg, err := Load(flags.ConfigPath)
-		return cfg, false, err
+		if err != nil {
+			return nil, false, err
+		}
+		if err := cfg.ApplyAggregationFlags(flags); err != nil {
+			return nil, false, err
+		}
+		return cfg, false, nil
 	}
 
 	cfg, err := flags.generatedConfig()
@@ -221,6 +232,10 @@ func LoadFromFlags(flags *FlagConfig) (*Config, bool, error) {
 
 func (c *FlagConfig) usesGeneratedHelpers() bool {
 	return len(c.Inputs) > 0 || c.OutputSet || c.Aggregate || c.GenConf
+}
+
+func (c *FlagConfig) usesGeneratedHelpersWithConfig() bool {
+	return len(c.Inputs) > 0 || c.OutputSet || c.GenConf
 }
 
 func (c *FlagConfig) generatedConfig() (*Config, error) {
@@ -452,15 +467,25 @@ func parseNonNegativeInputParam(name, value string) (int, error) {
 }
 
 func parseAggregateParams(cfg *FlagConfig, rawParams string) error {
-	params, err := parseCommaQueryParams(rawParams)
-	if err != nil {
-		return fmt.Errorf("parse aggregate parameters: %w", err)
+	rawParams = strings.TrimPrefix(strings.TrimSpace(rawParams), "?")
+	if rawParams == "" {
+		return fmt.Errorf("parse aggregate parameters: parameters cannot be empty")
 	}
-	for key, values := range params {
-		if len(values) != 1 {
-			return fmt.Errorf("aggregate parameter %q must be set once", key)
+	parts := strings.Split(strings.ReplaceAll(rawParams, "&", ","), ",")
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			return fmt.Errorf("parse aggregate parameters: parameters cannot be empty")
 		}
-		value := values[0]
+		key, value, hasValue := strings.Cut(part, "=")
+		if !hasValue {
+			if err := parseAggregatePreset(cfg, key); err != nil {
+				return err
+			}
+			continue
+		}
+		key = strings.TrimSpace(key)
+		value = strings.TrimSpace(value)
 		switch key {
 		case "idle_flush_after_ms":
 			parsed, err := parseNonNegativeAggregateParam(key, value)
@@ -495,6 +520,25 @@ func parseAggregateParams(cfg *FlagConfig, rawParams string) error {
 		default:
 			return fmt.Errorf("unsupported aggregate parameter %q", key)
 		}
+	}
+	return nil
+}
+
+func parseAggregatePreset(cfg *FlagConfig, raw string) error {
+	preset := strings.ToLower(strings.TrimSpace(raw))
+	switch preset {
+	case "payload", "header", "packet-header":
+		cfg.AggPresets = append(cfg.AggPresets, "payload")
+	case "passthrough":
+		cfg.AggPresets = append(cfg.AggPresets, "passthrough")
+	case "none", "off":
+		cfg.AggPresets = append(cfg.AggPresets, "none")
+	case "true":
+		// Useful when users write -agg=true,payload.
+	case "":
+		return fmt.Errorf("aggregate preset cannot be empty")
+	default:
+		return fmt.Errorf("unsupported aggregate preset %q", raw)
 	}
 	return nil
 }
@@ -731,7 +775,17 @@ func cutLast(s, sep string) (string, string, bool) {
 }
 
 func generatedAggregators(flags *FlagConfig) []AggregatorConfig {
-	cfg := AggregatorConfig{
+	if lastAggregatePreset(flags) == "none" {
+		return nil
+	}
+	cfg := defaultGeneratedAggregator()
+	applyGeneratedAggregatorOverrides(&cfg, flags)
+	applyAggregationPresetsToAggregator(&cfg, aggregatePresets(flags))
+	return []AggregatorConfig{cfg}
+}
+
+func defaultGeneratedAggregator() AggregatorConfig {
+	return AggregatorConfig{
 		Stream: "flow_data",
 		Match: map[string]string{
 			"record_kind": "packet",
@@ -764,8 +818,6 @@ func generatedAggregators(flags *FlagConfig) []AggregatorConfig {
 		},
 		TemplateID: 256,
 	}
-	applyGeneratedAggregatorOverrides(&cfg, flags)
-	return []AggregatorConfig{cfg}
 }
 
 func applyGeneratedAggregatorOverrides(cfg *AggregatorConfig, flags *FlagConfig) {
@@ -787,4 +839,150 @@ func applyGeneratedAggregatorOverrides(cfg *AggregatorConfig, flags *FlagConfig)
 	if flags.AggResetBuckets != nil {
 		cfg.Periodic.ResetBuckets = *flags.AggResetBuckets
 	}
+}
+
+// ApplyAggregationFlags applies -agg overlays to an explicit YAML config.
+// Presets are useful with -config, while -input/-output remain generated-config
+// helpers and are intentionally still rejected with -config.
+func (c *Config) ApplyAggregationFlags(flags *FlagConfig) error {
+	if c == nil || flags == nil || !flags.Aggregate {
+		return nil
+	}
+	if len(c.Aggregators) == 0 && (len(flags.AggPresets) == 0 || hasAggregateOverrides(flags)) {
+		c.Aggregators = []AggregatorConfig{defaultGeneratedAggregator()}
+	}
+	if len(c.Aggregators) > 0 {
+		applyGeneratedAggregatorOverrides(&c.Aggregators[0], flags)
+	}
+	for _, preset := range aggregatePresets(flags) {
+		switch preset {
+		case "none":
+			c.Aggregators = nil
+		case "passthrough", "payload":
+			agg := c.ensurePrimaryAggregator()
+			applyAggregationPresetsToAggregator(agg, []string{preset})
+		}
+	}
+	for i := range c.Aggregators {
+		if c.Aggregators[i].Stream == "" {
+			c.Aggregators[i].Stream = "flow_data"
+		}
+		if err := validateAggregatorFields(c.Aggregators[i].Fields); err != nil {
+			return fmt.Errorf("aggregators[%d]: %w", i, err)
+		}
+		c.Aggregators[i].Passthrough = !aggregatorNeedsState(&c.Aggregators[i])
+		if err := validateAggregatorConfig(c.Aggregators[i]); err != nil {
+			return fmt.Errorf("aggregators[%d]: %w", i, err)
+		}
+	}
+	return nil
+}
+
+func (c *Config) ensurePrimaryAggregator() *AggregatorConfig {
+	if len(c.Aggregators) == 0 {
+		c.Aggregators = []AggregatorConfig{defaultGeneratedAggregator()}
+	}
+	return &c.Aggregators[0]
+}
+
+func applyAggregationPresetsToAggregator(cfg *AggregatorConfig, presets []string) {
+	for _, preset := range presets {
+		switch preset {
+		case "none":
+			// Handled at Config level.
+		case "passthrough":
+			makeAggregatorPassthrough(cfg)
+		case "payload":
+			addPayloadFields(cfg)
+		}
+	}
+}
+
+func makeAggregatorPassthrough(cfg *AggregatorConfig) {
+	if cfg == nil {
+		return
+	}
+	cfg.Window = AggregatorWindowConfig{}
+	cfg.Periodic = AggregatorPeriodicConfig{}
+	cfg.ResetInterval = 0
+	cfg.PeriodicInterval = 0
+	cfg.Sum = nil
+	cfg.First = nil
+	cfg.Min = nil
+	cfg.Max = nil
+	if len(cfg.Fields) > 0 {
+		out := cfg.Fields[:0]
+		for _, field := range cfg.Fields {
+			switch field.Role {
+			case "key", "current", "static":
+				out = append(out, field)
+			}
+		}
+		cfg.Fields = out
+	}
+}
+
+func addPayloadFields(cfg *AggregatorConfig) {
+	if cfg == nil {
+		return
+	}
+	appendUniqueAggregatorField(cfg, AggregatorField{Role: "current", Name: "frame_length"})
+	appendUniqueAggregatorField(cfg, AggregatorField{Role: "current", Name: "header_data"})
+	appendUniqueString(&cfg.Current, "frame_length")
+	appendUniqueString(&cfg.Current, "header_data")
+}
+
+func appendUniqueAggregatorField(cfg *AggregatorConfig, field AggregatorField) {
+	for _, existing := range cfg.Fields {
+		if existing.Role == field.Role && existing.Name == field.Name {
+			return
+		}
+	}
+	cfg.Fields = append(cfg.Fields, field)
+}
+
+func appendUniqueString(values *[]string, value string) {
+	for _, existing := range *values {
+		if existing == value {
+			return
+		}
+	}
+	*values = append(*values, value)
+}
+
+func aggregatePresets(flags *FlagConfig) []string {
+	if flags == nil {
+		return nil
+	}
+	return flags.AggPresets
+}
+
+func hasAggregateOverrides(flags *FlagConfig) bool {
+	return flags != nil && (flags.AggIdleFlushAfter != nil || flags.AggMaxFlushAfter != nil || flags.AggIdleEraseAfter != nil || flags.AggPeriodicEvery != nil || flags.AggResetBuckets != nil)
+}
+
+func aggregatePresetRequested(flags *FlagConfig, want string) bool {
+	for _, preset := range aggregatePresets(flags) {
+		if preset == want {
+			return true
+		}
+	}
+	return false
+}
+
+func lastAggregatePreset(flags *FlagConfig) string {
+	presets := aggregatePresets(flags)
+	if len(presets) == 0 {
+		return ""
+	}
+	return presets[len(presets)-1]
+}
+
+func validateAggregatorFields(fields []AggregatorField) error {
+	for _, field := range fields {
+		if err := validateAggregatorField(field); err != nil {
+			return err
+		}
+	}
+	return nil
 }

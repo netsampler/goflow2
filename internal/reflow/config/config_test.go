@@ -935,6 +935,113 @@ func TestGeneratedAggregateConfigSupportsCLIParams(t *testing.T) {
 	}
 }
 
+func TestGeneratedAggregateConfigSupportsPayloadPreset(t *testing.T) {
+	fs := flag.NewFlagSet("test", flag.ContinueOnError)
+	flags, _ := BindFlags(fs)
+	if err := fs.Parse([]string{"-agg=payload", "-genconf"}); err != nil {
+		t.Fatalf("Parse returned error: %v", err)
+	}
+
+	cfg, generated, err := LoadFromFlags(flags)
+	if err != nil {
+		t.Fatalf("LoadFromFlags returned error: %v", err)
+	}
+	if !generated {
+		t.Fatalf("expected generated config")
+	}
+	if len(cfg.Aggregators) != 1 {
+		t.Fatalf("expected generated aggregator, got %d", len(cfg.Aggregators))
+	}
+	agg := cfg.Aggregators[0]
+	if agg.Passthrough {
+		t.Fatalf("expected payload preset alone to keep stateful aggregation")
+	}
+	if !aggregatorHasField(agg, "sum", "bytes") || !aggregatorHasField(agg, "sum", "packets") {
+		t.Fatalf("expected generated aggregate sums, got %#v", agg.Fields)
+	}
+	if !aggregatorHasField(agg, "current", "frame_length") || !aggregatorHasField(agg, "current", "header_data") {
+		t.Fatalf("expected payload fields, got %#v", agg.Fields)
+	}
+}
+
+func TestGeneratedAggregateConfigSupportsPassthroughPayloadPreset(t *testing.T) {
+	fs := flag.NewFlagSet("test", flag.ContinueOnError)
+	flags, _ := BindFlags(fs)
+	if err := fs.Parse([]string{"-agg=passthrough,payload", "-genconf"}); err != nil {
+		t.Fatalf("Parse returned error: %v", err)
+	}
+
+	cfg, generated, err := LoadFromFlags(flags)
+	if err != nil {
+		t.Fatalf("LoadFromFlags returned error: %v", err)
+	}
+	if !generated {
+		t.Fatalf("expected generated config")
+	}
+	if len(cfg.Aggregators) != 1 {
+		t.Fatalf("expected generated aggregator, got %d", len(cfg.Aggregators))
+	}
+	agg := cfg.Aggregators[0]
+	if !agg.Passthrough {
+		t.Fatalf("expected passthrough,payload to use schema passthrough")
+	}
+	if len(agg.Sum) != 0 || aggregatorHasRole(agg, "sum") {
+		t.Fatalf("expected passthrough preset to remove sum fields, got sum=%#v fields=%#v", agg.Sum, agg.Fields)
+	}
+	if agg.Window.IdleFlushAfter != 0 || agg.Periodic.Every != 0 {
+		t.Fatalf("expected passthrough preset to remove export timers, got window=%#v periodic=%#v", agg.Window, agg.Periodic)
+	}
+	if !aggregatorHasField(agg, "current", "frame_length") || !aggregatorHasField(agg, "current", "header_data") {
+		t.Fatalf("expected payload fields, got %#v", agg.Fields)
+	}
+}
+
+func TestConfigModeAllowsAggregationPresets(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "reflow.yaml")
+	if err := os.WriteFile(cfgPath, []byte(`
+sources:
+  - network: udp
+    address: ":18081"
+    type: json
+
+processor:
+  type: builtin
+
+encoder:
+  type: ipfix
+
+sink:
+  type: udp
+  address: "127.0.0.1:4739"
+`), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	fs := flag.NewFlagSet("test", flag.ContinueOnError)
+	flags, _ := BindFlags(fs)
+	if err := fs.Parse([]string{"-config", cfgPath, "-agg=passthrough,payload"}); err != nil {
+		t.Fatalf("Parse returned error: %v", err)
+	}
+	cfg, generated, err := LoadFromFlags(flags)
+	if err != nil {
+		t.Fatalf("LoadFromFlags returned error: %v", err)
+	}
+	if generated {
+		t.Fatalf("expected explicit config mode")
+	}
+	if len(cfg.Aggregators) != 1 {
+		t.Fatalf("expected one overlay aggregator, got %d", len(cfg.Aggregators))
+	}
+	agg := cfg.Aggregators[0]
+	if !agg.Passthrough {
+		t.Fatalf("expected passthrough preset to use schema passthrough")
+	}
+	if !aggregatorHasField(agg, "current", "frame_length") || !aggregatorHasField(agg, "current", "header_data") {
+		t.Fatalf("expected payload fields, got %#v", agg.Fields)
+	}
+}
+
 func TestLoadSupportsJSONDropFields(t *testing.T) {
 	dir := t.TempDir()
 
@@ -1214,15 +1321,17 @@ sink:
 	}
 }
 
-func TestHelperOptionsTextListsInputAndOutputExamples(t *testing.T) {
+func TestHelperOptionsTextListsInputOutputAndAggregationExamples(t *testing.T) {
 	text := HelperOptionsText()
 	for _, want := range []string{
 		"udp::6343:flow",
 		"ebpf:eth0:bytes",
 		"pcap_live:en0:bytes",
+		"-input udp::6343:flow",
 		"json:stdout",
 		"ipfix:udp:127.0.0.1:4739",
 		"pcap:stdout",
+		"-output json:stdout",
 		"allow_truncate=<bool>",
 		"max_header_bytes=<bytes>",
 		"batch_max_records=<n>",
@@ -1230,6 +1339,13 @@ func TestHelperOptionsTextListsInputAndOutputExamples(t *testing.T) {
 		"batch_flush_interval_ms=<ms>",
 		"sflow:udp:127.0.0.1:6343?allow_truncate=true&max_header_bytes=128",
 		"ipfix:udp:127.0.0.1:4739?batch=true&batch_max_records=32&batch_max_bytes=4096&batch_flush_interval_ms=250",
+		"-agg",
+		"-agg=payload",
+		"-agg=passthrough,payload",
+		"-agg=idle_flush_after_ms=<ms>,periodic_every_ms=<ms>",
+		"-agg=max_flush_after_ms=<ms>,idle_erase_after_ms=<ms>,reset_buckets=<bool>",
+		"-agg=idle_flush_after_ms=5000,periodic_every_ms=30000",
+		"-agg=periodic_every_ms=10000,reset_buckets=true",
 		"stream:<path-or-stdin>:json",
 		"encoders: json, protobuf, sflow, ipfix, netflowv9, netflowv5, pcap, pcapng",
 	} {
@@ -1582,4 +1698,22 @@ func TestParseInputSpecRejectsCaptureParamsOnSocketInputs(t *testing.T) {
 	if _, err := parseInputSpec("udp::6343:flow?snaplen=128"); err == nil {
 		t.Fatalf("expected capture params on udp input to fail")
 	}
+}
+
+func aggregatorHasField(agg AggregatorConfig, role, name string) bool {
+	for _, field := range agg.Fields {
+		if field.Role == role && field.Name == name {
+			return true
+		}
+	}
+	return false
+}
+
+func aggregatorHasRole(agg AggregatorConfig, role string) bool {
+	for _, field := range agg.Fields {
+		if field.Role == role {
+			return true
+		}
+	}
+	return false
 }

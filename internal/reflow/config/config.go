@@ -31,6 +31,7 @@ type FlagConfig struct {
 	AggIdleEraseAfter *int
 	AggPeriodicEvery  *int
 	AggResetBuckets   *bool
+	AggPresets        []string
 	GenConf           bool
 	ListOptions       bool
 }
@@ -595,9 +596,9 @@ func BindFlags(fs *flag.FlagSet) (*FlagConfig, *bool) {
 	out := outputFlag{cfg: cfg}
 	fs.Var(out, "output", "Output helper spec encoder:sink[:target]")
 	fs.Var(out, "o", "Output helper spec encoder:sink[:target]")
-	fs.Var(aggregateFlag{cfg: cfg}, "agg", "Generate packet aggregation config")
+	fs.Var(aggregateFlag{cfg: cfg}, "agg", "Generate packet aggregation config or apply aggregation presets")
 	fs.BoolVar(&cfg.GenConf, "genconf", false, "Print generated config and exit")
-	fs.BoolVar(&cfg.ListOptions, "list-options", false, "List helper -input/-output options and exit")
+	fs.BoolVar(&cfg.ListOptions, "list-options", false, "List helper -input/-output/-agg options and exit")
 	return cfg, version
 }
 
