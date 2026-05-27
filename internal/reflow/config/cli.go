@@ -65,18 +65,18 @@ var (
 	}
 	aggregateHelperOptions = []string{
 		"-agg",
-		"-agg=payload",
-		"-agg=nat",
-		"-agg=passthrough",
-		"-agg=idle_flush_after_ms=<ms>,periodic_every_ms=<ms>",
-		"-agg=max_flush_after_ms=<ms>,idle_erase_after_ms=<ms>,reset_buckets=<bool>",
+		"-agg payload",
+		"-agg nat",
+		"-agg passthrough",
+		"-agg idle_flush_after_ms=<ms>,periodic_every_ms=<ms>",
+		"-agg max_flush_after_ms=<ms>,idle_erase_after_ms=<ms>,reset_buckets=<bool>",
 	}
 	aggregateHelperExamples = []string{
-		"-agg=payload",
-		"-agg=nat",
-		"-agg=passthrough",
-		"-agg=idle_flush_after_ms=5000,periodic_every_ms=30000",
-		"-agg=periodic_every_ms=10000,reset_buckets=true",
+		"-agg payload",
+		"-agg nat",
+		"-agg passthrough",
+		"-agg idle_flush_after_ms=5000,periodic_every_ms=30000",
+		"-agg periodic_every_ms=10000,reset_buckets=true",
 	}
 	generatedTemplatedFlowFields = []string{
 		"bytes",

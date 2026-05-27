@@ -1503,17 +1503,20 @@ func TestHelperOptionsTextListsInputOutputAndAggregationExamples(t *testing.T) {
 		"sflow:udp:127.0.0.1:6343?allow_truncate=true&max_header_bytes=128",
 		"ipfix:udp:127.0.0.1:4739?batch=true&batch_max_records=32&batch_max_bytes=4096&batch_flush_interval_ms=250",
 		"-agg",
-		"-agg=passthrough",
-		"-agg=idle_flush_after_ms=<ms>,periodic_every_ms=<ms>",
-		"-agg=max_flush_after_ms=<ms>,idle_erase_after_ms=<ms>,reset_buckets=<bool>",
-		"-agg=idle_flush_after_ms=5000,periodic_every_ms=30000",
-		"-agg=periodic_every_ms=10000,reset_buckets=true",
+		"-agg passthrough",
+		"-agg idle_flush_after_ms=<ms>,periodic_every_ms=<ms>",
+		"-agg max_flush_after_ms=<ms>,idle_erase_after_ms=<ms>,reset_buckets=<bool>",
+		"-agg idle_flush_after_ms=5000,periodic_every_ms=30000",
+		"-agg periodic_every_ms=10000,reset_buckets=true",
 		"stream:<path-or-stdin>:json",
 		"encoders: json, protobuf, sflow, ipfix, netflowv9, netflowv5, pcap, pcapng",
 	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("expected helper options to contain %q, got:\n%s", want, text)
 		}
+	}
+	if strings.Contains(text, "-agg=") {
+		t.Fatalf("expected helper options not to contain -agg= syntax, got:\n%s", text)
 	}
 }
 
