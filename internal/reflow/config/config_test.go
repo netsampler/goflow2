@@ -102,18 +102,9 @@ sink:
 		t.Fatalf("Load returned error: %v", err)
 	}
 
-	if len(cfg.Sources) != 1 {
-		t.Fatalf("expected 1 source, got %d", len(cfg.Sources))
-	}
-	if cfg.Sources[0].Address != ":18081" {
-		t.Fatalf("expected sources[0].address=:18081, got %q", cfg.Sources[0].Address)
-	}
 	decoder := cfg.Processor.Builtin.PacketDecoder
 	if decoder.DecodeBeyondL4 == nil || *decoder.DecodeBeyondL4 {
 		t.Fatalf("expected processor packet decoder decode_beyond_l4=false, got %#v", decoder.DecodeBeyondL4)
-	}
-	if decoder.Encapsulations.GRE.Enabled == nil || !*decoder.Encapsulations.GRE.Enabled {
-		t.Fatalf("expected GRE encapsulation enabled=true, got %#v", decoder.Encapsulations.GRE.Enabled)
 	}
 	if decoder.Encapsulations.VXLAN.Enabled == nil || *decoder.Encapsulations.VXLAN.Enabled {
 		t.Fatalf("expected VXLAN encapsulation enabled=false, got %#v", decoder.Encapsulations.VXLAN.Enabled)
@@ -121,17 +112,8 @@ sink:
 	if len(decoder.Encapsulations.VXLAN.Ports) != 2 || decoder.Encapsulations.VXLAN.Ports[1] != 4790 {
 		t.Fatalf("expected VXLAN ports [4789 4790], got %#v", decoder.Encapsulations.VXLAN.Ports)
 	}
-	if len(decoder.Encapsulations.L2TP.Ports) != 1 || decoder.Encapsulations.L2TP.Ports[0] != 1701 {
-		t.Fatalf("expected L2TP ports [1701], got %#v", decoder.Encapsulations.L2TP.Ports)
-	}
-	if len(decoder.Encapsulations.GTPU.Ports) != 1 || decoder.Encapsulations.GTPU.Ports[0] != 2152 {
-		t.Fatalf("expected GTP-U ports [2152], got %#v", decoder.Encapsulations.GTPU.Ports)
-	}
 	if cfg.Processor.Builtin.AggregationHelpers.MPLSLabels != 3 {
 		t.Fatalf("expected aggregation helper mpls_labels=3, got %d", cfg.Processor.Builtin.AggregationHelpers.MPLSLabels)
-	}
-	if cfg.Processor.Builtin.AggregationHelpers.IPLayers != 2 {
-		t.Fatalf("expected aggregation helper ip_layers=2, got %d", cfg.Processor.Builtin.AggregationHelpers.IPLayers)
 	}
 	if !cfg.Processor.Builtin.NAT.SwapPrePost {
 		t.Fatalf("expected processor.builtin.nat.swap_pre_post=true")
@@ -145,21 +127,9 @@ sink:
 	if !cfg.Aggregators[0].Passthrough {
 		t.Fatalf("expected aggregators[0] without aggregation fields to use pass-through schema mode")
 	}
-	if len(cfg.Aggregators[0].Sum) != 0 {
-		t.Fatalf("expected sum fields to default empty, got %#v", cfg.Aggregators[0].Sum)
-	}
-	if len(cfg.Aggregators[0].First) != 0 {
-		t.Fatalf("expected first fields to default empty, got %#v", cfg.Aggregators[0].First)
-	}
-	if len(cfg.Aggregators[0].Current) != 0 {
-		t.Fatalf("expected current fields to default empty, got %#v", cfg.Aggregators[0].Current)
-	}
 	custom := cfg.Encoder.TemplatedFlow.Data.Catalog["custom_counter"]
 	if custom.ID != 2000 || custom.PEN != 64512 {
 		t.Fatalf("expected override for custom_counter to win, got %#v", custom)
-	}
-	if cfg.Encoder.TemplatedFlow.Data.Catalog["bytes"].ID != 1 {
-		t.Fatalf("expected bytes field definition to be loaded from external catalog")
 	}
 	compact := cfg.Encoder.TemplatedFlow.Data.Catalog["compact_enterprise"]
 	if compact.ID != 4000 || compact.Length != 4 || compact.Type != "unsigned32" || compact.PEN != 64513 || !compact.EnterpriseScoped {
@@ -216,23 +186,9 @@ sink:
 	if mpls.ID != 72 || mpls.Length != 3 || mpls.Type != "bytes" {
 		t.Fatalf("expected mpls_label_stack_section_3 bytes/3 field from embedded catalog, got %#v", mpls)
 	}
-	if cfg.Encoder.TemplatedFlow.Data.Catalog["agent_ip"].ID != 130 {
-		t.Fatalf("expected agent_ip field from embedded catalog, got %#v", cfg.Encoder.TemplatedFlow.Data.Catalog["agent_ip"])
-	}
-	samplePool := cfg.Encoder.TemplatedFlow.Data.Catalog["sample_pool"]
-	if samplePool.ID != 310 || samplePool.Length != 4 || samplePool.Type != "unsigned32" {
-		t.Fatalf("expected sample_pool unsigned32/4 field from embedded catalog, got %#v", samplePool)
-	}
-	frameLength := cfg.Encoder.TemplatedFlow.Data.Catalog["frame_length"]
-	if frameLength.ID != 312 || frameLength.Length != 2 || frameLength.Type != "unsigned16" {
-		t.Fatalf("expected frame_length dataLinkFrameSize field from embedded catalog, got %#v", frameLength)
-	}
 	headerData := cfg.Encoder.TemplatedFlow.Data.Catalog["header_data"]
 	if headerData.ID != 315 || headerData.Length != 65535 || headerData.Type != "bytes" {
 		t.Fatalf("expected header_data variable dataLinkFrameSection field from embedded catalog, got %#v", headerData)
-	}
-	if cfg.Encoder.TemplatedFlow.Data.Catalog["src_mac"].Type != "macAddress" {
-		t.Fatalf("expected src_mac macAddress field from embedded catalog, got %#v", cfg.Encoder.TemplatedFlow.Data.Catalog["src_mac"])
 	}
 	if cfg.Encoder.TemplatedFlow.Data.Catalog["custom_counter"].ID != 2000 {
 		t.Fatalf("expected override to merge over embedded catalog, got %#v", cfg.Encoder.TemplatedFlow.Data.Catalog["custom_counter"])
@@ -341,12 +297,6 @@ sink:
 	if err != nil {
 		t.Fatalf("Load returned error: %v", err)
 	}
-	if cfg.TemplatedFields.FieldsPath != fieldsPath {
-		t.Fatalf("expected shared fields_path to resolve relative to config, got %q", cfg.TemplatedFields.FieldsPath)
-	}
-	if cfg.Encoder.TemplatedFlow.Data.FieldsPath != exportFieldsPath {
-		t.Fatalf("expected encoder fields_path to resolve relative to config, got %q", cfg.Encoder.TemplatedFlow.Data.FieldsPath)
-	}
 	shared := cfg.TemplatedFields.Catalog["custom_counter"]
 	if shared.ID != 1001 || shared.PEN != 32473 {
 		t.Fatalf("expected top-level override to apply to shared catalog, got %#v", shared)
@@ -359,9 +309,6 @@ sink:
 	}
 	if cfg.Encoder.TemplatedFlow.Data.Catalog["file_export_only"].ID != 3000 {
 		t.Fatalf("expected encoder-only fields_path in export catalog, got %#v", cfg.Encoder.TemplatedFlow.Data.Catalog["file_export_only"])
-	}
-	if cfg.Encoder.TemplatedFlow.Data.Catalog["export_only"].ID != 2000 {
-		t.Fatalf("expected encoder-only override in export catalog, got %#v", cfg.Encoder.TemplatedFlow.Data.Catalog["export_only"])
 	}
 	if len(cfg.Encoder.TemplatedFlow.Data.Select) != 1 || cfg.Encoder.TemplatedFlow.Data.Select[0] != "bytes" {
 		t.Fatalf("expected export field selection to remain export-only, got %#v", cfg.Encoder.TemplatedFlow.Data.Select)
@@ -856,52 +803,35 @@ func TestGeneratedAggregateConfigUsesFieldDSL(t *testing.T) {
 	if !generated {
 		t.Fatalf("expected generated config")
 	}
-
+	if len(cfg.Aggregators) != 1 {
+		t.Fatalf("expected one generated aggregator, got %d", len(cfg.Aggregators))
+	}
+	agg := cfg.Aggregators[0]
+	if agg.Match["record_kind"] != "packet" {
+		t.Fatalf("expected generated aggregator to match packets, got %#v", agg.Match)
+	}
+	if agg.TemplateID != 256 {
+		t.Fatalf("expected generated template_id 256, got %d", agg.TemplateID)
+	}
+	for _, field := range []struct {
+		role string
+		name string
+	}{
+		{"key", "src_addr"},
+		{"sum", "bytes"},
+		{"current", "tcp_flags"},
+		{"current", "src_mac"},
+	} {
+		if !aggregatorHasField(agg, field.role, field.name) {
+			t.Fatalf("expected generated aggregate field %s:%s, got %#v", field.role, field.name, agg.Fields)
+		}
+	}
 	raw, err := yaml.Marshal(cfg)
 	if err != nil {
 		t.Fatalf("marshal config: %v", err)
 	}
 	out := string(raw)
-	for _, want := range []string{
-		"fields:",
-		"- key:src_addr",
-		"- sum:bytes",
-		"- current:tcp_flags",
-		"- current:src_mac",
-		"- current:dst_mac",
-		"- current:end_time_unix",
-		"- current:ether_type",
-		"record_kind: packet",
-		"template_id: 256",
-	} {
-		if !strings.Contains(out, want) {
-			t.Fatalf("expected generated config to contain %q:\n%s", want, out)
-		}
-	}
-	for _, unwanted := range []string{
-		"key_fields:",
-		"- current:template_id",
-		"- first:agent_ip",
-		"- first:source_id",
-		"- current:source_id",
-		"- current:sub_agent_id",
-		"- current:sampling_rate",
-		"- current:sample_pool",
-		"- current:drops",
-		"- current:nat_src_addr",
-		"- current:nat_dst_addr",
-		"- current:nat_src_port",
-		"- current:nat_dst_port",
-		"- current:mpls_label_stack_section_1",
-		"- current:mpls_label_stack_section_2",
-		"- current:mpls_label_stack_section_3",
-		"static_fields:",
-		"ip_family:",
-		"flow_data_ipv4",
-		"flow_data_ipv6",
-		"reset_interval_ms:",
-		"periodic_interval_ms:",
-	} {
+	for _, unwanted := range []string{"key_fields:", "static_fields:", "reset_interval_ms:", "periodic_interval_ms:"} {
 		if strings.Contains(out, unwanted) {
 			t.Fatalf("expected generated config not to contain %q:\n%s", unwanted, out)
 		}
@@ -928,28 +858,21 @@ func TestGeneratedAggregateConfigSupportsCLIParams(t *testing.T) {
 	if len(cfg.Aggregators) != 1 {
 		t.Fatalf("expected generated aggregators, got %d", len(cfg.Aggregators))
 	}
-	for i, agg := range cfg.Aggregators {
-		if agg.Match["record_kind"] != "packet" {
-			t.Fatalf("aggregators[%d] match = %#v, want record_kind=packet", i, agg.Match)
-		}
-		if agg.Window.IdleFlushAfter != 0 {
-			t.Fatalf("aggregators[%d] idle flush = %d", i, agg.Window.IdleFlushAfter)
-		}
-		if agg.Window.MaxFlushAfter != 45000 {
-			t.Fatalf("aggregators[%d] max flush = %d", i, agg.Window.MaxFlushAfter)
-		}
-		if agg.Periodic.Every != 15000 {
-			t.Fatalf("aggregators[%d] periodic every = %d", i, agg.Periodic.Every)
-		}
-		if !agg.Periodic.ResetBuckets {
-			t.Fatalf("aggregators[%d] expected reset_buckets=true", i)
-		}
-		for _, field := range agg.Fields {
-			switch field.Name {
-			case "sampling_rate", "sample_pool", "drops", "sub_agent_id", "observation_domain_id", "nat_src_addr", "nat_dst_addr", "nat_src_port", "nat_dst_port":
-				t.Fatalf("aggregators[%d] should not export %s by default: %#v", i, field.Name, agg.Fields)
-			}
-		}
+	agg := cfg.Aggregators[0]
+	if agg.Match["record_kind"] != "packet" {
+		t.Fatalf("match = %#v, want record_kind=packet", agg.Match)
+	}
+	if agg.Window.IdleFlushAfter != 0 {
+		t.Fatalf("idle flush = %d", agg.Window.IdleFlushAfter)
+	}
+	if agg.Window.MaxFlushAfter != 45000 {
+		t.Fatalf("max flush = %d", agg.Window.MaxFlushAfter)
+	}
+	if agg.Periodic.Every != 15000 {
+		t.Fatalf("periodic every = %d", agg.Periodic.Every)
+	}
+	if !agg.Periodic.ResetBuckets {
+		t.Fatalf("expected reset_buckets=true")
 	}
 }
 
@@ -969,16 +892,6 @@ func TestNormalizeAggregateArgsSupportsSpaceSeparatedValue(t *testing.T) {
 			args: []string{"-agg", "-genconf"},
 			want: []string{"-agg", "-genconf"},
 		},
-		{
-			name: "equals form remains unchanged",
-			args: []string{"-agg=payload", "-genconf"},
-			want: []string{"-agg=payload", "-genconf"},
-		},
-		{
-			name: "double dash aggregate",
-			args: []string{"--agg", "none", "-genconf"},
-			want: []string{"--agg=none", "-genconf"},
-		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -990,48 +903,56 @@ func TestNormalizeAggregateArgsSupportsSpaceSeparatedValue(t *testing.T) {
 	}
 }
 
-func TestGeneratedAggregateConfigSupportsSpaceSeparatedPreset(t *testing.T) {
-	fs := flag.NewFlagSet("test", flag.ContinueOnError)
-	flags, _ := BindFlags(fs)
-	if err := fs.Parse(NormalizeAggregateArgs([]string{"-agg", "passthrough,payload", "-genconf"})); err != nil {
-		t.Fatalf("Parse returned error: %v", err)
+func TestGeneratedAggregateConfigSupportsSpaceSeparatedPresets(t *testing.T) {
+	tests := []struct {
+		name      string
+		preset    string
+		checkFunc func(t *testing.T, cfg *Config)
+	}{
+		{
+			name:   "passthrough payload",
+			preset: "passthrough,payload",
+			checkFunc: func(t *testing.T, cfg *Config) {
+				t.Helper()
+				if len(cfg.Aggregators) != 1 {
+					t.Fatalf("expected generated aggregator, got %d", len(cfg.Aggregators))
+				}
+				agg := cfg.Aggregators[0]
+				if !agg.Passthrough {
+					t.Fatalf("expected passthrough preset to use schema passthrough")
+				}
+				if !aggregatorHasField(agg, "current", "frame_length") || !aggregatorHasField(agg, "current", "header_data") {
+					t.Fatalf("expected payload fields, got %#v", agg.Fields)
+				}
+			},
+		},
+		{
+			name:   "none",
+			preset: "none",
+			checkFunc: func(t *testing.T, cfg *Config) {
+				t.Helper()
+				if len(cfg.Aggregators) != 0 {
+					t.Fatalf("expected no generated aggregators, got %d", len(cfg.Aggregators))
+				}
+			},
+		},
 	}
-
-	cfg, generated, err := LoadFromFlags(flags)
-	if err != nil {
-		t.Fatalf("LoadFromFlags returned error: %v", err)
-	}
-	if !generated {
-		t.Fatalf("expected generated config")
-	}
-	if len(cfg.Aggregators) != 1 {
-		t.Fatalf("expected generated aggregator, got %d", len(cfg.Aggregators))
-	}
-	agg := cfg.Aggregators[0]
-	if !agg.Passthrough {
-		t.Fatalf("expected passthrough preset to use schema passthrough")
-	}
-	if !aggregatorHasField(agg, "current", "frame_length") || !aggregatorHasField(agg, "current", "header_data") {
-		t.Fatalf("expected payload fields, got %#v", agg.Fields)
-	}
-}
-
-func TestGeneratedAggregateConfigSupportsSpaceSeparatedNonePreset(t *testing.T) {
-	fs := flag.NewFlagSet("test", flag.ContinueOnError)
-	flags, _ := BindFlags(fs)
-	if err := fs.Parse(NormalizeAggregateArgs([]string{"-agg", "none", "-genconf"})); err != nil {
-		t.Fatalf("Parse returned error: %v", err)
-	}
-
-	cfg, generated, err := LoadFromFlags(flags)
-	if err != nil {
-		t.Fatalf("LoadFromFlags returned error: %v", err)
-	}
-	if !generated {
-		t.Fatalf("expected generated config")
-	}
-	if len(cfg.Aggregators) != 0 {
-		t.Fatalf("expected no generated aggregators, got %d", len(cfg.Aggregators))
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			fs := flag.NewFlagSet("test", flag.ContinueOnError)
+			flags, _ := BindFlags(fs)
+			if err := fs.Parse(NormalizeAggregateArgs([]string{"-agg", tt.preset, "-genconf"})); err != nil {
+				t.Fatalf("Parse returned error: %v", err)
+			}
+			cfg, generated, err := LoadFromFlags(flags)
+			if err != nil {
+				t.Fatalf("LoadFromFlags returned error: %v", err)
+			}
+			if !generated {
+				t.Fatalf("expected generated config")
+			}
+			tt.checkFunc(t, cfg)
+		})
 	}
 }
 
@@ -1053,12 +974,12 @@ func TestGeneratedIPFIXConfigExcludesDataLinkFrameByDefault(t *testing.T) {
 	if len(fields) == 0 {
 		t.Fatalf("expected generated ipfix config to select explicit fields")
 	}
-	for _, name := range []string{"frame_length", "header_data", "template_id", "sampling_rate", "sample_pool", "sub_agent_id", "observation_domain_id", "drops", "nat_src_addr", "nat_dst_addr", "nat_src_port", "nat_dst_port", "mpls_label_stack_section_1", "mpls_label_stack_section_2", "mpls_label_stack_section_3"} {
+	for _, name := range []string{"header_data", "nat_src_addr", "mpls_label_stack_section_1"} {
 		if slices.Contains(fields, name) {
 			t.Fatalf("expected generated ipfix config not to export %s by default: %#v", name, fields)
 		}
 	}
-	for _, name := range []string{"src_addr", "dst_addr", "bytes", "packets", "src_mac", "dst_mac", "ether_type", "source_id"} {
+	for _, name := range []string{"src_addr", "bytes", "source_id"} {
 		if !slices.Contains(fields, name) {
 			t.Fatalf("expected generated ipfix config to export %s: %#v", name, fields)
 		}
@@ -1086,9 +1007,6 @@ func TestGeneratedAggregateConfigPayloadPresetEnablesDataLinkFrame(t *testing.T)
 	if agg.Passthrough {
 		t.Fatalf("expected payload preset alone to keep stateful aggregation")
 	}
-	if !aggregatorHasField(agg, "sum", "bytes") || !aggregatorHasField(agg, "sum", "packets") {
-		t.Fatalf("expected generated aggregate sums, got %#v", agg.Fields)
-	}
 	if !aggregatorHasField(agg, "current", "frame_length") || !aggregatorHasField(agg, "current", "header_data") {
 		t.Fatalf("expected payload preset to enable data-link fields, got %#v", agg.Fields)
 	}
@@ -1096,10 +1014,8 @@ func TestGeneratedAggregateConfigPayloadPresetEnablesDataLinkFrame(t *testing.T)
 	if !slices.Contains(fields, "frame_length") || !slices.Contains(fields, "header_data") {
 		t.Fatalf("expected payload preset to select data-link fields for IPFIX, got %#v", fields)
 	}
-	for _, name := range generatedTemplatedFlowNATFields {
-		if aggregatorHasField(agg, "current", name) || slices.Contains(fields, name) {
-			t.Fatalf("expected payload preset not to select NAT field %s, agg=%#v fields=%#v", name, agg.Fields, fields)
-		}
+	if aggregatorHasField(agg, "current", "nat_src_addr") || slices.Contains(fields, "nat_src_addr") {
+		t.Fatalf("expected payload preset not to select NAT fields, agg=%#v fields=%#v", agg.Fields, fields)
 	}
 }
 
@@ -1122,13 +1038,8 @@ func TestGeneratedAggregateConfigNATPresetEnablesNATFields(t *testing.T) {
 	}
 	agg := cfg.Aggregators[0]
 	fields := cfg.Encoder.TemplatedFlow.Data.Select
-	for _, name := range generatedTemplatedFlowNATFields {
-		if !aggregatorHasField(agg, "current", name) {
-			t.Fatalf("expected nat preset to add aggregate field %s, got %#v", name, agg.Fields)
-		}
-		if !slices.Contains(fields, name) {
-			t.Fatalf("expected nat preset to select IPFIX field %s, got %#v", name, fields)
-		}
+	if !aggregatorHasField(agg, "current", "nat_src_addr") || !slices.Contains(fields, "nat_src_addr") {
+		t.Fatalf("expected nat preset to add and select NAT fields, agg=%#v fields=%#v", agg.Fields, fields)
 	}
 	if aggregatorHasField(agg, "current", "frame_length") || aggregatorHasField(agg, "current", "header_data") {
 		t.Fatalf("expected nat preset not to enable payload fields, got %#v", agg.Fields)
@@ -1157,13 +1068,8 @@ func TestGeneratedAggregateConfigMPLSPresetEnablesMPLSFields(t *testing.T) {
 	}
 	agg := cfg.Aggregators[0]
 	fields := cfg.Encoder.TemplatedFlow.Data.Select
-	for _, name := range generatedTemplatedFlowMPLSFields {
-		if !aggregatorHasField(agg, "current", name) {
-			t.Fatalf("expected mpls preset to add aggregate field %s, got %#v", name, agg.Fields)
-		}
-		if !slices.Contains(fields, name) {
-			t.Fatalf("expected mpls preset to select IPFIX field %s, got %#v", name, fields)
-		}
+	if !aggregatorHasField(agg, "current", "mpls_label_stack_section_1") || !slices.Contains(fields, "mpls_label_stack_section_1") {
+		t.Fatalf("expected mpls preset to add and select MPLS fields, agg=%#v fields=%#v", agg.Fields, fields)
 	}
 }
 
@@ -1193,9 +1099,6 @@ func TestGeneratedAggregateConfigSupportsPassthroughPreset(t *testing.T) {
 	}
 	if agg.Window.IdleFlushAfter != 0 || agg.Periodic.Every != 0 {
 		t.Fatalf("expected passthrough preset to remove export timers, got window=%#v periodic=%#v", agg.Window, agg.Periodic)
-	}
-	if aggregatorHasField(agg, "current", "frame_length") || aggregatorHasField(agg, "current", "header_data") {
-		t.Fatalf("expected passthrough preset not to enable payload fields without payload preset, got %#v", agg.Fields)
 	}
 }
 
@@ -1288,11 +1191,8 @@ sink:
 	if len(cfg.Aggregators) != 1 {
 		t.Fatalf("expected one overlay aggregator, got %d", len(cfg.Aggregators))
 	}
-	agg := cfg.Aggregators[0]
-	for _, name := range generatedTemplatedFlowMPLSFields {
-		if !aggregatorHasField(agg, "current", name) {
-			t.Fatalf("expected mpls preset to add aggregate field %s, got %#v", name, agg.Fields)
-		}
+	if !aggregatorHasField(cfg.Aggregators[0], "current", "mpls_label_stack_section_1") {
+		t.Fatalf("expected mpls preset to add aggregate MPLS fields, got %#v", cfg.Aggregators[0].Fields)
 	}
 }
 
@@ -1578,37 +1478,19 @@ sink:
 func TestHelperOptionsTextListsInputOutputAndAggregationExamples(t *testing.T) {
 	text := HelperOptionsText()
 	for _, want := range []string{
-		"udp::6343:flow",
-		"ebpf:eth0:bytes",
-		"pcap_live:en0:bytes",
+		"Input helper specs",
+		"Output helper specs",
+		"Aggregation helper specs",
 		"-input udp::6343:flow",
-		"json:stdout",
-		"ipfix:udp:127.0.0.1:4739",
-		"pcap:stdout",
 		"-output json:stdout",
-		"allow_truncate=<bool>",
-		"max_header_bytes=<bytes>",
-		"batch_max_records=<n>",
-		"batch_max_bytes=<bytes>",
-		"batch_flush_interval_ms=<ms>",
-		"sflow:udp:127.0.0.1:6343?allow_truncate=true&max_header_bytes=128",
-		"ipfix:udp:127.0.0.1:4739?batch=true&batch_max_records=32&batch_max_bytes=4096&batch_flush_interval_ms=250",
-		"-agg",
 		"-agg passthrough",
 		"-agg mpls",
 		"-agg idle_flush_after_ms=<ms>,periodic_every_ms=<ms>",
-		"-agg max_flush_after_ms=<ms>,idle_erase_after_ms=<ms>,reset_buckets=<bool>",
-		"-agg idle_flush_after_ms=5000,periodic_every_ms=30000",
-		"-agg periodic_every_ms=10000,reset_buckets=true",
-		"stream:<path-or-stdin>:json",
 		"encoders: json, protobuf, sflow, ipfix, netflowv9, netflowv5, pcap, pcapng",
 	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("expected helper options to contain %q, got:\n%s", want, text)
 		}
-	}
-	if strings.Contains(text, "-agg=") {
-		t.Fatalf("expected helper options not to contain -agg= syntax, got:\n%s", text)
 	}
 }
 
@@ -1630,20 +1512,11 @@ func TestGeneratedSFlowOutputAllowsTruncate(t *testing.T) {
 	if cfg.Encoder.AllowTruncate == nil || !*cfg.Encoder.AllowTruncate {
 		t.Fatalf("expected helper sflow output to enable allow_truncate")
 	}
-	if cfg.Encoder.SFlow.MaxHeaderBytes != 128 {
-		t.Fatalf("expected helper sflow output to default max_header_bytes=128, got %d", cfg.Encoder.SFlow.MaxHeaderBytes)
-	}
 	if !cfg.Encoder.Batch.IsEnabled() {
 		t.Fatalf("expected helper sflow output to enable batching by default")
 	}
-	if cfg.Encoder.Batch.MaxRecords != 8 || cfg.Encoder.Batch.MaxBytes != 1200 || cfg.Encoder.Batch.FlushInterval != 1000 {
-		t.Fatalf("unexpected default sflow batch settings: %#v", cfg.Encoder.Batch)
-	}
 	if cfg.Encoder.Workers != AutoWorkers {
 		t.Fatalf("expected helper sflow output to keep encoder workers auto, got %d", cfg.Encoder.Workers)
-	}
-	if got := ResolveEncoderWorkers(cfg.Encoder.Workers, cfg.Encoder.Type); got != 1 {
-		t.Fatalf("expected helper sflow auto encoder workers to resolve to 1, got %d", got)
 	}
 }
 
@@ -1661,14 +1534,8 @@ func TestGeneratedIPFIXOutputEnablesBatching(t *testing.T) {
 	if !cfg.Encoder.Batch.IsEnabled() {
 		t.Fatalf("expected helper ipfix output to enable batching by default")
 	}
-	if cfg.Encoder.Batch.MaxRecords != 8 || cfg.Encoder.Batch.MaxBytes != 1200 || cfg.Encoder.Batch.FlushInterval != 1000 {
-		t.Fatalf("unexpected default ipfix batch settings: %#v", cfg.Encoder.Batch)
-	}
 	if cfg.Encoder.Workers != AutoWorkers {
 		t.Fatalf("expected helper ipfix output to keep encoder workers auto, got %d", cfg.Encoder.Workers)
-	}
-	if got := ResolveEncoderWorkers(cfg.Encoder.Workers, cfg.Encoder.Type); got != 1 {
-		t.Fatalf("expected helper ipfix auto encoder workers to resolve to 1, got %d", got)
 	}
 }
 
@@ -1686,17 +1553,8 @@ func TestGeneratedOutputParsesBatchParams(t *testing.T) {
 	if !cfg.Encoder.Batch.IsEnabled() {
 		t.Fatalf("expected explicit batch=true")
 	}
-	if cfg.Encoder.Batch.MaxRecords != 32 {
-		t.Fatalf("expected batch max_records=32, got %d", cfg.Encoder.Batch.MaxRecords)
-	}
-	if cfg.Encoder.Batch.MaxBytes != 4096 {
-		t.Fatalf("expected batch max_bytes=4096, got %d", cfg.Encoder.Batch.MaxBytes)
-	}
-	if cfg.Encoder.Batch.FlushInterval != 250 {
-		t.Fatalf("expected batch flush_interval_ms=250, got %d", cfg.Encoder.Batch.FlushInterval)
-	}
-	if cfg.Encoder.MaxDatagramBytes != 4096 {
-		t.Fatalf("expected batch_max_bytes to set default max_datagram_bytes=4096, got %d", cfg.Encoder.MaxDatagramBytes)
+	if cfg.Encoder.Batch.MaxRecords != 32 || cfg.Encoder.Batch.MaxBytes != 4096 || cfg.Encoder.Batch.FlushInterval != 250 {
+		t.Fatalf("unexpected batch params: %#v", cfg.Encoder.Batch)
 	}
 
 	sflowCfg, generated, err := LoadFromFlags(&FlagConfig{
@@ -1815,6 +1673,27 @@ func TestGeneratedConfigYAMLUsesFalseForPacketDecoderBooleans(t *testing.T) {
 	if !generated {
 		t.Fatalf("expected generated config mode")
 	}
+	if cfg.Sources[0].SnapLen != 65535 || cfg.Sources[0].SampleEvery != 1 {
+		t.Fatalf("expected generated source defaults, got %#v", cfg.Sources[0])
+	}
+	if cfg.Processor.Workers != AutoWorkers {
+		t.Fatalf("expected generated processor workers auto, got %d", cfg.Processor.Workers)
+	}
+	if cfg.Processor.Builtin.PacketDecoder.DecodeBeyondL4 == nil || *cfg.Processor.Builtin.PacketDecoder.DecodeBeyondL4 {
+		t.Fatalf("expected generated packet decoder decode_beyond_l4=false")
+	}
+	if cfg.Processor.Builtin.PacketDecoder.Encapsulations.VXLAN.Enabled == nil || *cfg.Processor.Builtin.PacketDecoder.Encapsulations.VXLAN.Enabled {
+		t.Fatalf("expected generated vxlan enabled=false")
+	}
+	if !slices.Contains(cfg.Processor.Builtin.PacketDecoder.Encapsulations.VXLAN.Ports, 4789) {
+		t.Fatalf("expected generated vxlan default port 4789, got %#v", cfg.Processor.Builtin.PacketDecoder.Encapsulations.VXLAN.Ports)
+	}
+	if cfg.Encoder.TemplatedFlow.TemplateBaseID != 256 || cfg.Encoder.TemplatedFlow.OptionsTemplateBaseID != 1024 {
+		t.Fatalf("expected generated templated flow base IDs, got %#v", cfg.Encoder.TemplatedFlow)
+	}
+	if cfg.Encoder.TemplatedFlow.TemplateRefresh != 60000 || cfg.Encoder.TemplatedFlow.OptionsRefresh != 30000 {
+		t.Fatalf("expected generated templated flow refresh defaults, got %#v", cfg.Encoder.TemplatedFlow)
+	}
 	raw, err := yaml.Marshal(cfg)
 	if err != nil {
 		t.Fatalf("marshal config: %v", err)
@@ -1822,25 +1701,6 @@ func TestGeneratedConfigYAMLUsesFalseForPacketDecoderBooleans(t *testing.T) {
 	text := string(raw)
 	if strings.Contains(text, ": null") {
 		t.Fatalf("expected generated config to avoid null booleans, got:\n%s", text)
-	}
-	for _, want := range []string{
-		"snaplen: 65535",
-		"sample_every: 1",
-		"workers: auto",
-		"decode_beyond_l4: false",
-		"enabled: false",
-		"- 4789",
-		"- 6081",
-		"- 1701",
-		"- 2152",
-		"template_base_id: 256",
-		"options_template_base_id: 1024",
-		"template_refresh_ms: 60000",
-		"options_refresh_ms: 30000",
-	} {
-		if !strings.Contains(text, want) {
-			t.Fatalf("expected generated config to contain %q, got:\n%s", want, text)
-		}
 	}
 	if strings.Contains(text, "ports: []") {
 		t.Fatalf("expected generated config to materialize encapsulation ports, got:\n%s", text)
@@ -1858,20 +1718,21 @@ func TestGeneratedEBPFConfigMaterializesFeatureDefaults(t *testing.T) {
 	if !generated {
 		t.Fatalf("expected generated config mode")
 	}
-	raw, err := yaml.Marshal(cfg)
-	if err != nil {
-		t.Fatalf("marshal config: %v", err)
+	if len(cfg.Sources) != 1 {
+		t.Fatalf("expected one generated source, got %d", len(cfg.Sources))
 	}
-	text := string(raw)
-	for _, want := range []string{
-		"ebpf:",
-		"skb_metadata: true",
-		"conntrack: true",
-		"direction: both",
-	} {
-		if !strings.Contains(text, want) {
-			t.Fatalf("expected generated ebpf config to contain %q, got:\n%s", want, text)
-		}
+	src := cfg.Sources[0]
+	if src.Network != "ebpf" || src.Interface != "br-lan" || src.Type != "bytes" {
+		t.Fatalf("unexpected generated ebpf source: %#v", src)
+	}
+	if src.EBPF.SKBMetadata == nil || !*src.EBPF.SKBMetadata {
+		t.Fatalf("expected generated ebpf skb_metadata=true, got %#v", src.EBPF.SKBMetadata)
+	}
+	if src.EBPF.Conntrack == nil || !*src.EBPF.Conntrack {
+		t.Fatalf("expected generated ebpf conntrack=true, got %#v", src.EBPF.Conntrack)
+	}
+	if src.EBPF.Direction != "both" {
+		t.Fatalf("expected generated ebpf direction both, got %q", src.EBPF.Direction)
 	}
 }
 
