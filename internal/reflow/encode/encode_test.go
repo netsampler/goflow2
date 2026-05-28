@@ -1966,6 +1966,101 @@ func TestNFv9EncoderUsesSwitchedTimeFields(t *testing.T) {
 	}
 }
 
+func TestNFv9EncoderSkipsIPFIXOnlyFallbackFields(t *testing.T) {
+	cfg := testTFlowEncoderConfig("netflowv9")
+	cfg.TemplatedFlow.Data.Select = append(cfg.TemplatedFlow.Data.Select, "source_id", "header_data", "start_time_unix")
+	cfg.TemplatedFlow.Data.Catalog["source_id"] = config.IPFIXFieldDefinition{ID: netflow.IPFIX_FIELD_observationPointId, Length: 8, Type: "unsigned64"}
+	cfg.TemplatedFlow.Data.Catalog["header_data"] = config.IPFIXFieldDefinition{ID: netflow.IPFIX_FIELD_dataLinkFrameSection, Length: 0xffff, Type: "bytes"}
+	enc := NewNFv9Encoder(cfg)
+
+	evt := testTemplatedFlowEvent()
+	evt.Fields["header_data"] = []byte{0xde, 0xad, 0xbe, 0xef}
+	payloads, err := enc.Encode(evt)
+	if err != nil {
+		t.Fatalf("Encode returned error: %v", err)
+	}
+
+	store := templates.NewTemplateFlowStore()
+	store.Start()
+	var decoded netflow.NFv9Packet
+	if err := netflow.DecodeMessageVersion(bytes.NewBuffer(payloads[0]), store, netflow.FlowContext{RouterKey: "test-router"}, &decoded, nil); err != nil {
+		t.Fatalf("decode netflow v9 payload: %v", err)
+	}
+
+	templateSet := decoded.FlowSets[0].(netflow.TemplateFlowSet)
+	dataSet := decoded.FlowSets[1].(netflow.DataFlowSet)
+	fields := templateSet.Records[0].Fields
+	values := dataSet.Records[0].Values
+	if len(fields) != len(values) {
+		t.Fatalf("expected template/data widths to match, got fields=%d values=%d", len(fields), len(values))
+	}
+	for _, field := range fields {
+		if field.Type == netflow.IPFIX_FIELD_observationPointId || field.Type == netflow.IPFIX_FIELD_dataLinkFrameSection {
+			t.Fatalf("expected IPFIX-only field to be skipped, got template field %#v", field)
+		}
+		if !isNetFlowV9FieldID(field.Type) {
+			t.Fatalf("expected only NetFlow v9 field IDs, got %#v", field)
+		}
+	}
+	if got := fields[len(fields)-1]; got.Type != netflow.NFV9_FIELD_FIRST_SWITCHED || got.Length != 4 {
+		t.Fatalf("expected supported remapped start_time_unix to remain, got %#v", got)
+	}
+}
+
+func TestNFv9EncoderSkipsIPFIXOnlySchemaFields(t *testing.T) {
+	cfg := testTFlowEncoderConfig("netflowv9")
+	cfg.TemplatedFlow.Data.Catalog["source_id"] = config.IPFIXFieldDefinition{ID: netflow.IPFIX_FIELD_observationPointId, Length: 8, Type: "unsigned64"}
+	cfg.TemplatedFlow.Data.Catalog["header_data"] = config.IPFIXFieldDefinition{ID: netflow.IPFIX_FIELD_dataLinkFrameSection, Length: 0xffff, Type: "bytes"}
+	enc := NewNFv9Encoder(cfg)
+
+	templatePayloads, err := enc.Encode(&event.Event{
+		Kind: "control",
+		Control: &event.ControlMetadata{
+			Type:   "schema",
+			Stream: "flow_data",
+		},
+		Payload: event.AggregationSchema{
+			Stream:         "flow_data",
+			FieldNames:     []string{"source_id", "header_data", "bytes"},
+			BaseTemplateID: 300,
+		},
+	})
+	if err != nil {
+		t.Fatalf("schema Encode returned error: %v", err)
+	}
+	if len(templatePayloads) != 1 {
+		t.Fatalf("expected one schema template payload, got %d", len(templatePayloads))
+	}
+
+	store := templates.NewTemplateFlowStore()
+	store.Start()
+	ctx := netflow.FlowContext{RouterKey: "test-router"}
+	var templateDecoded netflow.NFv9Packet
+	if err := netflow.DecodeMessageVersion(bytes.NewBuffer(templatePayloads[0]), store, ctx, &templateDecoded, nil); err != nil {
+		t.Fatalf("decode netflow v9 schema payload: %v", err)
+	}
+	templateSet := templateDecoded.FlowSets[0].(netflow.TemplateFlowSet)
+	if got := templateSet.Records[0].Fields; len(got) != 1 || got[0].Type != netflow.NFV9_FIELD_IN_BYTES {
+		t.Fatalf("expected only supported bytes template field, got %#v", got)
+	}
+
+	evt := testTemplatedFlowEvent()
+	evt.Stream = "flow_data"
+	evt.Fields["header_data"] = []byte{0xde, 0xad, 0xbe, 0xef}
+	payloads, err := enc.Encode(evt)
+	if err != nil {
+		t.Fatalf("data Encode returned error: %v", err)
+	}
+	var decoded netflow.NFv9Packet
+	if err := netflow.DecodeMessageVersion(bytes.NewBuffer(payloads[0]), store, ctx, &decoded, nil); err != nil {
+		t.Fatalf("decode netflow v9 data payload: %v", err)
+	}
+	dataSet := decoded.FlowSets[0].(netflow.DataFlowSet)
+	if got := dataSet.Records[0].Values; len(got) != 1 || got[0].Type != netflow.NFV9_FIELD_IN_BYTES {
+		t.Fatalf("expected only supported bytes data value, got %#v", got)
+	}
+}
+
 func TestTemplatedEncoderEncodesMacAddressFields(t *testing.T) {
 	cfg := config.TemplatedFlowDataConfig{
 		Select: []string{"src_mac"},
