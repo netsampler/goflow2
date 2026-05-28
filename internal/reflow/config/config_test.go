@@ -1019,6 +1019,107 @@ func TestGeneratedAggregateConfigPayloadPresetEnablesDataLinkFrame(t *testing.T)
 	}
 }
 
+func TestGeneratedAggregateConfigLimitedPresetRemovesParsedPacketFields(t *testing.T) {
+	fs := flag.NewFlagSet("test", flag.ContinueOnError)
+	flags, _ := BindFlags(fs)
+	if err := fs.Parse([]string{"-output=ipfix:udp:127.0.0.1:4739", "-agg=payload,limited", "-genconf"}); err != nil {
+		t.Fatalf("Parse returned error: %v", err)
+	}
+
+	cfg, generated, err := LoadFromFlags(flags)
+	if err != nil {
+		t.Fatalf("LoadFromFlags returned error: %v", err)
+	}
+	if !generated {
+		t.Fatalf("expected generated config")
+	}
+	if len(cfg.Aggregators) != 1 {
+		t.Fatalf("expected generated aggregator, got %d", len(cfg.Aggregators))
+	}
+	agg := cfg.Aggregators[0]
+	fields := cfg.Encoder.TemplatedFlow.Data.Select
+	if !aggregatorHasField(agg, "current", "frame_length") || !aggregatorHasField(agg, "current", "header_data") {
+		t.Fatalf("expected payload fields to remain, got %#v", agg.Fields)
+	}
+	for _, name := range []string{"src_addr", "dst_addr", "src_port", "dst_port", "src_mac", "dst_mac", "proto", "tcp_flags", "ether_type"} {
+		if aggregatorHasFieldName(agg, name) || slices.Contains(fields, name) {
+			t.Fatalf("expected limited preset to remove %s, agg=%#v fields=%#v", name, agg.Fields, fields)
+		}
+	}
+	for _, name := range []string{"bytes", "packets", "input_if", "output_if", "agent_ip", "source_id"} {
+		if !aggregatorHasFieldName(agg, name) || !slices.Contains(fields, name) {
+			t.Fatalf("expected limited preset to preserve %s, agg=%#v fields=%#v", name, agg.Fields, fields)
+		}
+	}
+}
+
+func TestGeneratedAggregateConfigLimitedKeepsIPFieldsWithNATPreset(t *testing.T) {
+	fs := flag.NewFlagSet("test", flag.ContinueOnError)
+	flags, _ := BindFlags(fs)
+	if err := fs.Parse([]string{"-output=ipfix:udp:127.0.0.1:4739", "-agg=payload,limited,nat", "-genconf"}); err != nil {
+		t.Fatalf("Parse returned error: %v", err)
+	}
+
+	cfg, generated, err := LoadFromFlags(flags)
+	if err != nil {
+		t.Fatalf("LoadFromFlags returned error: %v", err)
+	}
+	if !generated {
+		t.Fatalf("expected generated config")
+	}
+	if len(cfg.Aggregators) != 1 {
+		t.Fatalf("expected generated aggregator, got %d", len(cfg.Aggregators))
+	}
+	agg := cfg.Aggregators[0]
+	fields := cfg.Encoder.TemplatedFlow.Data.Select
+	for _, name := range []string{"src_addr", "dst_addr", "nat_src_addr", "nat_dst_addr", "nat_src_port", "nat_dst_port"} {
+		if !aggregatorHasFieldName(agg, name) || !slices.Contains(fields, name) {
+			t.Fatalf("expected NAT limited preset to preserve %s, agg=%#v fields=%#v", name, agg.Fields, fields)
+		}
+	}
+	for _, name := range []string{"src_port", "dst_port", "src_mac", "dst_mac", "proto", "tcp_flags", "ether_type"} {
+		if aggregatorHasFieldName(agg, name) || slices.Contains(fields, name) {
+			t.Fatalf("expected NAT limited preset to remove %s, agg=%#v fields=%#v", name, agg.Fields, fields)
+		}
+	}
+}
+
+func TestGeneratedAggregateConfigEncapPresetEnablesOuterFields(t *testing.T) {
+	fs := flag.NewFlagSet("test", flag.ContinueOnError)
+	flags, _ := BindFlags(fs)
+	if err := fs.Parse([]string{"-output=ipfix:udp:127.0.0.1:4739", "-agg=payload,limited,encap", "-genconf"}); err != nil {
+		t.Fatalf("Parse returned error: %v", err)
+	}
+
+	cfg, generated, err := LoadFromFlags(flags)
+	if err != nil {
+		t.Fatalf("LoadFromFlags returned error: %v", err)
+	}
+	if !generated {
+		t.Fatalf("expected generated config")
+	}
+	if len(cfg.Aggregators) != 1 {
+		t.Fatalf("expected generated aggregator, got %d", len(cfg.Aggregators))
+	}
+	agg := cfg.Aggregators[0]
+	fields := cfg.Encoder.TemplatedFlow.Data.Select
+	for _, name := range []string{"outer_proto", "outer_src_port", "outer_src_addr", "outer_dst_port", "outer_dst_addr"} {
+		if !aggregatorHasField(agg, "key", name) || !slices.Contains(fields, name) {
+			t.Fatalf("expected encap preset to add key %s, agg=%#v fields=%#v", name, agg.Fields, fields)
+		}
+	}
+	for _, name := range []string{"outer_proto_name", "encap_depth"} {
+		if !aggregatorHasField(agg, "current", name) || !slices.Contains(fields, name) {
+			t.Fatalf("expected encap preset to add current %s, agg=%#v fields=%#v", name, agg.Fields, fields)
+		}
+	}
+	for _, name := range []string{"src_addr", "dst_addr", "src_port", "dst_port"} {
+		if aggregatorHasFieldName(agg, name) || slices.Contains(fields, name) {
+			t.Fatalf("expected limited encap preset to keep inner field %s removed, agg=%#v fields=%#v", name, agg.Fields, fields)
+		}
+	}
+}
+
 func TestGeneratedAggregateConfigNATPresetEnablesNATFields(t *testing.T) {
 	fs := flag.NewFlagSet("test", flag.ContinueOnError)
 	flags, _ := BindFlags(fs)
@@ -1834,6 +1935,15 @@ func TestParseInputSpecRejectsCaptureParamsOnSocketInputs(t *testing.T) {
 func aggregatorHasField(agg AggregatorConfig, role, name string) bool {
 	for _, field := range agg.Fields {
 		if field.Role == role && field.Name == name {
+			return true
+		}
+	}
+	return false
+}
+
+func aggregatorHasFieldName(agg AggregatorConfig, name string) bool {
+	for _, field := range agg.Fields {
+		if field.Name == name {
 			return true
 		}
 	}

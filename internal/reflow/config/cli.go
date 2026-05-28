@@ -66,7 +66,9 @@ var (
 	aggregateHelperOptions = []string{
 		"-agg",
 		"-agg payload",
+		"-agg payload,limited",
 		"-agg nat",
+		"-agg encap",
 		"-agg mpls",
 		"-agg passthrough",
 		"-agg idle_flush_after_ms=<ms>,periodic_every_ms=<ms>",
@@ -74,7 +76,11 @@ var (
 	}
 	aggregateHelperExamples = []string{
 		"-agg payload",
+		"-agg payload,limited",
+		"-agg payload,limited,nat",
+		"-agg payload,limited,encap",
 		"-agg nat",
+		"-agg encap",
 		"-agg mpls",
 		"-agg passthrough",
 		"-agg idle_flush_after_ms=5000,periodic_every_ms=30000",
@@ -110,6 +116,44 @@ var (
 		"nat_dst_addr",
 		"nat_src_port",
 		"nat_dst_port",
+	}
+	generatedTemplatedFlowEncapFields = []string{
+		"outer_proto",
+		"outer_proto_name",
+		"outer_src_port",
+		"outer_src_addr",
+		"outer_dst_port",
+		"outer_dst_addr",
+		"encap_depth",
+	}
+	generatedPacketParsedFlowFields = []string{
+		"protocol",
+		"header_protocol",
+		"header_protocol_name",
+		"proto",
+		"proto_name",
+		"tcp_flags",
+		"src_port",
+		"src_addr",
+		"dst_port",
+		"dst_addr",
+		"ip_family",
+		"src_mac",
+		"vlan_id",
+		"dst_mac",
+		"ether_type",
+		"outer_proto",
+		"outer_proto_name",
+		"outer_src_port",
+		"outer_src_addr",
+		"outer_dst_port",
+		"outer_dst_addr",
+		"encap_depth",
+	}
+	generatedPacketParsedIPFields = map[string]struct{}{
+		"src_addr":  {},
+		"dst_addr":  {},
+		"ip_family": {},
 	}
 )
 
@@ -323,9 +367,18 @@ func (c *FlagConfig) generatedConfig() (*Config, error) {
 		if lastAggregatePreset(c) != "none" && aggregatePresetRequested(c, "nat") {
 			cfg.ensureTemplatedFlowFieldsSelected(generatedTemplatedFlowNATFields...)
 		}
+		if lastAggregatePreset(c) != "none" && aggregatePresetRequested(c, "encap") {
+			cfg.ensureTemplatedFlowFieldsSelected(generatedTemplatedFlowEncapFields...)
+		}
 		if lastAggregatePreset(c) != "none" && aggregatePresetRequested(c, "mpls") {
 			cfg.enableMPLSAggregationHelpers()
 			cfg.ensureTemplatedFlowFieldsSelected(generatedTemplatedFlowMPLSFields...)
+		}
+		if lastAggregatePreset(c) != "none" && aggregatePresetRequested(c, "limited") {
+			cfg.removeTemplatedFlowFieldsSelected(packetParsedFieldsToRemove(
+				aggregatePresetRequested(c, "nat"),
+				aggregatePresetRequested(c, "encap"),
+			)...)
 		}
 	}
 	return cfg, nil
@@ -591,8 +644,14 @@ func parseAggregatePreset(cfg *FlagConfig, raw string) error {
 		cfg.AggPresets = append(cfg.AggPresets, "payload")
 	case "nat":
 		cfg.AggPresets = append(cfg.AggPresets, "nat")
+	case "encap", "encapsulation", "outer":
+		cfg.AggPresets = append(cfg.AggPresets, "encap")
 	case "mpls":
 		cfg.AggPresets = append(cfg.AggPresets, "mpls")
+	case "limited", "no-packet-fields", "no-packet", "strip-packet-fields", "packetless":
+		cfg.AggPresets = append(cfg.AggPresets, "limited")
+	case "payload-only":
+		cfg.AggPresets = append(cfg.AggPresets, "payload", "limited")
 	case "passthrough":
 		cfg.AggPresets = append(cfg.AggPresets, "passthrough")
 	case "none", "off":
@@ -938,18 +997,34 @@ func (c *Config) ApplyAggregationFlags(flags *FlagConfig) error {
 		switch preset {
 		case "none":
 			c.Aggregators = nil
-		case "passthrough", "payload", "nat", "mpls":
+		case "passthrough", "payload", "nat", "encap", "mpls", "limited":
 			agg := c.ensurePrimaryAggregator()
-			applyAggregationPresetsToAggregator(agg, []string{preset})
+			if preset == "limited" {
+				removePacketParsedFields(agg,
+					aggregatePresetRequested(flags, "nat"),
+					aggregatePresetRequested(flags, "encap"),
+				)
+			} else {
+				applyAggregationPresetsToAggregator(agg, []string{preset})
+			}
 			if preset == "payload" {
 				c.ensureTemplatedFlowFieldsSelected("frame_length", "header_data")
 			}
 			if preset == "nat" {
 				c.ensureTemplatedFlowFieldsSelected(generatedTemplatedFlowNATFields...)
 			}
+			if preset == "encap" {
+				c.ensureTemplatedFlowFieldsSelected(generatedTemplatedFlowEncapFields...)
+			}
 			if preset == "mpls" {
 				c.enableMPLSAggregationHelpers()
 				c.ensureTemplatedFlowFieldsSelected(generatedTemplatedFlowMPLSFields...)
+			}
+			if preset == "limited" {
+				c.removeTemplatedFlowFieldsSelected(packetParsedFieldsToRemove(
+					aggregatePresetRequested(flags, "nat"),
+					aggregatePresetRequested(flags, "encap"),
+				)...)
 			}
 		}
 	}
@@ -976,6 +1051,8 @@ func (c *Config) ensurePrimaryAggregator() *AggregatorConfig {
 }
 
 func applyAggregationPresetsToAggregator(cfg *AggregatorConfig, presets []string) {
+	keepIPFields := aggregatePresetSliceContains(presets, "nat")
+	keepEncapFields := aggregatePresetSliceContains(presets, "encap")
 	for _, preset := range presets {
 		switch preset {
 		case "none":
@@ -986,8 +1063,12 @@ func applyAggregationPresetsToAggregator(cfg *AggregatorConfig, presets []string
 			addPayloadFields(cfg)
 		case "nat":
 			addNATFields(cfg)
+		case "encap":
+			addEncapFields(cfg)
 		case "mpls":
 			addMPLSFields(cfg)
+		case "limited":
+			removePacketParsedFields(cfg, keepIPFields, keepEncapFields)
 		}
 	}
 }
@@ -1036,6 +1117,20 @@ func addNATFields(cfg *AggregatorConfig) {
 	}
 }
 
+func addEncapFields(cfg *AggregatorConfig) {
+	if cfg == nil {
+		return
+	}
+	for _, name := range []string{"outer_proto", "outer_src_port", "outer_src_addr", "outer_dst_port", "outer_dst_addr"} {
+		appendUniqueAggregatorField(cfg, AggregatorField{Role: "key", Name: name})
+		appendUniqueString(&cfg.KeyFields, name)
+	}
+	for _, name := range []string{"outer_proto_name", "encap_depth"} {
+		appendUniqueAggregatorField(cfg, AggregatorField{Role: "current", Name: name})
+		appendUniqueString(&cfg.Current, name)
+	}
+}
+
 func addMPLSFields(cfg *AggregatorConfig) {
 	if cfg == nil {
 		return
@@ -1043,6 +1138,23 @@ func addMPLSFields(cfg *AggregatorConfig) {
 	for _, name := range generatedTemplatedFlowMPLSFields {
 		appendUniqueAggregatorField(cfg, AggregatorField{Role: "current", Name: name})
 		appendUniqueString(&cfg.Current, name)
+	}
+}
+
+func removePacketParsedFields(cfg *AggregatorConfig, keepIPFields, keepEncapFields bool) {
+	if cfg == nil {
+		return
+	}
+	remove := packetParsedFieldSet(keepIPFields, keepEncapFields)
+	cfg.Fields = filterAggregatorFieldsByName(cfg.Fields, remove)
+	cfg.KeyFields = filterStringsBySet(cfg.KeyFields, remove)
+	cfg.Current = filterStringsBySet(cfg.Current, remove)
+	cfg.Sum = filterStringsBySet(cfg.Sum, remove)
+	cfg.First = filterStringsBySet(cfg.First, remove)
+	cfg.Min = filterStringsBySet(cfg.Min, remove)
+	cfg.Max = filterStringsBySet(cfg.Max, remove)
+	for name := range remove {
+		delete(cfg.StaticFields, name)
 	}
 }
 
@@ -1082,6 +1194,17 @@ func (c *Config) ensureTemplatedFlowFieldsSelected(names ...string) {
 	}
 }
 
+func (c *Config) removeTemplatedFlowFieldsSelected(names ...string) {
+	if c == nil || len(c.Encoder.TemplatedFlow.Data.Select) == 0 {
+		return
+	}
+	remove := make(map[string]struct{}, len(names))
+	for _, name := range names {
+		remove[name] = struct{}{}
+	}
+	c.Encoder.TemplatedFlow.Data.Select = filterStringsBySet(c.Encoder.TemplatedFlow.Data.Select, remove)
+}
+
 func aggregatePresets(flags *FlagConfig) []string {
 	if flags == nil {
 		return nil
@@ -1094,12 +1217,7 @@ func hasAggregateOverrides(flags *FlagConfig) bool {
 }
 
 func aggregatePresetRequested(flags *FlagConfig, want string) bool {
-	for _, preset := range aggregatePresets(flags) {
-		if preset == want {
-			return true
-		}
-	}
-	return false
+	return aggregatePresetSliceContains(aggregatePresets(flags), want)
 }
 
 func lastAggregatePreset(flags *FlagConfig) string {
@@ -1108,6 +1226,79 @@ func lastAggregatePreset(flags *FlagConfig) string {
 		return ""
 	}
 	return presets[len(presets)-1]
+}
+
+func aggregatePresetSliceContains(presets []string, want string) bool {
+	for _, preset := range presets {
+		if preset == want {
+			return true
+		}
+	}
+	return false
+}
+
+func packetParsedFieldsToRemove(keepIPFields, keepEncapFields bool) []string {
+	fields := make([]string, 0, len(generatedPacketParsedFlowFields))
+	for _, name := range generatedPacketParsedFlowFields {
+		if keepIPFields {
+			if _, ok := generatedPacketParsedIPFields[name]; ok {
+				continue
+			}
+		}
+		if keepEncapFields {
+			if stringInSlice(generatedTemplatedFlowEncapFields, name) {
+				continue
+			}
+		}
+		fields = append(fields, name)
+	}
+	return fields
+}
+
+func packetParsedFieldSet(keepIPFields, keepEncapFields bool) map[string]struct{} {
+	fields := packetParsedFieldsToRemove(keepIPFields, keepEncapFields)
+	out := make(map[string]struct{}, len(fields))
+	for _, name := range fields {
+		out[name] = struct{}{}
+	}
+	return out
+}
+
+func stringInSlice(values []string, want string) bool {
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+	return false
+}
+
+func filterAggregatorFieldsByName(fields []AggregatorField, remove map[string]struct{}) []AggregatorField {
+	if len(fields) == 0 || len(remove) == 0 {
+		return fields
+	}
+	out := fields[:0]
+	for _, field := range fields {
+		if _, ok := remove[field.Name]; ok {
+			continue
+		}
+		out = append(out, field)
+	}
+	return out
+}
+
+func filterStringsBySet(values []string, remove map[string]struct{}) []string {
+	if len(values) == 0 || len(remove) == 0 {
+		return values
+	}
+	out := values[:0]
+	for _, value := range values {
+		if _, ok := remove[value]; ok {
+			continue
+		}
+		out = append(out, value)
+	}
+	return out
 }
 
 func validateAggregatorFields(fields []AggregatorField) error {
