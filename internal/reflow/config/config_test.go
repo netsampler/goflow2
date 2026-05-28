@@ -1105,6 +1105,9 @@ func TestGeneratedAggregateConfigEncapPresetEnablesOuterFields(t *testing.T) {
 	if len(cfg.Aggregators) != 1 {
 		t.Fatalf("expected generated aggregator, got %d", len(cfg.Aggregators))
 	}
+	if cfg.Processor.Builtin.PacketDecoder.DecodeBeyondL4 == nil || !*cfg.Processor.Builtin.PacketDecoder.DecodeBeyondL4 {
+		t.Fatalf("expected encap preset to enable decode_beyond_l4, got %#v", cfg.Processor.Builtin.PacketDecoder.DecodeBeyondL4)
+	}
 	agg := cfg.Aggregators[0]
 	fields := cfg.Encoder.TemplatedFlow.Data.Select
 	for _, name := range []string{"outer_proto", "outer_src_port", "outer_src_addr", "outer_dst_port", "outer_dst_addr"} {

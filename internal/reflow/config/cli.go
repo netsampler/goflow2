@@ -369,6 +369,7 @@ func (c *FlagConfig) generatedConfig() (*Config, error) {
 			cfg.ensureTemplatedFlowFieldsSelected(generatedTemplatedFlowNATFields...)
 		}
 		if lastAggregatePreset(c) != "none" && aggregatePresetRequested(c, "encap") {
+			cfg.enablePacketDecoderBeyondL4()
 			cfg.ensureTemplatedFlowFieldsSelected(generatedTemplatedFlowEncapFields...)
 		}
 		if lastAggregatePreset(c) != "none" && aggregatePresetRequested(c, "mpls") {
@@ -1016,6 +1017,7 @@ func (c *Config) ApplyAggregationFlags(flags *FlagConfig) error {
 				c.ensureTemplatedFlowFieldsSelected(generatedTemplatedFlowNATFields...)
 			}
 			if preset == "encap" {
+				c.enablePacketDecoderBeyondL4()
 				c.ensureTemplatedFlowFieldsSelected(generatedTemplatedFlowEncapFields...)
 			}
 			if preset == "mpls" {
@@ -1185,6 +1187,13 @@ func (c *Config) enableMPLSAggregationHelpers() {
 	if c.Processor.Builtin.AggregationHelpers.MPLSLabels < len(generatedTemplatedFlowMPLSFields) {
 		c.Processor.Builtin.AggregationHelpers.MPLSLabels = len(generatedTemplatedFlowMPLSFields)
 	}
+}
+
+func (c *Config) enablePacketDecoderBeyondL4() {
+	if c == nil {
+		return
+	}
+	c.Processor.Builtin.PacketDecoder.DecodeBeyondL4 = boolPtr(true)
 }
 
 func (c *Config) ensureTemplatedFlowFieldsSelected(names ...string) {
