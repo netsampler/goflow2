@@ -799,7 +799,7 @@ func (e *IPFIXEncoder) registerSourceInit(evt *event.Event) ([][]byte, error) {
 		state.templateID = e.cfg.TemplatedFlow.OptionsTemplateBaseID
 	}
 	state.observationDomainID = e.observationDomainID()
-	e.sourceOptions[state.stream] = state
+	e.sourceOptions[sourceOptionsKey(state)] = state
 	payloads, err := e.encodeSourceOptions(state)
 	if err != nil {
 		return nil, err
@@ -818,7 +818,7 @@ func (e *NFv9Encoder) registerSourceInit(evt *event.Event) ([][]byte, error) {
 		state.templateID = e.cfg.TemplatedFlow.OptionsTemplateBaseID
 	}
 	state.observationDomainID = e.sourceID()
-	e.sourceOptions[state.stream] = state
+	e.sourceOptions[sourceOptionsKey(state)] = state
 	payloads, err := e.encodeSourceOptions(state)
 	if err != nil {
 		return nil, err
@@ -841,13 +841,11 @@ func (e *IPFIXEncoder) flushControlPackets(now time.Time) ([][]byte, error) {
 		e.lastTemplateRun = now
 	}
 	if e.cfg.TemplatedFlow.OptionsRefresh > 0 && (e.lastOptionsRun.IsZero() || now.Sub(e.lastOptionsRun) >= time.Duration(e.cfg.TemplatedFlow.OptionsRefresh)*time.Millisecond) {
-		for _, state := range e.sourceOptions {
-			encoded, err := e.encodeSourceOptions(state)
-			if err != nil {
-				return nil, err
-			}
-			payloads = append(payloads, encoded...)
+		encoded, err := e.encodeSourceOptionsBatch(sortedSourceOptions(e.sourceOptions))
+		if err != nil {
+			return nil, err
 		}
+		payloads = append(payloads, encoded...)
 		e.lastOptionsRun = now
 	}
 	return payloads, nil
@@ -937,17 +935,49 @@ func (e *NFv9Encoder) encodeSchemaTemplates(state templatedSchemaState) ([][]byt
 
 // encodeSourceOptions serializes source-level exporter metadata as IPFIX options records.
 func (e *IPFIXEncoder) encodeSourceOptions(state sourceOptionsState) ([][]byte, error) {
+	return e.encodeSourceOptionsBatch([]sourceOptionsState{state})
+}
+
+func (e *IPFIXEncoder) encodeSourceOptionsBatch(states []sourceOptionsState) ([][]byte, error) {
+	groups := groupedIPFIXSourceOptions(states)
+	out := make([][]byte, 0, len(groups))
+	for _, states := range groups {
+		data, err := e.encodeSourceOptionsGroup(states)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, data)
+	}
+	return out, nil
+}
+
+func (e *IPFIXEncoder) encodeSourceOptionsGroup(states []sourceOptionsState) ([]byte, error) {
+	if len(states) == 0 {
+		return nil, nil
+	}
+	first := states[0]
+	records := make([]netflow.OptionsDataRecord, 0, len(states))
+	for _, state := range states {
+		records = append(records, netflow.OptionsDataRecord{
+			ScopesValues: []netflow.DataField{
+				{Type: netflow.IPFIX_FIELD_observationPointId, Value: encodeU64(uint64(state.sourceID))},
+			},
+			OptionsValues: []netflow.DataField{
+				{Type: netflow.IPFIX_FIELD_samplingInterval, Value: encodeU32(state.samplingRate)},
+			},
+		})
+	}
 	packet := &netflow.IPFIXPacket{
 		Version:             10,
 		ExportTime:          uint32(time.Now().Unix()),
 		SequenceNumber:      e.seq.Load(),
-		ObservationDomainId: state.observationDomainID,
+		ObservationDomainId: first.observationDomainID,
 		FlowSets: []interface{}{
 			netflow.IPFIXOptionsTemplateFlowSet{
 				FlowSetHeader: netflow.FlowSetHeader{Id: 3},
 				Records: []netflow.IPFIXOptionsTemplateRecord{
 					{
-						TemplateId:      state.templateID,
+						TemplateId:      first.templateID,
 						FieldCount:      2,
 						ScopeFieldCount: 1,
 						Scopes: []netflow.Field{
@@ -960,17 +990,8 @@ func (e *IPFIXEncoder) encodeSourceOptions(state sourceOptionsState) ([][]byte, 
 				},
 			},
 			netflow.OptionsDataFlowSet{
-				FlowSetHeader: netflow.FlowSetHeader{Id: state.templateID},
-				Records: []netflow.OptionsDataRecord{
-					{
-						ScopesValues: []netflow.DataField{
-							{Type: netflow.IPFIX_FIELD_observationPointId, Value: encodeU64(uint64(state.sourceID))},
-						},
-						OptionsValues: []netflow.DataField{
-							{Type: netflow.IPFIX_FIELD_samplingInterval, Value: encodeU32(state.samplingRate)},
-						},
-					},
-				},
+				FlowSetHeader: netflow.FlowSetHeader{Id: first.templateID},
+				Records:       records,
 			},
 		},
 	}
@@ -979,7 +1000,7 @@ func (e *IPFIXEncoder) encodeSourceOptions(state sourceOptionsState) ([][]byte, 
 		return nil, fmt.Errorf("encode ipfix source options: %w", err)
 	}
 	e.advanceIPFIXSequence(packet)
-	return [][]byte{data}, nil
+	return data, nil
 }
 
 // encodeSourceOptions serializes source-level exporter metadata as NetFlow v9 options records.
@@ -1255,6 +1276,44 @@ func preferredNATVariantMask(groups []string) (uint64, bool) {
 		return 0, false
 	}
 	return (uint64(1) << primaryIndex) | (uint64(1) << natIndex), true
+}
+
+func sourceOptionsKey(state sourceOptionsState) string {
+	return fmt.Sprintf("%s|%d|%d|%d", state.stream, state.observationDomainID, state.sourceID, state.templateID)
+}
+
+func sortedSourceOptions(options map[string]sourceOptionsState) []sourceOptionsState {
+	if len(options) == 0 {
+		return nil
+	}
+	keys := make([]string, 0, len(options))
+	for key := range options {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	states := make([]sourceOptionsState, 0, len(keys))
+	for _, key := range keys {
+		states = append(states, options[key])
+	}
+	return states
+}
+
+func groupedIPFIXSourceOptions(states []sourceOptionsState) [][]sourceOptionsState {
+	if len(states) == 0 {
+		return nil
+	}
+	groups := make([][]sourceOptionsState, 0, len(states))
+	groupIndexes := make(map[string]int, len(states))
+	for _, state := range states {
+		key := fmt.Sprintf("%d|%d", state.observationDomainID, state.templateID)
+		if index, ok := groupIndexes[key]; ok {
+			groups[index] = append(groups[index], state)
+			continue
+		}
+		groupIndexes[key] = len(groups)
+		groups = append(groups, []sourceOptionsState{state})
+	}
+	return groups
 }
 
 // sourceOptionsFromEvent extracts source-level exporter metadata from event

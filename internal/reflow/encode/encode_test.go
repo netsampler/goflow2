@@ -1608,6 +1608,42 @@ func TestIPFIXEncoderConfigObservationDomainIDOverridesEvent(t *testing.T) {
 	}
 }
 
+func TestIPFIXDataRecordUsesSourceIDAsObservationPointID(t *testing.T) {
+	cfg := testTFlowEncoderConfig("ipfix")
+	cfg.TemplatedFlow.Data.Select = []string{"source_id", "bytes"}
+	cfg.TemplatedFlow.Data.Catalog["source_id"] = config.IPFIXFieldDefinition{ID: netflow.IPFIX_FIELD_observationPointId, Length: 8, Type: "unsigned64"}
+	enc := NewIPFIXEncoder(cfg)
+
+	evt := testTemplatedFlowEvent()
+	delete(evt.Fields, "source_id")
+	evt.Source.SourceID = 99
+	payloads, err := enc.Encode(evt)
+	if err != nil {
+		t.Fatalf("Encode returned error: %v", err)
+	}
+
+	store := templates.NewTemplateFlowStore()
+	store.Start()
+	var decoded netflow.IPFIXPacket
+	if err := netflow.DecodeMessageVersion(bytes.NewBuffer(payloads[0]), store, netflow.FlowContext{RouterKey: "test-router"}, nil, &decoded); err != nil {
+		t.Fatalf("decode ipfix payload: %v", err)
+	}
+	templateSet, ok := decoded.FlowSets[0].(netflow.TemplateFlowSet)
+	if !ok {
+		t.Fatalf("expected template flow set, got %T", decoded.FlowSets[0])
+	}
+	if templateSet.Records[0].Fields[0].Type != netflow.IPFIX_FIELD_observationPointId {
+		t.Fatalf("expected observationPointId template field, got %d", templateSet.Records[0].Fields[0].Type)
+	}
+	dataSet, ok := decoded.FlowSets[1].(netflow.DataFlowSet)
+	if !ok {
+		t.Fatalf("expected data flow set, got %T", decoded.FlowSets[1])
+	}
+	if got := dataSet.Records[0].Values[0].Value.([]byte); !bytes.Equal(got, encodeU64(99)) {
+		t.Fatalf("expected observation point value 99, got %v", got)
+	}
+}
+
 func TestIPFIXSourceOptionsUseObservationPointScope(t *testing.T) {
 	cfg := testTFlowEncoderConfig("ipfix")
 	cfg.TemplatedFlow.ObservationDomainID = 888
@@ -1690,6 +1726,61 @@ func TestIPFIXSourceOptionsUseObservationPointScope(t *testing.T) {
 	}
 	if dataDecoded.SequenceNumber != 1 {
 		t.Fatalf("expected first data packet after options data record sequence 1, got %d", dataDecoded.SequenceNumber)
+	}
+}
+
+func TestIPFIXSourceOptionsRefreshMergesObservationPointRecords(t *testing.T) {
+	cfg := testTFlowEncoderConfig("ipfix")
+	cfg.TemplatedFlow.ObservationDomainID = 888
+	cfg.TemplatedFlow.OptionsRefresh = 1
+	enc := NewIPFIXEncoder(cfg)
+
+	for _, sourceID := range []uint32{42, 43} {
+		if _, err := enc.Encode(&event.Event{
+			Kind: "control",
+			Control: &event.ControlMetadata{
+				Type: "source_init",
+			},
+			Source: event.SourceMetadata{
+				SourceID: sourceID,
+				Sampling: &event.SamplingMetadata{
+					Rate: sourceID + 100,
+				},
+			},
+		}); err != nil {
+			t.Fatalf("Encode source_init %d returned error: %v", sourceID, err)
+		}
+	}
+	if len(enc.sourceOptions) != 2 {
+		t.Fatalf("expected two source options states, got %d", len(enc.sourceOptions))
+	}
+
+	enc.lastOptionsRun = time.Time{}
+	payloads, err := enc.Flush()
+	if err != nil {
+		t.Fatalf("Flush returned error: %v", err)
+	}
+	if len(payloads) != 1 {
+		t.Fatalf("expected one merged source options payload, got %d", len(payloads))
+	}
+
+	store := templates.NewTemplateFlowStore()
+	store.Start()
+	var decoded netflow.IPFIXPacket
+	if err := netflow.DecodeMessageVersion(bytes.NewBuffer(payloads[0]), store, netflow.FlowContext{RouterKey: "test-router"}, nil, &decoded); err != nil {
+		t.Fatalf("decode merged source options payload: %v", err)
+	}
+	optionsData, ok := decoded.FlowSets[1].(netflow.OptionsDataFlowSet)
+	if !ok {
+		t.Fatalf("expected options data flow set, got %T", decoded.FlowSets[1])
+	}
+	if len(optionsData.Records) != 2 {
+		t.Fatalf("expected two merged options data records, got %d", len(optionsData.Records))
+	}
+	for i, wantSourceID := range []uint64{42, 43} {
+		if got := optionsData.Records[i].ScopesValues[0].Value.([]byte); !bytes.Equal(got, encodeU64(wantSourceID)) {
+			t.Fatalf("expected options record %d observation point %d, got %v", i, wantSourceID, got)
+		}
 	}
 }
 
@@ -1885,6 +1976,7 @@ func TestIPFIXSchemaDataUsesSourceSamplingMetadata(t *testing.T) {
 	cfg.TemplatedFlow.Data.Catalog["sampling_rate"] = config.IPFIXFieldDefinition{ID: 34, Length: 4, Type: "unsigned32"}
 	cfg.TemplatedFlow.Data.Catalog["sample_pool"] = config.IPFIXFieldDefinition{ID: 310, Length: 4, Type: "unsigned32"}
 	cfg.TemplatedFlow.Data.Catalog["drops"] = config.IPFIXFieldDefinition{ID: 133, Length: 8, Type: "unsigned64"}
+	cfg.TemplatedFlow.Data.Catalog["source_id"] = config.IPFIXFieldDefinition{ID: netflow.IPFIX_FIELD_observationPointId, Length: 8, Type: "unsigned64"}
 	enc := NewIPFIXEncoder(cfg)
 
 	if _, err := enc.Encode(&event.Event{
@@ -1895,7 +1987,7 @@ func TestIPFIXSchemaDataUsesSourceSamplingMetadata(t *testing.T) {
 		},
 		Payload: event.AggregationSchema{
 			Stream:         "flow_data",
-			FieldNames:     []string{"sampling_rate", "sample_pool", "drops"},
+			FieldNames:     []string{"source_id", "sampling_rate", "sample_pool", "drops"},
 			BaseTemplateID: 300,
 		},
 	}); err != nil {
@@ -1906,6 +1998,7 @@ func TestIPFIXSchemaDataUsesSourceSamplingMetadata(t *testing.T) {
 		ReceivedAt: testEventTime(),
 		Stream:     "flow_data",
 		Source: event.SourceMetadata{
+			SourceID: 42,
 			Sampling: &event.SamplingMetadata{
 				Rate:       250,
 				SamplePool: 54321,
@@ -1920,7 +2013,7 @@ func TestIPFIXSchemaDataUsesSourceSamplingMetadata(t *testing.T) {
 		},
 	}
 	fields := eventFieldsWithMetadataForSchema(evt, enc.dataSchemas["flow_data"].fields)
-	if fields["sampling_rate"] != uint32(250) || fields["sample_pool"] != uint32(54321) || fields["drops"] != uint32(7) {
+	if fields["source_id"] != uint32(42) || fields["sampling_rate"] != uint32(250) || fields["sample_pool"] != uint32(54321) || fields["drops"] != uint32(7) {
 		t.Fatalf("expected source sampling metadata to materialize for schema, got %#v", fields)
 	}
 	payloads, err := enc.Encode(evt)
@@ -1931,7 +2024,7 @@ func TestIPFIXSchemaDataUsesSourceSamplingMetadata(t *testing.T) {
 		t.Fatalf("expected one data payload, got %d", len(payloads))
 	}
 	record := enc.dataSchemas["flow_data"].templateForFields(nil)
-	if record.Fields[0].Type != 34 || record.Fields[1].Type != 310 || record.Fields[2].Type != 133 {
+	if record.Fields[0].Type != netflow.IPFIX_FIELD_observationPointId || record.Fields[1].Type != 34 || record.Fields[2].Type != 310 || record.Fields[3].Type != 133 {
 		t.Fatalf("unexpected metadata template fields: %#v", record.Fields)
 	}
 }
