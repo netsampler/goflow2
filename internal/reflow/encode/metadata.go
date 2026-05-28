@@ -16,6 +16,12 @@ func eventAgentIP(evt *event.Event) string {
 	if evt.Source.AgentIP != "" {
 		return evt.Source.AgentIP
 	}
+	if agentIPv6 := stringFieldOrZero(evt.Fields, "agent_ipv6"); agentIPv6 != "" {
+		return agentIPv6
+	}
+	if agentIP := stringFieldOrZero(evt.Fields, "agent_ip"); agentIP != "" {
+		return agentIP
+	}
 	return ""
 }
 

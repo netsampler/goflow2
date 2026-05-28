@@ -319,6 +319,35 @@ func TestSFlowEncoderUsesConfiguredAgentIPOverride(t *testing.T) {
 	}
 }
 
+func TestSFlowEncoderUsesAgentIPv6Field(t *testing.T) {
+	enc := NewSFlowEncoder(config.EncoderConfig{
+		Type: "sflow",
+	})
+
+	payloads, err := enc.Encode(&event.Event{
+		Fields: map[string]any{
+			"agent_ipv6":      "2001:db8::10",
+			"agent_ip":        "192.0.2.10",
+			"protocol":        uint32(1),
+			"frame_length":    uint32(60),
+			"original_length": uint32(60),
+			"header_data":     []byte{0, 1, 2, 3},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Encode returned error: %v", err)
+	}
+	if len(payloads) != 1 {
+		t.Fatalf("expected 1 payload, got %d", len(payloads))
+	}
+
+	packet := decodeSFlowPacket(t, payloads[0])
+	got, ok := netip.AddrFromSlice(packet.AgentIP)
+	if !ok || got.String() != "2001:db8::10" {
+		t.Fatalf("expected agent_ipv6 field 2001:db8::10, got %s", got.String())
+	}
+}
+
 func TestSFlowEncoderIgnoresControlEvents(t *testing.T) {
 	enc := NewSFlowEncoder(config.EncoderConfig{Type: "sflow"})
 
