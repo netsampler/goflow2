@@ -200,14 +200,18 @@ func DecodeFlowRecord(header *RecordHeader, payload *bytes.Buffer) (FlowRecord, 
 		sampledHeader.HeaderData = payload.Bytes()
 		flowRecord.Data = sampledHeader
 	case FLOW_TYPE_ETH:
+		// MAC addresses are XDR-padded to 8 bytes (6 bytes + 2 zero pad bytes).
 		sampledEth := SampledEthernet{
 			SrcMac: make([]byte, 6),
 			DstMac: make([]byte, 6),
 		}
+		var srcMacPad, dstMacPad uint16
 		if err := utils.BinaryDecoder(payload,
 			&sampledEth.Length,
 			sampledEth.SrcMac,
+			&srcMacPad,
 			sampledEth.DstMac,
+			&dstMacPad,
 			&sampledEth.EthType,
 		); err != nil {
 			return flowRecord, &RecordError{header.DataFormat, err}
