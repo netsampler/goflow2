@@ -67,6 +67,8 @@ processor:
     aggregation_helpers:
       mpls_labels: 3
       ip_layers: 2
+    nat:
+      swap_pre_post: true
 
 aggregators:
   - window:
@@ -130,6 +132,9 @@ sink:
 	}
 	if cfg.Processor.Builtin.AggregationHelpers.IPLayers != 2 {
 		t.Fatalf("expected aggregation helper ip_layers=2, got %d", cfg.Processor.Builtin.AggregationHelpers.IPLayers)
+	}
+	if !cfg.Processor.Builtin.NAT.SwapPrePost {
+		t.Fatalf("expected processor.builtin.nat.swap_pre_post=true")
 	}
 	if len(cfg.Aggregators) != 1 {
 		t.Fatalf("expected 1 aggregator, got %d", len(cfg.Aggregators))

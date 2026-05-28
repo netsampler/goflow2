@@ -115,7 +115,7 @@ func (p *Builtin) processBytes(evt *event.Event) ([]*event.Event, error) {
 	}); err != nil {
 		return nil, err
 	}
-	applyDerivedFieldMappings(evt)
+	p.applyDerivedFieldMappings(evt)
 
 	if p.cfg.DropMessage {
 		evt.Message = nil
@@ -165,7 +165,7 @@ func (p *Builtin) processFlow(evt *event.Event) ([]*event.Event, error) {
 		}
 	}
 	setIPFamilyFromFields(fields)
-	applyDerivedFieldMappings(evt)
+	p.applyDerivedFieldMappings(evt)
 	if p.cfg.DropMessage {
 		evt.Message = nil
 	}
@@ -247,7 +247,7 @@ func (p *Builtin) processJSONRawPacketHeader(evt *event.Event) ([]*event.Event, 
 	}); err != nil {
 		return nil, err
 	}
-	applyDerivedFieldMappings(evt)
+	p.applyDerivedFieldMappings(evt)
 
 	if p.cfg.DropMessage {
 		evt.Message = nil
@@ -333,21 +333,21 @@ func (p *Builtin) processReFlowFields(evt *event.Event, record map[string]any) (
 		fields[key] = normalizeReFlowJSONValue(key, value)
 	}
 	setIPFamilyFromFields(fields)
-	applyDerivedFieldMappings(evt)
+	p.applyDerivedFieldMappings(evt)
 	if p.cfg.DropMessage {
 		evt.Message = nil
 	}
 	return []*event.Event{evt}, nil
 }
 
-func applyDerivedFieldMappings(evt *event.Event) {
+func (p *Builtin) applyDerivedFieldMappings(evt *event.Event) {
 	if evt == nil {
 		return
 	}
-	deriveNATFieldsFromConntrack(evt.Fields, evt.Internal)
+	deriveNATFieldsFromConntrack(evt.Fields, evt.Internal, p.cfg.NAT)
 }
 
-func deriveNATFieldsFromConntrack(fields, internal map[string]any) {
+func deriveNATFieldsFromConntrack(fields, internal map[string]any, cfg config.NATProcessorConfig) {
 	if fields == nil {
 		return
 	}
@@ -370,18 +370,36 @@ func deriveNATFieldsFromConntrack(fields, internal map[string]any) {
 	replySrcPort := uint32FromAny(firstValue(fields, internal, "conntrack_reply_src_port"))
 	replyDstPort := uint32FromAny(firstValue(fields, internal, "conntrack_reply_dst_port"))
 
-	if originalSrc != replyDst || portsDiffer(originalSrcPort, replyDstPort) {
+	hasSNAT := originalSrc != replyDst || portsDiffer(originalSrcPort, replyDstPort)
+	hasDNAT := originalDst != replySrc || portsDiffer(originalDstPort, replySrcPort)
+	if hasSNAT {
 		fields["nat_src_addr"] = replyDst
 		fields["nat_src_port"] = replyDstPort
 	}
-	if originalDst != replySrc || portsDiffer(originalDstPort, replySrcPort) {
+	if hasDNAT {
 		fields["nat_dst_addr"] = replySrc
 		fields["nat_dst_port"] = replySrcPort
+	}
+	if cfg.SwapPrePost && isEgressCapture(fields) && (hasSNAT || hasDNAT) {
+		fields["src_addr"] = originalSrc
+		fields["src_port"] = originalSrcPort
+		fields["dst_addr"] = originalDst
+		fields["dst_port"] = originalDstPort
+		refreshIPFamilyFromFields(fields)
 	}
 }
 
 func portsDiffer(a, b uint32) bool {
 	return a != 0 && b != 0 && a != b
+}
+
+func isEgressCapture(fields map[string]any) bool {
+	switch strings.ToLower(fieldStringOrZero(fields, "capture_direction")) {
+	case "out", "egress", "output":
+		return true
+	default:
+		return false
+	}
 }
 
 func firstValue(primary, fallback map[string]any, key string) any {
@@ -394,6 +412,14 @@ func firstValue(primary, fallback map[string]any, key string) any {
 		return fallback[key]
 	}
 	return nil
+}
+
+func refreshIPFamilyFromFields(fields map[string]any) {
+	if fields == nil {
+		return
+	}
+	delete(fields, "ip_family")
+	setIPFamilyFromFields(fields)
 }
 
 func reFlowPacketModelFromValue(value any) (*event.PacketModel, error) {

@@ -343,6 +343,110 @@ func TestBuiltinProcessBytesDerivesNATFieldsFromInternalConntrackReply(t *testin
 	}
 }
 
+func TestBuiltinProcessBytesCanSwapPreNATTupleIntoCanonicalFields(t *testing.T) {
+	proc := NewBuiltin(config.ProcessorConfig{
+		Builtin: config.BuiltinProcessorConfig{
+			NAT: config.NATProcessorConfig{SwapPrePost: true},
+		},
+	})
+	packet := ethernetPayload(
+		0x0800,
+		ipv4Packet(6, [4]byte{203, 0, 113, 9}, [4]byte{198, 51, 100, 20}, tcpHeader(54321, 443)),
+	)
+
+	events, err := proc.Process(&event.Event{
+		Source:  event.SourceMetadata{Type: "bytes"},
+		Payload: packet,
+		Fields: map[string]any{
+			"conntrack_original_src_addr": "192.168.1.10",
+			"conntrack_original_src_port": uint32(12345),
+			"conntrack_original_dst_addr": "198.51.100.20",
+			"conntrack_original_dst_port": uint32(443),
+			"capture_direction":           "out",
+			"ip_family":                   "ipv6",
+		},
+		Internal: map[string]any{
+			"conntrack_reply_src_addr": "198.51.100.20",
+			"conntrack_reply_src_port": uint32(443),
+			"conntrack_reply_dst_addr": "203.0.113.9",
+			"conntrack_reply_dst_port": uint32(54321),
+		},
+	})
+	if err != nil {
+		t.Fatalf("Process returned error: %v", err)
+	}
+
+	fields := events[0].Fields
+	if got := fields["src_addr"]; got != "192.168.1.10" {
+		t.Fatalf("expected src_addr to be pre-NAT source, got %#v", got)
+	}
+	if got := fields["src_port"]; got != uint32(12345) {
+		t.Fatalf("expected src_port to be pre-NAT source port, got %#v", got)
+	}
+	if got := fields["dst_addr"]; got != "198.51.100.20" {
+		t.Fatalf("expected dst_addr to be pre-NAT destination, got %#v", got)
+	}
+	if got := fields["dst_port"]; got != uint32(443) {
+		t.Fatalf("expected dst_port to be pre-NAT destination port, got %#v", got)
+	}
+	if got := fields["nat_src_addr"]; got != "203.0.113.9" {
+		t.Fatalf("expected nat_src_addr to remain translated source, got %#v", got)
+	}
+	if got := fields["nat_src_port"]; got != uint32(54321) {
+		t.Fatalf("expected nat_src_port to remain translated source port, got %#v", got)
+	}
+	if got := fields["ip_family"]; got != "ipv4" {
+		t.Fatalf("expected ip_family to refresh from swapped tuple, got %#v", got)
+	}
+}
+
+func TestBuiltinProcessBytesDoesNotSwapPreNATTupleForIngressCapture(t *testing.T) {
+	proc := NewBuiltin(config.ProcessorConfig{
+		Builtin: config.BuiltinProcessorConfig{
+			NAT: config.NATProcessorConfig{SwapPrePost: true},
+		},
+	})
+	packet := ethernetPayload(
+		0x0800,
+		ipv4Packet(6, [4]byte{203, 0, 113, 9}, [4]byte{198, 51, 100, 20}, tcpHeader(54321, 443)),
+	)
+
+	events, err := proc.Process(&event.Event{
+		Source:  event.SourceMetadata{Type: "bytes"},
+		Payload: packet,
+		Fields: map[string]any{
+			"conntrack_original_src_addr": "192.168.1.10",
+			"conntrack_original_src_port": uint32(12345),
+			"conntrack_original_dst_addr": "198.51.100.20",
+			"conntrack_original_dst_port": uint32(443),
+			"capture_direction":           "in",
+		},
+		Internal: map[string]any{
+			"conntrack_reply_src_addr": "198.51.100.20",
+			"conntrack_reply_src_port": uint32(443),
+			"conntrack_reply_dst_addr": "203.0.113.9",
+			"conntrack_reply_dst_port": uint32(54321),
+		},
+	})
+	if err != nil {
+		t.Fatalf("Process returned error: %v", err)
+	}
+
+	fields := events[0].Fields
+	if got := fields["src_addr"]; got != "203.0.113.9" {
+		t.Fatalf("expected ingress src_addr to stay captured/post-NAT source, got %#v", got)
+	}
+	if got := fields["src_port"]; got != uint32(54321) {
+		t.Fatalf("expected ingress src_port to stay captured/post-NAT source port, got %#v", got)
+	}
+	if got := fields["nat_src_addr"]; got != "203.0.113.9" {
+		t.Fatalf("expected nat_src_addr to still be derived, got %#v", got)
+	}
+	if got := fields["nat_src_port"]; got != uint32(54321) {
+		t.Fatalf("expected nat_src_port to still be derived, got %#v", got)
+	}
+}
+
 func TestBuiltinProcessReFlowJSONDerivesNATFieldsFromConntrack(t *testing.T) {
 	proc := NewBuiltin(config.ProcessorConfig{})
 
@@ -387,7 +491,7 @@ func TestDerivedNATFieldsKeepUnchangedEndpointParts(t *testing.T) {
 		"conntrack_reply_dst_port":    uint32(12345),
 	}
 
-	applyDerivedFieldMappings(&event.Event{Fields: fields})
+	NewBuiltin(config.ProcessorConfig{}).applyDerivedFieldMappings(&event.Event{Fields: fields})
 
 	if got := fields["nat_src_addr"]; got != "203.0.113.9" {
 		t.Fatalf("expected changed NAT source address, got %#v", got)
@@ -407,7 +511,7 @@ func TestDerivedNATFieldsKeepUnchangedEndpointParts(t *testing.T) {
 		"conntrack_reply_dst_port":    uint32(54321),
 	}
 
-	applyDerivedFieldMappings(&event.Event{Fields: fields})
+	NewBuiltin(config.ProcessorConfig{}).applyDerivedFieldMappings(&event.Event{Fields: fields})
 
 	if got := fields["nat_src_addr"]; got != "192.168.1.10" {
 		t.Fatalf("expected unchanged NAT source address to be kept, got %#v", got)

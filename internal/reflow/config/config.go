@@ -165,6 +165,11 @@ type BuiltinProcessorConfig struct {
 	TruncatePacketBytes  int                     `yaml:"truncate_packet_bytes"`
 	PacketDecoder        PacketDecoderConfig     `yaml:"packet_decoder"`
 	AggregationHelpers   AggregationHelperConfig `yaml:"aggregation_helpers"`
+	NAT                  NATProcessorConfig      `yaml:"nat"`
+}
+
+type NATProcessorConfig struct {
+	SwapPrePost bool `yaml:"swap_pre_post"`
 }
 
 type AggregationHelperConfig struct {
