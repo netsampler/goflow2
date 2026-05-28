@@ -876,6 +876,7 @@ func TestGeneratedAggregateConfigUsesFieldDSL(t *testing.T) {
 	}
 	for _, unwanted := range []string{
 		"key_fields:",
+		"- current:template_id",
 		"- first:agent_ip",
 		"- first:source_id",
 		"- current:source_id",
@@ -1045,7 +1046,7 @@ func TestGeneratedIPFIXConfigExcludesDataLinkFrameByDefault(t *testing.T) {
 	if len(fields) == 0 {
 		t.Fatalf("expected generated ipfix config to select explicit fields")
 	}
-	for _, name := range []string{"frame_length", "header_data", "sampling_rate", "source_id", "sample_pool", "sub_agent_id", "observation_domain_id", "drops", "nat_src_addr", "nat_dst_addr", "nat_src_port", "nat_dst_port"} {
+	for _, name := range []string{"frame_length", "header_data", "template_id", "sampling_rate", "source_id", "sample_pool", "sub_agent_id", "observation_domain_id", "drops", "nat_src_addr", "nat_dst_addr", "nat_src_port", "nat_dst_port"} {
 		if slices.Contains(fields, name) {
 			t.Fatalf("expected generated ipfix config not to export %s by default: %#v", name, fields)
 		}
