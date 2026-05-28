@@ -1423,6 +1423,82 @@ func TestIPFIXEncoderCapacityFlushKeepsSmallTailBuffered(t *testing.T) {
 	}
 }
 
+func TestIPFIXEncoderPayloadBatchFlowSetLengthsAreConsistent(t *testing.T) {
+	cfg := testTFlowEncoderConfig("ipfix")
+	cfg.TemplatedFlow.Data.Catalog["frame_length"] = config.IPFIXFieldDefinition{ID: 312, Length: 2, Type: "unsigned16"}
+	cfg.TemplatedFlow.Data.Catalog["header_data"] = config.IPFIXFieldDefinition{ID: 315, Length: 0xffff, Type: "bytes"}
+	cfg.Batch = config.BatchConfig{
+		Enabled:    testBoolPtr(true),
+		MaxRecords: 2,
+		MaxBytes:   1200,
+	}
+	enc := NewIPFIXEncoder(cfg)
+
+	if _, err := enc.Encode(&event.Event{
+		Kind: "control",
+		Control: &event.ControlMetadata{
+			Type:   "schema",
+			Stream: "flow_data",
+		},
+		Payload: event.AggregationSchema{
+			Stream: "flow_data",
+			Fields: []event.SchemaField{
+				{Role: "key", Name: "src_addr"},
+				{Role: "key", Name: "dst_addr"},
+				{Role: "current", Name: "frame_length"},
+				{Role: "current", Name: "header_data"},
+			},
+			BaseTemplateID: 256,
+		},
+	}); err != nil {
+		t.Fatalf("schema Encode returned error: %v", err)
+	}
+
+	first := testTemplatedFlowEvent()
+	first.Fields["frame_length"] = uint32(300)
+	first.Fields["header_data"] = bytes.Repeat([]byte{0xab}, 300)
+	if payloads, err := enc.Encode(first); err != nil {
+		t.Fatalf("Encode(first) returned error: %v", err)
+	} else if len(payloads) != 0 {
+		t.Fatalf("expected first payload record to stay buffered, got %d payloads", len(payloads))
+	}
+
+	second := testTemplatedFlowEvent()
+	second.Fields["src_addr"] = "2001:db8::10"
+	second.Fields["dst_addr"] = "2001:db8::20"
+	second.Fields["frame_length"] = uint32(300)
+	second.Fields["header_data"] = bytes.Repeat([]byte{0xcd}, 300)
+	payloads, err := enc.Encode(second)
+	if err != nil {
+		t.Fatalf("Encode(second) returned error: %v", err)
+	}
+	if len(payloads) != 1 {
+		t.Fatalf("expected one batched payload, got %d", len(payloads))
+	}
+
+	packetLength := int(binary.BigEndian.Uint16(payloads[0][2:4]))
+	if packetLength != len(payloads[0]) {
+		t.Fatalf("expected IPFIX packet length %d to equal payload bytes %d", packetLength, len(payloads[0]))
+	}
+	offset := 16
+	for flowSet := 0; offset < len(payloads[0]); flowSet++ {
+		if offset+4 > len(payloads[0]) {
+			t.Fatalf("flowset %d header at offset %d exceeds payload length %d", flowSet, offset, len(payloads[0]))
+		}
+		length := int(binary.BigEndian.Uint16(payloads[0][offset+2 : offset+4]))
+		if length < 4 {
+			t.Fatalf("flowset %d at offset %d has invalid length %d", flowSet, offset, length)
+		}
+		if offset+length > len(payloads[0]) {
+			t.Fatalf("flowset %d at offset %d length %d exceeds payload length %d", flowSet, offset, length, len(payloads[0]))
+		}
+		offset += length
+	}
+	if offset != len(payloads[0]) {
+		t.Fatalf("expected flowset lengths to end at %d, got %d", len(payloads[0]), offset)
+	}
+}
+
 func TestIPFIXEncoderFallbackUsesConfiguredSelectWidth(t *testing.T) {
 	enc := NewIPFIXEncoder(testTFlowEncoderConfig("ipfix"))
 	evt := testTemplatedFlowEvent()
