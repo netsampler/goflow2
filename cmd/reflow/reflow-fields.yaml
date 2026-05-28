@@ -38,3 +38,14 @@ fields:
   sample_pool: 310:4:u32 # samplingPopulation
   frame_length: 312:2:u16 # dataLinkFrameSize
   header_data: 315:65535:bytes # dataLinkFrameSection
+  skb_len: 40000:4:u32[pen=32473] # Linux __sk_buff len
+  skb_packet_type: 40001:4:u32[pen=32473] # Linux __sk_buff pkt_type
+  skb_mark: 40002:4:u32[pen=32473] # Linux __sk_buff mark
+  skb_queue_mapping: 40003:4:u32[pen=32473] # Linux __sk_buff queue_mapping
+  skb_protocol: 40004:4:u32[pen=32473] # Linux __sk_buff protocol
+  skb_priority: 40005:4:u32[pen=32473] # Linux __sk_buff priority
+  skb_ingress_ifindex: 40006:4:u32[pen=32473] # Linux __sk_buff ingress_ifindex
+  skb_ifindex: 40007:4:u32[pen=32473] # Linux __sk_buff ifindex
+  skb_tc_index: 40008:4:u32[pen=32473] # Linux __sk_buff tc_index
+  skb_hash: 40009:4:u32[pen=32473] # Linux __sk_buff hash
+  skb_tc_classid: 40010:4:u32[pen=32473] # Linux __sk_buff tc_classid

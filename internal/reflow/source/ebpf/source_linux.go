@@ -472,17 +472,14 @@ func applyPacketMetadataFields(fields map[string]any, meta packetMetadata) {
 	}
 	if meta.inputInterface != "" {
 		fields["input_interface"] = meta.inputInterface
-		fields["src_interface"] = meta.inputInterface
 	}
 	if meta.outputInterface != "" {
 		fields["output_interface"] = meta.outputInterface
-		fields["dst_interface"] = meta.outputInterface
 	}
 	if meta.hasSKBMetadata {
 		fields["skb_len"] = meta.skb.Len
 		fields["skb_packet_type"] = meta.skb.PacketType
 		fields["skb_mark"] = meta.skb.Mark
-		fields["firewall_mark"] = meta.skb.Mark
 		fields["skb_queue_mapping"] = meta.skb.QueueMapping
 		fields["skb_protocol"] = meta.skb.Protocol
 		fields["skb_priority"] = meta.skb.Priority
@@ -491,12 +488,6 @@ func applyPacketMetadataFields(fields map[string]any, meta packetMetadata) {
 		fields["skb_tc_index"] = meta.skb.TCIndex
 		fields["skb_hash"] = meta.skb.Hash
 		fields["skb_tc_classid"] = meta.skb.TCClassID
-		if meta.skb.IngressIfindex != 0 {
-			fields["route_input_if"] = meta.skb.IngressIfindex
-		}
-		if meta.skb.Ifindex != 0 {
-			fields["route_output_if"] = meta.skb.Ifindex
-		}
 	}
 	if meta.hasConntrack {
 		applyConntrackFields(fields, meta.conntrack)

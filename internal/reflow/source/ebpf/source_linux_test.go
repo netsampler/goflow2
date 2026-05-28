@@ -40,8 +40,8 @@ func TestPacketMetadataMarksOutgoingCapture(t *testing.T) {
 	if got := evt.Fields["output_interface"]; got != "br-lan" {
 		t.Fatalf("expected output_interface=br-lan, got %#v", got)
 	}
-	if got := evt.Fields["dst_interface"]; got != "br-lan" {
-		t.Fatalf("expected dst_interface=br-lan, got %#v", got)
+	if _, ok := evt.Fields["dst_interface"]; ok {
+		t.Fatalf("expected dst_interface alias to be unset, got %#v", evt.Fields["dst_interface"])
 	}
 	for _, key := range []string{"agent_ip", "sampling_rate", "sample_pool", "drops"} {
 		if _, ok := evt.Fields[key]; ok {
@@ -200,8 +200,8 @@ func TestPacketMetadataMarksIncomingCapture(t *testing.T) {
 	if got := evt.Fields["input_interface"]; got != "br-lan" {
 		t.Fatalf("expected input_interface=br-lan, got %#v", got)
 	}
-	if got := evt.Fields["src_interface"]; got != "br-lan" {
-		t.Fatalf("expected src_interface=br-lan, got %#v", got)
+	if _, ok := evt.Fields["src_interface"]; ok {
+		t.Fatalf("expected src_interface alias to be unset, got %#v", evt.Fields["src_interface"])
 	}
 }
 
@@ -257,8 +257,11 @@ func TestPacketMetadataAddsSKBFields(t *testing.T) {
 	})
 	evt := source.packetEvent([]byte{0, 1, 2, 3}, meta)
 
-	if got := evt.Fields["firewall_mark"]; got != uint32(42) {
-		t.Fatalf("expected firewall_mark=42, got %#v", got)
+	if got := evt.Fields["skb_mark"]; got != uint32(42) {
+		t.Fatalf("expected skb_mark=42, got %#v", got)
+	}
+	if _, ok := evt.Fields["firewall_mark"]; ok {
+		t.Fatalf("expected firewall_mark alias to be unset, got %#v", evt.Fields["firewall_mark"])
 	}
 	if got := evt.Fields["skb_len"]; got != uint32(1514) {
 		t.Fatalf("expected skb_len=1514, got %#v", got)
@@ -272,13 +275,18 @@ func TestPacketMetadataAddsSKBFields(t *testing.T) {
 	if got := evt.Fields["skb_hash"]; got != uint32(0x12345678) {
 		t.Fatalf("expected skb_hash=0x12345678, got %#v", got)
 	}
-	if got := evt.Fields["route_input_if"]; got != uint32(7) {
-		t.Fatalf("expected route_input_if=7, got %#v", got)
+	if got := evt.Fields["skb_ingress_ifindex"]; got != uint32(7) {
+		t.Fatalf("expected skb_ingress_ifindex=7, got %#v", got)
 	}
-	if got := evt.Fields["route_output_if"]; got != uint32(9) {
-		t.Fatalf("expected route_output_if=9, got %#v", got)
+	if got := evt.Fields["skb_ifindex"]; got != uint32(9) {
+		t.Fatalf("expected skb_ifindex=9, got %#v", got)
 	}
-	if got := evt.Fields["dst_interface"]; got != "wan" {
-		t.Fatalf("expected dst_interface=wan, got %#v", got)
+	for _, key := range []string{"route_input_if", "route_output_if", "dst_interface"} {
+		if _, ok := evt.Fields[key]; ok {
+			t.Fatalf("expected %s alias to be unset, got %#v", key, evt.Fields[key])
+		}
+	}
+	if got := evt.Fields["output_interface"]; got != "wan" {
+		t.Fatalf("expected output_interface=wan, got %#v", got)
 	}
 }
