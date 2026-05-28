@@ -1696,6 +1696,9 @@ func TestGeneratedIPFIXOutputEnablesBatching(t *testing.T) {
 	if !cfg.Encoder.Batch.IsEnabled() {
 		t.Fatalf("expected helper ipfix output to enable batching by default")
 	}
+	if cfg.Encoder.Batch.MaxRecords != 32 {
+		t.Fatalf("expected helper ipfix output to default batch max records to 32, got %d", cfg.Encoder.Batch.MaxRecords)
+	}
 	if cfg.Encoder.Workers != AutoWorkers {
 		t.Fatalf("expected helper ipfix output to keep encoder workers auto, got %d", cfg.Encoder.Workers)
 	}
@@ -1714,6 +1717,9 @@ func TestGeneratedNetFlowV9OutputEnablesBatching(t *testing.T) {
 	}
 	if !cfg.Encoder.Batch.IsEnabled() {
 		t.Fatalf("expected helper netflowv9 output to enable batching by default")
+	}
+	if cfg.Encoder.Batch.MaxRecords != 32 {
+		t.Fatalf("expected helper netflowv9 output to default batch max records to 32, got %d", cfg.Encoder.Batch.MaxRecords)
 	}
 	if cfg.Encoder.Workers != AutoWorkers {
 		t.Fatalf("expected helper netflowv9 output to keep encoder workers auto, got %d", cfg.Encoder.Workers)

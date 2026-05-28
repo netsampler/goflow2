@@ -692,7 +692,7 @@ func (c *Config) setDefaults(configPath string) error {
 	}
 	if c.Encoder.Batch.IsEnabled() {
 		if c.Encoder.Batch.MaxRecords == 0 {
-			c.Encoder.Batch.MaxRecords = 8
+			c.Encoder.Batch.MaxRecords = 32
 		}
 		if c.Encoder.Batch.MaxBytes == 0 {
 			c.Encoder.Batch.MaxBytes = 1200

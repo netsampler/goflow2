@@ -120,7 +120,7 @@ func NewIPFIXEncoder(cfg config.EncoderConfig) *IPFIXEncoder {
 
 func (e *IPFIXEncoder) Encode(evt *event.Event) ([][]byte, error) {
 	if evt != nil && evt.Kind == "control" {
-		payloads, err := e.flushDataPackets()
+		payloads, err := e.flushDataPackets("control")
 		if err != nil {
 			return nil, err
 		}
@@ -142,14 +142,14 @@ func (e *IPFIXEncoder) Encode(evt *event.Event) ([][]byte, error) {
 		return [][]byte{data}, nil
 	}
 	e.appendEvent(evt)
-	if e.shouldFlush() {
-		return e.flushDataPackets()
+	if trigger := e.batchFlushTrigger(); trigger != "" {
+		return e.flushDataPackets(trigger)
 	}
 	return nil, nil
 }
 
 func (e *IPFIXEncoder) Flush() ([][]byte, error) {
-	payloads, err := e.flushDataPackets()
+	payloads, err := e.flushDataPackets("flush")
 	if err != nil {
 		return nil, err
 	}
@@ -162,23 +162,27 @@ func (e *IPFIXEncoder) Flush() ([][]byte, error) {
 
 func (e *IPFIXEncoder) appendEvent(evt *event.Event) {
 	e.events = append(e.events, evt)
-	e.estimatedBytes += estimatedEventSize(evt)
+	e.estimatedBytes += e.estimatedEventRenderedSize(evt)
 }
 
 func (e *IPFIXEncoder) shouldFlush() bool {
-	if len(e.events) == 0 {
-		return false
-	}
-	if e.cfg.Batch.MaxRecords > 0 && len(e.events) >= e.cfg.Batch.MaxRecords {
-		return true
-	}
-	if e.cfg.Batch.MaxBytes > 0 && e.estimatedBytes >= e.cfg.Batch.MaxBytes {
-		return true
-	}
-	return false
+	return e.batchFlushTrigger() != ""
 }
 
-func (e *IPFIXEncoder) flushDataPackets() ([][]byte, error) {
+func (e *IPFIXEncoder) batchFlushTrigger() string {
+	if len(e.events) == 0 {
+		return ""
+	}
+	if e.cfg.Batch.MaxRecords > 0 && len(e.events) >= e.cfg.Batch.MaxRecords {
+		return "max_records"
+	}
+	if e.cfg.Batch.MaxBytes > 0 && e.estimatedBytes >= e.cfg.Batch.MaxBytes {
+		return "max_bytes"
+	}
+	return ""
+}
+
+func (e *IPFIXEncoder) flushDataPackets(trigger string) ([][]byte, error) {
 	if len(e.events) == 0 {
 		return nil, nil
 	}
@@ -190,29 +194,137 @@ func (e *IPFIXEncoder) flushDataPackets() ([][]byte, error) {
 		packet, accepted, err := e.buildBatchedPacket(pending)
 		if err != nil {
 			e.events = pending
-			e.estimatedBytes = estimatedEventsSize(pending)
+			e.estimatedBytes = e.estimatedEventsRenderedSize(pending)
 			return payloads, err
 		}
 		data, err := netflow.EncodeMessage(packet)
 		if err != nil {
 			e.events = pending
-			e.estimatedBytes = estimatedEventsSize(pending)
+			e.estimatedBytes = e.estimatedEventsRenderedSize(pending)
 			return payloads, fmt.Errorf("encode ipfix packet: %w", err)
 		}
+		acceptedBytes := renderedFlowSetsDataSize(packet.FlowSets)
 		payloads = append(payloads, data)
 		pending = pending[accepted:]
 		e.events = pending
-		e.estimatedBytes = estimatedEventsSize(pending)
+		e.estimatedBytes -= acceptedBytes
+		if e.estimatedBytes < 0 {
+			e.estimatedBytes = e.estimatedEventsRenderedSize(pending)
+		}
+		if !e.shouldContinueDataFlush(trigger) {
+			return payloads, nil
+		}
 	}
 	e.events = nil
 	e.estimatedBytes = 0
 	return payloads, nil
 }
 
-func estimatedEventsSize(events []*event.Event) int {
+func (e *IPFIXEncoder) shouldContinueDataFlush(trigger string) bool {
+	if len(e.events) == 0 {
+		return false
+	}
+	switch trigger {
+	case "max_records", "max_bytes":
+		return e.batchFlushTrigger() != ""
+	default:
+		return true
+	}
+}
+
+func (e *IPFIXEncoder) estimatedEventsRenderedSize(events []*event.Event) int {
 	var total int
 	for _, evt := range events {
-		total += estimatedEventSize(evt)
+		total += e.estimatedEventRenderedSize(evt)
+	}
+	return total
+}
+
+func (e *IPFIXEncoder) estimatedEventRenderedSize(evt *event.Event) int {
+	record, err := e.ipfixBatchRecord(evt)
+	if err != nil {
+		return estimatedEventSize(evt)
+	}
+	return renderedDataRecordSize(record.data)
+}
+
+func (e *NFv9Encoder) estimatedEventsRenderedSize(events []*event.Event) int {
+	var total int
+	for _, evt := range events {
+		total += e.estimatedEventRenderedSize(evt)
+	}
+	return total
+}
+
+func (e *NFv9Encoder) estimatedEventRenderedSize(evt *event.Event) int {
+	timing := nfv9BatchTimingFor([]*event.Event{evt})
+	record, err := e.nfv9BatchRecord(evt, timing)
+	if err != nil {
+		return estimatedEventSize(evt)
+	}
+	return renderedDataRecordSize(record.data)
+}
+
+func renderedDataRecordSize(record netflow.DataRecord) int {
+	var total int
+	for _, field := range record.Values {
+		total += renderedDataFieldSize(field)
+	}
+	return total
+}
+
+func renderedDataFieldSize(field netflow.DataField) int {
+	value, ok := field.Value.([]byte)
+	if !ok {
+		return 0
+	}
+	if field.Length == 0xffff {
+		if len(value) < 255 {
+			return 1 + len(value)
+		}
+		return 3 + len(value)
+	}
+	return len(value)
+}
+
+func renderedFlowSetsDataSize(flowSets []interface{}) int {
+	var total int
+	for _, flowSet := range flowSets {
+		switch fs := flowSet.(type) {
+		case netflow.DataFlowSet:
+			total += renderedDataRecordsSize(fs.Records)
+		case *netflow.DataFlowSet:
+			if fs != nil {
+				total += renderedDataRecordsSize(fs.Records)
+			}
+		case netflow.OptionsDataFlowSet:
+			total += renderedOptionsDataRecordsSize(fs.Records)
+		case *netflow.OptionsDataFlowSet:
+			if fs != nil {
+				total += renderedOptionsDataRecordsSize(fs.Records)
+			}
+		}
+	}
+	return total
+}
+
+func renderedDataRecordsSize(records []netflow.DataRecord) int {
+	var total int
+	for _, record := range records {
+		total += renderedDataRecordSize(record)
+	}
+	return total
+}
+
+func renderedOptionsDataRecordsSize(records []netflow.OptionsDataRecord) int {
+	var total int
+	for _, record := range records {
+		for _, field := range record.ScopesValues {
+			total += renderedDataFieldSize(field)
+		}
+		for _, field := range record.OptionsValues {
+			total += renderedDataFieldSize(field)
+		}
 	}
 	return total
 }
@@ -544,7 +656,7 @@ func NewNFv9Encoder(cfg config.EncoderConfig) *NFv9Encoder {
 
 func (e *NFv9Encoder) Encode(evt *event.Event) ([][]byte, error) {
 	if evt != nil && evt.Kind == "control" {
-		payloads, err := e.flushDataPackets()
+		payloads, err := e.flushDataPackets("control")
 		if err != nil {
 			return nil, err
 		}
@@ -567,14 +679,14 @@ func (e *NFv9Encoder) Encode(evt *event.Event) ([][]byte, error) {
 		return [][]byte{data}, nil
 	}
 	e.appendEvent(evt)
-	if e.shouldFlush() {
-		return e.flushDataPackets()
+	if trigger := e.batchFlushTrigger(); trigger != "" {
+		return e.flushDataPackets(trigger)
 	}
 	return nil, nil
 }
 
 func (e *NFv9Encoder) Flush() ([][]byte, error) {
-	payloads, err := e.flushDataPackets()
+	payloads, err := e.flushDataPackets("flush")
 	if err != nil {
 		return nil, err
 	}
@@ -587,23 +699,27 @@ func (e *NFv9Encoder) Flush() ([][]byte, error) {
 
 func (e *NFv9Encoder) appendEvent(evt *event.Event) {
 	e.events = append(e.events, evt)
-	e.estimatedBytes += estimatedEventSize(evt)
+	e.estimatedBytes += e.estimatedEventRenderedSize(evt)
 }
 
 func (e *NFv9Encoder) shouldFlush() bool {
-	if len(e.events) == 0 {
-		return false
-	}
-	if e.cfg.Batch.MaxRecords > 0 && len(e.events) >= e.cfg.Batch.MaxRecords {
-		return true
-	}
-	if e.cfg.Batch.MaxBytes > 0 && e.estimatedBytes >= e.cfg.Batch.MaxBytes {
-		return true
-	}
-	return false
+	return e.batchFlushTrigger() != ""
 }
 
-func (e *NFv9Encoder) flushDataPackets() ([][]byte, error) {
+func (e *NFv9Encoder) batchFlushTrigger() string {
+	if len(e.events) == 0 {
+		return ""
+	}
+	if e.cfg.Batch.MaxRecords > 0 && len(e.events) >= e.cfg.Batch.MaxRecords {
+		return "max_records"
+	}
+	if e.cfg.Batch.MaxBytes > 0 && e.estimatedBytes >= e.cfg.Batch.MaxBytes {
+		return "max_bytes"
+	}
+	return ""
+}
+
+func (e *NFv9Encoder) flushDataPackets(trigger string) ([][]byte, error) {
 	if len(e.events) == 0 {
 		return nil, nil
 	}
@@ -615,23 +731,42 @@ func (e *NFv9Encoder) flushDataPackets() ([][]byte, error) {
 		packet, accepted, err := e.buildBatchedPacket(pending)
 		if err != nil {
 			e.events = pending
-			e.estimatedBytes = estimatedEventsSize(pending)
+			e.estimatedBytes = e.estimatedEventsRenderedSize(pending)
 			return payloads, err
 		}
 		data, err := netflow.EncodeMessage(packet)
 		if err != nil {
 			e.events = pending
-			e.estimatedBytes = estimatedEventsSize(pending)
+			e.estimatedBytes = e.estimatedEventsRenderedSize(pending)
 			return payloads, fmt.Errorf("encode netflow v9 packet: %w", err)
 		}
+		acceptedBytes := renderedFlowSetsDataSize(packet.FlowSets)
 		payloads = append(payloads, data)
 		pending = pending[accepted:]
 		e.events = pending
-		e.estimatedBytes = estimatedEventsSize(pending)
+		e.estimatedBytes -= acceptedBytes
+		if e.estimatedBytes < 0 {
+			e.estimatedBytes = e.estimatedEventsRenderedSize(pending)
+		}
+		if !e.shouldContinueDataFlush(trigger) {
+			return payloads, nil
+		}
 	}
 	e.events = nil
 	e.estimatedBytes = 0
 	return payloads, nil
+}
+
+func (e *NFv9Encoder) shouldContinueDataFlush(trigger string) bool {
+	if len(e.events) == 0 {
+		return false
+	}
+	switch trigger {
+	case "max_records", "max_bytes":
+		return e.batchFlushTrigger() != ""
+	default:
+		return true
+	}
 }
 
 func (e *NFv9Encoder) buildBatchedPacket(events []*event.Event) (*netflow.NFv9Packet, int, error) {

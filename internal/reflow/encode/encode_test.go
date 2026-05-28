@@ -1338,6 +1338,91 @@ func TestIPFIXEncoderBatchesCompatibleDataRecords(t *testing.T) {
 	}
 }
 
+func TestIPFIXEncoderBatchMaxBytesUsesRenderedDataFields(t *testing.T) {
+	cfg := testTFlowEncoderConfig("ipfix")
+	cfg.Batch = config.BatchConfig{
+		Enabled:    testBoolPtr(true),
+		MaxRecords: 32,
+		MaxBytes:   100,
+	}
+	enc := NewIPFIXEncoder(cfg)
+
+	for i := 0; i < 3; i++ {
+		evt := testTemplatedFlowEvent()
+		evt.Fields["bytes"] = int64(i)
+		for j := 0; j < 128; j++ {
+			evt.Fields[fmt.Sprintf("unused_%03d", j)] = "this field is not encoded into ipfix"
+		}
+		payloads, err := enc.Encode(evt)
+		if err != nil {
+			t.Fatalf("Encode(%d) returned error: %v", i, err)
+		}
+		if len(payloads) != 0 {
+			t.Fatalf("expected event %d to stay buffered, got %d payloads", i, len(payloads))
+		}
+	}
+	if enc.estimatedBytes != 87 {
+		t.Fatalf("expected rendered field estimate 87, got %d", enc.estimatedBytes)
+	}
+
+	payloads, err := enc.Flush()
+	if err != nil {
+		t.Fatalf("Flush returned error: %v", err)
+	}
+	if len(payloads) != 1 {
+		t.Fatalf("expected one flushed IPFIX packet, got %d", len(payloads))
+	}
+	store := templates.NewTemplateFlowStore()
+	store.Start()
+	var decoded netflow.IPFIXPacket
+	if err := netflow.DecodeMessageVersion(bytes.NewBuffer(payloads[0]), store, netflow.FlowContext{RouterKey: "test-router"}, nil, &decoded); err != nil {
+		t.Fatalf("decode ipfix payload: %v", err)
+	}
+	dataSet, ok := decoded.FlowSets[1].(netflow.DataFlowSet)
+	if !ok {
+		t.Fatalf("expected second flow set to be DataFlowSet, got %T", decoded.FlowSets[1])
+	}
+	if len(dataSet.Records) != 3 {
+		t.Fatalf("expected three IPFIX data records, got %d", len(dataSet.Records))
+	}
+}
+
+func TestIPFIXEncoderCapacityFlushKeepsSmallTailBuffered(t *testing.T) {
+	cfg := testTFlowEncoderConfig("ipfix")
+	cfg.MaxDatagramBytes = 150
+	cfg.Batch = config.BatchConfig{
+		Enabled:    testBoolPtr(true),
+		MaxRecords: 32,
+		MaxBytes:   100,
+	}
+	enc := NewIPFIXEncoder(cfg)
+
+	var payloads [][]byte
+	for i := 0; i < 4; i++ {
+		evt := testTemplatedFlowEvent()
+		evt.Fields["bytes"] = int64(i)
+		got, err := enc.Encode(evt)
+		if err != nil {
+			t.Fatalf("Encode(%d) returned error: %v", i, err)
+		}
+		payloads = append(payloads, got...)
+	}
+	if len(payloads) != 1 {
+		t.Fatalf("expected capacity flush to emit one packet and keep the tail buffered, got %d payloads", len(payloads))
+	}
+	if len(enc.events) == 0 {
+		t.Fatalf("expected small tail to remain buffered")
+	}
+
+	flushed, err := enc.Flush()
+	if err != nil {
+		t.Fatalf("Flush returned error: %v", err)
+	}
+	if len(flushed) != 1 {
+		t.Fatalf("expected timer/shutdown flush to emit buffered tail, got %d payloads", len(flushed))
+	}
+}
+
 func TestIPFIXEncoderFallbackUsesConfiguredSelectWidth(t *testing.T) {
 	enc := NewIPFIXEncoder(testTFlowEncoderConfig("ipfix"))
 	evt := testTemplatedFlowEvent()
@@ -2120,6 +2205,91 @@ func TestNFv9EncoderBatchesCompatibleDataRecords(t *testing.T) {
 	}
 	if flushedDecoded.SequenceNumber != 1 {
 		t.Fatalf("expected flushed packet sequence 1, got %d", flushedDecoded.SequenceNumber)
+	}
+}
+
+func TestNFv9EncoderBatchMaxBytesUsesRenderedDataFields(t *testing.T) {
+	cfg := testTFlowEncoderConfig("netflowv9")
+	cfg.Batch = config.BatchConfig{
+		Enabled:    testBoolPtr(true),
+		MaxRecords: 32,
+		MaxBytes:   100,
+	}
+	enc := NewNFv9Encoder(cfg)
+
+	for i := 0; i < 3; i++ {
+		evt := testTemplatedFlowEvent()
+		evt.Fields["bytes"] = int64(i)
+		for j := 0; j < 128; j++ {
+			evt.Fields[fmt.Sprintf("unused_%03d", j)] = "this field is not encoded into netflow v9"
+		}
+		payloads, err := enc.Encode(evt)
+		if err != nil {
+			t.Fatalf("Encode(%d) returned error: %v", i, err)
+		}
+		if len(payloads) != 0 {
+			t.Fatalf("expected event %d to stay buffered, got %d payloads", i, len(payloads))
+		}
+	}
+	if enc.estimatedBytes != 87 {
+		t.Fatalf("expected rendered field estimate 87, got %d", enc.estimatedBytes)
+	}
+
+	payloads, err := enc.Flush()
+	if err != nil {
+		t.Fatalf("Flush returned error: %v", err)
+	}
+	if len(payloads) != 1 {
+		t.Fatalf("expected one flushed NetFlow v9 packet, got %d", len(payloads))
+	}
+	store := templates.NewTemplateFlowStore()
+	store.Start()
+	var decoded netflow.NFv9Packet
+	if err := netflow.DecodeMessageVersion(bytes.NewBuffer(payloads[0]), store, netflow.FlowContext{RouterKey: "test-router"}, &decoded, nil); err != nil {
+		t.Fatalf("decode netflow v9 payload: %v", err)
+	}
+	dataSet, ok := decoded.FlowSets[1].(netflow.DataFlowSet)
+	if !ok {
+		t.Fatalf("expected second flow set to be DataFlowSet, got %T", decoded.FlowSets[1])
+	}
+	if len(dataSet.Records) != 3 {
+		t.Fatalf("expected three NetFlow v9 data records, got %d", len(dataSet.Records))
+	}
+}
+
+func TestNFv9EncoderCapacityFlushKeepsSmallTailBuffered(t *testing.T) {
+	cfg := testTFlowEncoderConfig("netflowv9")
+	cfg.MaxDatagramBytes = 150
+	cfg.Batch = config.BatchConfig{
+		Enabled:    testBoolPtr(true),
+		MaxRecords: 32,
+		MaxBytes:   100,
+	}
+	enc := NewNFv9Encoder(cfg)
+
+	var payloads [][]byte
+	for i := 0; i < 4; i++ {
+		evt := testTemplatedFlowEvent()
+		evt.Fields["bytes"] = int64(i)
+		got, err := enc.Encode(evt)
+		if err != nil {
+			t.Fatalf("Encode(%d) returned error: %v", i, err)
+		}
+		payloads = append(payloads, got...)
+	}
+	if len(payloads) != 1 {
+		t.Fatalf("expected capacity flush to emit one packet and keep the tail buffered, got %d payloads", len(payloads))
+	}
+	if len(enc.events) == 0 {
+		t.Fatalf("expected small tail to remain buffered")
+	}
+
+	flushed, err := enc.Flush()
+	if err != nil {
+		t.Fatalf("Flush returned error: %v", err)
+	}
+	if len(flushed) != 1 {
+		t.Fatalf("expected timer/shutdown flush to emit buffered tail, got %d payloads", len(flushed))
 	}
 }
 
