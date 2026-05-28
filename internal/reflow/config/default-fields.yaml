@@ -18,6 +18,7 @@ fields:
   sampling_rate: 34:4:u32 # samplingInterval
   src_mac: 56:6:mac # sourceMacAddress
   vlan_id: 58:2:u16 # vlanId
+  flow_direction: 61:1:u8 # flowDirection
   mpls_label_stack_section_1: 70:3:bytes # mplsTopLabelStackSection
   mpls_label_stack_section_2: 71:3:bytes # mplsLabelStackSection2
   mpls_label_stack_section_3: 72:3:bytes # mplsLabelStackSection3

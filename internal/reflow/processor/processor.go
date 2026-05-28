@@ -344,7 +344,23 @@ func (p *Builtin) applyDerivedFieldMappings(evt *event.Event) {
 	if evt == nil {
 		return
 	}
+	deriveFlowDirectionFromCapture(evt.Fields)
 	deriveNATFieldsFromConntrack(evt.Fields, evt.Internal, p.cfg.NAT)
+}
+
+func deriveFlowDirectionFromCapture(fields map[string]any) {
+	if fields == nil {
+		return
+	}
+	if _, ok := fields["flow_direction"]; ok {
+		return
+	}
+	switch strings.ToLower(fieldStringOrZero(fields, "capture_direction")) {
+	case "in", "ingress", "input":
+		fields["flow_direction"] = uint32(0)
+	case "out", "egress", "output":
+		fields["flow_direction"] = uint32(1)
+	}
 }
 
 func deriveNATFieldsFromConntrack(fields, internal map[string]any, cfg config.NATProcessorConfig) {

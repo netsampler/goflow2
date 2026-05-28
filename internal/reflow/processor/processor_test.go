@@ -400,6 +400,39 @@ func TestBuiltinProcessBytesCanSwapPreNATTupleIntoCanonicalFields(t *testing.T) 
 	}
 }
 
+func TestBuiltinProcessBytesDerivesFlowDirectionFromCaptureDirection(t *testing.T) {
+	tests := []struct {
+		name      string
+		direction string
+		want      uint32
+	}{
+		{name: "ingress", direction: "in", want: 0},
+		{name: "egress", direction: "out", want: 1},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			proc := NewBuiltin(config.ProcessorConfig{})
+			events, err := proc.Process(&event.Event{
+				Source: event.SourceMetadata{Type: "bytes"},
+				Payload: ethernetPayload(
+					0x0800,
+					ipv4Packet(6, [4]byte{192, 0, 2, 10}, [4]byte{198, 51, 100, 20}, tcpHeader(12345, 443)),
+				),
+				Fields: map[string]any{
+					"capture_direction": tt.direction,
+				},
+			})
+			if err != nil {
+				t.Fatalf("Process returned error: %v", err)
+			}
+			if got := events[0].Fields["flow_direction"]; got != tt.want {
+				t.Fatalf("expected flow_direction=%d, got %#v", tt.want, got)
+			}
+		})
+	}
+}
+
 func TestBuiltinProcessBytesDoesNotSwapPreNATTupleForIngressCapture(t *testing.T) {
 	proc := NewBuiltin(config.ProcessorConfig{
 		Builtin: config.BuiltinProcessorConfig{

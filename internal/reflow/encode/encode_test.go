@@ -1219,6 +1219,57 @@ func TestIPFIXEncoderEmitsTemplateAndDataRecord(t *testing.T) {
 	}
 }
 
+func TestTemplatedFlowEncoderExportsFlowDirection(t *testing.T) {
+	tests := []struct {
+		name      string
+		typ       string
+		fieldType uint16
+	}{
+		{name: "ipfix", typ: "ipfix", fieldType: netflow.IPFIX_FIELD_flowDirection},
+		{name: "netflowv9", typ: "netflowv9", fieldType: netflow.NFV9_FIELD_DIRECTION},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := testTFlowEncoderConfig(tt.typ)
+			cfg.TemplatedFlow.Data.Select = []string{"flow_direction"}
+			cfg.TemplatedFlow.Data.Catalog["flow_direction"] = config.IPFIXFieldDefinition{
+				ID:     netflow.IPFIX_FIELD_flowDirection,
+				Length: 1,
+				Type:   "unsigned8",
+			}
+			evt := testTemplatedFlowEvent()
+			evt.Fields["flow_direction"] = uint32(1)
+
+			var payloads [][]byte
+			var err error
+			store := templates.NewTemplateFlowStore()
+			store.Start()
+			switch tt.typ {
+			case "ipfix":
+				payloads, err = NewIPFIXEncoder(cfg).Encode(evt)
+				if err != nil {
+					t.Fatalf("Encode returned error: %v", err)
+				}
+				var decoded netflow.IPFIXPacket
+				if err := netflow.DecodeMessageVersion(bytes.NewBuffer(payloads[0]), store, netflow.FlowContext{RouterKey: "test-router"}, nil, &decoded); err != nil {
+					t.Fatalf("decode ipfix payload: %v", err)
+				}
+				assertFlowDirectionTemplateAndValue(t, decoded.FlowSets, tt.fieldType)
+			case "netflowv9":
+				payloads, err = NewNFv9Encoder(cfg).Encode(evt)
+				if err != nil {
+					t.Fatalf("Encode returned error: %v", err)
+				}
+				var decoded netflow.NFv9Packet
+				if err := netflow.DecodeMessageVersion(bytes.NewBuffer(payloads[0]), store, netflow.FlowContext{RouterKey: "test-router"}, &decoded, nil); err != nil {
+					t.Fatalf("decode netflow v9 payload: %v", err)
+				}
+				assertFlowDirectionTemplateAndValue(t, decoded.FlowSets, tt.fieldType)
+			}
+		})
+	}
+}
+
 func TestIPFIXEncoderBatchesCompatibleDataRecords(t *testing.T) {
 	cfg := testTFlowEncoderConfig("ipfix")
 	cfg.Batch = config.BatchConfig{
@@ -2803,6 +2854,34 @@ func decodeFlowMessage(t *testing.T, payload []byte) *flowpb.FlowMessage {
 
 func testBoolPtr(v bool) *bool {
 	return &v
+}
+
+func assertFlowDirectionTemplateAndValue(t *testing.T, flowSets []interface{}, fieldType uint16) {
+	t.Helper()
+	if len(flowSets) != 2 {
+		t.Fatalf("expected template and data flow sets, got %d", len(flowSets))
+	}
+	templateSet, ok := flowSets[0].(netflow.TemplateFlowSet)
+	if !ok {
+		t.Fatalf("expected first flow set to be TemplateFlowSet, got %T", flowSets[0])
+	}
+	if len(templateSet.Records) != 1 || len(templateSet.Records[0].Fields) != 1 {
+		t.Fatalf("expected one-field template, got %#v", templateSet.Records)
+	}
+	field := templateSet.Records[0].Fields[0]
+	if field.Type != fieldType || field.Length != 1 {
+		t.Fatalf("expected flow direction field type=%d length=1, got type=%d length=%d", fieldType, field.Type, field.Length)
+	}
+	dataSet, ok := flowSets[1].(netflow.DataFlowSet)
+	if !ok {
+		t.Fatalf("expected second flow set to be DataFlowSet, got %T", flowSets[1])
+	}
+	if len(dataSet.Records) < 1 || len(dataSet.Records[0].Values) != 1 {
+		t.Fatalf("expected first flow direction value, got %#v", dataSet.Records)
+	}
+	if got := dataSet.Records[0].Values[0].Value.([]byte); !bytes.Equal(got, []byte{1}) {
+		t.Fatalf("expected flow direction value 1, got %v", got)
+	}
 }
 
 func testTFlowEncoderConfig(typ string) config.EncoderConfig {

@@ -877,6 +877,7 @@ func TestGeneratedAggregateConfigUsesFieldDSL(t *testing.T) {
 		{"sum", "bytes"},
 		{"current", "tcp_flags"},
 		{"current", "src_mac"},
+		{"current", "flow_direction"},
 		{"current", "agent_ipv6"},
 	} {
 		if !aggregatorHasField(agg, field.role, field.name) {
@@ -1036,7 +1037,7 @@ func TestGeneratedIPFIXConfigExcludesDataLinkFrameByDefault(t *testing.T) {
 			t.Fatalf("expected generated ipfix config not to export %s by default: %#v", name, fields)
 		}
 	}
-	for _, name := range []string{"src_addr", "bytes", "source_id"} {
+	for _, name := range []string{"src_addr", "bytes", "source_id", "flow_direction"} {
 		if !slices.Contains(fields, name) {
 			t.Fatalf("expected generated ipfix config to export %s: %#v", name, fields)
 		}
@@ -1103,7 +1104,7 @@ func TestGeneratedAggregateConfigLimitedPresetRemovesParsedPacketFields(t *testi
 			t.Fatalf("expected limited preset to remove %s, agg=%#v fields=%#v", name, agg.Fields, fields)
 		}
 	}
-	for _, name := range []string{"bytes", "packets", "input_if", "output_if", "agent_ip", "agent_ipv6", "source_id"} {
+	for _, name := range []string{"bytes", "packets", "input_if", "output_if", "flow_direction", "agent_ip", "agent_ipv6", "source_id"} {
 		if !aggregatorHasFieldName(agg, name) || !slices.Contains(fields, name) {
 			t.Fatalf("expected limited preset to preserve %s, agg=%#v fields=%#v", name, agg.Fields, fields)
 		}
