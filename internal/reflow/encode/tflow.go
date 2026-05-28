@@ -566,7 +566,8 @@ func (e *NFv9Encoder) buildPacket(evt *event.Event) (*netflow.NFv9Packet, error)
 	sourceID := e.sourceID()
 	exportMS := exportUnixMilliseconds(evt.ReceivedAt, evt.Fields)
 	unixSeconds := uint32((exportMS + 999) / 1000)
-	sysUptime, firstSwitched, lastSwitched := uptimeWindow(exportMS, int64Field(evt.Fields, "start_time_unix"), int64Field(evt.Fields, "end_time_unix"))
+	packetExportMS := int64(unixSeconds) * 1000
+	sysUptime, firstSwitched, lastSwitched := uptimeWindow(packetExportMS, int64Field(evt.Fields, "start_time_unix"), int64Field(evt.Fields, "end_time_unix"))
 	encodingCtx := templatedEncodingContext{
 		netflowV9:     true,
 		firstSwitched: firstSwitched,

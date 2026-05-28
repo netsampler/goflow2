@@ -1985,6 +1985,12 @@ func TestNFv9EncoderUsesSwitchedTimeFields(t *testing.T) {
 	if err := netflow.DecodeMessageVersion(bytes.NewBuffer(payloads[0]), store, netflow.FlowContext{RouterKey: "test-router"}, &decoded, nil); err != nil {
 		t.Fatalf("decode netflow v9 payload: %v", err)
 	}
+	if decoded.UnixSeconds != 1_700_000_001 {
+		t.Fatalf("expected rounded packet timestamp 1700000001, got %d", decoded.UnixSeconds)
+	}
+	if decoded.SystemUptime != 900 {
+		t.Fatalf("expected system uptime to include packet timestamp rounding remainder, got %d", decoded.SystemUptime)
+	}
 
 	templateSet := decoded.FlowSets[0].(netflow.TemplateFlowSet)
 	fields := templateSet.Records[0].Fields
@@ -2014,6 +2020,15 @@ func TestNFv9EncoderUsesSwitchedTimeFields(t *testing.T) {
 	}
 	if got := binary.BigEndian.Uint32(endRaw); got != 800 {
 		t.Fatalf("expected LAST_SWITCHED value 800, got %d", got)
+	}
+	decodeV9Time := func(switched uint32) int64 {
+		return int64(decoded.UnixSeconds)*1000 - (int64(decoded.SystemUptime) - int64(switched))
+	}
+	if got := decodeV9Time(binary.BigEndian.Uint32(startRaw)); got != int64(1_700_000_000_100) {
+		t.Fatalf("expected reconstructed start_time_unix=1700000000100, got %d", got)
+	}
+	if got := decodeV9Time(binary.BigEndian.Uint32(endRaw)); got != int64(1_700_000_000_900) {
+		t.Fatalf("expected reconstructed end_time_unix=1700000000900, got %d", got)
 	}
 }
 
