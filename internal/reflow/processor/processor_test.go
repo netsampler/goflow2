@@ -241,6 +241,7 @@ func TestBuiltinProcessGoFlow2V2PreservesNanosecondTimeAliases(t *testing.T) {
 		},
 		Message: []byte(`{
 			"type": 1,
+			"tcp_flags": 18,
 			"time_flow_start_ns": 1700000000100123456,
 			"time_flow_end_ns": 1700000000900123456
 		}`),
@@ -261,6 +262,9 @@ func TestBuiltinProcessGoFlow2V2PreservesNanosecondTimeAliases(t *testing.T) {
 	}
 	if got := fields["end_time_unix"]; got != int64(1_700_000_000_900) {
 		t.Fatalf("expected end_time_unix milliseconds, got %#v", got)
+	}
+	if got := fields["tcp_flags"]; got != uint32(18) {
+		t.Fatalf("expected tcp_flags to be copied, got %#v", got)
 	}
 	if events[0].SFlow != nil {
 		t.Fatalf("expected sflow metadata to remain unset, got %#v", events[0].SFlow)

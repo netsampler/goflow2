@@ -34,6 +34,9 @@ func TestNormalizeEventParsesDirectIPv4SampledHeader(t *testing.T) {
 	if got := evt.Fields["dst_port"]; got != uint32(443) {
 		t.Fatalf("expected dst_port=443, got %#v", got)
 	}
+	if got := evt.Fields["tcp_flags"]; got != uint32(2) {
+		t.Fatalf("expected tcp_flags=2, got %#v", got)
+	}
 	if got := evt.Fields["bytes"]; got != int64(74) {
 		t.Fatalf("expected bytes to use frame_length=74, got %#v", got)
 	}
@@ -45,6 +48,9 @@ func TestNormalizeEventParsesDirectIPv4SampledHeader(t *testing.T) {
 	}
 	if got := evt.Packet.Layers[1].Length; got != 20 {
 		t.Fatalf("expected tcp layer length 20, got %d", got)
+	}
+	if evt.Packet.Layers[1].TCP == nil || evt.Packet.Layers[1].TCP.Flags != 2 {
+		t.Fatalf("expected tcp layer flags 2, got %#v", evt.Packet.Layers[1].TCP)
 	}
 }
 

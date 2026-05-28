@@ -564,6 +564,7 @@ func (p *Builtin) processGoFlow2V2(evt *event.Event, payload any) ([]*event.Even
 	setUint32Alias(fields, record, "src_port", "src_port")
 	setUint32Alias(fields, record, "dst_port", "dst_port")
 	setUint32Alias(fields, record, "proto", "proto")
+	setUint32Alias(fields, record, "tcp_flags", "tcp_flags")
 	if proto := fieldUint32(fields, "proto"); proto != 0 {
 		fields["proto_name"] = ipProtocolName(proto)
 	}

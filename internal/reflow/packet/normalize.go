@@ -851,11 +851,12 @@ func fillPseudoL4(buf []byte, proto, srcPort, dstPort uint32) {
 }
 
 type packetTuple struct {
-	SrcAddr netip.Addr
-	DstAddr netip.Addr
-	Proto   uint32
-	SrcPort uint32
-	DstPort uint32
+	SrcAddr  netip.Addr
+	DstAddr  netip.Addr
+	Proto    uint32
+	SrcPort  uint32
+	DstPort  uint32
+	TCPFlags uint32
 }
 
 type packetView struct {
@@ -974,6 +975,9 @@ func applyPacketViewFields(fields map[string]any, view packetView, helpers Aggre
 		fields["proto_name"] = ipProtocolName(tuple.Proto)
 		fields["src_port"] = tuple.SrcPort
 		fields["dst_port"] = tuple.DstPort
+		if tuple.Proto == 6 {
+			fields["tcp_flags"] = tuple.TCPFlags
+		}
 	}
 	if len(view.Tuples) > 1 {
 		outer := view.Tuples[0]
@@ -983,6 +987,9 @@ func applyPacketViewFields(fields map[string]any, view packetView, helpers Aggre
 		fields["outer_proto_name"] = ipProtocolName(outer.Proto)
 		fields["outer_src_port"] = outer.SrcPort
 		fields["outer_dst_port"] = outer.DstPort
+		if outer.Proto == 6 {
+			fields["outer_tcp_flags"] = outer.TCPFlags
+		}
 		fields["encap_depth"] = uint32(len(view.Tuples) - 1)
 	}
 }
@@ -1179,6 +1186,7 @@ func packetViewFromModel(model *event.PacketModel) packetView {
 			}
 			view.Tuples[currentTuple].SrcPort = uint32(layer.TCP.SrcPort)
 			view.Tuples[currentTuple].DstPort = uint32(layer.TCP.DstPort)
+			view.Tuples[currentTuple].TCPFlags = uint32(layer.TCP.Flags)
 		case "udp":
 			if layer.UDP == nil || currentTuple < 0 {
 				continue
@@ -1559,6 +1567,9 @@ func parseIPv4Tuple(data []byte) (int, packetTuple, uint32, error) {
 		tuple.SrcPort = uint32(uint16(data[ihl])<<8 | uint16(data[ihl+1]))
 		tuple.DstPort = uint32(uint16(data[ihl+2])<<8 | uint16(data[ihl+3]))
 	}
+	if len(data) >= ihl+14 && tuple.Proto == 6 {
+		tuple.TCPFlags = uint32(data[ihl+13])
+	}
 	return ihl, tuple, tuple.Proto, nil
 }
 
@@ -1648,6 +1659,9 @@ func parseIPv6Tuple(data []byte) (int, packetTuple, uint32, []event.LayerSpec, e
 	if len(data) >= offset+4 && (tuple.Proto == 6 || tuple.Proto == 17) {
 		tuple.SrcPort = uint32(uint16(data[offset])<<8 | uint16(data[offset+1]))
 		tuple.DstPort = uint32(uint16(data[offset+2])<<8 | uint16(data[offset+3]))
+	}
+	if len(data) >= offset+14 && tuple.Proto == 6 {
+		tuple.TCPFlags = uint32(data[offset+13])
 	}
 	return offset, tuple, tuple.Proto, extensionLayers, nil
 }
@@ -1927,6 +1941,7 @@ func appendTransportLayer(view *packetView, proto uint32, data []byte) {
 			layer.TCP = &event.TCPLayer{
 				SrcPort: uint16(tuple.SrcPort),
 				DstPort: uint16(tuple.DstPort),
+				Flags:   uint8(tuple.TCPFlags),
 			}
 		}
 		view.appendLayer(layer)

@@ -160,6 +160,18 @@ func TestMapDataFieldsUsesNetFlowV9FieldIDs(t *testing.T) {
 	}
 }
 
+func TestMapDataFieldsPopulatesTCPFlagsWithoutCatalog(t *testing.T) {
+	d := &builtIn{}
+	fields := map[string]any{}
+	d.mapDataFields(fields, []netflow.DataField{
+		{Type: netflow.NFV9_FIELD_TCP_FLAGS, Value: []byte{0x12}},
+	}, 0, 0, true)
+
+	if fields["tcp_flags"] != uint32(0x12) {
+		t.Fatalf("expected tcp_flags to decode from field 6, got %#v", fields["tcp_flags"])
+	}
+}
+
 func TestIPFIXCustomCatalogFieldRoundTrip(t *testing.T) {
 	catalog := map[string]config.IPFIXFieldDefinition{
 		"bytes": {ID: 1, Length: 8, Type: "unsigned64"},
