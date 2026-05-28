@@ -866,7 +866,6 @@ func TestGeneratedAggregateConfigUsesFieldDSL(t *testing.T) {
 		"- current:dst_mac",
 		"- current:end_time_unix",
 		"- current:ether_type",
-		"- current:mpls_label_stack_section_1",
 		"record_kind: packet",
 		"template_id: 256",
 	} {
@@ -888,6 +887,9 @@ func TestGeneratedAggregateConfigUsesFieldDSL(t *testing.T) {
 		"- current:nat_dst_addr",
 		"- current:nat_src_port",
 		"- current:nat_dst_port",
+		"- current:mpls_label_stack_section_1",
+		"- current:mpls_label_stack_section_2",
+		"- current:mpls_label_stack_section_3",
 		"static_fields:",
 		"ip_family:",
 		"flow_data_ipv4",
@@ -1046,7 +1048,7 @@ func TestGeneratedIPFIXConfigExcludesDataLinkFrameByDefault(t *testing.T) {
 	if len(fields) == 0 {
 		t.Fatalf("expected generated ipfix config to select explicit fields")
 	}
-	for _, name := range []string{"frame_length", "header_data", "template_id", "sampling_rate", "source_id", "sample_pool", "sub_agent_id", "observation_domain_id", "drops", "nat_src_addr", "nat_dst_addr", "nat_src_port", "nat_dst_port"} {
+	for _, name := range []string{"frame_length", "header_data", "template_id", "sampling_rate", "source_id", "sample_pool", "sub_agent_id", "observation_domain_id", "drops", "nat_src_addr", "nat_dst_addr", "nat_src_port", "nat_dst_port", "mpls_label_stack_section_1", "mpls_label_stack_section_2", "mpls_label_stack_section_3"} {
 		if slices.Contains(fields, name) {
 			t.Fatalf("expected generated ipfix config not to export %s by default: %#v", name, fields)
 		}
