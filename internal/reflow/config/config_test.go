@@ -226,6 +226,9 @@ sink:
 	if emptyFile.Encoder.TemplatedFlow.Data.Catalog["bytes"].ID != 1 {
 		t.Fatalf("expected empty catalog file to use embedded bytes field, got %#v", emptyFile.Encoder.TemplatedFlow.Data.Catalog["bytes"])
 	}
+	if got := emptyFile.Encoder.TemplatedFlow.Data.Catalog["agent_ipv6"]; got.ID != 131 || got.Length != 16 || got.Type != "ipv6Address" {
+		t.Fatalf("expected embedded agent_ipv6 exporter IPv6 field, got %#v", got)
+	}
 }
 
 func TestLoadSupportsSharedTemplatedFieldsCatalog(t *testing.T) {
@@ -821,6 +824,7 @@ func TestGeneratedAggregateConfigUsesFieldDSL(t *testing.T) {
 		{"sum", "bytes"},
 		{"current", "tcp_flags"},
 		{"current", "src_mac"},
+		{"current", "agent_ipv6"},
 	} {
 		if !aggregatorHasField(agg, field.role, field.name) {
 			t.Fatalf("expected generated aggregate field %s:%s, got %#v", field.role, field.name, agg.Fields)
@@ -1046,7 +1050,7 @@ func TestGeneratedAggregateConfigLimitedPresetRemovesParsedPacketFields(t *testi
 			t.Fatalf("expected limited preset to remove %s, agg=%#v fields=%#v", name, agg.Fields, fields)
 		}
 	}
-	for _, name := range []string{"bytes", "packets", "input_if", "output_if", "agent_ip", "source_id"} {
+	for _, name := range []string{"bytes", "packets", "input_if", "output_if", "agent_ip", "agent_ipv6", "source_id"} {
 		if !aggregatorHasFieldName(agg, name) || !slices.Contains(fields, name) {
 			t.Fatalf("expected limited preset to preserve %s, agg=%#v fields=%#v", name, agg.Fields, fields)
 		}

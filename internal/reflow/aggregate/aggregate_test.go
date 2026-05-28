@@ -693,6 +693,46 @@ func TestStatefulReadsSourceMetadataFields(t *testing.T) {
 	}
 }
 
+func TestStatefulSplitsAgentIPMetadataByFamily(t *testing.T) {
+	agg, err := New(config.AggregatorConfig{
+		Periodic: config.AggregatorPeriodicConfig{
+			Every: 1,
+		},
+		Current: []string{"agent_ip", "agent_ipv6"},
+	})
+	if err != nil {
+		t.Fatalf("New returned error: %v", err)
+	}
+
+	_, err = agg.Process(&event.Event{
+		Source: event.SourceMetadata{
+			AgentIP: "2001:db8::99",
+		},
+		Fields: map[string]any{
+			"bytes":    uint64(64),
+			"agent_ip": "192.0.2.1",
+		},
+	})
+	if err != nil {
+		t.Fatalf("Process returned error: %v", err)
+	}
+
+	out, err := agg.Close()
+	if err != nil {
+		t.Fatalf("Close returned error: %v", err)
+	}
+	if len(out) != 1 {
+		t.Fatalf("expected one aggregate, got %d", len(out))
+	}
+	fields := out[0].Fields
+	if _, ok := fields["agent_ip"]; ok {
+		t.Fatalf("expected IPv6 metadata not to populate agent_ip, got %#v", fields)
+	}
+	if fields["agent_ipv6"] != "2001:db8::99" {
+		t.Fatalf("expected agent_ipv6 from metadata, got %#v", fields["agent_ipv6"])
+	}
+}
+
 func TestStatefulPeriodicFlushOnlyEmitsDirtyBuckets(t *testing.T) {
 	agg, err := New(config.AggregatorConfig{
 		Periodic: config.AggregatorPeriodicConfig{

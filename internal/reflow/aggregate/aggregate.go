@@ -3,6 +3,7 @@ package aggregate
 import (
 	"errors"
 	"fmt"
+	"net/netip"
 	"sort"
 	"strconv"
 	"strings"
@@ -740,11 +741,18 @@ func eventFieldValue(evt *event.Event, key string) (any, bool) {
 	}
 	switch key {
 	case "agent_ip":
-		if evt.SFlow != nil && evt.SFlow.AgentIP != "" {
-			return evt.SFlow.AgentIP, true
+		if agentIP, ok := metadataAgentIP(evt); ok {
+			if agentIPv4, _ := agentIPByFamily(agentIP); agentIPv4 != "" {
+				return agentIPv4, true
+			}
+			return nil, false
 		}
-		if evt.Source.AgentIP != "" {
-			return evt.Source.AgentIP, true
+	case "agent_ipv6":
+		if agentIP, ok := metadataAgentIP(evt); ok {
+			if _, agentIPv6 := agentIPByFamily(agentIP); agentIPv6 != "" {
+				return agentIPv6, true
+			}
+			return nil, false
 		}
 	case "source_id":
 		if evt.SFlow != nil && evt.SFlow.SourceID != 0 {
@@ -776,6 +784,30 @@ func eventFieldValue(evt *event.Event, key string) (any, bool) {
 		}
 	}
 	return fieldValue(evt.Fields, key)
+}
+
+func metadataAgentIP(evt *event.Event) (string, bool) {
+	if evt.SFlow != nil && evt.SFlow.AgentIP != "" {
+		return evt.SFlow.AgentIP, true
+	}
+	if evt.Source.AgentIP != "" {
+		return evt.Source.AgentIP, true
+	}
+	return "", false
+}
+
+func agentIPByFamily(raw string) (string, string) {
+	if raw == "" {
+		return "", ""
+	}
+	addr, err := netip.ParseAddr(raw)
+	if err != nil {
+		return raw, ""
+	}
+	if addr.Is4() {
+		return raw, ""
+	}
+	return "", raw
 }
 
 // fieldValue reads flat field names first, then dotted paths through nested

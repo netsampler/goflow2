@@ -2029,6 +2029,57 @@ func TestIPFIXSchemaDataUsesSourceSamplingMetadata(t *testing.T) {
 	}
 }
 
+func TestIPFIXSchemaDataUsesAgentIPv6Metadata(t *testing.T) {
+	cfg := testTFlowEncoderConfig("ipfix")
+	cfg.TemplatedFlow.Data.Catalog["agent_ip"] = config.IPFIXFieldDefinition{ID: netflow.IPFIX_FIELD_exporterIPv4Address, Length: 4, Type: "ipv4Address"}
+	cfg.TemplatedFlow.Data.Catalog["agent_ipv6"] = config.IPFIXFieldDefinition{ID: netflow.IPFIX_FIELD_exporterIPv6Address, Length: 16, Type: "ipv6Address"}
+	enc := NewIPFIXEncoder(cfg)
+
+	if _, err := enc.Encode(&event.Event{
+		Kind: "control",
+		Control: &event.ControlMetadata{
+			Type:   "schema",
+			Stream: "flow_data",
+		},
+		Payload: event.AggregationSchema{
+			Stream:         "flow_data",
+			FieldNames:     []string{"agent_ip", "agent_ipv6"},
+			BaseTemplateID: 300,
+		},
+	}); err != nil {
+		t.Fatalf("schema Encode returned error: %v", err)
+	}
+
+	evt := &event.Event{
+		ReceivedAt: testEventTime(),
+		Stream:     "flow_data",
+		Source: event.SourceMetadata{
+			AgentIP: "2001:db8::99",
+		},
+		Fields: map[string]any{
+			"bytes": uint64(64),
+		},
+	}
+	fields := eventFieldsWithMetadataForSchema(evt, enc.dataSchemas["flow_data"].fields)
+	if _, ok := fields["agent_ip"]; ok {
+		t.Fatalf("expected IPv6 metadata not to materialize as agent_ip, got %#v", fields)
+	}
+	if fields["agent_ipv6"] != "2001:db8::99" {
+		t.Fatalf("expected agent_ipv6 metadata, got %#v", fields)
+	}
+	payloads, err := enc.Encode(evt)
+	if err != nil {
+		t.Fatalf("data Encode returned error: %v", err)
+	}
+	if len(payloads) != 1 {
+		t.Fatalf("expected one data payload, got %d", len(payloads))
+	}
+	record := enc.dataSchemas["flow_data"].templateForFields(nil)
+	if record.Fields[0].Type != netflow.IPFIX_FIELD_exporterIPv4Address || record.Fields[1].Type != netflow.IPFIX_FIELD_exporterIPv6Address {
+		t.Fatalf("unexpected agent address template fields: %#v", record.Fields)
+	}
+}
+
 func TestNFv9EncoderPassesThroughOptionsTemplate(t *testing.T) {
 	enc := NewNFv9Encoder(config.EncoderConfig{Type: "netflowv9"})
 	evt := &event.Event{

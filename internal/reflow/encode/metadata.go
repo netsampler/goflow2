@@ -1,6 +1,10 @@
 package encode
 
-import "github.com/netsampler/goflow2/v3/internal/reflow/event"
+import (
+	"net/netip"
+
+	"github.com/netsampler/goflow2/v3/internal/reflow/event"
+)
 
 func eventAgentIP(evt *event.Event) string {
 	if evt == nil {
@@ -113,15 +117,31 @@ func addEventMetadataFields(fields map[string]any, evt *event.Event, names map[s
 		fields[name] = val
 	}
 	agentIP := eventAgentIP(evt)
+	agentIPv4, agentIPv6 := agentIPByFamily(agentIP)
 	sourceID := eventSourceID(evt)
 	samplingRate := eventSamplingRate(evt)
 	samplePool := eventSamplePool(evt)
 	drops := eventDrops(evt)
-	add("agent_ip", agentIP, agentIP != "")
+	add("agent_ip", agentIPv4, agentIPv4 != "")
+	add("agent_ipv6", agentIPv6, agentIPv6 != "")
 	add("source_id", sourceID, sourceID != 0)
 	add("sampling_rate", samplingRate, hasSamplingMetadata(evt))
 	add("sample_pool", samplePool, hasSamplePoolMetadata(evt))
 	add("drops", drops, hasDropsMetadata(evt))
+}
+
+func agentIPByFamily(raw string) (string, string) {
+	if raw == "" {
+		return "", ""
+	}
+	addr, err := netip.ParseAddr(raw)
+	if err != nil {
+		return raw, ""
+	}
+	if addr.Is4() {
+		return raw, ""
+	}
+	return "", raw
 }
 
 func hasSamplingMetadata(evt *event.Event) bool {
