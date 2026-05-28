@@ -313,14 +313,16 @@ func (a *App) Run(ctx context.Context) error {
 			encodeJobs <- evt
 		}
 	}
+	var sourceInitEvents []*event.Event
 	for i, src := range a.sources {
-		sourceInitEvents, err := src.InitEvents()
+		initEvents, err := src.InitEvents()
 		if err != nil {
 			return fmt.Errorf("init source %d events: %w", i, err)
 		}
-		for _, evt := range sourceInitEvents {
-			encodeJobs <- evt
-		}
+		sourceInitEvents = append(sourceInitEvents, initEvents...)
+	}
+	for _, evt := range sourceInitEventsForEncoder(a.encoderCfg.Type, sourceInitEvents) {
+		encodeJobs <- evt
 	}
 
 	sourceDone := make(chan error, len(a.sources))
@@ -380,6 +382,22 @@ func (a *App) Run(ctx context.Context) error {
 		sourceWG.Wait()
 		shutdown()
 		return nil
+	}
+}
+
+func sourceInitEventsForEncoder(encoderType string, events []*event.Event) []*event.Event {
+	if encoderType != "ipfix" || len(events) <= 1 {
+		return events
+	}
+	return []*event.Event{
+		{
+			ReceivedAt: time.Now().UTC(),
+			Kind:       "control",
+			Control: &event.ControlMetadata{
+				Type: "source_init_batch",
+			},
+			Payload: events,
+		},
 	}
 }
 

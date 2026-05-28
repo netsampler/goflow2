@@ -311,7 +311,8 @@ func (s *Source) packetEvent(data []byte, meta packetMetadata) *event.Event {
 			CaptureDirection:      meta.direction,
 			CapturePacketType:     meta.packetType,
 			AgentIP:               s.agentIP,
-			SourceID:              uint32(s.captureInterfaceIndex),
+			SourceID:              s.sourceID(),
+			SourceIDSet:           true,
 			Sampling: &event.SamplingMetadata{
 				Rate:       uint32(s.cfg.SampleEvery),
 				SamplePool: samplePool,

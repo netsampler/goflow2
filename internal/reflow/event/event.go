@@ -68,6 +68,7 @@ type SourceMetadata struct {
 	CapturePacketType     string            `json:"capture_packet_type,omitempty"`
 	AgentIP               string            `json:"agent_ip,omitempty"`
 	SourceID              uint32            `json:"source_id,omitempty"`
+	SourceIDSet           bool              `json:"-"`
 	Sampling              *SamplingMetadata `json:"sampling,omitempty"`
 	JSON                  JSONMetadata      `json:"json,omitempty"`
 }

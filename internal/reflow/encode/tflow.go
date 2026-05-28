@@ -708,6 +708,8 @@ func (e *IPFIXEncoder) handleControl(evt *event.Event) ([][]byte, error) {
 		return e.registerSchema(evt)
 	case "source_init":
 		return e.registerSourceInit(evt)
+	case "source_init_batch":
+		return e.registerSourceInitBatch(evt)
 	default:
 		return nil, nil
 	}
@@ -801,6 +803,32 @@ func (e *IPFIXEncoder) registerSourceInit(evt *event.Event) ([][]byte, error) {
 	state.observationDomainID = e.observationDomainID()
 	e.sourceOptions[sourceOptionsKey(state)] = state
 	payloads, err := e.encodeSourceOptions(state)
+	if err != nil {
+		return nil, err
+	}
+	e.lastOptionsRun = time.Now().UTC()
+	return payloads, nil
+}
+
+func (e *IPFIXEncoder) registerSourceInitBatch(evt *event.Event) ([][]byte, error) {
+	events, ok := evt.Payload.([]*event.Event)
+	if !ok {
+		return nil, nil
+	}
+	states := make([]sourceOptionsState, 0, len(events))
+	for _, sourceEvt := range events {
+		state := sourceOptionsFromEvent(sourceEvt)
+		if state.stream == "" {
+			state.stream = eventStream(sourceEvt, "options_data")
+		}
+		if state.templateID == 0 {
+			state.templateID = e.cfg.TemplatedFlow.OptionsTemplateBaseID
+		}
+		state.observationDomainID = e.observationDomainID()
+		e.sourceOptions[sourceOptionsKey(state)] = state
+		states = append(states, state)
+	}
+	payloads, err := e.encodeSourceOptionsBatch(states)
 	if err != nil {
 		return nil, err
 	}

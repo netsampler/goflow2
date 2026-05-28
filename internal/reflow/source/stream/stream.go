@@ -42,16 +42,25 @@ func New(cfg config.SourceConfig) (*Source, error) {
 func (s *Source) InitEvents() ([]*event.Event, error) {
 	now := time.Now().UTC()
 	name := streamInterfaceName(s.cfg.Address)
+	sourceMeta := event.SourceMetadata{
+		Network:          s.cfg.Network,
+		Address:          s.cfg.Address,
+		Type:             s.cfg.Type,
+		CaptureInterface: name,
+	}
+	payload := event.SourceInit{
+		Stream: s.cfg.Type,
+	}
+	if s.cfg.SourceID != nil {
+		sourceMeta.SourceID = *s.cfg.SourceID
+		sourceMeta.SourceIDSet = true
+		payload.SourceID = *s.cfg.SourceID
+	}
 	return []*event.Event{
 		{
 			ReceivedAt: now,
 			Kind:       "control",
-			Source: event.SourceMetadata{
-				Network:          s.cfg.Network,
-				Address:          s.cfg.Address,
-				Type:             s.cfg.Type,
-				CaptureInterface: name,
-			},
+			Source:     sourceMeta,
 			Control: &event.ControlMetadata{
 				Type:   "source_init",
 				Stream: s.cfg.Type,
@@ -59,9 +68,7 @@ func (s *Source) InitEvents() ([]*event.Event, error) {
 			Fields: map[string]any{
 				"stream_type": s.cfg.Type,
 			},
-			Payload: event.SourceInit{
-				Stream: s.cfg.Type,
-			},
+			Payload: payload,
 		},
 	}, nil
 }
@@ -141,18 +148,27 @@ func (s *Source) readPackets(ctx context.Context, emit func(*event.Event) error,
 
 		evt := &event.Event{
 			ReceivedAt: receivedAt,
-			Source: event.SourceMetadata{
-				Network: s.cfg.Network,
-				Address: s.cfg.Address,
-				Type:    "bytes",
-			},
-			Payload: append([]byte(nil), data...),
-			Fields:  fields,
+			Source:     s.sourceMetadata("bytes"),
+			Payload:    append([]byte(nil), data...),
+			Fields:     fields,
 		}
 		if err := emit(evt); err != nil {
 			return err
 		}
 	}
+}
+
+func (s *Source) sourceMetadata(sourceType string) event.SourceMetadata {
+	meta := event.SourceMetadata{
+		Network: s.cfg.Network,
+		Address: s.cfg.Address,
+		Type:    sourceType,
+	}
+	if s.cfg.SourceID != nil {
+		meta.SourceID = *s.cfg.SourceID
+		meta.SourceIDSet = true
+	}
+	return meta
 }
 
 func (s *Source) readNDJSON(ctx context.Context, emit func(*event.Event) error, r io.Reader) error {
@@ -207,14 +223,13 @@ func (s *Source) readNDJSON(ctx context.Context, emit func(*event.Event) error, 
 		}
 		evt := &event.Event{
 			ReceivedAt: time.Now().UTC(),
-			Source: event.SourceMetadata{
-				Network: s.cfg.Network,
-				Address: s.cfg.Address,
-				Type:    "json",
-				JSON: event.JSONMetadata{
+			Source: func() event.SourceMetadata {
+				meta := s.sourceMetadata("json")
+				meta.JSON = event.JSONMetadata{
 					Flavor: s.cfg.JSON.Flavor,
-				},
-			},
+				}
+				return meta
+			}(),
 			Message: raw,
 		}
 		if err := emit(evt); err != nil {
@@ -222,7 +237,6 @@ func (s *Source) readNDJSON(ctx context.Context, emit func(*event.Event) error, 
 		}
 	}
 }
-
 func (s *Source) Close() error {
 	if s.closer != nil {
 		return s.closer.Close()

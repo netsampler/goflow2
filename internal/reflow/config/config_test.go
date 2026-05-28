@@ -610,6 +610,59 @@ sink:
 	}
 }
 
+func TestLoadAssignsSourceIDsByLocalObservationPointOrder(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "reflow.yaml")
+	if err := os.WriteFile(cfgPath, []byte(`
+sources:
+  - network: stream
+    address: first.pcap
+    type: pcap
+  - network: stream
+    address: events.ndjson
+    type: json
+  - network: stream
+    address: second.pcapng
+    type: pcapng
+  - network: pcap_live
+    interface: lo0
+    type: bytes
+    source_id: 9
+  - network: ebpf
+    interface: eth0
+    type: bytes
+processor:
+  type: builtin
+encoder:
+  type: ipfix
+sink:
+  type: file
+  path: out.ipfix
+`), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	cfg, err := Load(cfgPath)
+	if err != nil {
+		t.Fatalf("Load returned error: %v", err)
+	}
+	if cfg.Sources[0].SourceID == nil || *cfg.Sources[0].SourceID != 0 {
+		t.Fatalf("expected first stream pcap source_id 0, got %#v", cfg.Sources[0].SourceID)
+	}
+	if cfg.Sources[1].SourceID != nil {
+		t.Fatalf("expected stream json not to receive source_id, got %#v", cfg.Sources[1].SourceID)
+	}
+	if cfg.Sources[2].SourceID == nil || *cfg.Sources[2].SourceID != 1 {
+		t.Fatalf("expected stream pcapng source_id 1, got %#v", cfg.Sources[2].SourceID)
+	}
+	if cfg.Sources[3].SourceID == nil || *cfg.Sources[3].SourceID != 9 {
+		t.Fatalf("expected explicit pcap_live source_id 9, got %#v", cfg.Sources[3].SourceID)
+	}
+	if cfg.Sources[4].SourceID == nil || *cfg.Sources[4].SourceID != 10 {
+		t.Fatalf("expected ebpf source_id 10 after explicit id, got %#v", cfg.Sources[4].SourceID)
+	}
+}
+
 func TestLoadRejectsPcapEncoderWithDatagramSink(t *testing.T) {
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, "reflow.yaml")

@@ -57,6 +57,7 @@ func New(cfg config.SourceConfig) (*Source, error) {
 // InitEvents emits a source_init control event so template-based encoders can
 // learn source-scoped metadata before the first captured packet arrives.
 func (s *Source) InitEvents() ([]*event.Event, error) {
+	sourceID := s.sourceID()
 	return []*event.Event{
 		{
 			ReceivedAt: time.Now().UTC(),
@@ -68,7 +69,8 @@ func (s *Source) InitEvents() ([]*event.Event, error) {
 				CaptureInterface:      s.cfg.Interface,
 				CaptureInterfaceIndex: s.captureInterfaceIndex,
 				AgentIP:               s.agentIP,
-				SourceID:              uint32(s.captureInterfaceIndex),
+				SourceID:              sourceID,
+				SourceIDSet:           true,
 				Sampling: &event.SamplingMetadata{
 					Rate:       uint32(s.cfg.SampleEvery),
 					SamplePool: 0,
@@ -86,7 +88,7 @@ func (s *Source) InitEvents() ([]*event.Event, error) {
 			Payload: event.SourceInit{
 				Stream:       "options_data",
 				AgentIP:      s.agentIP,
-				SourceID:     uint32(s.captureInterfaceIndex),
+				SourceID:     sourceID,
 				SamplingRate: uint32(s.cfg.SampleEvery),
 				SamplePool:   0,
 				Drops:        0,
@@ -143,6 +145,7 @@ func (s *Source) Start(ctx context.Context, emit func(*event.Event) error) error
 		}
 		// Drop counters come from the capture engine, not from packet contents.
 		drops := s.currentDropCount()
+		sourceID := s.sourceID()
 
 		evt := &event.Event{
 			ReceivedAt: time.Now().UTC(),
@@ -153,7 +156,8 @@ func (s *Source) Start(ctx context.Context, emit func(*event.Event) error) error
 				CaptureInterface:      s.cfg.Interface,
 				CaptureInterfaceIndex: s.captureInterfaceIndex,
 				AgentIP:               s.agentIP,
-				SourceID:              uint32(s.captureInterfaceIndex),
+				SourceID:              sourceID,
+				SourceIDSet:           true,
 				Sampling: &event.SamplingMetadata{
 					Rate:       uint32(s.cfg.SampleEvery),
 					SamplePool: uint32(s.seenCount),
@@ -206,6 +210,13 @@ func (s *Source) Close() error {
 	}
 	s.wg.Wait()
 	return nil
+}
+
+func (s *Source) sourceID() uint32 {
+	if s.cfg.SourceID != nil {
+		return *s.cfg.SourceID
+	}
+	return uint32(s.captureInterfaceIndex)
 }
 
 // firstInterfaceIP picks a stable agent IP for exported metadata, preferring

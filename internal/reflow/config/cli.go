@@ -869,6 +869,10 @@ func boolPtr(v bool) *bool {
 	return &v
 }
 
+func uint32Ptr(v uint32) *uint32 {
+	return &v
+}
+
 func validateSocketSourceType(sourceType string) error {
 	switch sourceType {
 	case "flow", "bytes", "json":

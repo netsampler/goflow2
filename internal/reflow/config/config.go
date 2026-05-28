@@ -54,6 +54,7 @@ type SourceConfig struct {
 	SnapLen      int        `yaml:"snaplen"`
 	SampleEvery  int        `yaml:"sample_every"`
 	SampleOffset int        `yaml:"sample_offset"`
+	SourceID     *uint32    `yaml:"source_id,omitempty"`
 	Type         string     `yaml:"type"`
 	JSON         JSONConfig `yaml:"json"`
 	EBPF         EBPFConfig `yaml:"ebpf,omitempty"`
@@ -637,6 +638,7 @@ func (c *Config) setDefaults(configPath string) error {
 	if len(c.Sources) == 0 {
 		return fmt.Errorf("sources must contain at least one source")
 	}
+	assignDefaultSourceIDs(c.Sources)
 	for i := range c.Sources {
 		if err := applySourceDefaults(&c.Sources[i]); err != nil {
 			return fmt.Errorf("sources[%d]: %w", i, err)
@@ -823,6 +825,32 @@ func (c *Config) setDefaults(configPath string) error {
 		return fmt.Errorf("sink.address is required when sink.type=%s", c.Sink.Type)
 	}
 	return nil
+}
+
+func assignDefaultSourceIDs(sources []SourceConfig) {
+	var next uint32
+	for i := range sources {
+		if sources[i].SourceID != nil {
+			next = *sources[i].SourceID + 1
+			continue
+		}
+		if !sourceUsesConfiguredObservationPoint(sources[i]) {
+			continue
+		}
+		sources[i].SourceID = uint32Ptr(next)
+		next++
+	}
+}
+
+func sourceUsesConfiguredObservationPoint(src SourceConfig) bool {
+	switch src.Network {
+	case "pcap_live", "ebpf":
+		return true
+	case "stream":
+		return src.Type == "pcap" || src.Type == "pcapng"
+	default:
+		return false
+	}
 }
 
 func validatePacketDecoderConfig(cfg PacketDecoderConfig) error {

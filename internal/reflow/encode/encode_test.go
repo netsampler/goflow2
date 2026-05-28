@@ -1645,7 +1645,8 @@ func TestIPFIXDataRecordUsesSourceIDAsObservationPointID(t *testing.T) {
 
 	evt := testTemplatedFlowEvent()
 	delete(evt.Fields, "source_id")
-	evt.Source.SourceID = 99
+	evt.Source.SourceID = 0
+	evt.Source.SourceIDSet = true
 	payloads, err := enc.Encode(evt)
 	if err != nil {
 		t.Fatalf("Encode returned error: %v", err)
@@ -1668,8 +1669,8 @@ func TestIPFIXDataRecordUsesSourceIDAsObservationPointID(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected data flow set, got %T", decoded.FlowSets[1])
 	}
-	if got := dataSet.Records[0].Values[0].Value.([]byte); !bytes.Equal(got, encodeU64(99)) {
-		t.Fatalf("expected observation point value 99, got %v", got)
+	if got := dataSet.Records[0].Values[0].Value.([]byte); !bytes.Equal(got, encodeU64(0)) {
+		t.Fatalf("expected observation point value 0, got %v", got)
 	}
 }
 
@@ -1809,6 +1810,71 @@ func TestIPFIXSourceOptionsRefreshMergesObservationPointRecords(t *testing.T) {
 	for i, wantSourceID := range []uint64{42, 43} {
 		if got := optionsData.Records[i].ScopesValues[0].Value.([]byte); !bytes.Equal(got, encodeU64(wantSourceID)) {
 			t.Fatalf("expected options record %d observation point %d, got %v", i, wantSourceID, got)
+		}
+	}
+}
+
+func TestIPFIXSourceInitBatchSendsOneTemplateAndMultipleDataRecords(t *testing.T) {
+	cfg := testTFlowEncoderConfig("ipfix")
+	cfg.TemplatedFlow.ObservationDomainID = 888
+	enc := NewIPFIXEncoder(cfg)
+
+	payloads, err := enc.Encode(&event.Event{
+		Kind: "control",
+		Control: &event.ControlMetadata{
+			Type: "source_init_batch",
+		},
+		Payload: []*event.Event{
+			{
+				Source: event.SourceMetadata{
+					SourceID:    0,
+					SourceIDSet: true,
+					Sampling: &event.SamplingMetadata{
+						Rate: 100,
+					},
+				},
+			},
+			{
+				Source: event.SourceMetadata{
+					SourceID:    1,
+					SourceIDSet: true,
+					Sampling: &event.SamplingMetadata{
+						Rate: 200,
+					},
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Encode returned error: %v", err)
+	}
+	if len(payloads) != 1 {
+		t.Fatalf("expected one source-init batch payload, got %d", len(payloads))
+	}
+
+	store := templates.NewTemplateFlowStore()
+	store.Start()
+	var decoded netflow.IPFIXPacket
+	if err := netflow.DecodeMessageVersion(bytes.NewBuffer(payloads[0]), store, netflow.FlowContext{RouterKey: "test-router"}, nil, &decoded); err != nil {
+		t.Fatalf("decode source-init batch payload: %v", err)
+	}
+	optionsTemplate, ok := decoded.FlowSets[0].(netflow.IPFIXOptionsTemplateFlowSet)
+	if !ok {
+		t.Fatalf("expected options template flow set, got %T", decoded.FlowSets[0])
+	}
+	if len(optionsTemplate.Records) != 1 || optionsTemplate.Records[0].TemplateId != 1024 {
+		t.Fatalf("expected one options template 1024, got %#v", optionsTemplate.Records)
+	}
+	optionsData, ok := decoded.FlowSets[1].(netflow.OptionsDataFlowSet)
+	if !ok {
+		t.Fatalf("expected options data flow set, got %T", decoded.FlowSets[1])
+	}
+	if len(optionsData.Records) != 2 {
+		t.Fatalf("expected two options data records, got %d", len(optionsData.Records))
+	}
+	for i, wantSourceID := range []uint64{0, 1} {
+		if got := optionsData.Records[i].ScopesValues[0].Value.([]byte); !bytes.Equal(got, encodeU64(wantSourceID)) {
+			t.Fatalf("expected options data record %d observation point %d, got %v", i, wantSourceID, got)
 		}
 	}
 }

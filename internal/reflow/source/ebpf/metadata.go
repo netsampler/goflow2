@@ -25,6 +25,7 @@ type Source struct {
 // InitEvents emits a source_init control event so template-based encoders can
 // learn source-scoped metadata before the first captured packet arrives.
 func (s *Source) InitEvents() ([]*event.Event, error) {
+	sourceID := s.sourceID()
 	return []*event.Event{
 		{
 			ReceivedAt: time.Now().UTC(),
@@ -36,7 +37,8 @@ func (s *Source) InitEvents() ([]*event.Event, error) {
 				CaptureInterface:      s.cfg.Interface,
 				CaptureInterfaceIndex: s.captureInterfaceIndex,
 				AgentIP:               s.agentIP,
-				SourceID:              uint32(s.captureInterfaceIndex),
+				SourceID:              sourceID,
+				SourceIDSet:           true,
 				Sampling: &event.SamplingMetadata{
 					Rate:       uint32(s.cfg.SampleEvery),
 					SamplePool: 0,
@@ -54,7 +56,7 @@ func (s *Source) InitEvents() ([]*event.Event, error) {
 			Payload: event.SourceInit{
 				Stream:       "options_data",
 				AgentIP:      s.agentIP,
-				SourceID:     uint32(s.captureInterfaceIndex),
+				SourceID:     sourceID,
 				SamplingRate: uint32(s.cfg.SampleEvery),
 				SamplePool:   0,
 				Drops:        0,
@@ -71,6 +73,13 @@ func (s *Source) shouldEmitCurrentPacket() bool {
 	}
 	index := int((s.seenCount - 1) % uint64(s.cfg.SampleEvery))
 	return index == s.cfg.SampleOffset
+}
+
+func (s *Source) sourceID() uint32 {
+	if s.cfg.SourceID != nil {
+		return *s.cfg.SourceID
+	}
+	return uint32(s.captureInterfaceIndex)
 }
 
 // firstInterfaceIP picks a stable agent IP for exported metadata, preferring

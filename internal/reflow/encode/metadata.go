@@ -39,16 +39,21 @@ func eventSamplingRate(evt *event.Event) uint32 {
 }
 
 func eventSourceID(evt *event.Event) uint32 {
+	sourceID, _ := eventSourceIDValue(evt)
+	return sourceID
+}
+
+func eventSourceIDValue(evt *event.Event) (uint32, bool) {
 	if evt == nil {
-		return 0
+		return 0, false
 	}
 	if evt.SFlow != nil && evt.SFlow.SourceID != 0 {
-		return evt.SFlow.SourceID
+		return evt.SFlow.SourceID, true
 	}
-	if evt.Source.SourceID != 0 {
-		return evt.Source.SourceID
+	if evt.Source.SourceIDSet || evt.Source.SourceID != 0 {
+		return evt.Source.SourceID, true
 	}
-	return 0
+	return 0, false
 }
 
 func eventSamplePool(evt *event.Event) uint32 {
@@ -124,13 +129,13 @@ func addEventMetadataFields(fields map[string]any, evt *event.Event, names map[s
 	}
 	agentIP := eventAgentIP(evt)
 	agentIPv4, agentIPv6 := agentIPByFamily(agentIP)
-	sourceID := eventSourceID(evt)
+	sourceID, hasSourceID := eventSourceIDValue(evt)
 	samplingRate := eventSamplingRate(evt)
 	samplePool := eventSamplePool(evt)
 	drops := eventDrops(evt)
 	add("agent_ip", agentIPv4, agentIPv4 != "")
 	add("agent_ipv6", agentIPv6, agentIPv6 != "")
-	add("source_id", sourceID, sourceID != 0)
+	add("source_id", sourceID, hasSourceID)
 	add("sampling_rate", samplingRate, hasSamplingMetadata(evt))
 	add("sample_pool", samplePool, hasSamplePoolMetadata(evt))
 	add("drops", drops, hasDropsMetadata(evt))
