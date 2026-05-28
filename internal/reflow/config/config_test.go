@@ -1701,6 +1701,25 @@ func TestGeneratedIPFIXOutputEnablesBatching(t *testing.T) {
 	}
 }
 
+func TestGeneratedNetFlowV9OutputEnablesBatching(t *testing.T) {
+	cfg, generated, err := LoadFromFlags(&FlagConfig{
+		Output:    "netflowv9:udp:127.0.0.1:2055",
+		OutputSet: true,
+	})
+	if err != nil {
+		t.Fatalf("LoadFromFlags returned error: %v", err)
+	}
+	if !generated {
+		t.Fatalf("expected generated config")
+	}
+	if !cfg.Encoder.Batch.IsEnabled() {
+		t.Fatalf("expected helper netflowv9 output to enable batching by default")
+	}
+	if cfg.Encoder.Workers != AutoWorkers {
+		t.Fatalf("expected helper netflowv9 output to keep encoder workers auto, got %d", cfg.Encoder.Workers)
+	}
+}
+
 func TestGeneratedOutputParsesBatchParams(t *testing.T) {
 	cfg, generated, err := LoadFromFlags(&FlagConfig{
 		Output:    "ipfix:udp:127.0.0.1:4739?batch=true&batch_max_records=32&batch_max_bytes=4096&batch_flush_interval_ms=250",
@@ -1731,6 +1750,23 @@ func TestGeneratedOutputParsesBatchParams(t *testing.T) {
 	}
 	if sflowCfg.Encoder.Batch.MaxBytes != 4096 || sflowCfg.Encoder.MaxDatagramBytes != 4096 {
 		t.Fatalf("expected sflow batch/max datagram bytes 4096, got batch=%d max_datagram=%d", sflowCfg.Encoder.Batch.MaxBytes, sflowCfg.Encoder.MaxDatagramBytes)
+	}
+
+	netflowV9Cfg, generated, err := LoadFromFlags(&FlagConfig{
+		Output:    "netflowv9:udp:127.0.0.1:2055?batch=true&batch_max_records=32&batch_max_bytes=4096&batch_flush_interval_ms=250",
+		OutputSet: true,
+	})
+	if err != nil {
+		t.Fatalf("LoadFromFlags netflowv9 returned error: %v", err)
+	}
+	if !generated {
+		t.Fatalf("expected generated netflowv9 config")
+	}
+	if netflowV9Cfg.Encoder.Batch.MaxRecords != 32 || netflowV9Cfg.Encoder.Batch.MaxBytes != 4096 || netflowV9Cfg.Encoder.Batch.FlushInterval != 250 {
+		t.Fatalf("unexpected netflowv9 batch params: %#v", netflowV9Cfg.Encoder.Batch)
+	}
+	if netflowV9Cfg.Encoder.MaxDatagramBytes != 4096 {
+		t.Fatalf("expected netflowv9 max datagram bytes 4096, got %d", netflowV9Cfg.Encoder.MaxDatagramBytes)
 	}
 }
 
@@ -1822,8 +1858,8 @@ func TestGeneratedOutputRejectsUnsupportedBatchParams(t *testing.T) {
 	if err == nil {
 		t.Fatalf("expected json output to reject batch")
 	}
-	if !strings.Contains(err.Error(), "only supported for sflow and ipfix") {
-		t.Fatalf("expected sflow/ipfix-only error, got %v", err)
+	if !strings.Contains(err.Error(), "only supported for sflow, ipfix, and netflowv9") {
+		t.Fatalf("expected sflow/ipfix/netflowv9-only error, got %v", err)
 	}
 }
 

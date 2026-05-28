@@ -35,6 +35,8 @@ type NFv9Encoder struct {
 	sourceOptions   map[string]sourceOptionsState
 	lastTemplateRun time.Time
 	lastOptionsRun  time.Time
+	events          []*event.Event
+	estimatedBytes  int
 }
 
 type templatedSchemaState struct {
@@ -82,6 +84,23 @@ type ipfixBatchSet struct {
 	templateID uint16
 	template   *netflow.TemplateRecord
 	records    []netflow.DataRecord
+}
+
+type nfv9BatchRecord struct {
+	key          string
+	unixSeconds  uint32
+	systemUptime uint32
+	sourceID     uint32
+	templateID   uint16
+	template     *netflow.TemplateRecord
+	data         netflow.DataRecord
+}
+
+type nfv9BatchTiming struct {
+	packetExportMS int64
+	baseMS         int64
+	unixSeconds    uint32
+	systemUptime   uint32
 }
 
 type templatedEncodingContext struct {
@@ -385,6 +404,135 @@ func (e *IPFIXEncoder) ipfixBatchRecord(evt *event.Event) (ipfixBatchRecord, err
 	}, nil
 }
 
+func nfv9BatchTimingFor(events []*event.Event) nfv9BatchTiming {
+	exportMS := time.Now().UnixMilli()
+	if len(events) > 0 && events[0] != nil {
+		exportMS = exportUnixMilliseconds(events[0].ReceivedAt, events[0].Fields)
+	}
+	unixSeconds := uint32((exportMS + 999) / 1000)
+	packetExportMS := int64(unixSeconds) * 1000
+	baseMS := packetExportMS
+	for _, evt := range events {
+		if evt == nil {
+			continue
+		}
+		for _, key := range []string{"start_time_unix", "end_time_unix"} {
+			ms := int64Field(evt.Fields, key)
+			if ms > 0 && ms < baseMS {
+				baseMS = ms
+			}
+		}
+	}
+	return nfv9BatchTiming{
+		packetExportMS: packetExportMS,
+		baseMS:         baseMS,
+		unixSeconds:    unixSeconds,
+		systemUptime:   uint32(packetExportMS - baseMS),
+	}
+}
+
+func (e *NFv9Encoder) nfv9BatchRecord(evt *event.Event, timing nfv9BatchTiming) (nfv9BatchRecord, error) {
+	if evt == nil {
+		return nfv9BatchRecord{}, fmt.Errorf("nil event")
+	}
+	if evt.Fields == nil {
+		return nfv9BatchRecord{}, fmt.Errorf("event fields are empty")
+	}
+	fieldMap := eventFieldsWithMetadata(evt)
+	templateID := uint16Field(fieldMap, "template_id")
+	if templateID == 0 {
+		templateID = 256
+	}
+	startMS := int64Field(evt.Fields, "start_time_unix")
+	if startMS <= 0 {
+		startMS = timing.packetExportMS
+	}
+	endMS := int64Field(evt.Fields, "end_time_unix")
+	if endMS <= 0 {
+		endMS = timing.packetExportMS
+	}
+	encodingCtx := templatedEncodingContext{
+		netflowV9:     true,
+		firstSwitched: uint32(startMS - timing.baseMS),
+		lastSwitched:  uint32(endMS - timing.baseMS),
+	}
+	sourceID := e.sourceID()
+
+	stream := eventStream(evt, "flow_data")
+	if schema, ok := e.dataSchemas[stream]; ok {
+		fieldMap = eventFieldsWithMetadataForSchema(evt, schema.fields)
+		mask := schema.addressVariantMask(fieldMap)
+		templateRecord := schema.templateForMask(mask)
+		dataRecord, err := buildTemplatedValuesFromSchemaFieldsForMask(e.cfg.TemplatedFlow.Data, fieldMap, schema.fields, encodingCtx, schema.addressGroups, mask)
+		if err != nil {
+			return nfv9BatchRecord{}, err
+		}
+		return nfv9BatchRecord{
+			key:          fmt.Sprintf("schema:%s:%d", stream, templateRecord.TemplateId),
+			unixSeconds:  timing.unixSeconds,
+			systemUptime: timing.systemUptime,
+			sourceID:     sourceID,
+			templateID:   templateRecord.TemplateId,
+			data:         dataRecord,
+		}, nil
+	}
+
+	plan, dataRecord, err := e.fallbackDataRecord(fieldMap, templateID, encodingCtx)
+	if err != nil {
+		return nfv9BatchRecord{}, err
+	}
+	key, err := fallbackPlanKey(e.cfg.TemplatedFlow.Data, fieldMap, templateID, true)
+	if err != nil {
+		return nfv9BatchRecord{}, err
+	}
+	return nfv9BatchRecord{
+		key:          key,
+		unixSeconds:  timing.unixSeconds,
+		systemUptime: timing.systemUptime,
+		sourceID:     sourceID,
+		templateID:   plan.template.TemplateId,
+		template:     &plan.template,
+		data:         dataRecord,
+	}, nil
+}
+
+func (e *NFv9Encoder) nfv9BatchPacket(first nfv9BatchRecord, sets []ipfixBatchSet) *netflow.NFv9Packet {
+	flowSets := make([]interface{}, 0, len(sets)+1)
+	templates := make([]netflow.TemplateRecord, 0, len(sets))
+	seenTemplates := make(map[uint16]struct{}, len(sets))
+	for _, set := range sets {
+		if set.template == nil {
+			continue
+		}
+		if _, ok := seenTemplates[set.templateID]; ok {
+			continue
+		}
+		seenTemplates[set.templateID] = struct{}{}
+		templates = append(templates, *set.template)
+	}
+	if len(templates) > 0 {
+		flowSets = append(flowSets, netflow.TemplateFlowSet{
+			FlowSetHeader: netflow.FlowSetHeader{Id: 0},
+			Records:       templates,
+		})
+	}
+	for _, set := range sets {
+		flowSets = append(flowSets, netflow.DataFlowSet{
+			FlowSetHeader: netflow.FlowSetHeader{Id: set.templateID},
+			Records:       set.records,
+		})
+	}
+	return &netflow.NFv9Packet{
+		Version:        9,
+		Count:          uint16(len(flowSets)),
+		SystemUptime:   first.systemUptime,
+		UnixSeconds:    first.unixSeconds,
+		SequenceNumber: e.seq.Load(),
+		SourceId:       first.sourceID,
+		FlowSets:       flowSets,
+	}
+}
+
 func NewNFv9Encoder(cfg config.EncoderConfig) *NFv9Encoder {
 	return &NFv9Encoder{
 		cfg:           cfg,
@@ -396,22 +544,172 @@ func NewNFv9Encoder(cfg config.EncoderConfig) *NFv9Encoder {
 
 func (e *NFv9Encoder) Encode(evt *event.Event) ([][]byte, error) {
 	if evt != nil && evt.Kind == "control" {
-		return e.handleControl(evt)
+		payloads, err := e.flushDataPackets()
+		if err != nil {
+			return nil, err
+		}
+		controlPayloads, err := e.handleControl(evt)
+		if err != nil {
+			return nil, err
+		}
+		return append(payloads, controlPayloads...), nil
 	}
-	packet, err := e.buildPacket(evt)
-	if err != nil {
-		return nil, err
+	if !e.cfg.Batch.IsEnabled() {
+		packet, err := e.buildPacket(evt)
+		if err != nil {
+			return nil, err
+		}
+		data, err := netflow.EncodeMessage(packet)
+		if err != nil {
+			return nil, fmt.Errorf("encode netflow v9 packet: %w", err)
+		}
+		e.advanceSequence(packet)
+		return [][]byte{data}, nil
 	}
-	data, err := netflow.EncodeMessage(packet)
-	if err != nil {
-		return nil, fmt.Errorf("encode netflow v9 packet: %w", err)
+	e.appendEvent(evt)
+	if e.shouldFlush() {
+		return e.flushDataPackets()
 	}
-	e.advanceSequence(packet)
-	return [][]byte{data}, nil
+	return nil, nil
 }
 
 func (e *NFv9Encoder) Flush() ([][]byte, error) {
-	return e.flushControlPackets(time.Now().UTC())
+	payloads, err := e.flushDataPackets()
+	if err != nil {
+		return nil, err
+	}
+	controlPayloads, err := e.flushControlPackets(time.Now().UTC())
+	if err != nil {
+		return nil, err
+	}
+	return append(payloads, controlPayloads...), nil
+}
+
+func (e *NFv9Encoder) appendEvent(evt *event.Event) {
+	e.events = append(e.events, evt)
+	e.estimatedBytes += estimatedEventSize(evt)
+}
+
+func (e *NFv9Encoder) shouldFlush() bool {
+	if len(e.events) == 0 {
+		return false
+	}
+	if e.cfg.Batch.MaxRecords > 0 && len(e.events) >= e.cfg.Batch.MaxRecords {
+		return true
+	}
+	if e.cfg.Batch.MaxBytes > 0 && e.estimatedBytes >= e.cfg.Batch.MaxBytes {
+		return true
+	}
+	return false
+}
+
+func (e *NFv9Encoder) flushDataPackets() ([][]byte, error) {
+	if len(e.events) == 0 {
+		return nil, nil
+	}
+
+	pending := e.events
+
+	var payloads [][]byte
+	for len(pending) > 0 {
+		packet, accepted, err := e.buildBatchedPacket(pending)
+		if err != nil {
+			e.events = pending
+			e.estimatedBytes = estimatedEventsSize(pending)
+			return payloads, err
+		}
+		data, err := netflow.EncodeMessage(packet)
+		if err != nil {
+			e.events = pending
+			e.estimatedBytes = estimatedEventsSize(pending)
+			return payloads, fmt.Errorf("encode netflow v9 packet: %w", err)
+		}
+		payloads = append(payloads, data)
+		pending = pending[accepted:]
+		e.events = pending
+		e.estimatedBytes = estimatedEventsSize(pending)
+	}
+	e.events = nil
+	e.estimatedBytes = 0
+	return payloads, nil
+}
+
+func (e *NFv9Encoder) buildBatchedPacket(events []*event.Event) (*netflow.NFv9Packet, int, error) {
+	if len(events) == 0 {
+		return nil, 0, fmt.Errorf("empty netflow v9 packet batch")
+	}
+	candidate := []*event.Event{events[0]}
+	packet, ok, err := e.nfv9BatchPacketForEvents(candidate)
+	if err != nil {
+		return nil, 0, err
+	}
+	if !ok {
+		return nil, 0, fmt.Errorf("empty netflow v9 packet batch")
+	}
+	accepted := 1
+
+	for _, evt := range events[1:] {
+		nextCandidate := append(append([]*event.Event(nil), candidate...), evt)
+		nextPacket, ok, err := e.nfv9BatchPacketForEvents(nextCandidate)
+		if err != nil {
+			return nil, accepted, err
+		}
+		if !ok {
+			break
+		}
+		if e.cfg.MaxDatagramBytes > 0 {
+			data, err := netflow.EncodeMessage(nextPacket)
+			if err != nil {
+				return nil, accepted, fmt.Errorf("encode netflow v9 packet: %w", err)
+			}
+			if len(data) > e.cfg.MaxDatagramBytes {
+				break
+			}
+		}
+		candidate = nextCandidate
+		packet = nextPacket
+		accepted++
+	}
+
+	e.advanceSequence(packet)
+	return packet, accepted, nil
+}
+
+func (e *NFv9Encoder) nfv9BatchPacketForEvents(events []*event.Event) (*netflow.NFv9Packet, bool, error) {
+	if len(events) == 0 {
+		return nil, false, nil
+	}
+	timing := nfv9BatchTimingFor(events)
+	first, err := e.nfv9BatchRecord(events[0], timing)
+	if err != nil {
+		return nil, false, err
+	}
+	sets := []ipfixBatchSet{{
+		key:        first.key,
+		templateID: first.templateID,
+		template:   first.template,
+		records:    []netflow.DataRecord{first.data},
+	}}
+	for _, evt := range events[1:] {
+		next, err := e.nfv9BatchRecord(evt, timing)
+		if err != nil {
+			return nil, false, err
+		}
+		if next.sourceID != first.sourceID {
+			return nil, false, nil
+		}
+		nextSets, ok := appendIPFIXBatchRecord(sets, ipfixBatchRecord{
+			key:        next.key,
+			templateID: next.templateID,
+			template:   next.template,
+			data:       next.data,
+		})
+		if !ok {
+			return nil, false, nil
+		}
+		sets = nextSets
+	}
+	return e.nfv9BatchPacket(first, sets), true, nil
 }
 
 // advanceSequence tracks NetFlow v9's export-packet sequence counter. IPFIX

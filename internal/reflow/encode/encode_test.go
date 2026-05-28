@@ -2052,6 +2052,188 @@ func TestNFv9EncoderSequenceAdvancesPerExportPacket(t *testing.T) {
 	}
 }
 
+func TestNFv9EncoderBatchesCompatibleDataRecords(t *testing.T) {
+	cfg := testTFlowEncoderConfig("netflowv9")
+	cfg.Batch = config.BatchConfig{
+		Enabled:    testBoolPtr(true),
+		MaxRecords: 2,
+	}
+	enc := NewNFv9Encoder(cfg)
+
+	firstPayloads, err := enc.Encode(testTemplatedFlowEvent())
+	if err != nil {
+		t.Fatalf("Encode(first) returned error: %v", err)
+	}
+	if len(firstPayloads) != 0 {
+		t.Fatalf("expected first NetFlow v9 record to stay buffered, got %d payloads", len(firstPayloads))
+	}
+	second := testTemplatedFlowEvent()
+	second.Fields["bytes"] = int64(654)
+	secondPayloads, err := enc.Encode(second)
+	if err != nil {
+		t.Fatalf("Encode(second) returned error: %v", err)
+	}
+	if len(secondPayloads) != 1 {
+		t.Fatalf("expected batched NetFlow v9 payload, got %d", len(secondPayloads))
+	}
+
+	store := templates.NewTemplateFlowStore()
+	store.Start()
+	var decoded netflow.NFv9Packet
+	if err := netflow.DecodeMessageVersion(bytes.NewBuffer(secondPayloads[0]), store, netflow.FlowContext{RouterKey: "test-router"}, &decoded, nil); err != nil {
+		t.Fatalf("decode netflow v9 payload: %v", err)
+	}
+	if decoded.SequenceNumber != 0 {
+		t.Fatalf("expected first batched packet sequence 0, got %d", decoded.SequenceNumber)
+	}
+	if decoded.Count != 2 {
+		t.Fatalf("expected template and data flow set count 2, got %d", decoded.Count)
+	}
+	if len(decoded.FlowSets) != 2 {
+		t.Fatalf("expected template and data flow sets, got %d", len(decoded.FlowSets))
+	}
+	dataSet, ok := decoded.FlowSets[1].(netflow.DataFlowSet)
+	if !ok {
+		t.Fatalf("expected second flow set to be DataFlowSet, got %T", decoded.FlowSets[1])
+	}
+	if len(dataSet.Records) != 2 {
+		t.Fatalf("expected two NetFlow v9 data records, got %d", len(dataSet.Records))
+	}
+
+	thirdPayloads, err := enc.Encode(testTemplatedFlowEvent())
+	if err != nil {
+		t.Fatalf("Encode(third) returned error: %v", err)
+	}
+	if len(thirdPayloads) != 0 {
+		t.Fatalf("expected third NetFlow v9 record to stay buffered, got %d payloads", len(thirdPayloads))
+	}
+	flushed, err := enc.Flush()
+	if err != nil {
+		t.Fatalf("Flush returned error: %v", err)
+	}
+	if len(flushed) != 1 {
+		t.Fatalf("expected one flushed NetFlow v9 payload, got %d", len(flushed))
+	}
+	var flushedDecoded netflow.NFv9Packet
+	if err := netflow.DecodeMessageVersion(bytes.NewBuffer(flushed[0]), store, netflow.FlowContext{RouterKey: "test-router"}, &flushedDecoded, nil); err != nil {
+		t.Fatalf("decode flushed netflow v9 payload: %v", err)
+	}
+	if flushedDecoded.SequenceNumber != 1 {
+		t.Fatalf("expected flushed packet sequence 1, got %d", flushedDecoded.SequenceNumber)
+	}
+}
+
+func TestNFv9EncoderBatchesMultipleDataSetsInOnePacket(t *testing.T) {
+	cfg := testTFlowEncoderConfig("netflowv9")
+	cfg.Batch = config.BatchConfig{
+		Enabled:    testBoolPtr(true),
+		MaxRecords: 2,
+	}
+	enc := NewNFv9Encoder(cfg)
+
+	if payloads, err := enc.Encode(testTemplatedFlowEvent()); err != nil {
+		t.Fatalf("Encode(first) returned error: %v", err)
+	} else if len(payloads) != 0 {
+		t.Fatalf("expected first NetFlow v9 record to stay buffered, got %d payloads", len(payloads))
+	}
+
+	second := testTemplatedFlowEvent()
+	second.Fields["template_id"] = uint32(257)
+	payloads, err := enc.Encode(second)
+	if err != nil {
+		t.Fatalf("Encode(second) returned error: %v", err)
+	}
+	if len(payloads) != 1 {
+		t.Fatalf("expected one batched NetFlow v9 payload, got %d", len(payloads))
+	}
+
+	store := templates.NewTemplateFlowStore()
+	store.Start()
+	var decoded netflow.NFv9Packet
+	if err := netflow.DecodeMessageVersion(bytes.NewBuffer(payloads[0]), store, netflow.FlowContext{RouterKey: "test-router"}, &decoded, nil); err != nil {
+		t.Fatalf("decode netflow v9 payload: %v", err)
+	}
+	if len(decoded.FlowSets) != 3 {
+		t.Fatalf("expected template set and two data sets, got %d", len(decoded.FlowSets))
+	}
+	templateSet, ok := decoded.FlowSets[0].(netflow.TemplateFlowSet)
+	if !ok {
+		t.Fatalf("expected first flow set to be TemplateFlowSet, got %T", decoded.FlowSets[0])
+	}
+	if len(templateSet.Records) != 2 {
+		t.Fatalf("expected two template records, got %d", len(templateSet.Records))
+	}
+	firstSet, ok := decoded.FlowSets[1].(netflow.DataFlowSet)
+	if !ok {
+		t.Fatalf("expected second flow set to be DataFlowSet, got %T", decoded.FlowSets[1])
+	}
+	secondSet, ok := decoded.FlowSets[2].(netflow.DataFlowSet)
+	if !ok {
+		t.Fatalf("expected third flow set to be DataFlowSet, got %T", decoded.FlowSets[2])
+	}
+	if firstSet.Id != 256 || secondSet.Id != 257 {
+		t.Fatalf("expected data set ids 256 and 257, got %d and %d", firstSet.Id, secondSet.Id)
+	}
+}
+
+func TestNFv9EncoderBatchedSwitchedTimesUseSharedPacketBase(t *testing.T) {
+	cfg := testTFlowEncoderConfig("netflowv9")
+	cfg.TemplatedFlow.Data.Select = append(cfg.TemplatedFlow.Data.Select, "start_time_unix", "end_time_unix")
+	cfg.Batch = config.BatchConfig{
+		Enabled:    testBoolPtr(true),
+		MaxRecords: 2,
+	}
+	enc := NewNFv9Encoder(cfg)
+
+	if payloads, err := enc.Encode(testTemplatedFlowEvent()); err != nil {
+		t.Fatalf("Encode(first) returned error: %v", err)
+	} else if len(payloads) != 0 {
+		t.Fatalf("expected first NetFlow v9 record to stay buffered, got %d payloads", len(payloads))
+	}
+
+	second := testTemplatedFlowEvent()
+	second.Fields["start_time_unix"] = int64(1_699_999_999_900)
+	second.Fields["end_time_unix"] = int64(1_700_000_000_200)
+	payloads, err := enc.Encode(second)
+	if err != nil {
+		t.Fatalf("Encode(second) returned error: %v", err)
+	}
+	if len(payloads) != 1 {
+		t.Fatalf("expected one batched NetFlow v9 payload, got %d", len(payloads))
+	}
+
+	store := templates.NewTemplateFlowStore()
+	store.Start()
+	var decoded netflow.NFv9Packet
+	if err := netflow.DecodeMessageVersion(bytes.NewBuffer(payloads[0]), store, netflow.FlowContext{RouterKey: "test-router"}, &decoded, nil); err != nil {
+		t.Fatalf("decode netflow v9 payload: %v", err)
+	}
+	dataSet := decoded.FlowSets[1].(netflow.DataFlowSet)
+	if len(dataSet.Records) != 2 {
+		t.Fatalf("expected two records, got %d", len(dataSet.Records))
+	}
+	decodeV9Time := func(switched uint32) int64 {
+		return int64(decoded.UnixSeconds)*1000 - (int64(decoded.SystemUptime) - int64(switched))
+	}
+	for i, want := range []struct {
+		start int64
+		end   int64
+	}{
+		{start: 1_700_000_000_100, end: 1_700_000_000_900},
+		{start: 1_699_999_999_900, end: 1_700_000_000_200},
+	} {
+		values := dataSet.Records[i].Values
+		startRaw := values[len(values)-2].Value.([]byte)
+		endRaw := values[len(values)-1].Value.([]byte)
+		if got := decodeV9Time(binary.BigEndian.Uint32(startRaw)); got != want.start {
+			t.Fatalf("record %d start time got %d, want %d", i, got, want.start)
+		}
+		if got := decodeV9Time(binary.BigEndian.Uint32(endRaw)); got != want.end {
+			t.Fatalf("record %d end time got %d, want %d", i, got, want.end)
+		}
+	}
+}
+
 func TestNFv9EncoderUsesSwitchedTimeFields(t *testing.T) {
 	cfg := testTFlowEncoderConfig("netflowv9")
 	cfg.TemplatedFlow.Data.Select = append(cfg.TemplatedFlow.Data.Select, "start_time_unix", "end_time_unix")

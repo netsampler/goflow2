@@ -46,7 +46,7 @@ var (
 	}
 	outputHelperOptions = []string{
 		"sflow:*[?allow_truncate=<bool>&max_header_bytes=<bytes>]",
-		"sflow|ipfix:*[?batch=<bool>&batch_max_records=<n>&batch_max_bytes=<bytes>&batch_flush_interval_ms=<ms>]",
+		"sflow|ipfix|netflowv9:*[?batch=<bool>&batch_max_records=<n>&batch_max_bytes=<bytes>&batch_flush_interval_ms=<ms>]",
 	}
 	inputHelperExamples = []string{
 		"udp::6343:flow",
@@ -766,7 +766,7 @@ func parseOutputSpec(spec string) (EncoderConfig, SinkConfig, error) {
 	if encoderType == "sflow" {
 		encoder.AllowTruncate = boolPtr(true)
 	}
-	if encoderType == "sflow" || encoderType == "ipfix" {
+	if encoderType == "sflow" || encoderType == "ipfix" || encoderType == "netflowv9" {
 		encoder.Batch.Enabled = boolPtr(true)
 	}
 	if err := applyOutputParams(spec, encoderType, params, &encoder); err != nil {
@@ -805,7 +805,7 @@ func applyOutputParams(spec, encoderType string, params url.Values, encoder *Enc
 			encoder.SFlow.MaxHeaderBytes = parsed
 		case "batch":
 			if !supportsBatchOutputParams(encoderType) {
-				return fmt.Errorf("invalid -output %q: output parameter %q is only supported for sflow and ipfix", spec, key)
+				return fmt.Errorf("invalid -output %q: output parameter %q is only supported for sflow, ipfix, and netflowv9", spec, key)
 			}
 			parsed, err := strconv.ParseBool(value)
 			if err != nil {
@@ -814,7 +814,7 @@ func applyOutputParams(spec, encoderType string, params url.Values, encoder *Enc
 			encoder.Batch.Enabled = boolPtr(parsed)
 		case "batch_max_records":
 			if !supportsBatchOutputParams(encoderType) {
-				return fmt.Errorf("invalid -output %q: output parameter %q is only supported for sflow and ipfix", spec, key)
+				return fmt.Errorf("invalid -output %q: output parameter %q is only supported for sflow, ipfix, and netflowv9", spec, key)
 			}
 			parsed, err := parseNonNegativeOutputParam(spec, key, value)
 			if err != nil {
@@ -823,7 +823,7 @@ func applyOutputParams(spec, encoderType string, params url.Values, encoder *Enc
 			encoder.Batch.MaxRecords = parsed
 		case "batch_max_bytes":
 			if !supportsBatchOutputParams(encoderType) {
-				return fmt.Errorf("invalid -output %q: output parameter %q is only supported for sflow and ipfix", spec, key)
+				return fmt.Errorf("invalid -output %q: output parameter %q is only supported for sflow, ipfix, and netflowv9", spec, key)
 			}
 			parsed, err := parseNonNegativeOutputParam(spec, key, value)
 			if err != nil {
@@ -832,7 +832,7 @@ func applyOutputParams(spec, encoderType string, params url.Values, encoder *Enc
 			encoder.Batch.MaxBytes = parsed
 		case "batch_flush_interval_ms":
 			if !supportsBatchOutputParams(encoderType) {
-				return fmt.Errorf("invalid -output %q: output parameter %q is only supported for sflow and ipfix", spec, key)
+				return fmt.Errorf("invalid -output %q: output parameter %q is only supported for sflow, ipfix, and netflowv9", spec, key)
 			}
 			parsed, err := parseNonNegativeOutputParam(spec, key, value)
 			if err != nil {
@@ -859,7 +859,7 @@ func parseNonNegativeOutputParam(spec, key, value string) (int, error) {
 
 func supportsBatchOutputParams(encoderType string) bool {
 	switch encoderType {
-	case "sflow", "ipfix":
+	case "sflow", "ipfix", "netflowv9":
 		return true
 	default:
 		return false
