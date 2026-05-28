@@ -181,6 +181,11 @@ func New(cfg config.SourceConfig) (*Source, error) {
 	if cfg.SampleEvery <= 0 {
 		cfg.SampleEvery = 1
 	}
+	direction, err := config.NormalizeEBPFDirection(cfg.EBPF.Direction)
+	if err != nil {
+		return nil, err
+	}
+	cfg.EBPF.Direction = direction
 	iface, err := net.InterfaceByName(cfg.Interface)
 	if err != nil {
 		return nil, fmt.Errorf("lookup capture interface %s: %w", cfg.Interface, err)
@@ -262,11 +267,14 @@ func (s *Source) Start(ctx context.Context, emit func(*event.Event) error) error
 		if n <= 0 {
 			continue
 		}
+		meta := s.packetMetadata(from)
+		if !allowDirection(s.cfg.EBPF.DirectionFilter(), meta.direction) {
+			continue
+		}
 		s.seenCount++
 		if !s.shouldEmitCurrentPacket() {
 			continue
 		}
-		meta := s.packetMetadata(from)
 		if s.cfg.EBPF.SKBMetadataEnabled() {
 			if skb, ok := s.readSKBMetadata(); ok {
 				meta = s.mergeSKBMetadata(meta, skb)
@@ -355,6 +363,19 @@ func (s *Source) packetMetadata(from unix.Sockaddr) packetMetadata {
 		meta.outputInterface = s.cfg.Interface
 	}
 	return meta
+}
+
+func allowDirection(filter, direction string) bool {
+	switch filter {
+	case "", "both":
+		return true
+	case "ingress":
+		return direction == "in"
+	case "egress":
+		return direction == "out"
+	default:
+		return true
+	}
 }
 
 func (s *Source) mergeSKBMetadata(meta packetMetadata, skb skbMetadata) packetMetadata {

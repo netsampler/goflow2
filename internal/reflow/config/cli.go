@@ -24,7 +24,7 @@ var (
 		"stream:<path-or-stdin>:pcap",
 		"stream:<path-or-stdin>:pcapng",
 		"stream:<path-or-stdin>:json",
-		"ebpf:<interface>:bytes[?snaplen=<bytes>&sample_every=<n>&sample_offset=<n>&skb_metadata=<bool>&conntrack=<bool>]",
+		"ebpf:<interface>:bytes[?snaplen=<bytes>&sample_every=<n>&sample_offset=<n>&direction=ingress|egress|both&skb_metadata=<bool>&conntrack=<bool>]",
 		"pcap_live:<interface>:bytes[?snaplen=<bytes>&sample_every=<n>&sample_offset=<n>]",
 	}
 	outputEncoderOptions = []string{
@@ -52,7 +52,7 @@ var (
 		"udp::6343:flow",
 		"udp:127.0.0.1:2055:flow",
 		"stream:-:json",
-		"ebpf:eth0:bytes",
+		"'ebpf:eth0:bytes?direction=ingress'",
 		"'pcap_live:en0:bytes?snaplen=262144&sample_every=10'",
 	}
 	outputHelperExamples = []string{
@@ -345,6 +345,9 @@ func (c *Config) materializeGeneratedYAMLDefaults() {
 		if c.Sources[i].Network == "ebpf" {
 			defaultTrue(&c.Sources[i].EBPF.SKBMetadata)
 			defaultTrue(&c.Sources[i].EBPF.Conntrack)
+			if c.Sources[i].EBPF.Direction == "" {
+				c.Sources[i].EBPF.Direction = "both"
+			}
 		}
 	}
 	defaultFalse(&c.Processor.Builtin.PacketDecoder.DecodeBeyondL4)
@@ -499,6 +502,15 @@ func applyInputParams(source *SourceConfig, rawParams string) error {
 				return fmt.Errorf("source parameter %q cannot be empty", key)
 			}
 			source.EBPF.ConntrackPath = value
+		case "direction":
+			if source.Network != "ebpf" {
+				return fmt.Errorf("source parameter %q is only supported for ebpf inputs", key)
+			}
+			parsed, err := NormalizeEBPFDirection(value)
+			if err != nil {
+				return fmt.Errorf("source parameter %q: %w", key, err)
+			}
+			source.EBPF.Direction = parsed
 		default:
 			return fmt.Errorf("unsupported source parameter %q", key)
 		}

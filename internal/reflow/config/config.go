@@ -63,10 +63,11 @@ type EBPFConfig struct {
 	SKBMetadata   *bool  `yaml:"skb_metadata,omitempty"`
 	Conntrack     *bool  `yaml:"conntrack,omitempty"`
 	ConntrackPath string `yaml:"conntrack_path,omitempty"`
+	Direction     string `yaml:"direction,omitempty"`
 }
 
 func (c EBPFConfig) IsZero() bool {
-	return c.SKBMetadata == nil && c.Conntrack == nil && c.ConntrackPath == ""
+	return c.SKBMetadata == nil && c.Conntrack == nil && c.ConntrackPath == "" && c.Direction == ""
 }
 
 func (c EBPFConfig) SKBMetadataEnabled() bool {
@@ -75,6 +76,13 @@ func (c EBPFConfig) SKBMetadataEnabled() bool {
 
 func (c EBPFConfig) ConntrackEnabled() bool {
 	return c.Conntrack == nil || *c.Conntrack
+}
+
+func (c EBPFConfig) DirectionFilter() string {
+	if c.Direction == "" {
+		return "both"
+	}
+	return c.Direction
 }
 
 type ProcessorConfig struct {
@@ -880,8 +888,28 @@ func applySourceDefaults(src *SourceConfig) error {
 		if src.Network == "ebpf" && src.Type != "bytes" {
 			return fmt.Errorf("source.type must be bytes when source.network=ebpf")
 		}
+		if src.Network == "ebpf" {
+			direction, err := NormalizeEBPFDirection(src.EBPF.Direction)
+			if err != nil {
+				return err
+			}
+			src.EBPF.Direction = direction
+		}
 	}
 	return nil
+}
+
+func NormalizeEBPFDirection(raw string) (string, error) {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "", "both", "all":
+		return "both", nil
+	case "ingress", "in", "input":
+		return "ingress", nil
+	case "egress", "out", "output":
+		return "egress", nil
+	default:
+		return "", fmt.Errorf("unsupported source.ebpf.direction %q", raw)
+	}
 }
 
 // defaultTrue fills optional boolean pointers with true so config can distinguish

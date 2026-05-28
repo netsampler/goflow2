@@ -1859,6 +1859,7 @@ func TestGeneratedEBPFConfigMaterializesFeatureDefaults(t *testing.T) {
 		"ebpf:",
 		"skb_metadata: true",
 		"conntrack: true",
+		"direction: both",
 	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("expected generated ebpf config to contain %q, got:\n%s", want, text)
@@ -1902,6 +1903,9 @@ sink:
 	if cfg.Sources[0].SampleEvery != 1 {
 		t.Fatalf("expected ebpf sample_every 1, got %d", cfg.Sources[0].SampleEvery)
 	}
+	if cfg.Sources[0].EBPF.Direction != "both" {
+		t.Fatalf("expected ebpf direction both, got %q", cfg.Sources[0].EBPF.Direction)
+	}
 }
 
 func TestParseInputSpecSupportsEBPF(t *testing.T) {
@@ -1928,7 +1932,7 @@ func TestParseInputSpecSupportsCaptureParams(t *testing.T) {
 }
 
 func TestParseInputSpecSupportsEBPFFeatureParams(t *testing.T) {
-	src, err := parseInputSpec("ebpf:br-lan:bytes?skb_metadata=false&conntrack=false&conntrack_path=/tmp/nf_conntrack")
+	src, err := parseInputSpec("ebpf:br-lan:bytes?skb_metadata=false&conntrack=false&conntrack_path=/tmp/nf_conntrack&direction=ingress")
 	if err != nil {
 		t.Fatalf("parseInputSpec returned error: %v", err)
 	}
@@ -1940,6 +1944,15 @@ func TestParseInputSpecSupportsEBPFFeatureParams(t *testing.T) {
 	}
 	if src.EBPF.ConntrackPath != "/tmp/nf_conntrack" {
 		t.Fatalf("expected conntrack path, got %q", src.EBPF.ConntrackPath)
+	}
+	if src.EBPF.Direction != "ingress" {
+		t.Fatalf("expected direction ingress, got %q", src.EBPF.Direction)
+	}
+}
+
+func TestParseInputSpecRejectsInvalidEBPFDirection(t *testing.T) {
+	if _, err := parseInputSpec("ebpf:br-lan:bytes?direction=sideways"); err == nil {
+		t.Fatalf("expected invalid ebpf direction to fail")
 	}
 }
 

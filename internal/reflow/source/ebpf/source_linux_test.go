@@ -194,6 +194,28 @@ func TestPacketMetadataMarksIncomingCapture(t *testing.T) {
 	}
 }
 
+func TestAllowDirectionFiltersIngressAndEgress(t *testing.T) {
+	tests := []struct {
+		filter    string
+		direction string
+		want      bool
+	}{
+		{filter: "both", direction: "in", want: true},
+		{filter: "both", direction: "out", want: true},
+		{filter: "both", direction: "loopback", want: true},
+		{filter: "ingress", direction: "in", want: true},
+		{filter: "ingress", direction: "out", want: false},
+		{filter: "egress", direction: "out", want: true},
+		{filter: "egress", direction: "in", want: false},
+		{filter: "egress", direction: "loopback", want: false},
+	}
+	for _, tt := range tests {
+		if got := allowDirection(tt.filter, tt.direction); got != tt.want {
+			t.Fatalf("allowDirection(%q, %q)=%t, want %t", tt.filter, tt.direction, got, tt.want)
+		}
+	}
+}
+
 func TestPacketMetadataAddsSKBFields(t *testing.T) {
 	source := &Source{
 		cfg:                   config.SourceConfig{Network: "ebpf", Interface: "br-lan", Type: "bytes", SampleEvery: 1},
