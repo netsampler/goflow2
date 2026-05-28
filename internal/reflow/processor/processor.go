@@ -115,6 +115,7 @@ func (p *Builtin) processBytes(evt *event.Event) ([]*event.Event, error) {
 	}); err != nil {
 		return nil, err
 	}
+	applyDerivedFieldMappings(evt)
 
 	if p.cfg.DropMessage {
 		evt.Message = nil
@@ -164,6 +165,7 @@ func (p *Builtin) processFlow(evt *event.Event) ([]*event.Event, error) {
 		}
 	}
 	setIPFamilyFromFields(fields)
+	applyDerivedFieldMappings(evt)
 	if p.cfg.DropMessage {
 		evt.Message = nil
 	}
@@ -245,6 +247,7 @@ func (p *Builtin) processJSONRawPacketHeader(evt *event.Event) ([]*event.Event, 
 	}); err != nil {
 		return nil, err
 	}
+	applyDerivedFieldMappings(evt)
 
 	if p.cfg.DropMessage {
 		evt.Message = nil
@@ -330,10 +333,67 @@ func (p *Builtin) processReFlowFields(evt *event.Event, record map[string]any) (
 		fields[key] = normalizeReFlowJSONValue(key, value)
 	}
 	setIPFamilyFromFields(fields)
+	applyDerivedFieldMappings(evt)
 	if p.cfg.DropMessage {
 		evt.Message = nil
 	}
 	return []*event.Event{evt}, nil
+}
+
+func applyDerivedFieldMappings(evt *event.Event) {
+	if evt == nil {
+		return
+	}
+	deriveNATFieldsFromConntrack(evt.Fields, evt.Internal)
+}
+
+func deriveNATFieldsFromConntrack(fields, internal map[string]any) {
+	if fields == nil {
+		return
+	}
+	originalSrc := stringAlias(fields, "conntrack_original_src_addr")
+	originalDst := stringAlias(fields, "conntrack_original_dst_addr")
+	replySrc := stringAlias(fields, "conntrack_reply_src_addr")
+	if replySrc == "" {
+		replySrc = stringAlias(internal, "conntrack_reply_src_addr")
+	}
+	replyDst := stringAlias(fields, "conntrack_reply_dst_addr")
+	if replyDst == "" {
+		replyDst = stringAlias(internal, "conntrack_reply_dst_addr")
+	}
+	if originalSrc == "" || originalDst == "" || replySrc == "" || replyDst == "" {
+		return
+	}
+
+	originalSrcPort := uint32FromAny(fields["conntrack_original_src_port"])
+	originalDstPort := uint32FromAny(fields["conntrack_original_dst_port"])
+	replySrcPort := uint32FromAny(firstValue(fields, internal, "conntrack_reply_src_port"))
+	replyDstPort := uint32FromAny(firstValue(fields, internal, "conntrack_reply_dst_port"))
+
+	if originalSrc != replyDst || portsDiffer(originalSrcPort, replyDstPort) {
+		fields["nat_src_addr"] = replyDst
+		fields["nat_src_port"] = replyDstPort
+	}
+	if originalDst != replySrc || portsDiffer(originalDstPort, replySrcPort) {
+		fields["nat_dst_addr"] = replySrc
+		fields["nat_dst_port"] = replySrcPort
+	}
+}
+
+func portsDiffer(a, b uint32) bool {
+	return a != 0 && b != 0 && a != b
+}
+
+func firstValue(primary, fallback map[string]any, key string) any {
+	if primary != nil {
+		if val, ok := primary[key]; ok {
+			return val
+		}
+	}
+	if fallback != nil {
+		return fallback[key]
+	}
+	return nil
 }
 
 func reFlowPacketModelFromValue(value any) (*event.PacketModel, error) {

@@ -267,6 +267,156 @@ func TestBuiltinProcessGoFlow2V2PreservesNanosecondTimeAliases(t *testing.T) {
 	}
 }
 
+func TestBuiltinProcessBytesDerivesNATFieldsFromConntrack(t *testing.T) {
+	proc := NewBuiltin(config.ProcessorConfig{})
+	packet := ethernetPayload(
+		0x0800,
+		ipv4Packet(6, [4]byte{192, 168, 1, 10}, [4]byte{198, 51, 100, 20}, tcpHeader(12345, 443)),
+	)
+
+	events, err := proc.Process(&event.Event{
+		Source:  event.SourceMetadata{Type: "bytes"},
+		Payload: packet,
+		Fields: map[string]any{
+			"conntrack_original_src_addr": "192.168.1.10",
+			"conntrack_original_src_port": uint32(12345),
+			"conntrack_original_dst_addr": "198.51.100.20",
+			"conntrack_original_dst_port": uint32(443),
+			"conntrack_reply_src_addr":    "198.51.100.20",
+			"conntrack_reply_src_port":    uint32(443),
+			"conntrack_reply_dst_addr":    "203.0.113.9",
+			"conntrack_reply_dst_port":    uint32(54321),
+		},
+	})
+	if err != nil {
+		t.Fatalf("Process returned error: %v", err)
+	}
+
+	fields := events[0].Fields
+	if got := fields["nat_src_addr"]; got != "203.0.113.9" {
+		t.Fatalf("expected nat_src_addr=203.0.113.9, got %#v", got)
+	}
+	if got := fields["nat_src_port"]; got != uint32(54321) {
+		t.Fatalf("expected nat_src_port=54321, got %#v", got)
+	}
+	if _, ok := fields["nat_dst_addr"]; ok {
+		t.Fatalf("expected no nat_dst_addr for SNAT-only tuple, got %#v", fields["nat_dst_addr"])
+	}
+}
+
+func TestBuiltinProcessBytesDerivesNATFieldsFromInternalConntrackReply(t *testing.T) {
+	proc := NewBuiltin(config.ProcessorConfig{})
+	packet := ethernetPayload(
+		0x0800,
+		ipv4Packet(6, [4]byte{192, 168, 1, 10}, [4]byte{198, 51, 100, 20}, tcpHeader(12345, 443)),
+	)
+
+	events, err := proc.Process(&event.Event{
+		Source:  event.SourceMetadata{Type: "bytes"},
+		Payload: packet,
+		Fields: map[string]any{
+			"conntrack_original_src_addr": "192.168.1.10",
+			"conntrack_original_src_port": uint32(12345),
+			"conntrack_original_dst_addr": "198.51.100.20",
+			"conntrack_original_dst_port": uint32(443),
+		},
+		Internal: map[string]any{
+			"conntrack_reply_src_addr": "198.51.100.20",
+			"conntrack_reply_src_port": uint32(443),
+			"conntrack_reply_dst_addr": "203.0.113.9",
+			"conntrack_reply_dst_port": uint32(54321),
+		},
+	})
+	if err != nil {
+		t.Fatalf("Process returned error: %v", err)
+	}
+
+	fields := events[0].Fields
+	if got := fields["nat_src_addr"]; got != "203.0.113.9" {
+		t.Fatalf("expected nat_src_addr=203.0.113.9, got %#v", got)
+	}
+	if got := fields["nat_src_port"]; got != uint32(54321) {
+		t.Fatalf("expected nat_src_port=54321, got %#v", got)
+	}
+	if _, ok := fields["conntrack_reply_dst_addr"]; ok {
+		t.Fatalf("expected conntrack_reply_dst_addr not to be exported, got %#v", fields["conntrack_reply_dst_addr"])
+	}
+}
+
+func TestBuiltinProcessReFlowJSONDerivesNATFieldsFromConntrack(t *testing.T) {
+	proc := NewBuiltin(config.ProcessorConfig{})
+
+	events, err := proc.Process(&event.Event{
+		Source: event.SourceMetadata{Type: "json", JSON: event.JSONMetadata{Flavor: "reflow"}},
+		Message: []byte(`{
+			"conntrack_original_src_addr": "2001:db8::10",
+			"conntrack_original_src_port": 12345,
+			"conntrack_original_dst_addr": "2001:db8::20",
+			"conntrack_original_dst_port": 443,
+			"conntrack_reply_src_addr": "192.0.2.20",
+			"conntrack_reply_src_port": 8443,
+			"conntrack_reply_dst_addr": "2001:db8::10",
+			"conntrack_reply_dst_port": 12345
+		}`),
+	})
+	if err != nil {
+		t.Fatalf("Process returned error: %v", err)
+	}
+
+	fields := events[0].Fields
+	if got := fields["nat_dst_addr"]; got != "192.0.2.20" {
+		t.Fatalf("expected nat_dst_addr=192.0.2.20, got %#v", got)
+	}
+	if got := fields["nat_dst_port"]; got != uint32(8443) {
+		t.Fatalf("expected nat_dst_port=8443, got %#v", got)
+	}
+	if _, ok := fields["nat_src_addr"]; ok {
+		t.Fatalf("expected no nat_src_addr for DNAT-only tuple, got %#v", fields["nat_src_addr"])
+	}
+}
+
+func TestDerivedNATFieldsKeepUnchangedEndpointParts(t *testing.T) {
+	fields := map[string]any{
+		"conntrack_original_src_addr": "192.168.1.10",
+		"conntrack_original_src_port": uint32(12345),
+		"conntrack_original_dst_addr": "198.51.100.20",
+		"conntrack_original_dst_port": uint32(443),
+		"conntrack_reply_src_addr":    "198.51.100.20",
+		"conntrack_reply_src_port":    uint32(443),
+		"conntrack_reply_dst_addr":    "203.0.113.9",
+		"conntrack_reply_dst_port":    uint32(12345),
+	}
+
+	applyDerivedFieldMappings(&event.Event{Fields: fields})
+
+	if got := fields["nat_src_addr"]; got != "203.0.113.9" {
+		t.Fatalf("expected changed NAT source address, got %#v", got)
+	}
+	if got := fields["nat_src_port"]; got != uint32(12345) {
+		t.Fatalf("expected unchanged NAT source port to be kept, got %#v", got)
+	}
+
+	fields = map[string]any{
+		"conntrack_original_src_addr": "192.168.1.10",
+		"conntrack_original_src_port": uint32(12345),
+		"conntrack_original_dst_addr": "198.51.100.20",
+		"conntrack_original_dst_port": uint32(443),
+		"conntrack_reply_src_addr":    "198.51.100.20",
+		"conntrack_reply_src_port":    uint32(443),
+		"conntrack_reply_dst_addr":    "192.168.1.10",
+		"conntrack_reply_dst_port":    uint32(54321),
+	}
+
+	applyDerivedFieldMappings(&event.Event{Fields: fields})
+
+	if got := fields["nat_src_addr"]; got != "192.168.1.10" {
+		t.Fatalf("expected unchanged NAT source address to be kept, got %#v", got)
+	}
+	if got := fields["nat_src_port"]; got != uint32(54321) {
+		t.Fatalf("expected changed NAT source port, got %#v", got)
+	}
+}
+
 func TestBuiltinProcessBytesCanDisablePacketMapping(t *testing.T) {
 	proc := NewBuiltin(config.ProcessorConfig{
 		Builtin: config.BuiltinProcessorConfig{

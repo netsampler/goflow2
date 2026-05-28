@@ -133,11 +133,22 @@ func TestPacketEventAddsConntrackFields(t *testing.T) {
 	if got := evt.Fields["conntrack_status"]; got != "assured" {
 		t.Fatalf("expected conntrack_status=assured, got %#v", got)
 	}
-	if got := evt.Fields["nat_src_addr"]; got != "203.0.113.9" {
-		t.Fatalf("expected nat_src_addr, got %#v", got)
+	if _, ok := evt.Fields["nat_src_addr"]; ok {
+		t.Fatalf("expected source event not to derive nat_src_addr, got %#v", evt.Fields["nat_src_addr"])
 	}
-	if got := evt.Fields["nat_src_port"]; got != uint32(54321) {
-		t.Fatalf("expected nat_src_port=54321, got %#v", got)
+	if _, ok := evt.Fields["nat_src_port"]; ok {
+		t.Fatalf("expected source event not to derive nat_src_port, got %#v", evt.Fields["nat_src_port"])
+	}
+	for _, key := range []string{"conntrack_reply_src_addr", "conntrack_reply_dst_addr", "conntrack_reply_src_port", "conntrack_reply_dst_port"} {
+		if _, ok := evt.Fields[key]; ok {
+			t.Fatalf("expected source event not to export %s, got %#v", key, evt.Fields[key])
+		}
+	}
+	if got := evt.Internal["conntrack_reply_dst_addr"]; got != "203.0.113.9" {
+		t.Fatalf("expected internal conntrack_reply_dst_addr, got %#v", got)
+	}
+	if got := evt.Internal["conntrack_reply_dst_port"]; got != uint32(54321) {
+		t.Fatalf("expected internal conntrack_reply_dst_port=54321, got %#v", got)
 	}
 }
 

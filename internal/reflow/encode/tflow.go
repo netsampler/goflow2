@@ -77,6 +77,13 @@ type ipfixBatchRecord struct {
 	data                netflow.DataRecord
 }
 
+type ipfixBatchSet struct {
+	key        string
+	templateID uint16
+	template   *netflow.TemplateRecord
+	records    []netflow.DataRecord
+}
+
 type templatedEncodingContext struct {
 	netflowV9     bool
 	firstSwitched uint32
@@ -199,8 +206,13 @@ func (e *IPFIXEncoder) buildBatchedPacket(events []*event.Event) (*netflow.IPFIX
 	if err != nil {
 		return nil, 0, err
 	}
-	records := []netflow.DataRecord{first.data}
-	packet := e.ipfixBatchPacket(first, records)
+	sets := []ipfixBatchSet{{
+		key:        first.key,
+		templateID: first.templateID,
+		template:   first.template,
+		records:    []netflow.DataRecord{first.data},
+	}}
+	packet := e.ipfixBatchPacket(first, sets)
 	accepted := 1
 
 	for _, evt := range events[1:] {
@@ -208,41 +220,80 @@ func (e *IPFIXEncoder) buildBatchedPacket(events []*event.Event) (*netflow.IPFIX
 		if err != nil {
 			return nil, accepted, err
 		}
-		if next.key != first.key || next.observationDomainID != first.observationDomainID || next.templateID != first.templateID {
+		if next.observationDomainID != first.observationDomainID {
 			break
 		}
-		records = append(records, next.data)
-		packet = e.ipfixBatchPacket(first, records)
+		nextSets, ok := appendIPFIXBatchRecord(sets, next)
+		if !ok {
+			break
+		}
+		packet = e.ipfixBatchPacket(first, nextSets)
 		if e.cfg.MaxDatagramBytes > 0 {
 			data, err := netflow.EncodeMessage(packet)
 			if err != nil {
 				return nil, accepted, fmt.Errorf("encode ipfix packet: %w", err)
 			}
 			if len(data) > e.cfg.MaxDatagramBytes {
-				records = records[:len(records)-1]
-				packet = e.ipfixBatchPacket(first, records)
+				packet = e.ipfixBatchPacket(first, sets)
 				break
 			}
 		}
+		sets = nextSets
 		accepted++
 	}
 
-	e.seq.Add(uint32(accepted))
+	e.advanceIPFIXSequence(packet)
 	return packet, accepted, nil
 }
 
-func (e *IPFIXEncoder) ipfixBatchPacket(first ipfixBatchRecord, records []netflow.DataRecord) *netflow.IPFIXPacket {
-	flowSets := make([]interface{}, 0, 2)
-	if first.template != nil {
+func appendIPFIXBatchRecord(sets []ipfixBatchSet, record ipfixBatchRecord) ([]ipfixBatchSet, bool) {
+	next := make([]ipfixBatchSet, len(sets))
+	copy(next, sets)
+	for i := range next {
+		if next[i].templateID != record.templateID {
+			continue
+		}
+		if next[i].key != record.key {
+			return nil, false
+		}
+		next[i].records = append(append([]netflow.DataRecord(nil), next[i].records...), record.data)
+		return next, true
+	}
+	next = append(next, ipfixBatchSet{
+		key:        record.key,
+		templateID: record.templateID,
+		template:   record.template,
+		records:    []netflow.DataRecord{record.data},
+	})
+	return next, true
+}
+
+func (e *IPFIXEncoder) ipfixBatchPacket(first ipfixBatchRecord, sets []ipfixBatchSet) *netflow.IPFIXPacket {
+	flowSets := make([]interface{}, 0, len(sets)+1)
+	templates := make([]netflow.TemplateRecord, 0, len(sets))
+	seenTemplates := make(map[uint16]struct{}, len(sets))
+	for _, set := range sets {
+		if set.template == nil {
+			continue
+		}
+		if _, ok := seenTemplates[set.templateID]; ok {
+			continue
+		}
+		seenTemplates[set.templateID] = struct{}{}
+		templates = append(templates, *set.template)
+	}
+	if len(templates) > 0 {
 		flowSets = append(flowSets, netflow.TemplateFlowSet{
 			FlowSetHeader: netflow.FlowSetHeader{Id: 2},
-			Records:       []netflow.TemplateRecord{*first.template},
+			Records:       templates,
 		})
 	}
-	flowSets = append(flowSets, netflow.DataFlowSet{
-		FlowSetHeader: netflow.FlowSetHeader{Id: first.templateID},
-		Records:       records,
-	})
+	for _, set := range sets {
+		flowSets = append(flowSets, netflow.DataFlowSet{
+			FlowSetHeader: netflow.FlowSetHeader{Id: set.templateID},
+			Records:       set.records,
+		})
+	}
 	return &netflow.IPFIXPacket{
 		Version:             10,
 		ExportTime:          first.exportTime,
@@ -250,6 +301,34 @@ func (e *IPFIXEncoder) ipfixBatchPacket(first ipfixBatchRecord, records []netflo
 		ObservationDomainId: first.observationDomainID,
 		FlowSets:            flowSets,
 	}
+}
+
+func (e *IPFIXEncoder) advanceIPFIXSequence(packet *netflow.IPFIXPacket) {
+	if packet == nil {
+		return
+	}
+	e.seq.Add(ipfixSequenceIncrement(packet.FlowSets))
+}
+
+func ipfixSequenceIncrement(flowSets []interface{}) uint32 {
+	var count uint32
+	for _, flowSet := range flowSets {
+		switch fs := flowSet.(type) {
+		case netflow.DataFlowSet:
+			count += uint32(len(fs.Records))
+		case *netflow.DataFlowSet:
+			if fs != nil {
+				count += uint32(len(fs.Records))
+			}
+		case netflow.OptionsDataFlowSet:
+			count += uint32(len(fs.Records))
+		case *netflow.OptionsDataFlowSet:
+			if fs != nil {
+				count += uint32(len(fs.Records))
+			}
+		}
+	}
+	return count
 }
 
 func (e *IPFIXEncoder) ipfixBatchRecord(evt *event.Event) (ipfixBatchRecord, error) {
@@ -292,8 +371,12 @@ func (e *IPFIXEncoder) ipfixBatchRecord(evt *event.Event) (ipfixBatchRecord, err
 	if err != nil {
 		return ipfixBatchRecord{}, err
 	}
+	key, err := fallbackPlanKey(e.cfg.TemplatedFlow.Data, fieldMap, templateID, false)
+	if err != nil {
+		return ipfixBatchRecord{}, err
+	}
 	return ipfixBatchRecord{
-		key:                 fallbackPlanKey(e.cfg.TemplatedFlow.Data, fieldMap, templateID, false),
+		key:                 key,
 		exportTime:          exportTime,
 		observationDomainID: obsDomainID,
 		templateID:          plan.template.TemplateId,
@@ -366,6 +449,7 @@ func (e *IPFIXEncoder) buildPacket(evt *event.Event) (*netflow.IPFIXPacket, erro
 				},
 			},
 		}
+		e.advanceIPFIXSequence(packet)
 		return packet, nil
 	case *netflow.TemplateRecord:
 		record := *evt.Payload.(*netflow.TemplateRecord)
@@ -381,6 +465,7 @@ func (e *IPFIXEncoder) buildPacket(evt *event.Event) (*netflow.IPFIXPacket, erro
 				},
 			},
 		}
+		e.advanceIPFIXSequence(packet)
 		return packet, nil
 	case netflow.IPFIXOptionsTemplateRecord:
 		record := evt.Payload.(netflow.IPFIXOptionsTemplateRecord)
@@ -396,6 +481,7 @@ func (e *IPFIXEncoder) buildPacket(evt *event.Event) (*netflow.IPFIXPacket, erro
 				},
 			},
 		}
+		e.advanceIPFIXSequence(packet)
 		return packet, nil
 	case *netflow.IPFIXOptionsTemplateRecord:
 		record := *evt.Payload.(*netflow.IPFIXOptionsTemplateRecord)
@@ -411,6 +497,7 @@ func (e *IPFIXEncoder) buildPacket(evt *event.Event) (*netflow.IPFIXPacket, erro
 				},
 			},
 		}
+		e.advanceIPFIXSequence(packet)
 		return packet, nil
 	}
 
@@ -435,7 +522,7 @@ func (e *IPFIXEncoder) buildPacket(evt *event.Event) (*netflow.IPFIXPacket, erro
 				},
 			},
 		}
-		e.seq.Add(1)
+		e.advanceIPFIXSequence(packet)
 		return packet, nil
 	}
 
@@ -459,7 +546,7 @@ func (e *IPFIXEncoder) buildPacket(evt *event.Event) (*netflow.IPFIXPacket, erro
 			},
 		},
 	}
-	e.seq.Add(1)
+	e.advanceIPFIXSequence(packet)
 	return packet, nil
 }
 
@@ -814,6 +901,7 @@ func (e *IPFIXEncoder) encodeSchemaTemplates(state templatedSchemaState) ([][]by
 			return nil, fmt.Errorf("encode ipfix schema template: %w", err)
 		}
 		out = append(out, data)
+		e.advanceIPFIXSequence(packet)
 	}
 	return out, nil
 }
@@ -863,7 +951,7 @@ func (e *IPFIXEncoder) encodeSourceOptions(state sourceOptionsState) ([][]byte, 
 						FieldCount:      2,
 						ScopeFieldCount: 1,
 						Scopes: []netflow.Field{
-							{Type: netflow.IPFIX_FIELD_observationDomainId, Length: 4},
+							{Type: netflow.IPFIX_FIELD_observationPointId, Length: 8},
 						},
 						Options: []netflow.Field{
 							{Type: netflow.IPFIX_FIELD_samplingInterval, Length: 4},
@@ -876,7 +964,7 @@ func (e *IPFIXEncoder) encodeSourceOptions(state sourceOptionsState) ([][]byte, 
 				Records: []netflow.OptionsDataRecord{
 					{
 						ScopesValues: []netflow.DataField{
-							{Type: netflow.IPFIX_FIELD_observationDomainId, Value: encodeU32(state.observationDomainID)},
+							{Type: netflow.IPFIX_FIELD_observationPointId, Value: encodeU64(uint64(state.sourceID))},
 						},
 						OptionsValues: []netflow.DataField{
 							{Type: netflow.IPFIX_FIELD_samplingInterval, Value: encodeU32(state.samplingRate)},
@@ -890,7 +978,7 @@ func (e *IPFIXEncoder) encodeSourceOptions(state sourceOptionsState) ([][]byte, 
 	if err != nil {
 		return nil, fmt.Errorf("encode ipfix source options: %w", err)
 	}
-	e.seq.Add(1)
+	e.advanceIPFIXSequence(packet)
 	return [][]byte{data}, nil
 }
 
@@ -990,9 +1078,10 @@ func buildSchemaStateWithBase(cfg config.TemplatedFlowDataConfig, schema event.A
 	if uint64(baseTemplateID)+variantCount-1 > 0xffff {
 		return templatedSchemaState{}, fmt.Errorf("template id range %d..%d exceeds 65535", baseTemplateID, uint64(baseTemplateID)+variantCount-1)
 	}
+	variantMasks := orderedAddressVariantMasks(state.addressGroups)
 	state.templateVariants = make(map[uint64]netflow.TemplateRecord, variantCount)
-	for mask := uint64(0); mask < variantCount; mask++ {
-		template, err := buildTemplateRecordFromSchemaFieldsForMask(cfg, state.fields, baseTemplateID+uint16(mask), netflowV9, state.addressGroups, mask)
+	for i, mask := range variantMasks {
+		template, err := buildTemplateRecordFromSchemaFieldsForMask(cfg, state.fields, baseTemplateID+uint16(i), netflowV9, state.addressGroups, mask)
 		if err != nil {
 			return templatedSchemaState{}, err
 		}
@@ -1088,7 +1177,9 @@ func (s templatedSchemaState) templates() []netflow.TemplateRecord {
 	for mask := range s.templateVariants {
 		masks = append(masks, mask)
 	}
-	sort.Slice(masks, func(i, j int) bool { return masks[i] < masks[j] })
+	sort.Slice(masks, func(i, j int) bool {
+		return s.templateVariants[masks[i]].TemplateId < s.templateVariants[masks[j]].TemplateId
+	})
 	templates := make([]netflow.TemplateRecord, 0, len(masks))
 	for _, mask := range masks {
 		templates = append(templates, s.templateVariants[mask])
@@ -1121,6 +1212,51 @@ func (s templatedSchemaState) addressVariantMask(fields map[string]any) uint64 {
 	return mask
 }
 
+func orderedAddressVariantMasks(groups []string) []uint64 {
+	if len(groups) == 0 {
+		return []uint64{0}
+	}
+	variantCount := uint64(1) << len(groups)
+	out := make([]uint64, 0, variantCount)
+	seen := make(map[uint64]bool, variantCount)
+	appendMask := func(mask uint64) {
+		if seen[mask] {
+			return
+		}
+		seen[mask] = true
+		out = append(out, mask)
+	}
+
+	appendMask(0)
+	if mask, ok := preferredNATVariantMask(groups); ok {
+		appendMask(mask)
+	}
+	// Mixed original/NAT address-family variants follow the paired IPv4 and IPv6
+	// templates. With the generated NAT schema, those become template 258 for
+	// NAT64 and template 259 for NAT46.
+	for mask := uint64(1); mask < variantCount; mask++ {
+		appendMask(mask)
+	}
+	return out
+}
+
+func preferredNATVariantMask(groups []string) (uint64, bool) {
+	primaryIndex := -1
+	natIndex := -1
+	for i, group := range groups {
+		switch group {
+		case "":
+			primaryIndex = i
+		case "nat":
+			natIndex = i
+		}
+	}
+	if primaryIndex < 0 || natIndex < 0 {
+		return 0, false
+	}
+	return (uint64(1) << primaryIndex) | (uint64(1) << natIndex), true
+}
+
 // sourceOptionsFromEvent extracts source-level exporter metadata from event
 // metadata, with payload/field values used only for exporter control knobs that
 // are not represented in SourceMetadata.
@@ -1150,10 +1286,12 @@ func sourceOptionsFromEvent(evt *event.Event) sourceOptionsState {
 }
 
 func (e *IPFIXEncoder) fallbackDataRecord(fieldMap map[string]any, templateID uint16) (fallbackTemplatePlan, netflow.DataRecord, error) {
-	key := fallbackPlanKey(e.cfg.TemplatedFlow.Data, fieldMap, templateID, false)
+	key, err := fallbackPlanKey(e.cfg.TemplatedFlow.Data, fieldMap, templateID, false)
+	if err != nil {
+		return fallbackTemplatePlan{}, netflow.DataRecord{}, err
+	}
 	plan, ok := e.fallbackPlans[key]
 	if !ok {
-		var err error
 		plan, err = buildFallbackPlan(e.cfg.TemplatedFlow.Data, fieldMap, templateID, false)
 		if err != nil {
 			return fallbackTemplatePlan{}, netflow.DataRecord{}, err
@@ -1168,10 +1306,12 @@ func (e *IPFIXEncoder) fallbackDataRecord(fieldMap map[string]any, templateID ui
 }
 
 func (e *NFv9Encoder) fallbackDataRecord(fieldMap map[string]any, templateID uint16, encodingCtx templatedEncodingContext) (fallbackTemplatePlan, netflow.DataRecord, error) {
-	key := fallbackPlanKey(e.cfg.TemplatedFlow.Data, fieldMap, templateID, true)
+	key, err := fallbackPlanKey(e.cfg.TemplatedFlow.Data, fieldMap, templateID, true)
+	if err != nil {
+		return fallbackTemplatePlan{}, netflow.DataRecord{}, err
+	}
 	plan, ok := e.fallbackPlans[key]
 	if !ok {
-		var err error
 		plan, err = buildFallbackPlan(e.cfg.TemplatedFlow.Data, fieldMap, templateID, true)
 		if err != nil {
 			return fallbackTemplatePlan{}, netflow.DataRecord{}, err
@@ -1185,33 +1325,46 @@ func (e *NFv9Encoder) fallbackDataRecord(fieldMap map[string]any, templateID uin
 	return plan, record, nil
 }
 
-func fallbackPlanKey(cfg config.TemplatedFlowDataConfig, fieldMap map[string]any, templateID uint16, netflowV9 bool) string {
+func fallbackPlanKey(cfg config.TemplatedFlowDataConfig, fieldMap map[string]any, templateID uint16, netflowV9 bool) (string, error) {
 	names := selectPresentFlowFields(cfg, fieldMap)
+	groups := fallbackAddressGroups(cfg, names)
+	mask := fallbackAddressVariantMask(names, groups, fieldMap)
+	templateID, err := fallbackVariantTemplateID(templateID, mask)
+	if err != nil {
+		return "", err
+	}
 	var b strings.Builder
 	fmt.Fprintf(&b, "%t|%d", netflowV9, templateID)
 	for _, name := range names {
-		def := resolvedFieldDefinition(name, cfg.Catalog[name], fieldMap[name])
+		def := resolvedFieldDefinitionForAddressMask(name, cfg.Catalog[name], groups, mask)
 		def = wireFieldDefinition(name, def, netflowV9)
 		length := def.Length
 		if length == 0 || length == 0xffff {
-			if encoded, err := encodeTemplatedValue(name, def, fieldMap[name], templatedEncodingContext{netflowV9: netflowV9}); err == nil {
+			encoded, err := encodeFallbackValue(name, def, fieldMap, templatedEncodingContext{netflowV9: netflowV9})
+			if err == nil {
 				length = ipfixFieldLength(def, encoded)
 			}
 		}
 		fmt.Fprintf(&b, "|%s:%d:%d:%d:%d:%t", name, def.ID, length, def.Length, def.PEN, def.EnterpriseScoped)
 	}
-	return b.String()
+	return b.String(), nil
 }
 
 func buildFallbackPlan(cfg config.TemplatedFlowDataConfig, fieldMap map[string]any, templateID uint16, netflowV9 bool) (fallbackTemplatePlan, error) {
 	names := selectPresentFlowFields(cfg, fieldMap)
+	groups := fallbackAddressGroups(cfg, names)
+	mask := fallbackAddressVariantMask(names, groups, fieldMap)
+	templateID, err := fallbackVariantTemplateID(templateID, mask)
+	if err != nil {
+		return fallbackTemplatePlan{}, err
+	}
 	fields := make([]netflow.Field, 0, len(names))
 	defs := make([]config.IPFIXFieldDefinition, 0, len(names))
 	keptNames := make([]string, 0, len(names))
 	for _, name := range names {
-		def := resolvedFieldDefinition(name, cfg.Catalog[name], fieldMap[name])
+		def := resolvedFieldDefinitionForAddressMask(name, cfg.Catalog[name], groups, mask)
 		def = wireFieldDefinition(name, def, netflowV9)
-		encoded, err := encodeTemplatedValue(name, def, fieldMap[name], templatedEncodingContext{netflowV9: netflowV9})
+		encoded, err := encodeFallbackValue(name, def, fieldMap, templatedEncodingContext{netflowV9: netflowV9})
 		if err != nil {
 			return fallbackTemplatePlan{}, fmt.Errorf("encode field %q: %w", name, err)
 		}
@@ -1240,13 +1393,13 @@ func buildFallbackPlan(cfg config.TemplatedFlowDataConfig, fieldMap map[string]a
 
 func buildFallbackValues(plan fallbackTemplatePlan, fieldMap map[string]any, encodingCtx templatedEncodingContext) (netflow.DataRecord, error) {
 	values := make([]netflow.DataField, 0, len(plan.names))
+	present := 0
 	for i, name := range plan.names {
-		val, ok := fieldMap[name]
-		if !ok {
-			continue
-		}
 		def := plan.defs[i]
-		encoded, err := encodeTemplatedValue(name, def, val, encodingCtx)
+		if _, ok := fieldMap[name]; ok {
+			present++
+		}
+		encoded, err := encodeFallbackValue(name, def, fieldMap, encodingCtx)
 		if err != nil {
 			return netflow.DataRecord{}, fmt.Errorf("encode field %q: %w", name, err)
 		}
@@ -1258,7 +1411,7 @@ func buildFallbackValues(plan fallbackTemplatePlan, fieldMap map[string]any, enc
 			Value:       encoded,
 		})
 	}
-	if len(values) == 0 {
+	if len(values) == 0 || present == 0 {
 		return netflow.DataRecord{}, fmt.Errorf("no encodable values found for templated packet")
 	}
 	return netflow.DataRecord{Values: values}, nil
@@ -1271,9 +1424,7 @@ func selectPresentFlowFields(cfg config.TemplatedFlowDataConfig, fieldMap map[st
 			if _, ok := cfg.Catalog[name]; !ok {
 				continue
 			}
-			if _, ok := fieldMap[name]; ok {
-				names = append(names, name)
-			}
+			names = append(names, name)
 		}
 		return names
 	}
@@ -1285,6 +1436,53 @@ func selectPresentFlowFields(cfg config.TemplatedFlowDataConfig, fieldMap map[st
 	}
 	sort.Strings(names)
 	return names
+}
+
+func fallbackAddressGroups(cfg config.TemplatedFlowDataConfig, names []string) []string {
+	fields := make([]event.SchemaField, 0, len(names))
+	for _, name := range names {
+		fields = append(fields, event.SchemaField{Name: name})
+	}
+	return schemaAddressGroups(cfg, fields)
+}
+
+func fallbackAddressVariantMask(names []string, groups []string, fieldMap map[string]any) uint64 {
+	if len(groups) == 0 || len(fieldMap) == 0 {
+		return 0
+	}
+	groupIndexes := make(map[string]int, len(groups))
+	for i, group := range groups {
+		groupIndexes[group] = i
+	}
+	var mask uint64
+	for _, name := range names {
+		group, ok := addressFieldGroup(name)
+		if !ok {
+			continue
+		}
+		index, ok := groupIndexes[group]
+		if !ok {
+			continue
+		}
+		if fieldValueIsIPv6(fieldMap[name]) {
+			mask |= 1 << index
+		}
+	}
+	return mask
+}
+
+func fallbackVariantTemplateID(baseTemplateID uint16, mask uint64) (uint16, error) {
+	if uint64(baseTemplateID)+mask > 0xffff {
+		return 0, fmt.Errorf("template id range %d..%d exceeds 65535", baseTemplateID, uint64(baseTemplateID)+mask)
+	}
+	return baseTemplateID + uint16(mask), nil
+}
+
+func encodeFallbackValue(name string, def config.IPFIXFieldDefinition, fieldMap map[string]any, encodingCtx templatedEncodingContext) ([]byte, error) {
+	if val, ok := fieldMap[name]; ok {
+		return encodeTemplatedValue(name, def, val, encodingCtx)
+	}
+	return defaultEncodedValue(def)
 }
 
 // buildTemplatedDataRecord picks fields from a runtime event and builds both the
@@ -1864,6 +2062,14 @@ func controlType(evt *event.Event) string {
 // encodeU32 writes one uint32 in big-endian order.
 func encodeU32(v uint32) []byte {
 	return []byte{byte(v >> 24), byte(v >> 16), byte(v >> 8), byte(v)}
+}
+
+// encodeU64 writes one uint64 in big-endian order.
+func encodeU64(v uint64) []byte {
+	return []byte{
+		byte(v >> 56), byte(v >> 48), byte(v >> 40), byte(v >> 32),
+		byte(v >> 24), byte(v >> 16), byte(v >> 8), byte(v),
+	}
 }
 
 // ipfixFieldLength honors explicit field lengths and falls back to encoded size

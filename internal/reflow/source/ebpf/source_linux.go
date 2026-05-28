@@ -328,6 +328,10 @@ func (s *Source) packetEvent(data []byte, meta packetMetadata) *event.Event {
 		},
 	}
 	applyPacketMetadataFields(evt.Fields, meta)
+	if meta.hasConntrack {
+		evt.Internal = make(map[string]any, 4)
+		addTupleFields(evt.Internal, "conntrack_reply", meta.conntrack.reply)
+	}
 	return evt
 }
 

@@ -390,19 +390,9 @@ func applyConntrackFields(fields map[string]any, meta conntrackMetadata) {
 		fields["conntrack_status"] = meta.status
 	}
 	addTupleFields(fields, "conntrack_original", meta.original)
-	addTupleFields(fields, "conntrack_reply", meta.reply)
-	if meta.hasSNAT {
-		fields["nat_src_addr"] = meta.natSrc.String()
-		if meta.natSPort != 0 {
-			fields["nat_src_port"] = uint32(meta.natSPort)
-		}
-	}
-	if meta.hasDNAT {
-		fields["nat_dst_addr"] = meta.natDst.String()
-		if meta.natDPort != 0 {
-			fields["nat_dst_port"] = uint32(meta.natDPort)
-		}
-	}
+	// Keep reply tuple details out of exported fields; packetEvent attaches them
+	// to Event.Internal so the processor can derive the NAT endpoint aliases.
+	// addTupleFields(fields, "conntrack_reply", meta.reply)
 }
 
 func addTupleFields(fields map[string]any, prefix string, tuple conntrackTuple) {

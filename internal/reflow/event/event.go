@@ -16,6 +16,7 @@ type Event struct {
 	Packet     *PacketModel     `json:"packet,omitempty"`
 	SFlow      *SFlowMetadata   `json:"sflow,omitempty"`
 	Payload    any              `json:"-"`
+	Internal   map[string]any   `json:"-"`
 }
 
 type ControlMetadata struct {
