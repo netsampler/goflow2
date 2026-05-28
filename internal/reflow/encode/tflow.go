@@ -406,11 +406,21 @@ func (e *NFv9Encoder) Encode(evt *event.Event) ([][]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("encode netflow v9 packet: %w", err)
 	}
+	e.advanceSequence(packet)
 	return [][]byte{data}, nil
 }
 
 func (e *NFv9Encoder) Flush() ([][]byte, error) {
 	return e.flushControlPackets(time.Now().UTC())
+}
+
+// advanceSequence tracks NetFlow v9's export-packet sequence counter. IPFIX
+// uses a data-record counter instead.
+func (e *NFv9Encoder) advanceSequence(packet *netflow.NFv9Packet) {
+	if packet == nil {
+		return
+	}
+	e.seq.Add(1)
 }
 
 // buildPacket translates one runtime event into the appropriate IPFIX packet
@@ -660,7 +670,6 @@ func (e *NFv9Encoder) buildPacket(evt *event.Event) (*netflow.NFv9Packet, error)
 				},
 			},
 		}
-		e.seq.Add(1)
 		return packet, nil
 	}
 
@@ -686,7 +695,6 @@ func (e *NFv9Encoder) buildPacket(evt *event.Event) (*netflow.NFv9Packet, error)
 			},
 		},
 	}
-	e.seq.Add(1)
 	return packet, nil
 }
 
@@ -958,6 +966,7 @@ func (e *NFv9Encoder) encodeSchemaTemplates(state templatedSchemaState) ([][]byt
 			return nil, fmt.Errorf("encode netflow v9 schema template: %w", err)
 		}
 		out = append(out, data)
+		e.advanceSequence(packet)
 	}
 	return out, nil
 }
@@ -1077,6 +1086,7 @@ func (e *NFv9Encoder) encodeSourceOptions(state sourceOptionsState) ([][]byte, e
 	if err != nil {
 		return nil, fmt.Errorf("encode netflow v9 source options: %w", err)
 	}
+	e.advanceSequence(packet)
 	return [][]byte{data}, nil
 }
 

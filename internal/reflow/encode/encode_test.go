@@ -1969,6 +1969,89 @@ func TestNFv9EncoderEmitsTemplateAndDataRecord(t *testing.T) {
 	}
 }
 
+func TestNFv9EncoderSequenceAdvancesPerExportPacket(t *testing.T) {
+	cfg := testTFlowEncoderConfig("netflowv9")
+	cfg.TemplatedFlow.ObservationDomainID = 42
+	enc := NewNFv9Encoder(cfg)
+
+	store := templates.NewTemplateFlowStore()
+	store.Start()
+	ctx := netflow.FlowContext{RouterKey: "test-router"}
+	decodePacket := func(payload []byte) netflow.NFv9Packet {
+		t.Helper()
+		var decoded netflow.NFv9Packet
+		if err := netflow.DecodeMessageVersion(bytes.NewBuffer(payload), store, ctx, &decoded, nil); err != nil {
+			t.Fatalf("decode netflow v9 payload: %v", err)
+		}
+		return decoded
+	}
+
+	templatePayloads, err := enc.Encode(&event.Event{
+		Kind: "control",
+		Control: &event.ControlMetadata{
+			Type:   "schema",
+			Stream: "flow_data",
+		},
+		Payload: event.AggregationSchema{
+			Stream:         "flow_data",
+			FieldNames:     []string{"bytes"},
+			BaseTemplateID: 300,
+		},
+	})
+	if err != nil {
+		t.Fatalf("schema Encode returned error: %v", err)
+	}
+	if len(templatePayloads) != 1 {
+		t.Fatalf("expected one template payload, got %d", len(templatePayloads))
+	}
+	templateDecoded := decodePacket(templatePayloads[0])
+	if templateDecoded.SequenceNumber != 0 {
+		t.Fatalf("expected template packet sequence 0, got %d", templateDecoded.SequenceNumber)
+	}
+
+	optionsPayloads, err := enc.Encode(&event.Event{
+		Kind: "control",
+		Control: &event.ControlMetadata{
+			Type: "source_init",
+		},
+		Source: event.SourceMetadata{
+			SourceID:    7,
+			SourceIDSet: true,
+			Sampling: &event.SamplingMetadata{
+				Rate: 100,
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("source_init Encode returned error: %v", err)
+	}
+	if len(optionsPayloads) != 1 {
+		t.Fatalf("expected one options payload, got %d", len(optionsPayloads))
+	}
+	optionsDecoded := decodePacket(optionsPayloads[0])
+	if optionsDecoded.SequenceNumber != 1 {
+		t.Fatalf("expected options packet sequence 1, got %d", optionsDecoded.SequenceNumber)
+	}
+
+	dataPayloads, err := enc.Encode(&event.Event{
+		ReceivedAt: testEventTime(),
+		Stream:     "flow_data",
+		Fields: map[string]any{
+			"bytes": uint64(64),
+		},
+	})
+	if err != nil {
+		t.Fatalf("data Encode returned error: %v", err)
+	}
+	if len(dataPayloads) != 1 {
+		t.Fatalf("expected one data payload, got %d", len(dataPayloads))
+	}
+	dataDecoded := decodePacket(dataPayloads[0])
+	if dataDecoded.SequenceNumber != 2 {
+		t.Fatalf("expected data packet sequence 2, got %d", dataDecoded.SequenceNumber)
+	}
+}
+
 func TestNFv9EncoderUsesSwitchedTimeFields(t *testing.T) {
 	cfg := testTFlowEncoderConfig("netflowv9")
 	cfg.TemplatedFlow.Data.Select = append(cfg.TemplatedFlow.Data.Select, "start_time_unix", "end_time_unix")
