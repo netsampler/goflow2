@@ -24,8 +24,8 @@ aggregators:
       every_ms: 60000
     template_id: 256
     # `fields` is ordered. Entries use role:name, except static:name:value.
-    # key forms the bucket key, sum adds numeric counters, first keeps the first value,
-    # current keeps the latest value, and static injects a configured constant.
+    # key forms the bucket key, sum adds numeric counters, and bitwise-ANDs masks,
+    # first keeps the first value, current keeps the latest value, and static injects a configured constant.
     fields:
       - key:src_addr
       - key:dst_addr
@@ -34,6 +34,7 @@ aggregators:
       - key:dst_port
       - sum:bytes
       - sum:packets
+      - and:tcp_flags
       - first:start_time_unix
       - current:agent_ip
       - current:end_time_unix

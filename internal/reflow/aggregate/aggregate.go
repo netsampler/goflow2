@@ -159,6 +159,7 @@ func schemaInitEvents(cfg config.AggregatorConfig) ([]*event.Event, error) {
 				CurrentFields:  append([]string(nil), cfg.Current...),
 				MinFields:      append([]string(nil), cfg.Min...),
 				MaxFields:      append([]string(nil), cfg.Max...),
+				AndFields:      append([]string(nil), cfg.And...),
 				Match:          cloneStringMap(cfg.Match),
 				StaticFields:   cloneFields(cfg.StaticFields),
 				BaseTemplateID: cfg.TemplateID,
@@ -252,6 +253,9 @@ func orderedSchemaFields(cfg config.AggregatorConfig) []string {
 	for _, field := range cfg.Max {
 		appendField(field)
 	}
+	for _, field := range cfg.And {
+		appendField(field)
+	}
 	appendField("start_time_unix")
 	appendField("end_time_unix")
 	staticFields := make([]string, 0, len(cfg.StaticFields))
@@ -306,6 +310,9 @@ func schemaFields(cfg config.AggregatorConfig) []event.SchemaField {
 	}
 	for _, field := range cfg.Max {
 		roleByName[field] = "max"
+	}
+	for _, field := range cfg.And {
+		roleByName[field] = "and"
 	}
 	for _, name := range names {
 		role := roleByName[name]
@@ -509,6 +516,11 @@ func aggregateFromEvent(cfg config.AggregatorConfig, recordCapacity int, evt *ev
 			recordFields[maxField] = maxValue{Value: val}
 		}
 	}
+	for _, andField := range cfg.And {
+		if val, ok := eventFieldValue(evt, andField); ok {
+			recordFields[andField] = andValue{Value: val}
+		}
+	}
 	seedTimestamps(recordFields, fields, now)
 
 	return key, aggregateRecord{
@@ -519,7 +531,7 @@ func aggregateFromEvent(cfg config.AggregatorConfig, recordCapacity int, evt *ev
 }
 
 func aggregateRecordCapacity(cfg config.AggregatorConfig) int {
-	return len(cfg.StaticFields) + len(cfg.KeyFields) + len(cfg.Sum) + len(cfg.First) + len(cfg.Current) + len(cfg.Min) + len(cfg.Max) + 2
+	return len(cfg.StaticFields) + len(cfg.KeyFields) + len(cfg.Sum) + len(cfg.First) + len(cfg.Current) + len(cfg.Min) + len(cfg.Max) + len(cfg.And) + 2
 }
 
 // seedTimestamps ensures aggregates always have start/end fields even when the
@@ -609,6 +621,8 @@ func cloneFields(in map[string]any) map[string]any {
 			out[key] = typed.Value
 		case maxValue:
 			out[key] = typed.Value
+		case andValue:
+			out[key] = typed.Value
 		default:
 			out[key] = val
 		}
@@ -621,9 +635,11 @@ type sumValue struct{ Value any }
 type currentValue struct{ Value any }
 type minValue struct{ Value any }
 type maxValue struct{ Value any }
+type andValue struct{ Value any }
 
 // mergeFields applies the configured aggregation semantics by field wrapper type:
-// sum values add, first values stick, current values overwrite.
+// sum values add, first values stick, current values overwrite, min/max compare,
+// and values bitwise-AND.
 func mergeFields(dst, src map[string]any) {
 	for key, val := range src {
 		if key == "start_time_unix" {
@@ -648,6 +664,8 @@ func mergeFields(dst, src map[string]any) {
 			dst[key] = minValue{Value: minAny(dst[key], incoming.Value)}
 		case maxValue:
 			dst[key] = maxValue{Value: maxAny(dst[key], incoming.Value)}
+		case andValue:
+			dst[key] = andValue{Value: andAny(dst[key], incoming.Value)}
 		default:
 			dst[key] = val
 		}
@@ -688,6 +706,13 @@ func maxAny(current, incoming any) any {
 		return incoming
 	}
 	return current
+}
+
+func andAny(current, incoming any) any {
+	if wrapped, exists := current.(andValue); exists {
+		return uint32FromAny(wrapped.Value) & uint32FromAny(incoming)
+	}
+	return uint32FromAny(current) & uint32FromAny(incoming)
 }
 
 // timestampFieldOrNow prefers an existing field timestamp and falls back to the

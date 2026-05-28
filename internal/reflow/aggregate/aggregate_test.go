@@ -587,6 +587,57 @@ func TestStatefulTracksMinStartAndMaxEndTimestamps(t *testing.T) {
 	}
 }
 
+func TestStatefulBitwiseAndsConfiguredFields(t *testing.T) {
+	agg, err := New(config.AggregatorConfig{
+		Periodic: config.AggregatorPeriodicConfig{
+			Every: 1,
+		},
+		KeyFields: []string{"src_addr", "dst_addr", "proto", "src_port", "dst_port"},
+		And:       []string{"tcp_flags"},
+	})
+	if err != nil {
+		t.Fatalf("New returned error: %v", err)
+	}
+	initEvents, err := agg.InitEvents()
+	if err != nil {
+		t.Fatalf("InitEvents returned error: %v", err)
+	}
+	schema, ok := initEvents[0].Payload.(event.AggregationSchema)
+	if !ok {
+		t.Fatalf("expected aggregation schema payload, got %T", initEvents[0].Payload)
+	}
+	if len(schema.AndFields) != 1 || schema.AndFields[0] != "tcp_flags" {
+		t.Fatalf("expected schema and_fields tcp_flags, got %#v", schema.AndFields)
+	}
+
+	for _, flags := range []uint32{0x13, 0x12, 0x16} {
+		_, err := agg.Process(&event.Event{
+			Fields: map[string]any{
+				"src_addr":  "192.0.2.1",
+				"dst_addr":  "198.51.100.2",
+				"proto":     uint32(6),
+				"src_port":  uint32(12345),
+				"dst_port":  uint32(443),
+				"tcp_flags": flags,
+			},
+		})
+		if err != nil {
+			t.Fatalf("Process returned error: %v", err)
+		}
+	}
+
+	out, err := agg.Close()
+	if err != nil {
+		t.Fatalf("Close returned error: %v", err)
+	}
+	if len(out) != 1 {
+		t.Fatalf("expected 1 aggregated event, got %d", len(out))
+	}
+	if got := out[0].Fields["tcp_flags"]; got != uint32(0x12) {
+		t.Fatalf("expected tcp_flags=0x12, got %#v", got)
+	}
+}
+
 func TestStatefulOnlySumsConfiguredSumFields(t *testing.T) {
 	agg, err := New(config.AggregatorConfig{
 		Periodic: config.AggregatorPeriodicConfig{

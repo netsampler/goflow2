@@ -34,6 +34,7 @@ type AggregationSchema struct {
 	CurrentFields  []string          `json:"current_fields,omitempty"`
 	MinFields      []string          `json:"min_fields,omitempty"`
 	MaxFields      []string          `json:"max_fields,omitempty"`
+	AndFields      []string          `json:"and_fields,omitempty"`
 	Match          map[string]string `json:"match,omitempty"`
 	StaticFields   map[string]any    `json:"static_fields,omitempty"`
 	BaseTemplateID uint16            `json:"base_template_id,omitempty"`

@@ -224,6 +224,7 @@ type AggregatorConfig struct {
 	Current      []string          `yaml:"current"`
 	Min          []string          `yaml:"min"`
 	Max          []string          `yaml:"max"`
+	And          []string          `yaml:"and"`
 	Match        map[string]string `yaml:"match"`
 	TemplateID   uint16            `yaml:"template_id"`
 	StaticFields map[string]any    `yaml:"static_fields"`
@@ -1135,6 +1136,9 @@ func normalizeAggregatorConfig(cfg *AggregatorConfig) error {
 		for _, field := range cfg.Max {
 			cfg.Fields = append(cfg.Fields, AggregatorField{Role: "max", Name: field})
 		}
+		for _, field := range cfg.And {
+			cfg.Fields = append(cfg.Fields, AggregatorField{Role: "and", Name: field})
+		}
 		staticFields := make([]string, 0, len(cfg.StaticFields))
 		for field := range cfg.StaticFields {
 			staticFields = append(staticFields, field)
@@ -1150,6 +1154,7 @@ func normalizeAggregatorConfig(cfg *AggregatorConfig) error {
 		cfg.Current = nil
 		cfg.Min = nil
 		cfg.Max = nil
+		cfg.And = nil
 		cfg.StaticFields = nil
 		for _, field := range cfg.Fields {
 			if err := validateAggregatorField(field); err != nil {
@@ -1168,6 +1173,8 @@ func normalizeAggregatorConfig(cfg *AggregatorConfig) error {
 				cfg.Min = append(cfg.Min, field.Name)
 			case "max":
 				cfg.Max = append(cfg.Max, field.Name)
+			case "and":
+				cfg.And = append(cfg.And, field.Name)
 			case "static":
 				if cfg.StaticFields == nil {
 					cfg.StaticFields = make(map[string]any)
@@ -1245,7 +1252,7 @@ func parseAggregatorField(raw string) (AggregatorField, error) {
 
 func validateAggregatorField(field AggregatorField) error {
 	switch field.Role {
-	case "key", "sum", "first", "current", "min", "max", "static":
+	case "key", "sum", "first", "current", "min", "max", "and", "static":
 	default:
 		return fmt.Errorf("unsupported aggregator field role %q", field.Role)
 	}
@@ -1259,7 +1266,7 @@ func aggregatorNeedsState(cfg *AggregatorConfig) bool {
 	hasCurrent := false
 	for _, field := range cfg.Fields {
 		switch field.Role {
-		case "sum", "first", "min", "max":
+		case "sum", "first", "min", "max", "and":
 			return true
 		case "current":
 			hasCurrent = true

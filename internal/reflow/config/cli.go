@@ -946,7 +946,7 @@ func defaultGeneratedAggregator() AggregatorConfig {
 			{Role: "sum", Name: "bytes"},
 			{Role: "sum", Name: "packets"},
 			{Role: "key", Name: "proto"},
-			{Role: "current", Name: "tcp_flags"},
+			{Role: "and", Name: "tcp_flags"},
 			{Role: "key", Name: "src_port"},
 			{Role: "key", Name: "src_addr"},
 			{Role: "current", Name: "input_if"},
@@ -1095,6 +1095,7 @@ func makeAggregatorPassthrough(cfg *AggregatorConfig) {
 	cfg.First = nil
 	cfg.Min = nil
 	cfg.Max = nil
+	cfg.And = nil
 	if len(cfg.Fields) > 0 {
 		out := cfg.Fields[:0]
 		for _, field := range cfg.Fields {

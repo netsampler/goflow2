@@ -501,6 +501,51 @@ sink:
 	}
 }
 
+func TestLoadParsesAggregatorAndField(t *testing.T) {
+	dir := t.TempDir()
+
+	cfgPath := filepath.Join(dir, "reflow.yaml")
+	if err := os.WriteFile(cfgPath, []byte(`
+sources:
+  - network: udp
+    address: ":18081"
+    type: json
+
+processor:
+  type: builtin
+
+aggregators:
+  - periodic:
+      every_ms: 1000
+    fields:
+      - key:src_addr
+      - and:tcp_flags
+
+encoder:
+  type: json
+
+sink:
+  type: stdout
+`), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	cfg, err := Load(cfgPath)
+	if err != nil {
+		t.Fatalf("Load returned error: %v", err)
+	}
+	agg := cfg.Aggregators[0]
+	if agg.Passthrough {
+		t.Fatalf("expected and field to force aggregate mode")
+	}
+	if !aggregatorHasField(agg, "and", "tcp_flags") {
+		t.Fatalf("expected and:tcp_flags, got %#v", agg.Fields)
+	}
+	if len(agg.And) != 1 || agg.And[0] != "tcp_flags" {
+		t.Fatalf("expected And list to contain tcp_flags, got %#v", agg.And)
+	}
+}
+
 func TestLoadRejectsPlainAggregatorFieldRole(t *testing.T) {
 	dir := t.TempDir()
 
@@ -875,7 +920,7 @@ func TestGeneratedAggregateConfigUsesFieldDSL(t *testing.T) {
 	}{
 		{"key", "src_addr"},
 		{"sum", "bytes"},
-		{"current", "tcp_flags"},
+		{"and", "tcp_flags"},
 		{"current", "src_mac"},
 		{"current", "flow_direction"},
 		{"current", "agent_ipv6"},

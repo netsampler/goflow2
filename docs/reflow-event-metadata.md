@@ -168,11 +168,12 @@ role:name
 static:name:value
 ```
 
-`role` can be `key`, `sum`, `first`, `current`, `min`, `max`, or `static`.
+`role` can be `key`, `sum`, `first`, `current`, `min`, `max`, `and`, or `static`.
 `current` includes the field in pass-through schemas and keeps the latest value
-when stateful aggregation is active. IPFIX and NetFlow v9 templates for
-`src_addr` and `dst_addr` automatically use IPv4 or IPv6 information elements
-based on the event address family.
+when stateful aggregation is active. `and` bitwise-ANDs numeric mask fields
+such as `tcp_flags`. IPFIX and NetFlow v9 templates for `src_addr` and
+`dst_addr` automatically use IPv4 or IPv6 information elements based on the
+event address family.
 
 ```yaml
 aggregators:
@@ -183,6 +184,7 @@ aggregators:
       - current:tenant_id
       - sum:bytes
       - sum:packets
+      - and:tcp_flags
       - current:end_time_unix
       - static:exporter_name:edge-a
 ```
@@ -205,10 +207,11 @@ aggregators:
       - static:exporter_name:edge-a
 ```
 
-Legacy `key_fields`, `sum`, `first`, `current`, and `static_fields` lists still
-load, but they no longer receive hidden default aggregation fields. Omitting
-`sum` means the sum list is empty. An aggregator with only `key`, `current`, and
-`static` fields and no export trigger forwards matching events immediately.
+Legacy `key_fields`, `sum`, `first`, `current`, `min`, `max`, `and`, and
+`static_fields` lists still load, but they no longer receive hidden default
+aggregation fields. Omitting `sum` means the sum list is empty. An aggregator
+with only `key`, `current`, and `static` fields and no export trigger forwards
+matching events immediately.
 
 When a custom field needs IPFIX enterprise mapping, configure it under the
 encoder catalog or overrides instead:
