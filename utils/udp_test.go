@@ -4,8 +4,10 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"os"
 	"strconv"
 	"sync/atomic"
+	"syscall"
 	"testing"
 	"time"
 
@@ -16,13 +18,16 @@ import (
 func TestUDPReceiver(t *testing.T) {
 	addr := "::1"
 	port, err := getFreeUDPPort()
+	skipOnSocketPermissionError(t, err)
 	require.NoError(t, err)
 	t.Logf("starting UDP receiver on %s:%d\n", addr, port)
 
 	r, err := NewUDPReceiver(nil)
 	require.NoError(t, err)
 
-	require.NoError(t, r.Start(addr, port, nil))
+	err = r.Start(addr, port, nil)
+	skipOnSocketPermissionError(t, err)
+	require.NoError(t, err)
 	sendMessage := func(msg string) error {
 		conn, err := net.Dial("udp", net.JoinHostPort(addr, strconv.Itoa(port)))
 		if err != nil {
@@ -48,12 +53,15 @@ func TestUDPReceiver(t *testing.T) {
 func TestUDPClose(t *testing.T) {
 	addr := "::1"
 	port, err := getFreeUDPPort()
+	skipOnSocketPermissionError(t, err)
 	require.NoError(t, err)
 	t.Logf("starting UDP receiver on %s:%d\n", addr, port)
 
 	r, err := NewUDPReceiver(nil)
 	require.NoError(t, err)
-	require.NoError(t, r.Start(addr, port, nil))
+	err = r.Start(addr, port, nil)
+	skipOnSocketPermissionError(t, err)
+	require.NoError(t, err)
 	require.NoError(t, r.Stop())
 	require.NoError(t, r.Start(addr, port, nil))
 	require.Error(t, r.Start(addr, port, nil))
@@ -97,6 +105,7 @@ func TestUDPReceiverDrainOnStop(t *testing.T) {
 func TestUDPReceiverDecodeError(t *testing.T) {
 	addr := "::1"
 	port, err := getFreeUDPPort()
+	skipOnSocketPermissionError(t, err)
 	require.NoError(t, err)
 
 	r, err := NewUDPReceiver(nil)
@@ -116,7 +125,9 @@ func TestUDPReceiverDecodeError(t *testing.T) {
 		return wantErr
 	}
 
-	require.NoError(t, r.Start(addr, port, decodeFunc))
+	err = r.Start(addr, port, decodeFunc)
+	skipOnSocketPermissionError(t, err)
+	require.NoError(t, err)
 	defer func() {
 		require.NoError(t, r.Stop())
 	}()
@@ -149,4 +160,14 @@ func getFreeUDPPort() (int, error) {
 		return 0, fmt.Errorf("close udp listener: %w", err)
 	}
 	return port, nil
+}
+
+func skipOnSocketPermissionError(t *testing.T, err error) {
+	t.Helper()
+	if err == nil {
+		return
+	}
+	if errors.Is(err, os.ErrPermission) || errors.Is(err, syscall.EACCES) || errors.Is(err, syscall.EPERM) {
+		t.Skipf("skipping UDP socket test: %v", err)
+	}
 }

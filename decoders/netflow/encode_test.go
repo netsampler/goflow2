@@ -2,6 +2,7 @@ package netflow
 
 import (
 	"bytes"
+	"encoding/binary"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -216,4 +217,144 @@ func TestEncodeDecodeIPFIX(t *testing.T) {
 	assert.True(t, ok)
 	assert.Equal(t, []byte{0, 0, 3, 21}, optionsDataSet.Records[0].ScopesValues[0].Value)
 	assert.Equal(t, []byte("abcde"), optionsDataSet.Records[0].OptionsValues[0].Value)
+}
+
+func TestEncodeIPFIXLengthsUseEmittedVariableLengthSection(t *testing.T) {
+	section := bytes.Repeat([]byte{0xab}, 88)
+	packet := IPFIXPacket{
+		Version:             10,
+		Length:              856,
+		ExportTime:          123,
+		SequenceNumber:      456,
+		ObservationDomainId: 789,
+		FlowSets: []interface{}{
+			TemplateFlowSet{
+				FlowSetHeader: FlowSetHeader{Id: 2},
+				Records: []TemplateRecord{
+					{
+						TemplateId: 256,
+						Fields: []Field{
+							{Type: IPFIX_FIELD_octetDeltaCount, Length: 8},
+							{Type: IPFIX_FIELD_dataLinkFrameSize, Length: 2},
+							{Type: IPFIX_FIELD_dataLinkFrameSection, Length: 0xffff},
+						},
+					},
+				},
+			},
+			DataFlowSet{
+				FlowSetHeader: FlowSetHeader{Id: 256},
+				Records: []DataRecord{
+					{
+						Values: []DataField{
+							{Type: IPFIX_FIELD_octetDeltaCount, Value: []byte{0, 0, 0, 0, 0, 0, 0, 1}},
+							{Type: IPFIX_FIELD_dataLinkFrameSize, Value: []byte{0, 0x60}},
+							{Type: IPFIX_FIELD_dataLinkFrameSection, Value: section},
+						},
+					},
+					{
+						Values: []DataField{
+							{Type: IPFIX_FIELD_octetDeltaCount, Value: []byte{0, 0, 0, 0, 0, 0, 0, 2}},
+							{Type: IPFIX_FIELD_dataLinkFrameSize, Value: []byte{0, 0x60}},
+							{Type: IPFIX_FIELD_dataLinkFrameSection, Value: section},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	encoded, err := EncodeMessage(&packet)
+	assert.NoError(t, err)
+	assert.Equal(t, len(encoded), int(binary.BigEndian.Uint16(encoded[2:4])))
+
+	offset := ipfixHeaderLen
+	templateSetLength := int(binary.BigEndian.Uint16(encoded[offset+2 : offset+4]))
+	assert.Equal(t, offset+templateSetLength, nextSetOffset(t, encoded, offset))
+	offset += templateSetLength
+
+	dataSetLength := int(binary.BigEndian.Uint16(encoded[offset+2 : offset+4]))
+	recordLength := 8 + 2 + 1 + len(section)
+	padding := (4 - ((flowSetHeaderLen + recordLength*2) % 4)) % 4
+	assert.Equal(t, flowSetHeaderLen+recordLength*2+padding, dataSetLength)
+	assert.Equal(t, len(encoded), offset+dataSetLength)
+
+	recordOffset := offset + flowSetHeaderLen
+	assert.Equal(t, byte(0x58), encoded[recordOffset+8+2])
+	assert.Equal(t, section, encoded[recordOffset+8+2+1:recordOffset+recordLength])
+
+	recordOffset += recordLength
+	assert.Equal(t, byte(0x58), encoded[recordOffset+8+2])
+	assert.Equal(t, section, encoded[recordOffset+8+2+1:recordOffset+recordLength])
+}
+
+func TestEncodeIPFIXPayloadAggregateFrameSectionBoundary(t *testing.T) {
+	record := func(frameSize uint16, section []byte) DataRecord {
+		fixed := make([]byte, 99)
+		return DataRecord{
+			Values: []DataField{
+				{Type: IPFIX_FIELD_dataLinkFrameSize, Length: 2, Value: []byte{byte(frameSize >> 8), byte(frameSize)}},
+				{Type: IPFIX_FIELD_octetTotalCount, Length: uint16(len(fixed)), Value: fixed},
+				{Type: IPFIX_FIELD_dataLinkFrameSection, Length: 0xffff, Value: section},
+			},
+		}
+	}
+	packet := IPFIXPacket{
+		Version:             10,
+		Length:              0x0408,
+		ExportTime:          123,
+		SequenceNumber:      456,
+		ObservationDomainId: 789,
+		FlowSets: []interface{}{
+			DataFlowSet{
+				FlowSetHeader: FlowSetHeader{Id: 256},
+				Records: []DataRecord{
+					record(74, bytes.Repeat([]byte{0xaa}, 74)),
+					record(96, bytes.Repeat([]byte{0xbb}, 96)),
+					record(96, bytes.Repeat([]byte{0xcc}, 88)),
+				},
+			},
+			DataFlowSet{
+				FlowSetHeader: FlowSetHeader{Id: 257},
+				Records: []DataRecord{
+					{
+						Values: []DataField{
+							{Type: IPFIX_FIELD_dataLinkFrameSection, Length: 436, Value: bytes.Repeat([]byte{0xdd}, 436)},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	encoded, err := EncodeMessage(&packet)
+	assert.NoError(t, err)
+	assert.Equal(t, 0x0400, int(binary.BigEndian.Uint16(encoded[2:4])))
+	assert.Equal(t, 1024, len(encoded))
+
+	set256Offset := ipfixHeaderLen
+	assert.Equal(t, 256, int(binary.BigEndian.Uint16(encoded[set256Offset:set256Offset+2])))
+	assert.Equal(t, 0x0238, int(binary.BigEndian.Uint16(encoded[set256Offset+2:set256Offset+4])))
+	record3Offset := set256Offset + flowSetHeaderLen + (101 + 1 + 74) + (101 + 1 + 96)
+	assert.Equal(t, byte(0x58), encoded[record3Offset+101])
+
+	set257Offset := set256Offset + int(binary.BigEndian.Uint16(encoded[set256Offset+2:set256Offset+4]))
+	assert.Equal(t, 584, set257Offset)
+	assert.Equal(t, 257, int(binary.BigEndian.Uint16(encoded[set257Offset:set257Offset+2])))
+	assert.Equal(t, 0x01b8, int(binary.BigEndian.Uint16(encoded[set257Offset+2:set257Offset+4])))
+	assert.Equal(t, len(encoded), set257Offset+int(binary.BigEndian.Uint16(encoded[set257Offset+2:set257Offset+4])))
+}
+
+func nextSetOffset(t *testing.T, encoded []byte, offset int) int {
+	t.Helper()
+	if offset+flowSetHeaderLen > len(encoded) {
+		t.Fatalf("set header at offset %d exceeds message length %d", offset, len(encoded))
+	}
+	length := int(binary.BigEndian.Uint16(encoded[offset+2 : offset+4]))
+	if length < flowSetHeaderLen {
+		t.Fatalf("set at offset %d has invalid length %d", offset, length)
+	}
+	if offset+length > len(encoded) {
+		t.Fatalf("set at offset %d length %d exceeds message length %d", offset, length, len(encoded))
+	}
+	return offset + length
 }
