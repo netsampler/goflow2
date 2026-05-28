@@ -170,6 +170,25 @@ func TestSFlowDecodeDropExtendedACL(t *testing.T) {
 	assert.Equal(t, ExtendedACL{Number: 42, Name: "foo!", Direction: 2}, sample.Records[0].Data)
 }
 
+func TestSFlowDecodeSampledEthernet(t *testing.T) {
+	payload := bytes.NewBuffer(nil)
+	payload.Write([]byte{0x00, 0x00, 0x05, 0xdc})
+	payload.Write([]byte{0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff, 0x00, 0x00})
+	payload.Write([]byte{0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x00, 0x00})
+	payload.Write([]byte{0x00, 0x00, 0x08, 0x00})
+
+	flowRecord, err := DecodeFlowRecord(&RecordHeader{DataFormat: FLOW_TYPE_ETH}, payload)
+	assert.NoError(t, err)
+
+	eth, ok := flowRecord.Data.(SampledEthernet)
+	assert.True(t, ok)
+	assert.Equal(t, uint32(1500), eth.Length)
+	assert.Equal(t, []byte{0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff}, []byte(eth.SrcMac))
+	assert.Equal(t, []byte{0x11, 0x22, 0x33, 0x44, 0x55, 0x66}, []byte(eth.DstMac))
+	assert.Equal(t, uint32(0x0800), eth.EthType)
+	assert.Equal(t, 0, payload.Len())
+}
+
 func TestSFlowDecodeDropExtendedFunction(t *testing.T) {
 	data := []byte{
 		0x00, 0x00, 0x00, 0x05, 0x00, 0x00, 0x00, 0x01, 0xc0, 0xa8, 0x77, 0xb8, 0x00, 0x01, 0x86, 0xa0,
