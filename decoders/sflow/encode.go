@@ -353,6 +353,9 @@ func encodeFlowRecord(buf *bytes.Buffer, record *FlowRecord) error {
 		if _, err := payload.Write(data.HeaderData); err != nil {
 			return err
 		}
+		if err := writeXDRPadding(payload, data.OriginalLength); err != nil {
+			return err
+		}
 	case *SampledHeader:
 		if dataFormat == 0 {
 			dataFormat = FLOW_TYPE_RAW
@@ -370,6 +373,9 @@ func encodeFlowRecord(buf *bytes.Buffer, record *FlowRecord) error {
 			return err
 		}
 		if _, err := payload.Write(data.HeaderData); err != nil {
+			return err
+		}
+		if err := writeXDRPadding(payload, data.OriginalLength); err != nil {
 			return err
 		}
 	case SampledEthernet:
@@ -569,7 +575,7 @@ func encodeFlowRecord(buf *bytes.Buffer, record *FlowRecord) error {
 		if err := utils.WriteU32(payload, data.Number); err != nil {
 			return err
 		}
-		if err := utils.WriteString(payload, data.Name); err != nil {
+		if err := writeXDRString(payload, data.Name); err != nil {
 			return err
 		}
 		if err := utils.WriteU32(payload, data.Direction); err != nil {
@@ -582,7 +588,7 @@ func encodeFlowRecord(buf *bytes.Buffer, record *FlowRecord) error {
 		if err := utils.WriteU32(payload, data.Number); err != nil {
 			return err
 		}
-		if err := utils.WriteString(payload, data.Name); err != nil {
+		if err := writeXDRString(payload, data.Name); err != nil {
 			return err
 		}
 		if err := utils.WriteU32(payload, data.Direction); err != nil {
@@ -592,14 +598,14 @@ func encodeFlowRecord(buf *bytes.Buffer, record *FlowRecord) error {
 		if dataFormat == 0 {
 			dataFormat = FLOW_TYPE_EXT_FUNCTION
 		}
-		if err := utils.WriteString(payload, data.Symbol); err != nil {
+		if err := writeXDRString(payload, data.Symbol); err != nil {
 			return err
 		}
 	case *ExtendedFunction:
 		if dataFormat == 0 {
 			dataFormat = FLOW_TYPE_EXT_FUNCTION
 		}
-		if err := utils.WriteString(payload, data.Symbol); err != nil {
+		if err := writeXDRString(payload, data.Symbol); err != nil {
 			return err
 		}
 	case RawRecord:

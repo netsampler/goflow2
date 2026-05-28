@@ -10,16 +10,16 @@ import (
 
 func TestEncodeDecodeSFlow(t *testing.T) {
 	packet := Packet{
-		Version:   5,
-		IPVersion: 1,
-		AgentIP:   utils.IPAddress{192, 0, 2, 1},
+		Version:        5,
+		IPVersion:      1,
+		AgentIP:        utils.IPAddress{192, 0, 2, 1},
 		SubAgentId:     1,
 		SequenceNumber: 2,
 		Uptime:         3,
 		Samples: []interface{}{
 			FlowSample{
 				Header: SampleHeader{
-					Format:              SAMPLE_FORMAT_FLOW,
+					Format:               SAMPLE_FORMAT_FLOW,
 					SampleSequenceNumber: 42,
 					SourceIdType:         0,
 					SourceIdValue:        7,
@@ -39,7 +39,7 @@ func TestEncodeDecodeSFlow(t *testing.T) {
 							Protocol:       1,
 							FrameLength:    64,
 							Stripped:       0,
-							OriginalLength: 64,
+							OriginalLength: 4,
 							HeaderData:     []byte{0xde, 0xad, 0xbe, 0xef},
 						},
 					},
