@@ -23,6 +23,7 @@ fields:
   mpls_label_stack_section_2: 71:3:bytes # mplsLabelStackSection2
   mpls_label_stack_section_3: 72:3:bytes # mplsLabelStackSection3
   dst_mac: 80:6:mac # destinationMacAddress
+  if_name: 82:65535:str # interfaceName
   agent_ip: 130:4:ip4 # exporterIPv4Address
   agent_ipv6: 131:16:ip6 # exporterIPv6Address
   drops: 133:8:u64:delta # droppedPacketDeltaCount

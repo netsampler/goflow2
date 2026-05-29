@@ -67,6 +67,9 @@ func TestTemplateAndOptionsEventsAreEmitted(t *testing.T) {
 	if templateEvents[1].Fields["flow_type"] != "ipfix_options_template" {
 		t.Fatalf("expected second template event flow_type=ipfix_options_template, got %#v", templateEvents[1].Fields["flow_type"])
 	}
+	if got := templateEvents[1].Fields["tflow_record_type"]; got != "options" {
+		t.Fatalf("expected options template tflow_record_type=options, got %#v", got)
+	}
 
 	optionsEvents := d.optionsEventsFromIPFIX(base, packet, []netflow.OptionsDataFlowSet{
 		{
@@ -84,6 +87,9 @@ func TestTemplateAndOptionsEventsAreEmitted(t *testing.T) {
 	}
 	if optionsEvents[0].Fields["record_kind"] != "options_data" {
 		t.Fatalf("expected record_kind=options_data, got %#v", optionsEvents[0].Fields["record_kind"])
+	}
+	if got := optionsEvents[0].Fields["tflow_record_type"]; got != "options" {
+		t.Fatalf("expected options data tflow_record_type=options, got %#v", got)
 	}
 	if got := optionsEvents[0].Fields["sampling_rate"]; got != uint32(100) {
 		t.Fatalf("expected sampling_rate=100, got %#v", got)
@@ -157,6 +163,63 @@ func TestMapDataFieldsUsesNetFlowV9FieldIDs(t *testing.T) {
 	}
 	if fields["start_time_unix"] != int64(99000) {
 		t.Fatalf("expected uptime-relative FIRST_SWITCHED conversion, got %#v", fields["start_time_unix"])
+	}
+}
+
+func TestOptionsEventsUseCatalogForScopesAndOptions(t *testing.T) {
+	d := &builtIn{catalog: newDecodeCatalog(map[string]config.IPFIXFieldDefinition{
+		"packets":  {ID: 2, Length: 8, Type: "unsigned64"},
+		"if_index": {ID: 10, Length: 4, Type: "unsigned32", NetFlowV9ScopeID: 2},
+		"if_name":  {ID: 82, Length: 0xffff, Type: "string"},
+	})}
+	base := &event.Event{
+		ReceivedAt: time.Unix(1, 0),
+		Source:     event.SourceMetadata{Type: "flow"},
+	}
+
+	ipfixEvents := d.optionsEventsFromIPFIX(base, &netflow.IPFIXPacket{Version: 10}, []netflow.OptionsDataFlowSet{
+		{
+			FlowSetHeader: netflow.FlowSetHeader{Id: 1300},
+			Records: []netflow.OptionsDataRecord{
+				{
+					ScopesValues:  []netflow.DataField{{Type: 10, Value: []byte{0, 0, 0, 3}}},
+					OptionsValues: []netflow.DataField{{Type: 82, Value: []byte("eth0")}},
+				},
+			},
+		},
+	})
+	if len(ipfixEvents) != 1 {
+		t.Fatalf("expected one IPFIX options event, got %d", len(ipfixEvents))
+	}
+	if ipfixEvents[0].Fields["if_index"] != uint32(3) || ipfixEvents[0].Fields["if_name"] != "eth0" {
+		t.Fatalf("expected IPFIX options catalog fields, got %#v", ipfixEvents[0].Fields)
+	}
+	if got := ipfixEvents[0].Fields["tflow_record_type"]; got != "options" {
+		t.Fatalf("expected IPFIX options tflow_record_type=options, got %#v", got)
+	}
+
+	v9Events := d.optionsEventsFromV9(base, &netflow.NFv9Packet{Version: 9}, []netflow.OptionsDataFlowSet{
+		{
+			FlowSetHeader: netflow.FlowSetHeader{Id: 1300},
+			Records: []netflow.OptionsDataRecord{
+				{
+					ScopesValues:  []netflow.DataField{{Type: 2, Value: []byte{0, 0, 0, 4}}},
+					OptionsValues: []netflow.DataField{{Type: 82, Value: []byte("eth1")}},
+				},
+			},
+		},
+	})
+	if len(v9Events) != 1 {
+		t.Fatalf("expected one NetFlow v9 options event, got %d", len(v9Events))
+	}
+	if v9Events[0].Fields["if_index"] != uint32(4) || v9Events[0].Fields["if_name"] != "eth1" {
+		t.Fatalf("expected NetFlow v9 options catalog fields, got %#v", v9Events[0].Fields)
+	}
+	if got := v9Events[0].Fields["tflow_record_type"]; got != "options" {
+		t.Fatalf("expected NetFlow v9 options tflow_record_type=options, got %#v", got)
+	}
+	if _, ok := v9Events[0].Fields["packets"]; ok {
+		t.Fatalf("expected NetFlow v9 scope id 2 not to decode as packets, got %#v", v9Events[0].Fields)
 	}
 }
 

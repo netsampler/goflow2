@@ -190,6 +190,10 @@ sink:
 	if headerData.ID != 315 || headerData.Length != 65535 || headerData.Type != "bytes" {
 		t.Fatalf("expected header_data variable dataLinkFrameSection field from embedded catalog, got %#v", headerData)
 	}
+	ifName := cfg.Encoder.TemplatedFlow.Data.Catalog["if_name"]
+	if ifName.ID != 82 || ifName.Length != 65535 || ifName.Type != "string" {
+		t.Fatalf("expected embedded if_name interfaceName field, got %#v", ifName)
+	}
 	if cfg.Encoder.TemplatedFlow.Data.Catalog["custom_counter"].ID != 2000 {
 		t.Fatalf("expected override to merge over embedded catalog, got %#v", cfg.Encoder.TemplatedFlow.Data.Catalog["custom_counter"])
 	}
@@ -244,6 +248,11 @@ fields:
     enterprise_scoped: true
     length: 8
     type: unsigned64
+  if_index:
+    id: 10
+    length: 4
+    type: unsigned32
+    netflow_v9_scope_id: 2
 `), 0o644); err != nil {
 		t.Fatalf("write fields: %v", err)
 	}
@@ -303,6 +312,10 @@ sink:
 	shared := cfg.TemplatedFields.Catalog["custom_counter"]
 	if shared.ID != 1001 || shared.PEN != 32473 {
 		t.Fatalf("expected top-level override to apply to shared catalog, got %#v", shared)
+	}
+	sharedScope := cfg.TemplatedFields.Catalog["if_index"]
+	if sharedScope.ID != 10 || sharedScope.NetFlowV9ScopeID != 2 {
+		t.Fatalf("expected netflow_v9_scope_id to load in shared catalog, got %#v", sharedScope)
 	}
 	if _, ok := cfg.TemplatedFields.Catalog["export_only"]; ok {
 		t.Fatalf("expected encoder-only override not to change shared decode catalog")

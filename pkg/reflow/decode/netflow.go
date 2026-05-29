@@ -220,6 +220,7 @@ func (d *builtIn) templateEventsFromV9(base *event.Event, packet *netflow.NFv9Pa
 			fields["flow_type"] = "netflowv9_options_template"
 			fields["flow_version"] = packet.Version
 			fields["record_kind"] = "options_template"
+			fields["tflow_record_type"] = "options"
 			fields["template_id"] = uint32(record.TemplateId)
 			fields["scope_field_count"] = uint32(len(record.Scopes))
 			fields["option_field_count"] = uint32(len(record.Options))
@@ -253,6 +254,7 @@ func (d *builtIn) templateEventsFromIPFIX(base *event.Event, packet *netflow.IPF
 			fields["flow_type"] = "ipfix_options_template"
 			fields["flow_version"] = packet.Version
 			fields["record_kind"] = "options_template"
+			fields["tflow_record_type"] = "options"
 			fields["template_id"] = uint32(record.TemplateId)
 			fields["scope_field_count"] = uint32(record.ScopeFieldCount)
 			fields["option_field_count"] = uint32(int(record.FieldCount) - int(record.ScopeFieldCount))
@@ -265,16 +267,16 @@ func (d *builtIn) templateEventsFromIPFIX(base *event.Event, packet *netflow.IPF
 
 // optionsEventsFromV9 wraps NetFlow v9 options records in runtime events.
 func (d *builtIn) optionsEventsFromV9(base *event.Event, packet *netflow.NFv9Packet, optionsSets []netflow.OptionsDataFlowSet) []*event.Event {
-	return d.optionsEvents(base, "netflowv9_options_data", packet.Version, optionsSets)
+	return d.optionsEvents(base, "netflowv9_options_data", packet.Version, optionsSets, true)
 }
 
 // optionsEventsFromIPFIX wraps IPFIX options records in runtime events.
 func (d *builtIn) optionsEventsFromIPFIX(base *event.Event, packet *netflow.IPFIXPacket, optionsSets []netflow.OptionsDataFlowSet) []*event.Event {
-	return d.optionsEvents(base, "ipfix_options_data", packet.Version, optionsSets)
+	return d.optionsEvents(base, "ipfix_options_data", packet.Version, optionsSets, false)
 }
 
 // optionsEvents shares the event-building logic for NetFlow/IPFIX options data.
-func (d *builtIn) optionsEvents(base *event.Event, flowType string, version uint16, optionsSets []netflow.OptionsDataFlowSet) []*event.Event {
+func (d *builtIn) optionsEvents(base *event.Event, flowType string, version uint16, optionsSets []netflow.OptionsDataFlowSet, netflowV9 bool) []*event.Event {
 	var out []*event.Event
 	for _, set := range optionsSets {
 		for _, record := range set.Records {
@@ -283,11 +285,19 @@ func (d *builtIn) optionsEvents(base *event.Event, flowType string, version uint
 			fields["flow_type"] = flowType
 			fields["flow_version"] = version
 			fields["record_kind"] = "options_data"
+			fields["tflow_record_type"] = "options"
 			fields["template_id"] = uint32(set.Id)
+			d.mapOptionsFields(fields, record.ScopesValues, netflowV9, true, "scope")
 			for _, dataField := range record.OptionsValues {
+				if catalogField, ok := d.catalog.lookupOptions(dataField, netflowV9, false); ok {
+					applyCatalogDataField(fields, dataField, catalogField, 0, 0, netflowV9)
+					continue
+				}
 				switch dataField.Type {
 				case 34, 50, 305:
 					fields["sampling_rate"] = decodeUint32(dataField.Value)
+				default:
+					fields[fmt.Sprintf("option_%d", dataField.Type)] = decodeOptionFallback(dataField.Value)
 				}
 			}
 			item.Payload = record
@@ -295,6 +305,25 @@ func (d *builtIn) optionsEvents(base *event.Event, flowType string, version uint
 		}
 	}
 	return out
+}
+
+func (d *builtIn) mapOptionsFields(fields map[string]any, values []netflow.DataField, netflowV9 bool, scope bool, prefix string) {
+	for _, dataField := range values {
+		if catalogField, ok := d.catalog.lookupOptions(dataField, netflowV9, scope); ok {
+			applyCatalogDataField(fields, dataField, catalogField, 0, 0, netflowV9)
+			continue
+		}
+		fields[fmt.Sprintf("%s_%d", prefix, dataField.Type)] = decodeOptionFallback(dataField.Value)
+	}
+}
+
+func decodeOptionFallback(val any) any {
+	switch v := val.(type) {
+	case []byte:
+		return cloneRawBytes(v)
+	default:
+		return v
+	}
 }
 
 // mapDataFields keeps the first cut of canonical field mapping close to the
