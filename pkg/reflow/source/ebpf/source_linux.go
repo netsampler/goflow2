@@ -4,9 +4,15 @@ package ebpf
 
 import (
 	"context"
+	"encoding/binary"
+	"errors"
 	"fmt"
 	"net"
+	"os"
+	"runtime"
+	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 	"unsafe"
 
@@ -28,37 +34,47 @@ const (
 	packetUser      = 6
 	packetKernel    = 7
 
-	bpfProgLoad         = 5
-	bpfMapCreate        = 0
-	bpfMapLookupElem    = 1
-	bpfMapTypeArray     = 2
-	bpfProgTypeSocket   = 1
-	bpfPseudoMapFD      = 1
-	bpfLD               = 0x00
-	bpfLDX              = 0x01
-	bpfST               = 0x02
-	bpfSTX              = 0x03
-	bpfALU64            = 0x07
-	bpfMov              = 0xb0
-	bpfAdd              = 0x00
-	bpfK                = 0x00
-	bpfX                = 0x08
-	bpfDW               = 0x18
-	bpfW                = 0x00
-	bpfMem              = 0x60
-	bpfImm              = 0x00
-	bpfExit             = 0x90
-	bpfCall             = 0x80
-	bpfJEQ              = 0x10
-	bpfJMP              = 0x05
-	bpfReg0             = 0
-	bpfReg1             = 1
-	bpfReg2             = 2
-	bpfReg6             = 6
-	bpfReg10            = 10
-	bpfFuncMapLookup    = 1
-	bpfLogBufferSize    = 16 * 1024
-	defaultPollInterval = 500 * time.Millisecond
+	bpfProgLoad          = 5
+	bpfMapCreate         = 0
+	bpfMapUpdateElem     = 2
+	bpfMapTypePerfEvent  = 4
+	bpfProgTypeSocket    = 1
+	bpfPseudoMapFD       = 1
+	bpfLD                = 0x00
+	bpfLDX               = 0x01
+	bpfST                = 0x02
+	bpfSTX               = 0x03
+	bpfALU64             = 0x07
+	bpfMov               = 0xb0
+	bpfAdd               = 0x00
+	bpfOr                = 0x40
+	bpfLSh               = 0x60
+	bpfK                 = 0x00
+	bpfX                 = 0x08
+	bpfDW                = 0x18
+	bpfW                 = 0x00
+	bpfMem               = 0x60
+	bpfImm               = 0x00
+	bpfExit              = 0x90
+	bpfCall              = 0x80
+	bpfJEQ               = 0x10
+	bpfJLE               = 0xb0
+	bpfJMP               = 0x05
+	bpfReg0              = 0
+	bpfReg1              = 1
+	bpfReg2              = 2
+	bpfReg3              = 3
+	bpfReg4              = 4
+	bpfReg5              = 5
+	bpfReg6              = 6
+	bpfReg7              = 7
+	bpfReg10             = 10
+	bpfFuncPerfOutput    = 25
+	bpfLogBufferSize     = 16 * 1024
+	defaultPollInterval  = 500 * time.Millisecond
+	defaultPerfDataPages = 8
+
+	perfRecordSample = 9
 
 	skbLenOffset            = 0
 	skbPacketTypeOffset     = 4
@@ -128,11 +144,11 @@ type bpfMapElemAttr struct {
 	Pad   uint32
 	Key   uint64
 	Value uint64
+	Flags uint64
 }
 
 type socketFilterHandles struct {
-	progFD        int
-	metadataMapFD int
+	progFD int
 }
 
 type bpfProgLoadAttr struct {
@@ -201,17 +217,17 @@ func New(cfg config.SourceConfig) (*Source, error) {
 		interfaceNames: map[uint32]string{
 			uint32(iface.Index): iface.Name,
 		},
-		fd:            -1,
-		progFD:        -1,
-		metadataMapFD: -1,
-		conntrack:     conntrack,
+		fd:         -1,
+		progFD:     -1,
+		eventMapFD: -1,
+		conntrack:  conntrack,
 	}, nil
 }
 
 // Start captures raw Ethernet frames from an AF_PACKET socket with a small eBPF
-// socket filter attached. The filter returns the configured snaplen, so packet
-// selection stays in-kernel while ReFlow keeps the same bytes-event path used by
-// pcap_live.
+// socket filter attached. The filter emits one perf-buffer record containing
+// both SKB metadata and packet bytes, so user space never has to pair a packet
+// read with a separate metadata map lookup.
 func (s *Source) Start(ctx context.Context, emit func(*event.Event) error) error {
 	fd, err := unix.Socket(unix.AF_PACKET, unix.SOCK_RAW|unix.SOCK_CLOEXEC, int(htons(ethPAll)))
 	if err != nil {
@@ -233,14 +249,22 @@ func (s *Source) Start(ctx context.Context, emit func(*event.Event) error) error
 		return fmt.Errorf("set ebpf packet socket timeout: %w", err)
 	}
 
-	filter, err := attachSocketFilter(fd, s.cfg.SnapLen)
+	eventMapFD, perfEvents, err := createPerfEventOutput(defaultPerfDataPages)
+	if err != nil {
+		return fmt.Errorf("create ebpf perf output: %w", err)
+	}
+	s.mu.Lock()
+	s.eventMapFD = eventMapFD
+	s.perfEvents = perfEvents
+	s.mu.Unlock()
+
+	filter, err := attachSocketFilter(fd, s.cfg.SnapLen, eventMapFD)
 	if err != nil {
 		return fmt.Errorf("attach packet socket filter: %w", err)
 	}
-	if filter.progFD >= 0 || filter.metadataMapFD >= 0 {
+	if filter.progFD >= 0 {
 		s.mu.Lock()
 		s.progFD = filter.progFD
-		s.metadataMapFD = filter.metadataMapFD
 		s.mu.Unlock()
 	}
 
@@ -249,47 +273,7 @@ func (s *Source) Start(ctx context.Context, emit func(*event.Event) error) error
 		_ = s.Close()
 	}()
 
-	buf := make([]byte, s.cfg.SnapLen)
-	for {
-		n, from, err := unix.Recvfrom(fd, buf, 0)
-		if err != nil {
-			if err == unix.EAGAIN || err == unix.EWOULDBLOCK || err == unix.EINTR {
-				if ctx.Err() != nil {
-					return nil
-				}
-				continue
-			}
-			if ctx.Err() != nil {
-				return nil
-			}
-			return fmt.Errorf("read ebpf packet: %w", err)
-		}
-		if n <= 0 {
-			continue
-		}
-		meta := s.packetMetadata(from)
-		if !allowDirection(s.cfg.EBPF.DirectionFilter(), meta.direction) {
-			continue
-		}
-		s.seenCount++
-		if !s.shouldEmitCurrentPacket() {
-			continue
-		}
-		if s.cfg.EBPF.SKBMetadataEnabled() {
-			if skb, ok := s.readSKBMetadata(); ok {
-				meta = s.mergeSKBMetadata(meta, skb)
-			}
-		}
-		if s.conntrack != nil {
-			if ct, ok := s.conntrack.Lookup(buf[:n]); ok {
-				meta.conntrack = ct
-				meta.hasConntrack = true
-			}
-		}
-		if err := emit(s.packetEvent(buf[:n], meta)); err != nil {
-			return err
-		}
-	}
+	return s.pollPerfEvents(ctx, perfEvents, emit)
 }
 
 func (s *Source) packetEvent(data []byte, meta packetMetadata) *event.Event {
@@ -334,6 +318,133 @@ func (s *Source) packetEvent(data []byte, meta packetMetadata) *event.Event {
 		addTupleFields(evt.Internal, "conntrack_reply", meta.conntrack.reply)
 	}
 	return evt
+}
+
+func (s *Source) pollPerfEvents(ctx context.Context, readers []*perfEventReader, emit func(*event.Event) error) error {
+	pollFDs := make([]unix.PollFd, 0, len(readers))
+	for _, reader := range readers {
+		pollFDs = append(pollFDs, unix.PollFd{Fd: int32(reader.fd), Events: unix.POLLIN})
+	}
+	timeout := int(defaultPollInterval / time.Millisecond)
+	for {
+		if ctx.Err() != nil {
+			return nil
+		}
+		_, err := unix.Poll(pollFDs, timeout)
+		if err != nil {
+			if err == unix.EINTR {
+				continue
+			}
+			if ctx.Err() != nil {
+				return nil
+			}
+			return fmt.Errorf("poll ebpf perf events: %w", err)
+		}
+		for i := range readers {
+			if pollFDs[i].Revents&(unix.POLLERR|unix.POLLHUP|unix.POLLNVAL) != 0 {
+				return fmt.Errorf("poll ebpf perf event cpu %d: revents=%#x", readers[i].cpu, pollFDs[i].Revents)
+			}
+			if err := readers[i].readSamples(func(sample []byte) error {
+				return s.emitPerfSample(sample, emit)
+			}); err != nil {
+				return err
+			}
+		}
+	}
+}
+
+func (s *Source) emitPerfSample(sample []byte, emit func(*event.Event) error) error {
+	skb, packet, err := parsePerfPacketSample(sample)
+	if err != nil {
+		return err
+	}
+	meta := s.packetMetadataFromSKB(skb)
+	if !allowDirection(s.cfg.EBPF.DirectionFilter(), meta.direction) {
+		return nil
+	}
+	s.seenCount++
+	if !s.shouldEmitCurrentPacket() {
+		return nil
+	}
+	if s.conntrack != nil {
+		if ct, ok := s.conntrack.Lookup(packet); ok {
+			meta.conntrack = ct
+			meta.hasConntrack = true
+		}
+	}
+	return emit(s.packetEvent(packet, meta))
+}
+
+func parsePerfPacketSample(sample []byte) (skbMetadata, []byte, error) {
+	metadataSize := int(unsafe.Sizeof(skbMetadata{}))
+	if len(sample) < metadataSize {
+		return skbMetadata{}, nil, fmt.Errorf("short ebpf packet event: got %d bytes, need at least %d", len(sample), metadataSize)
+	}
+	meta := skbMetadata{
+		Len:            binary.LittleEndian.Uint32(sample[0:4]),
+		PacketType:     binary.LittleEndian.Uint32(sample[4:8]),
+		Mark:           binary.LittleEndian.Uint32(sample[8:12]),
+		QueueMapping:   binary.LittleEndian.Uint32(sample[12:16]),
+		Protocol:       binary.LittleEndian.Uint32(sample[16:20]),
+		Priority:       binary.LittleEndian.Uint32(sample[20:24]),
+		IngressIfindex: binary.LittleEndian.Uint32(sample[24:28]),
+		Ifindex:        binary.LittleEndian.Uint32(sample[28:32]),
+		TCIndex:        binary.LittleEndian.Uint32(sample[32:36]),
+		Hash:           binary.LittleEndian.Uint32(sample[36:40]),
+		TCClassID:      binary.LittleEndian.Uint32(sample[40:44]),
+	}
+	packet := append([]byte(nil), sample[metadataSize:]...)
+	return meta, packet, nil
+}
+
+func (s *Source) packetMetadataFromSKB(skb skbMetadata) packetMetadata {
+	packetType := uint8(skb.PacketType)
+	meta := packetMetadata{
+		packetType: packetTypeName(packetType),
+		direction:  "unknown",
+	}
+	switch packetType {
+	case packetOutgoing:
+		meta.direction = "out"
+	case packetHost, packetBroadcast, packetMulticast, packetOtherHost:
+		meta.direction = "in"
+	case packetLoopback:
+		meta.direction = "loopback"
+	}
+	if s.cfg.EBPF.SKBMetadataEnabled() {
+		meta = s.mergeSKBMetadata(meta, skb)
+	}
+	switch meta.direction {
+	case "in":
+		if meta.inputIf == 0 {
+			meta.inputIf = firstNonZero(skb.IngressIfindex, skb.Ifindex, uint32(s.captureInterfaceIndex))
+			meta.inputInterface = s.interfaceName(meta.inputIf)
+		}
+	case "out":
+		if meta.outputIf == 0 {
+			meta.outputIf = firstNonZero(skb.Ifindex, uint32(s.captureInterfaceIndex))
+			meta.outputInterface = s.interfaceName(meta.outputIf)
+		}
+	case "loopback":
+		if meta.inputIf == 0 {
+			meta.inputIf = firstNonZero(skb.IngressIfindex, skb.Ifindex, uint32(s.captureInterfaceIndex))
+			meta.inputInterface = s.interfaceName(meta.inputIf)
+		}
+		if meta.outputIf == 0 {
+			meta.outputIf = firstNonZero(skb.Ifindex, uint32(s.captureInterfaceIndex))
+			meta.outputInterface = s.interfaceName(meta.outputIf)
+		}
+	}
+	return meta
+}
+
+func firstNonZero(values ...uint32) uint32 {
+	for _, value := range values {
+		if value != 0 {
+			return value
+		}
+	}
+	return 0
 }
 
 func (s *Source) packetMetadata(from unix.Sockaddr) packetMetadata {
@@ -511,34 +622,26 @@ func (s *Source) Close() error {
 		}
 		s.progFD = -1
 	}
-	if s.metadataMapFD >= 0 {
-		if err := unix.Close(s.metadataMapFD); err != nil && err != unix.EBADF && firstErr == nil {
+	if s.eventMapFD >= 0 {
+		if err := unix.Close(s.eventMapFD); err != nil && err != unix.EBADF && firstErr == nil {
 			firstErr = err
 		}
-		s.metadataMapFD = -1
+		s.eventMapFD = -1
 	}
+	for _, reader := range s.perfEvents {
+		if err := reader.Close(); err != nil && firstErr == nil {
+			firstErr = err
+		}
+	}
+	s.perfEvents = nil
 	return firstErr
 }
 
-func (s *Source) readSKBMetadata() (skbMetadata, bool) {
-	s.mu.Lock()
-	mapFD := s.metadataMapFD
-	s.mu.Unlock()
-	if mapFD < 0 {
-		return skbMetadata{}, false
-	}
-	meta, err := lookupSKBMetadata(mapFD)
-	if err != nil {
-		return skbMetadata{}, false
-	}
-	return meta, true
-}
-
-func loadSocketFilterProgram(snapLen, metadataMapFD int, fullMetadata bool) (int, error) {
+func loadSocketFilterProgram(snapLen, eventMapFD int, fullMetadata bool) (int, error) {
 	if snapLen <= 0 {
 		return -1, fmt.Errorf("snaplen must be > 0")
 	}
-	insns := socketFilterInstructions(snapLen, metadataMapFD, fullMetadata)
+	insns := socketFilterInstructions(snapLen, eventMapFD, fullMetadata)
 	license := []byte("GPL\x00")
 	attr := bpfProgLoadAttr{
 		ProgType: bpfProgTypeSocket,
@@ -567,22 +670,22 @@ func loadSocketFilterProgram(snapLen, metadataMapFD int, fullMetadata bool) (int
 	return -1, errno
 }
 
-func socketFilterInstructions(snapLen, metadataMapFD int, fullMetadata bool) []bpfInsn {
-	if metadataMapFD < 0 {
+func socketFilterInstructions(snapLen, eventMapFD int, fullMetadata bool) []bpfInsn {
+	if eventMapFD < 0 {
 		return []bpfInsn{
 			mov64Imm(bpfReg0, int32(snapLen)),
 			exitInsn(),
 		}
 	}
+	metadataSize := int16(unsafe.Sizeof(skbMetadata{}))
+	stackSize := alignInt16(metadataSize, 8)
+	stackBase := -stackSize
 	insns := []bpfInsn{
 		mov64Reg(bpfReg6, bpfReg1),
-		storeImm(bpfReg10, -4, 0),
-		mov64Reg(bpfReg2, bpfReg10),
-		add64Imm(bpfReg2, -4),
 	}
 	fields := []struct {
-		skbOffset int16
-		mapOffset int16
+		skbOffset   int16
+		eventOffset int16
 	}{
 		{skbLenOffset, 0},
 		{skbPacketTypeOffset, 4},
@@ -597,32 +700,54 @@ func socketFilterInstructions(snapLen, metadataMapFD int, fullMetadata bool) []b
 	if fullMetadata {
 		fields = append(fields,
 			struct {
-				skbOffset int16
-				mapOffset int16
+				skbOffset   int16
+				eventOffset int16
 			}{skbTCIndexOffset, 32},
 			struct {
-				skbOffset int16
-				mapOffset int16
+				skbOffset   int16
+				eventOffset int16
 			}{skbTCClassIDOffset, 40},
 		)
 	}
-	insns = append(insns, loadMapFD(bpfReg1, metadataMapFD)...)
-	insns = append(insns,
-		callInsn(bpfFuncMapLookup),
-		jumpImm(bpfJEQ, bpfReg0, 0, int16(2*len(fields))),
-	)
+	for offset := int16(0); offset < stackSize; offset += 4 {
+		insns = append(insns, storeImm(bpfReg10, stackBase+offset, 0))
+	}
 	for _, field := range fields {
 		insns = append(insns,
 			loadMem(bpfReg1, bpfReg6, field.skbOffset),
-			storeReg(bpfReg0, bpfReg1, field.mapOffset),
+			storeReg(bpfReg10, bpfReg1, stackBase+field.eventOffset),
 		)
 	}
-	insns = append(insns, mov64Imm(bpfReg0, int32(snapLen)), exitInsn())
+	insns = append(insns,
+		loadMem(bpfReg3, bpfReg6, skbLenOffset),
+		jumpImm(bpfJLE, bpfReg3, int32(snapLen), 1),
+		mov64Imm(bpfReg3, int32(snapLen)),
+		lsh64Imm(bpfReg3, 32),
+	)
+	insns = append(insns, loadImm64(bpfReg7, uint64(unix.BPF_F_CURRENT_CPU))...)
+	insns = append(insns, or64Reg(bpfReg3, bpfReg7))
+	insns = append(insns, loadMapFD(bpfReg2, eventMapFD)...)
+	insns = append(insns,
+		mov64Reg(bpfReg1, bpfReg6),
+		mov64Reg(bpfReg4, bpfReg10),
+		add64Imm(bpfReg4, int32(stackBase)),
+		mov64Imm(bpfReg5, int32(metadataSize)),
+		callInsn(bpfFuncPerfOutput),
+		mov64Imm(bpfReg0, 0),
+		exitInsn(),
+	)
 	return insns
 }
 
 func reg(dst, src uint8) uint8 {
 	return dst | src<<4
+}
+
+func alignInt16(v, alignment int16) int16 {
+	if alignment <= 0 || v%alignment == 0 {
+		return v
+	}
+	return v + alignment - v%alignment
 }
 
 func mov64Imm(dst uint8, imm int32) bpfInsn {
@@ -635,6 +760,14 @@ func mov64Reg(dst, src uint8) bpfInsn {
 
 func add64Imm(dst uint8, imm int32) bpfInsn {
 	return bpfInsn{Code: bpfALU64 | bpfAdd | bpfK, DstSrc: reg(dst, 0), Imm: imm}
+}
+
+func or64Reg(dst, src uint8) bpfInsn {
+	return bpfInsn{Code: bpfALU64 | bpfOr | bpfX, DstSrc: reg(dst, src)}
+}
+
+func lsh64Imm(dst uint8, imm int32) bpfInsn {
+	return bpfInsn{Code: bpfALU64 | bpfLSh | bpfK, DstSrc: reg(dst, 0), Imm: imm}
 }
 
 func loadMem(dst, src uint8, off int16) bpfInsn {
@@ -653,6 +786,13 @@ func loadMapFD(dst uint8, mapFD int) []bpfInsn {
 	return []bpfInsn{
 		{Code: bpfLD | bpfDW | bpfImm, DstSrc: reg(dst, bpfPseudoMapFD), Imm: int32(mapFD)},
 		{},
+	}
+}
+
+func loadImm64(dst uint8, imm uint64) []bpfInsn {
+	return []bpfInsn{
+		{Code: bpfLD | bpfDW | bpfImm, DstSrc: reg(dst, 0), Imm: int32(imm)},
+		{Imm: int32(imm >> 32)},
 	}
 }
 
@@ -676,51 +816,29 @@ func bpfProgLoadProgram(attr bpfProgLoadAttr) (int, unix.Errno) {
 	return int(fd), 0
 }
 
-func attachSocketFilter(fd, snapLen int) (socketFilterHandles, error) {
-	metadataMapFD, mapErr := createSKBMetadataMap()
-	if mapErr != nil {
-		metadataMapFD = -1
+func attachSocketFilter(fd, snapLen, eventMapFD int) (socketFilterHandles, error) {
+	progFD, err := loadSocketFilterProgram(snapLen, eventMapFD, true)
+	if err != nil {
+		progFD, err = loadSocketFilterProgram(snapLen, eventMapFD, false)
 	}
-	progFD, err := loadSocketFilterProgram(snapLen, metadataMapFD, true)
-	if err != nil && metadataMapFD >= 0 {
-		progFD, err = loadSocketFilterProgram(snapLen, metadataMapFD, false)
-	}
-	if err == nil {
-		if attachErr := unix.SetsockoptInt(fd, unix.SOL_SOCKET, unix.SO_ATTACH_BPF, progFD); attachErr != nil {
-			_ = unix.Close(progFD)
-			if metadataMapFD >= 0 {
-				_ = unix.Close(metadataMapFD)
-			}
-			return socketFilterHandles{}, fmt.Errorf("attach ebpf socket filter: %w", attachErr)
-		}
-		return socketFilterHandles{progFD: progFD, metadataMapFD: metadataMapFD}, nil
-	}
-	metadataErr := err
-	if metadataMapFD >= 0 {
-		_ = unix.Close(metadataMapFD)
-	}
-	progFD, err = loadSocketFilterProgram(snapLen, -1, false)
 	if err == nil {
 		if attachErr := unix.SetsockoptInt(fd, unix.SOL_SOCKET, unix.SO_ATTACH_BPF, progFD); attachErr != nil {
 			_ = unix.Close(progFD)
 			return socketFilterHandles{}, fmt.Errorf("attach ebpf socket filter: %w", attachErr)
 		}
-		return socketFilterHandles{progFD: progFD, metadataMapFD: -1}, nil
+		return socketFilterHandles{progFD: progFD}, nil
 	}
-	if fallbackErr := attachClassicSocketFilter(fd, snapLen); fallbackErr != nil {
-		return socketFilterHandles{}, fmt.Errorf("load ebpf socket filter: %w; load metadata filter: %v; attach classic socket filter fallback: %v", err, metadataErr, fallbackErr)
-	}
-	return socketFilterHandles{progFD: -1, metadataMapFD: -1}, nil
+	return socketFilterHandles{}, fmt.Errorf("load ebpf socket perf filter: %w", err)
 }
 
-func createSKBMetadataMap() (int, error) {
+func createPerfEventArrayMap(maxEntries int) (int, error) {
 	attr := bpfMapCreateAttr{
-		MapType:    bpfMapTypeArray,
+		MapType:    bpfMapTypePerfEvent,
 		KeySize:    4,
-		ValueSize:  uint32(unsafe.Sizeof(skbMetadata{})),
-		MaxEntries: 1,
+		ValueSize:  4,
+		MaxEntries: uint32(maxEntries),
 	}
-	copy(attr.MapName[:], "reflow_skb_meta")
+	copy(attr.MapName[:], "reflow_events")
 	fd, _, errno := unix.Syscall(unix.SYS_BPF, uintptr(bpfMapCreate), uintptr(unsafe.Pointer(&attr)), unsafe.Sizeof(attr))
 	if errno != 0 {
 		return -1, errno
@@ -728,35 +846,223 @@ func createSKBMetadataMap() (int, error) {
 	return int(fd), nil
 }
 
-func lookupSKBMetadata(mapFD int) (skbMetadata, error) {
-	key := uint32(0)
-	var meta skbMetadata
+func updatePerfEventArrayMap(mapFD int, cpu int, perfFD int) error {
+	key := uint32(cpu)
+	value := uint32(perfFD)
 	attr := bpfMapElemAttr{
 		MapFD: uint32(mapFD),
 		Key:   uint64(uintptr(unsafe.Pointer(&key))),
-		Value: uint64(uintptr(unsafe.Pointer(&meta))),
+		Value: uint64(uintptr(unsafe.Pointer(&value))),
+		Flags: unix.BPF_ANY,
 	}
-	_, _, errno := unix.Syscall(unix.SYS_BPF, uintptr(bpfMapLookupElem), uintptr(unsafe.Pointer(&attr)), unsafe.Sizeof(attr))
+	_, _, errno := unix.Syscall(unix.SYS_BPF, uintptr(bpfMapUpdateElem), uintptr(unsafe.Pointer(&attr)), unsafe.Sizeof(attr))
 	if errno != 0 {
-		return skbMetadata{}, errno
+		return errno
 	}
-	return meta, nil
+	return nil
 }
 
-func attachClassicSocketFilter(fd, snapLen int) error {
-	if snapLen <= 0 {
-		return fmt.Errorf("snaplen must be > 0")
+type perfEventReader struct {
+	cpu      int
+	fd       int
+	pageSize int
+	data     []byte
+}
+
+func createPerfEventOutput(dataPages int) (int, []*perfEventReader, error) {
+	cpus := onlineCPUs()
+	if len(cpus) == 0 {
+		return -1, nil, fmt.Errorf("no online CPUs found")
 	}
-	filter := []unix.SockFilter{
-		{
-			Code: uint16(unix.BPF_RET | unix.BPF_K),
-			K:    uint32(snapLen),
-		},
+	maxCPU := cpus[0]
+	for _, cpu := range cpus[1:] {
+		if cpu > maxCPU {
+			maxCPU = cpu
+		}
 	}
-	return unix.SetsockoptSockFprog(fd, unix.SOL_SOCKET, unix.SO_ATTACH_FILTER, &unix.SockFprog{
-		Len:    uint16(len(filter)),
-		Filter: &filter[0],
-	})
+	mapFD, err := createPerfEventArrayMap(maxCPU + 1)
+	if err != nil {
+		return -1, nil, err
+	}
+	readers := make([]*perfEventReader, 0, len(cpus))
+	for _, cpu := range cpus {
+		reader, err := openPerfEventReader(cpu, dataPages)
+		if err != nil {
+			closePerfEventReaders(readers)
+			_ = unix.Close(mapFD)
+			return -1, nil, fmt.Errorf("open perf event for cpu %d: %w", cpu, err)
+		}
+		if err := updatePerfEventArrayMap(mapFD, cpu, reader.fd); err != nil {
+			_ = reader.Close()
+			closePerfEventReaders(readers)
+			_ = unix.Close(mapFD)
+			return -1, nil, fmt.Errorf("populate perf event map for cpu %d: %w", cpu, err)
+		}
+		readers = append(readers, reader)
+	}
+	return mapFD, readers, nil
+}
+
+func openPerfEventReader(cpu, dataPages int) (*perfEventReader, error) {
+	if dataPages <= 0 {
+		dataPages = defaultPerfDataPages
+	}
+	attr := unix.PerfEventAttr{
+		Type:        unix.PERF_TYPE_SOFTWARE,
+		Size:        uint32(unsafe.Sizeof(unix.PerfEventAttr{})),
+		Config:      unix.PERF_COUNT_SW_BPF_OUTPUT,
+		Sample_type: unix.PERF_SAMPLE_RAW,
+		Wakeup:      1,
+	}
+	fd, err := unix.PerfEventOpen(&attr, -1, cpu, -1, unix.PERF_FLAG_FD_CLOEXEC)
+	if err != nil {
+		return nil, err
+	}
+	pageSize := os.Getpagesize()
+	data, err := unix.Mmap(fd, 0, pageSize*(dataPages+1), unix.PROT_READ|unix.PROT_WRITE, unix.MAP_SHARED)
+	if err != nil {
+		_ = unix.Close(fd)
+		return nil, err
+	}
+	if err := unix.IoctlSetInt(fd, unix.PERF_EVENT_IOC_ENABLE, 0); err != nil {
+		_ = unix.Munmap(data)
+		_ = unix.Close(fd)
+		return nil, err
+	}
+	return &perfEventReader{cpu: cpu, fd: fd, pageSize: pageSize, data: data}, nil
+}
+
+func closePerfEventReaders(readers []*perfEventReader) {
+	for _, reader := range readers {
+		_ = reader.Close()
+	}
+}
+
+func (r *perfEventReader) Close() error {
+	var firstErr error
+	if r.fd >= 0 {
+		if err := unix.IoctlSetInt(r.fd, unix.PERF_EVENT_IOC_DISABLE, 0); err != nil && !errors.Is(err, unix.EBADF) {
+			firstErr = err
+		}
+	}
+	if len(r.data) > 0 {
+		if err := unix.Munmap(r.data); err != nil && firstErr == nil {
+			firstErr = err
+		}
+		r.data = nil
+	}
+	if r.fd >= 0 {
+		if err := unix.Close(r.fd); err != nil && err != unix.EBADF && firstErr == nil {
+			firstErr = err
+		}
+		r.fd = -1
+	}
+	return firstErr
+}
+
+func (r *perfEventReader) readSamples(emit func([]byte) error) error {
+	if len(r.data) < r.pageSize {
+		return fmt.Errorf("perf event cpu %d is not mapped", r.cpu)
+	}
+	page := (*unix.PerfEventMmapPage)(unsafe.Pointer(&r.data[0]))
+	head := atomic.LoadUint64(&page.Data_head)
+	tail := atomic.LoadUint64(&page.Data_tail)
+	dataOffset := int(page.Data_offset)
+	dataSize := int(page.Data_size)
+	if dataOffset == 0 {
+		dataOffset = r.pageSize
+	}
+	if dataSize == 0 {
+		dataSize = len(r.data) - dataOffset
+	}
+	if dataOffset < 0 || dataSize <= 0 || dataOffset+dataSize > len(r.data) {
+		return fmt.Errorf("invalid perf ring layout for cpu %d", r.cpu)
+	}
+	ring := r.data[dataOffset : dataOffset+dataSize]
+	for tail < head {
+		record, size, err := readPerfRecord(ring, tail)
+		if err != nil {
+			return fmt.Errorf("read ebpf perf record cpu %d: %w", r.cpu, err)
+		}
+		tail += uint64(size)
+		if len(record) < 12 || binary.LittleEndian.Uint32(record[0:4]) != perfRecordSample {
+			continue
+		}
+		rawSize := int(binary.LittleEndian.Uint32(record[8:12]))
+		if rawSize < 0 || 12+rawSize > len(record) {
+			return fmt.Errorf("invalid ebpf perf sample size %d in record size %d", rawSize, len(record))
+		}
+		if err := emit(record[12 : 12+rawSize]); err != nil {
+			return err
+		}
+	}
+	atomic.StoreUint64(&page.Data_tail, tail)
+	return nil
+}
+
+func readPerfRecord(ring []byte, tail uint64) ([]byte, uint16, error) {
+	if len(ring) < 8 {
+		return nil, 0, fmt.Errorf("perf ring is too small")
+	}
+	headerBytes := readPerfRingBytes(ring, tail, 8)
+	size := binary.LittleEndian.Uint16(headerBytes[6:8])
+	if size < 8 {
+		return nil, 0, fmt.Errorf("invalid perf record size %d", size)
+	}
+	record := readPerfRingBytes(ring, tail, int(size))
+	return record, size, nil
+}
+
+func readPerfRingBytes(ring []byte, offset uint64, size int) []byte {
+	start := int(offset % uint64(len(ring)))
+	if start+size <= len(ring) {
+		return append([]byte(nil), ring[start:start+size]...)
+	}
+	out := make([]byte, size)
+	n := copy(out, ring[start:])
+	copy(out[n:], ring[:size-n])
+	return out
+}
+
+func onlineCPUs() []int {
+	data, err := os.ReadFile("/sys/devices/system/cpu/online")
+	if err == nil {
+		if cpus := parseCPUList(strings.TrimSpace(string(data))); len(cpus) > 0 {
+			return cpus
+		}
+	}
+	n := runtime.NumCPU()
+	cpus := make([]int, 0, n)
+	for i := 0; i < n; i++ {
+		cpus = append(cpus, i)
+	}
+	return cpus
+}
+
+func parseCPUList(text string) []int {
+	var cpus []int
+	for _, part := range strings.Split(text, ",") {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		startText, endText, ranged := strings.Cut(part, "-")
+		start, err := strconv.Atoi(startText)
+		if err != nil || start < 0 {
+			return nil
+		}
+		end := start
+		if ranged {
+			end, err = strconv.Atoi(endText)
+			if err != nil || end < start {
+				return nil
+			}
+		}
+		for cpu := start; cpu <= end; cpu++ {
+			cpus = append(cpus, cpu)
+		}
+	}
+	return cpus
 }
 
 func htons(v uint16) uint16 {

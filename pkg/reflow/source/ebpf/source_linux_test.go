@@ -3,12 +3,14 @@
 package ebpf
 
 import (
+	"encoding/binary"
 	"net/netip"
 	"testing"
 
 	"golang.org/x/sys/unix"
 
 	"github.com/netsampler/goflow2/v3/pkg/reflow/config"
+	"github.com/netsampler/goflow2/v3/pkg/reflow/event"
 )
 
 func TestPacketMetadataMarksOutgoingCapture(t *testing.T) {
@@ -48,6 +50,122 @@ func TestPacketMetadataMarksOutgoingCapture(t *testing.T) {
 			t.Fatalf("expected %s to stay in source metadata, got field value %#v", key, evt.Fields[key])
 		}
 	}
+}
+
+func TestParsePerfPacketSampleCombinesMetadataAndPacket(t *testing.T) {
+	packet := []byte{0xde, 0xad, 0xbe, 0xef}
+	sample := make([]byte, testSKBMetadataSize()+len(packet))
+	binary.LittleEndian.PutUint32(sample[0:4], 1514)
+	binary.LittleEndian.PutUint32(sample[4:8], packetOutgoing)
+	binary.LittleEndian.PutUint32(sample[8:12], 42)
+	binary.LittleEndian.PutUint32(sample[12:16], 3)
+	binary.LittleEndian.PutUint32(sample[16:20], 0x0800)
+	binary.LittleEndian.PutUint32(sample[20:24], 5)
+	binary.LittleEndian.PutUint32(sample[24:28], 7)
+	binary.LittleEndian.PutUint32(sample[28:32], 9)
+	binary.LittleEndian.PutUint32(sample[32:36], 11)
+	binary.LittleEndian.PutUint32(sample[36:40], 0x12345678)
+	binary.LittleEndian.PutUint32(sample[40:44], 0x10002)
+	copy(sample[testSKBMetadataSize():], packet)
+
+	meta, gotPacket, err := parsePerfPacketSample(sample)
+	if err != nil {
+		t.Fatalf("parse perf packet sample: %v", err)
+	}
+	if meta.Len != 1514 || meta.PacketType != packetOutgoing || meta.Mark != 42 || meta.Hash != 0x12345678 {
+		t.Fatalf("unexpected metadata: %#v", meta)
+	}
+	if string(gotPacket) != string(packet) {
+		t.Fatalf("expected packet %x, got %x", packet, gotPacket)
+	}
+	gotPacket[0] = 0
+	if packet[0] == 0 {
+		t.Fatalf("expected parsed packet to be copied away from the sample buffer")
+	}
+}
+
+func TestPacketMetadataFromSKBEventPreservesBranchAliases(t *testing.T) {
+	source := &Source{
+		cfg:                   config.SourceConfig{Network: "ebpf", Interface: "br-lan", Type: "bytes", SampleEvery: 1},
+		agentIP:               "192.0.2.10",
+		captureInterfaceIndex: 7,
+		interfaceNames: map[uint32]string{
+			7: "br-lan",
+			9: "wan",
+		},
+	}
+	meta := source.packetMetadataFromSKB(skbMetadata{
+		Len:            1514,
+		PacketType:     packetOutgoing,
+		Mark:           42,
+		IngressIfindex: 7,
+		Ifindex:        9,
+	})
+	if meta.direction != "out" || meta.packetType != "outgoing" {
+		t.Fatalf("unexpected packet direction/type: %#v", meta)
+	}
+	if meta.outputIf != 9 || meta.outputInterface != "wan" {
+		t.Fatalf("expected output interface from skb ifindex, got %#v", meta)
+	}
+	if !meta.hasSKBMetadata {
+		t.Fatalf("expected skb metadata to be marked present")
+	}
+	evt := source.packetEvent([]byte{0, 1, 2, 3}, meta)
+	if _, ok := evt.Fields["firewall_mark"]; ok {
+		t.Fatalf("expected firewall_mark alias to be unset, got %#v", evt.Fields["firewall_mark"])
+	}
+	if _, ok := evt.Fields["dst_interface"]; ok {
+		t.Fatalf("expected dst_interface alias to be unset, got %#v", evt.Fields["dst_interface"])
+	}
+}
+
+func TestEmitPerfSampleAppliesDirectionBeforeSampling(t *testing.T) {
+	source := &Source{
+		cfg: config.SourceConfig{
+			Network:     "ebpf",
+			Interface:   "br-lan",
+			Type:        "bytes",
+			SampleEvery: 1,
+			EBPF:        config.EBPFConfig{Direction: "egress"},
+		},
+		agentIP:               "192.0.2.10",
+		captureInterfaceIndex: 7,
+		interfaceNames: map[uint32]string{
+			7: "br-lan",
+		},
+	}
+	sample := make([]byte, testSKBMetadataSize()+4)
+	binary.LittleEndian.PutUint32(sample[4:8], packetHost)
+	binary.LittleEndian.PutUint32(sample[24:28], 7)
+	if err := source.emitPerfSample(sample, func(*event.Event) error {
+		t.Fatalf("did not expect ingress packet to be emitted")
+		return nil
+	}); err != nil {
+		t.Fatalf("emit perf sample: %v", err)
+	}
+	if source.seenCount != 0 {
+		t.Fatalf("expected filtered packet not to advance sampling pool, got %d", source.seenCount)
+	}
+}
+
+func TestParseCPUList(t *testing.T) {
+	got := parseCPUList("0-2,4,6-7")
+	want := []int{0, 1, 2, 4, 6, 7}
+	if len(got) != len(want) {
+		t.Fatalf("expected %v, got %v", want, got)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("expected %v, got %v", want, got)
+		}
+	}
+	if got := parseCPUList("2-1"); got != nil {
+		t.Fatalf("expected invalid range to return nil, got %v", got)
+	}
+}
+
+func testSKBMetadataSize() int {
+	return 44
 }
 
 func TestConntrackLineExtractsNATMetadata(t *testing.T) {

@@ -18,7 +18,8 @@ type Source struct {
 	mu                    sync.Mutex
 	fd                    int
 	progFD                int
-	metadataMapFD         int
+	eventMapFD            int
+	perfEvents            []*perfEventReader
 	conntrack             *conntrackTracker
 }
 
