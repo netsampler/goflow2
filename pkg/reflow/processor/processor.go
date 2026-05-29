@@ -332,12 +332,25 @@ func (p *Builtin) processReFlowFields(evt *event.Event, record map[string]any) (
 		}
 		fields[key] = normalizeReFlowJSONValue(key, value)
 	}
+	applyReFlowJSONAliases(fields)
 	setIPFamilyFromFields(fields)
 	p.applyDerivedFieldMappings(evt)
 	if p.cfg.DropMessage {
 		evt.Message = nil
 	}
 	return []*event.Event{evt}, nil
+}
+
+func applyReFlowJSONAliases(fields map[string]any) {
+	if fields == nil || fieldStringOrZero(fields, "record_kind") != "interface_option" {
+		return
+	}
+	if _, ok := fields["input_if"]; ok {
+		return
+	}
+	if val, ok := fields["if_index"]; ok {
+		fields["input_if"] = val
+	}
 }
 
 func (p *Builtin) applyDerivedFieldMappings(evt *event.Event) {
