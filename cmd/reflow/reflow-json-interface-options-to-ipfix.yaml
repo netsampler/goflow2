@@ -35,4 +35,4 @@ encoder:
 
 sink:
   type: udp
-  address: "127.0.0.1:14739"
+  address: "127.0.0.1:6343"
