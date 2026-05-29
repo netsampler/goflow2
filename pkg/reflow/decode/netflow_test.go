@@ -7,9 +7,11 @@ import (
 	"time"
 
 	"github.com/netsampler/goflow2/v3/decoders/netflow"
+	flowpb "github.com/netsampler/goflow2/v3/pb"
 	"github.com/netsampler/goflow2/v3/pkg/reflow/config"
 	"github.com/netsampler/goflow2/v3/pkg/reflow/encode"
 	"github.com/netsampler/goflow2/v3/pkg/reflow/event"
+	"google.golang.org/protobuf/proto"
 )
 
 func TestSearchNetFlowOptionDataSetsFindsSamplingRate(t *testing.T) {
@@ -94,6 +96,92 @@ func TestTemplateAndOptionsEventsAreEmitted(t *testing.T) {
 	}
 	if got := optionsEvents[0].Fields["sampling_rate"]; got != uint32(100) {
 		t.Fatalf("expected sampling_rate=100, got %#v", got)
+	}
+}
+
+func TestDecodeNetFlowV5EmitsPacketMetadataAndCanonicalFields(t *testing.T) {
+	nfv5 := encode.NewNFv5Encoder(config.EncoderConfig{Type: "netflowv5"})
+	payloads, err := nfv5.Encode(&event.Event{
+		ReceivedAt: time.Unix(1700000000, 0).UTC(),
+		Fields: map[string]any{
+			"src_addr":        "192.0.2.10",
+			"dst_addr":        "198.51.100.20",
+			"next_hop":        "203.0.113.1",
+			"src_port":        uint32(12345),
+			"dst_port":        uint32(443),
+			"proto":           uint32(6),
+			"tcp_flags":       uint32(0x12),
+			"tos":             uint32(184),
+			"bytes":           int64(321),
+			"packets":         int64(7),
+			"input_if":        uint32(10),
+			"output_if":       uint32(20),
+			"src_as":          uint32(64512),
+			"dst_as":          uint32(64513),
+			"src_mask":        uint32(24),
+			"dst_mask":        uint32(25),
+			"engine_type":     uint32(1),
+			"engine_id":       uint32(2),
+			"sampling_rate":   uint32(100),
+			"start_time_unix": int64(1699999999000),
+			"end_time_unix":   int64(1700000000000),
+		},
+	})
+	if err != nil {
+		t.Fatalf("Encode returned error: %v", err)
+	}
+
+	dec := New()
+	defer dec.Close()
+	events, err := dec.Decode(&event.Event{
+		Source:  event.SourceMetadata{Type: "flow"},
+		Payload: payloads[0],
+	})
+	if err != nil {
+		t.Fatalf("Decode returned error: %v", err)
+	}
+	if len(events) != 1 {
+		t.Fatalf("expected one NetFlow v5 event, got %d", len(events))
+	}
+	fields := events[0].Fields
+	if fields["flow_type"] != "netflowv5" || fields["flow_version"] != uint16(5) || fields["record_kind"] != "packet" {
+		t.Fatalf("expected NetFlow v5 packet metadata, got %#v", fields)
+	}
+	if fields["src_addr"] != "192.0.2.10" || fields["dst_addr"] != "198.51.100.20" || fields["next_hop"] != "203.0.113.1" {
+		t.Fatalf("expected dotted IPv4 fields, got src=%#v dst=%#v next_hop=%#v", fields["src_addr"], fields["dst_addr"], fields["next_hop"])
+	}
+	for key, want := range map[string]any{
+		"sampling_rate": uint32(100),
+		"engine_type":   uint32(1),
+		"engine_id":     uint32(2),
+		"tos":           uint32(184),
+		"src_as":        uint32(64512),
+		"dst_as":        uint32(64513),
+		"src_mask":      uint32(24),
+		"dst_mask":      uint32(25),
+	} {
+		if fields[key] != want {
+			t.Fatalf("expected %s=%#v, got %#v", key, want, fields[key])
+		}
+	}
+
+	protobufEnc, err := encode.New(config.EncoderConfig{Type: "protobuf"})
+	if err != nil {
+		t.Fatalf("New protobuf encoder returned error: %v", err)
+	}
+	protobufPayloads, err := protobufEnc.Encode(events[0])
+	if err != nil {
+		t.Fatalf("protobuf Encode returned error: %v", err)
+	}
+	var msg flowpb.FlowMessage
+	if err := proto.Unmarshal(protobufPayloads[0], &msg); err != nil {
+		t.Fatalf("unmarshal protobuf flow message: %v", err)
+	}
+	if msg.Type != flowpb.FlowMessage_NETFLOW_V5 {
+		t.Fatalf("expected protobuf type NETFLOW_V5, got %v", msg.Type)
+	}
+	if msg.Bytes != 321 || msg.Packets != 7 {
+		t.Fatalf("expected protobuf counters bytes=321 packets=7, got bytes=%d packets=%d", msg.Bytes, msg.Packets)
 	}
 }
 

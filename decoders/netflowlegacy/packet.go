@@ -45,10 +45,14 @@ type RecordsNetFlowV5 struct {
 // IPAddress is a NetFlow legacy IPv4 address rendered as dotted decimal.
 type IPAddress uint32
 
+func (s IPAddress) String() string {
+	return fmt.Sprintf("%d.%d.%d.%d", s>>24, (s>>16)&0xFF, (s>>8)&0xFF, s&0xFF)
+}
+
 // MarshalJSON formats the IPv4 address as a JSON string.
 func IPAddressToUint32(addr IPAddress) uint32 {
 	return uint32(addr)
 }
 func (s *IPAddress) MarshalJSON() ([]byte, error) {
-	return []byte(fmt.Sprintf("\"%d.%d.%d.%d\"", *s>>24, (*s>>16)&0xFF, (*s>>8)&0xFF, *s&0xFF)), nil
+	return []byte(fmt.Sprintf("%q", s.String())), nil
 }

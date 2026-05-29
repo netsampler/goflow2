@@ -18,20 +18,31 @@ func (d *builtIn) decodeNetFlowV5(evt *event.Event, payload []byte) ([]*event.Ev
 	out := make([]*event.Event, 0, len(packet.Records))
 	for _, record := range packet.Records {
 		item := cloneEvent(evt)
-		fields := ensureFields(item, 16)
+		fields := ensureFields(item, 32)
 		fields["flow_type"] = "netflowv5"
 		fields["flow_version"] = packet.Version
+		fields["record_kind"] = "packet"
+		fields["flow_sequence"] = packet.FlowSequence
+		fields["engine_type"] = uint32(packet.EngineType)
+		fields["engine_id"] = uint32(packet.EngineId)
+		fields["sampling_rate"] = uint32(packet.SamplingInterval)
 		fields["src_addr"] = fmt.Sprint(record.SrcAddr)
 		fields["dst_addr"] = fmt.Sprint(record.DstAddr)
+		fields["next_hop"] = fmt.Sprint(record.NextHop)
 		fields["src_port"] = uint32(record.SrcPort)
 		fields["dst_port"] = uint32(record.DstPort)
 		fields["proto"] = uint32(record.Proto)
 		fields["proto_name"] = ipProtocolName(uint32(record.Proto))
 		fields["tcp_flags"] = uint32(record.TCPFlags)
+		fields["tos"] = uint32(record.Tos)
 		fields["bytes"] = int64(record.DOctets)
 		fields["packets"] = int64(record.DPkts)
 		fields["input_if"] = uint32(record.Input)
 		fields["output_if"] = uint32(record.Output)
+		fields["src_as"] = uint32(record.SrcAS)
+		fields["dst_as"] = uint32(record.DstAS)
+		fields["src_mask"] = uint32(record.SrcMask)
+		fields["dst_mask"] = uint32(record.DstMask)
 		fields["start_time_unix"] = flowTimeFromV5(packet.UnixSecs, packet.UnixNSecs, packet.SysUptime, record.First)
 		fields["end_time_unix"] = flowTimeFromV5(packet.UnixSecs, packet.UnixNSecs, packet.SysUptime, record.Last)
 		out = append(out, item)
@@ -73,6 +84,7 @@ func (d *builtIn) decodeNetFlowV9(evt *event.Event, payload []byte) ([]*event.Ev
 			fields := ensureFields(item, 16)
 			fields["flow_type"] = "netflowv9"
 			fields["flow_version"] = packet.Version
+			fields["record_kind"] = "packet"
 			d.mapDataFields(fields, record.Values, packet.SystemUptime, packet.UnixSeconds, true)
 			if fieldUint32(fields, "sampling_rate") == 0 && samplingRate != 0 {
 				fields["sampling_rate"] = samplingRate
@@ -117,6 +129,7 @@ func (d *builtIn) decodeIPFIX(evt *event.Event, payload []byte) ([]*event.Event,
 			fields := ensureFields(item, 16)
 			fields["flow_type"] = "ipfix"
 			fields["flow_version"] = packet.Version
+			fields["record_kind"] = "packet"
 			d.mapDataFields(fields, record.Values, 0, 0, false)
 			if fieldUint32(fields, "sampling_rate") == 0 && samplingRate != 0 {
 				fields["sampling_rate"] = samplingRate
