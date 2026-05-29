@@ -311,8 +311,8 @@ func (d *builtIn) mapDataFields(fields map[string]any, values []netflow.DataFiel
 			if catalogField, ok := d.catalog.lookup(field, netflowV9); ok {
 				applyCatalogDataField(fields, field, catalogField, sysUptime, unixSeconds, netflowV9)
 				keys = append(keys, catalogField.key)
-				continue
 			}
+			continue
 		}
 		switch field.Type {
 		case 4:

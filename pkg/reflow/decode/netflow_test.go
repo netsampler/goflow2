@@ -96,6 +96,8 @@ func TestMapDataFieldsUsesSharedCatalog(t *testing.T) {
 		"src_addr":        {ID: 8, Length: 4, Type: "ipv4Address"},
 		"dst_addr":        {ID: 12, Length: 4, Type: "ipv4Address"},
 		"proto":           {ID: 4, Length: 1, Type: "unsigned8"},
+		"src_port":        {ID: 7, Length: 2, Type: "unsigned16"},
+		"dst_port":        {ID: 11, Length: 2, Type: "unsigned16"},
 		"bytes":           {ID: 1, Length: 8, Type: "unsigned64"},
 		"packets":         {ID: 2, Length: 8, Type: "unsigned64"},
 		"start_time_unix": {ID: 152, Length: 8, Type: "unsigned64"},
@@ -112,6 +114,8 @@ func TestMapDataFieldsUsesSharedCatalog(t *testing.T) {
 		{Type: 27, Value: []byte{0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1}},
 		{Type: 12, Value: []byte{192, 0, 2, 10}},
 		{Type: 4, Value: []byte{6}},
+		{Type: 7, Value: []byte{0x1f, 0x90}},
+		{Type: 11, Value: []byte{0x01, 0xbb}},
 		{Type: 1, Value: testUint64(1234, 8)},
 		{Type: 2, Value: testUint64(12, 8)},
 		{Type: 152, Value: testUint64(1714860000000, 8)},
@@ -126,6 +130,9 @@ func TestMapDataFieldsUsesSharedCatalog(t *testing.T) {
 	}
 	if fields["proto"] != uint32(6) || fields["proto_name"] != "tcp" {
 		t.Fatalf("expected proto and proto_name, got proto=%#v proto_name=%#v", fields["proto"], fields["proto_name"])
+	}
+	if fields["src_port"] != uint32(8080) || fields["dst_port"] != uint32(443) {
+		t.Fatalf("expected ports from catalog, got src=%#v dst=%#v", fields["src_port"], fields["dst_port"])
 	}
 	if fields["bytes"] != int64(1234) || fields["packets"] != int64(12) {
 		t.Fatalf("expected bytes/packets int64 values, got bytes=%#v packets=%#v", fields["bytes"], fields["packets"])
@@ -173,7 +180,7 @@ func TestMapDataFieldsPopulatesTCPFlagsWithoutCatalog(t *testing.T) {
 	}
 }
 
-func TestMapDataFieldsFallsBackForUnmappedCanonicalFieldsWithCatalog(t *testing.T) {
+func TestMapDataFieldsUsesCatalogAsSourceOfTruth(t *testing.T) {
 	d := &builtIn{catalog: newDecodeCatalog(map[string]config.IPFIXFieldDefinition{
 		"interface_name": {ID: 82, Type: "string"},
 	})}
@@ -182,8 +189,8 @@ func TestMapDataFieldsFallsBackForUnmappedCanonicalFieldsWithCatalog(t *testing.
 		{Type: netflow.NFV9_FIELD_TCP_FLAGS, Value: []byte{0x12}},
 	}, 0, 0, true)
 
-	if fields["tcp_flags"] != uint32(0x12) {
-		t.Fatalf("expected unmapped canonical tcp_flags fallback, got %#v", fields["tcp_flags"])
+	if _, ok := fields["tcp_flags"]; ok {
+		t.Fatalf("expected unmapped tcp_flags to be omitted when catalog is present, got %#v", fields["tcp_flags"])
 	}
 }
 
