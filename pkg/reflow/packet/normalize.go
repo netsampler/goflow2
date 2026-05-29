@@ -1509,10 +1509,7 @@ func parseIPv6Tuple(data []byte) (int, packetTuple, uint32, []event.LayerSpec, e
 	nextHeader := data[6]
 	offset := 40
 	var extensionLayers []event.LayerSpec
-	for {
-		if !isIPv6ExtensionHeader(nextHeader) {
-			break
-		}
+	for isIPv6ExtensionHeader(nextHeader) {
 		if len(data) < offset+2 {
 			return 0, packetTuple{}, 0, nil, fmt.Errorf("truncated ipv6 extension header")
 		}
@@ -1992,7 +1989,9 @@ func uint32FromAny(val any) uint32 {
 		return uint32(n)
 	case string:
 		var n uint64
-		fmt.Sscan(v, &n)
+		if _, err := fmt.Sscan(v, &n); err != nil {
+			return 0
+		}
 		return uint32(n)
 	default:
 		return 0

@@ -11,8 +11,6 @@ import (
 	"github.com/netsampler/goflow2/v3/pkg/reflow/event"
 )
 
-type perfEventReader struct{}
-
 func New(cfg config.SourceConfig) (*Source, error) {
 	if runtime.GOOS == "linux" {
 		return nil, fmt.Errorf("source.network=%s is disabled in this build; rebuild without -tags reflow_noebpf", cfg.Network)

@@ -90,7 +90,11 @@ func New(cfg *config.Config) (*App, error) {
 // Run owns the source, processor, aggregation, encoding, and sink goroutines.
 func (a *App) Run(ctx context.Context) error {
 	a.logger.Info("starting ReFlow")
-	defer a.sink.Close()
+	defer func() {
+		if err := a.sink.Close(); err != nil {
+			a.logger.Error("sink close error", slog.String("error", err.Error()))
+		}
+	}()
 	defer a.decoder.Close()
 
 	sourceCtx, stopSource := context.WithCancel(ctx)

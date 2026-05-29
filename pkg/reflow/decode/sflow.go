@@ -108,16 +108,16 @@ func (d *builtIn) eventFromSFlowSample(base *event.Event, packet *sflow.Packet, 
 			fields["header_data"] = append([]byte(nil), data.HeaderData...)
 			fields["bytes"] = int64(data.FrameLength)
 		case sflow.SampledIPv4:
-			fields["src_addr"] = fmt.Sprint(data.SrcIP)
-			fields["dst_addr"] = fmt.Sprint(data.DstIP)
+			fields["src_addr"] = string(data.SrcIP)
+			fields["dst_addr"] = string(data.DstIP)
 			fields["src_port"] = data.SrcPort
 			fields["dst_port"] = data.DstPort
 			fields["proto"] = data.Protocol
 			fields["proto_name"] = ipProtocolName(uint32(data.Protocol))
 			fields["bytes"] = int64(data.Length)
 		case sflow.SampledIPv6:
-			fields["src_addr"] = fmt.Sprint(data.SrcIP)
-			fields["dst_addr"] = fmt.Sprint(data.DstIP)
+			fields["src_addr"] = string(data.SrcIP)
+			fields["dst_addr"] = string(data.DstIP)
 			fields["src_port"] = data.SrcPort
 			fields["dst_port"] = data.DstPort
 			fields["proto"] = data.Protocol

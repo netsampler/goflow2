@@ -134,8 +134,16 @@ func TestSourceReadsNDJSON(t *testing.T) {
 func TestSourceReadNDJSONReturnsOnContextCancelWhenReaderBlocks(t *testing.T) {
 	src := &Source{}
 	reader, writer := io.Pipe()
-	defer reader.Close()
-	defer writer.Close()
+	defer func() {
+		if err := reader.Close(); err != nil {
+			t.Errorf("reader close: %v", err)
+		}
+	}()
+	defer func() {
+		if err := writer.Close(); err != nil {
+			t.Errorf("writer close: %v", err)
+		}
+	}()
 	ctx, cancel := context.WithCancel(context.Background())
 
 	done := make(chan error, 1)
@@ -180,7 +188,11 @@ func writePcapFile(t *testing.T, pcapng bool) string {
 	if err != nil {
 		t.Fatalf("create capture: %v", err)
 	}
-	defer f.Close()
+	defer func() {
+		if err := f.Close(); err != nil {
+			t.Errorf("close capture: %v", err)
+		}
+	}()
 
 	ci := gopacket.CaptureInfo{
 		Timestamp:     time.Unix(42, 123).UTC(),
