@@ -20,7 +20,7 @@ aggregators:
     fields:
       - static:tflow_record_type:options
       - key:observation_domain_id
-      - key:if_index
+      - key:input_if
       - current:if_name
 
 encoder:
@@ -32,12 +32,6 @@ encoder:
   templated_flow:
     observation_domain_id: 777
     options_refresh_ms: 30000
-    data:
-      overrides:
-        if_index:
-          id: 10
-          length: 4
-          type: unsigned32
 
 sink:
   type: udp
