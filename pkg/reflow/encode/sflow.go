@@ -453,13 +453,14 @@ func (e *SFlowEncoder) packetTopLevel(evt *event.Event) (sflowPacketTopLevel, er
 	return top, nil
 }
 
-// sflowAgentIP resolves the emitted agent IP from encoder config first, then event metadata.
+// sflowAgentIP resolves the emitted agent IP from event metadata first, then
+// the encoder config fallback.
 func (e *SFlowEncoder) sflowAgentIP(evt *event.Event) string {
-	if e.cfg.AgentIP != "" {
-		return e.cfg.AgentIP
-	}
 	if agentIP := eventAgentIP(evt); agentIP != "" {
 		return agentIP
+	}
+	if e.cfg.AgentIP != "" {
+		return e.cfg.AgentIP
 	}
 	return "127.0.0.1"
 }

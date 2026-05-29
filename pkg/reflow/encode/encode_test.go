@@ -294,7 +294,7 @@ func TestProtobufEncoderSupportsGoFlow2V2Flavor(t *testing.T) {
 	}
 }
 
-func TestSFlowEncoderUsesConfiguredAgentIPOverride(t *testing.T) {
+func TestSFlowEncoderUsesEventAgentIPBeforeConfiguredFallback(t *testing.T) {
 	enc := NewSFlowEncoder(config.EncoderConfig{
 		Type: "sflow",
 		SFlow: config.SFlowConfig{
@@ -312,8 +312,38 @@ func TestSFlowEncoderUsesConfiguredAgentIPOverride(t *testing.T) {
 
 	packet := decodeSFlowPacket(t, payloads[0])
 	got, ok := netip.AddrFromSlice(packet.AgentIP)
+	if !ok || got.String() != "198.51.100.10" {
+		t.Fatalf("expected event agent_ip 198.51.100.10, got %s", got.String())
+	}
+}
+
+func TestSFlowEncoderUsesConfiguredAgentIPFallback(t *testing.T) {
+	enc := NewSFlowEncoder(config.EncoderConfig{
+		Type: "sflow",
+		SFlow: config.SFlowConfig{
+			AgentIP: "203.0.113.10",
+		},
+	})
+
+	payloads, err := enc.Encode(&event.Event{
+		Fields: map[string]any{
+			"protocol":        uint32(1),
+			"frame_length":    uint32(60),
+			"original_length": uint32(60),
+			"header_data":     []byte{0, 1, 2, 3},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Encode returned error: %v", err)
+	}
+	if len(payloads) != 1 {
+		t.Fatalf("expected 1 payload, got %d", len(payloads))
+	}
+
+	packet := decodeSFlowPacket(t, payloads[0])
+	got, ok := netip.AddrFromSlice(packet.AgentIP)
 	if !ok || got.String() != "203.0.113.10" {
-		t.Fatalf("expected agent_ip override 203.0.113.10, got %s", got.String())
+		t.Fatalf("expected configured agent_ip fallback 203.0.113.10, got %s", got.String())
 	}
 }
 

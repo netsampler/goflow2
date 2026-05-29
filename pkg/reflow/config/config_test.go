@@ -1089,6 +1089,17 @@ func TestGeneratedIPFIXConfigExcludesDataLinkFrameByDefault(t *testing.T) {
 	}
 }
 
+func TestGeneratedTemplatedFlowPickerOrdersAgentFields(t *testing.T) {
+	agentIP := slices.Index(generatedTemplatedFlowFields, "agent_ip")
+	agentIPv6 := slices.Index(generatedTemplatedFlowFields, "agent_ipv6")
+	if agentIP < 0 || agentIPv6 < 0 {
+		t.Fatalf("expected picker fields to include agent_ip and agent_ipv6: %#v", generatedTemplatedFlowFields)
+	}
+	if agentIP > agentIPv6 {
+		t.Fatalf("expected picker order agent_ip, agent_ipv6; got %#v", generatedTemplatedFlowFields)
+	}
+}
+
 func TestGeneratedAggregateConfigPayloadPresetEnablesDataLinkFrame(t *testing.T) {
 	fs := flag.NewFlagSet("test", flag.ContinueOnError)
 	flags, _ := BindFlags(fs)
