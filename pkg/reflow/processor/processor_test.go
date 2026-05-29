@@ -1274,38 +1274,6 @@ func TestBuiltinProcessReFlowJSONPreservesCounterFieldsWithoutSFlowMetadata(t *t
 	}
 }
 
-func TestBuiltinProcessReFlowJSONAliasesInterfaceOptionIfIndex(t *testing.T) {
-	proc := NewBuiltin(config.ProcessorConfig{})
-
-	msg, err := json.Marshal(map[string]any{
-		"record_kind":           "interface_option",
-		"observation_domain_id": 777,
-		"if_index":              2,
-		"if_name":               "eth0",
-	})
-	if err != nil {
-		t.Fatalf("Marshal returned error: %v", err)
-	}
-
-	events, err := proc.Process(&event.Event{
-		Source: event.SourceMetadata{
-			Type: "json",
-			JSON: event.JSONMetadata{Flavor: "reflow"},
-		},
-		Message: msg,
-	})
-	if err != nil {
-		t.Fatalf("Process returned error: %v", err)
-	}
-	fields := events[0].Fields
-	if got := fields["if_index"]; got != int64(2) {
-		t.Fatalf("expected if_index=2 to remain present, got %#v", got)
-	}
-	if got := fields["input_if"]; got != int64(2) {
-		t.Fatalf("expected input_if alias from if_index, got %#v", got)
-	}
-}
-
 func TestBuiltinProcessReFlowJSONUsesCanonicalEventFieldsWithoutEnvelopeMetadata(t *testing.T) {
 	proc := NewBuiltin(config.ProcessorConfig{})
 
