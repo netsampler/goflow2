@@ -32,6 +32,12 @@ encoder:
   templated_flow:
     observation_domain_id: 777
     options_refresh_ms: 30000
+    data:
+      overrides:
+        if_index:
+          id: 10
+          length: 4
+          type: unsigned32
 
 sink:
   type: udp
