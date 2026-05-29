@@ -20,6 +20,10 @@ func NewNFv5Encoder(cfg config.EncoderConfig) *NFv5Encoder {
 
 // Encode turns one canonical event into one NetFlow v5 datagram.
 func (e *NFv5Encoder) Encode(evt *event.Event) ([][]byte, error) {
+	if evt == nil || evt.Kind == "control" {
+		return nil, nil
+	}
+
 	packet, err := e.buildPacket(evt)
 	if err != nil {
 		return nil, err

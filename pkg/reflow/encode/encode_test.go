@@ -3303,6 +3303,24 @@ func TestNFv5EncoderEmitsRecord(t *testing.T) {
 	}
 }
 
+func TestNFv5EncoderIgnoresControlEvents(t *testing.T) {
+	enc := NewNFv5Encoder(config.EncoderConfig{Type: "netflowv5"})
+
+	payloads, err := enc.Encode(&event.Event{
+		Kind: "control",
+		Control: &event.ControlMetadata{
+			Type:   "schema",
+			Stream: "flow_data",
+		},
+	})
+	if err != nil {
+		t.Fatalf("Encode returned error: %v", err)
+	}
+	if len(payloads) != 0 {
+		t.Fatalf("expected no payloads for control event, got %d", len(payloads))
+	}
+}
+
 func TestSourceOptionsUseSourceSamplingMetadata(t *testing.T) {
 	state := sourceOptionsFromEvent(&event.Event{
 		Source: event.SourceMetadata{
