@@ -322,14 +322,14 @@ func (c *Config) setDefaults(configPath string) error {
 		c.Encoder.SFlow.CounterFormat = "standard"
 	case "expanded":
 	default:
-		return fmt.Errorf("unsupported encoder.sflow.counter_format %q", c.Encoder.SFlow.CounterFormat)
+		return unsupportedValueError("encoder.sflow.counter_format", c.Encoder.SFlow.CounterFormat, "standard", "expanded")
 	}
 	switch c.Encoder.Protobuf.Flavor {
 	case "", "canonical":
 		c.Encoder.Protobuf.Flavor = "canonical"
 	case "goflow2v2":
 	default:
-		return fmt.Errorf("unsupported encoder.protobuf.flavor %q", c.Encoder.Protobuf.Flavor)
+		return unsupportedValueError("encoder.protobuf.flavor", c.Encoder.Protobuf.Flavor, "canonical", "goflow2v2")
 	}
 	if c.Encoder.Batch.MaxRecords < 0 {
 		return fmt.Errorf("encoder.batch.max_records must be >= 0")
@@ -345,14 +345,14 @@ func (c *Config) setDefaults(configPath string) error {
 		c.Encoder.Pcap.PacketSource = "auto"
 	case "header_data", "payload", "pseudo":
 	default:
-		return fmt.Errorf("unsupported encoder.pcap.packet_source %q", c.Encoder.Pcap.PacketSource)
+		return unsupportedValueError("encoder.pcap.packet_source", c.Encoder.Pcap.PacketSource, "auto", "header_data", "payload", "pseudo")
 	}
 	switch c.Encoder.Pcap.LinkType {
 	case "", "ethernet":
 		c.Encoder.Pcap.LinkType = "ethernet"
 	case "raw", "ipv4", "ipv6":
 	default:
-		return fmt.Errorf("unsupported encoder.pcap.link_type %q", c.Encoder.Pcap.LinkType)
+		return unsupportedValueError("encoder.pcap.link_type", c.Encoder.Pcap.LinkType, "ethernet", "raw", "ipv4", "ipv6")
 	}
 	if c.Encoder.Pcap.SnapLen < 0 {
 		return fmt.Errorf("encoder.pcap.snaplen must be >= 0")
@@ -363,7 +363,7 @@ func (c *Config) setDefaults(configPath string) error {
 	switch c.Encoder.Type {
 	case "json", "protobuf", "sflow", "ipfix", "netflowv9", "netflowv5", "pcap", "pcapng":
 	default:
-		return fmt.Errorf("unsupported encoder.type %q", c.Encoder.Type)
+		return unsupportedValueError("encoder.type", c.Encoder.Type, "json", "protobuf", "sflow", "ipfix", "netflowv9", "netflowv5", "pcap", "pcapng")
 	}
 	if c.Sink.Type == "" {
 		c.Sink.Type = "stdout"
@@ -374,7 +374,7 @@ func (c *Config) setDefaults(configPath string) error {
 	switch c.Sink.Type {
 	case "stdout", "file", "udp", "unixgram":
 	default:
-		return fmt.Errorf("unsupported sink.type %q", c.Sink.Type)
+		return unsupportedValueError("sink.type", c.Sink.Type, "stdout", "file", "udp", "unixgram")
 	}
 	if c.Sink.Framing == "" {
 		if c.Encoder.Type == "pcap" || c.Encoder.Type == "pcapng" {
@@ -386,7 +386,7 @@ func (c *Config) setDefaults(configPath string) error {
 	switch c.Sink.Framing {
 	case "line", "none":
 	default:
-		return fmt.Errorf("unsupported sink.framing %q", c.Sink.Framing)
+		return unsupportedValueError("sink.framing", c.Sink.Framing, "line", "none")
 	}
 	if c.Sink.Mode == "" {
 		if (c.Encoder.Type == "pcap" || c.Encoder.Type == "pcapng") && c.Sink.Type == "file" {
@@ -398,7 +398,7 @@ func (c *Config) setDefaults(configPath string) error {
 	switch c.Sink.Mode {
 	case "append", "truncate":
 	default:
-		return fmt.Errorf("unsupported sink.mode %q", c.Sink.Mode)
+		return unsupportedValueError("sink.mode", c.Sink.Mode, "append", "truncate")
 	}
 	if c.Sink.Type == "file" && c.Sink.Path == "" {
 		return fmt.Errorf("sink.path is required when sink.type=file")
@@ -466,7 +466,7 @@ func applySourceDefaults(src *SourceConfig) error {
 		case "":
 			return fmt.Errorf("source.type is required when source.network=stream")
 		default:
-			return fmt.Errorf("unsupported source.type %q for source.network=stream", src.Type)
+			return fmt.Errorf("unsupported source.type %q for source.network=stream (valid options: %s)", src.Type, quotedOptions("pcap", "pcapng", "json"))
 		}
 		return nil
 	}
@@ -576,7 +576,7 @@ func (c *Config) ApplyAggregationPresets(spec string) error {
 			appendUniqueString(&agg.Current, "header_data")
 			c.ensureTFlowFieldsSelected("frame_length", "header_data")
 		default:
-			return fmt.Errorf("unsupported -agg preset %q", preset)
+			return fmt.Errorf("unsupported -agg preset %q (valid options: %s)", preset, quotedOptions("none", "off", "false", "passthrough", "payload", "header", "packet-header"))
 		}
 	}
 	for i := range c.Aggregators {
@@ -599,6 +599,18 @@ func (c *Config) ensureCLIPrimaryAggregator() *AggregatorConfig {
 	}
 	c.Aggregators = append(c.Aggregators, defaultCLIFlowAggregator())
 	return &c.Aggregators[0]
+}
+
+func unsupportedValueError(name, value string, options ...string) error {
+	return fmt.Errorf("unsupported %s %q (valid options: %s)", name, value, quotedOptions(options...))
+}
+
+func quotedOptions(options ...string) string {
+	quoted := make([]string, 0, len(options))
+	for _, option := range options {
+		quoted = append(quoted, fmt.Sprintf("%q", option))
+	}
+	return strings.Join(quoted, ", ")
 }
 
 func defaultCLIFlowAggregator() AggregatorConfig {

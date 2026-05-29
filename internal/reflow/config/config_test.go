@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -681,6 +682,41 @@ sink:
 	}
 	if !cfg.Encoder.SFlow.UseMetadataSequenceNumber {
 		t.Fatalf("expected sflow.use_metadata_sequence_number=true")
+	}
+}
+
+func TestLoadRejectsUnsupportedSFlowCounterFormatWithOptions(t *testing.T) {
+	dir := t.TempDir()
+
+	cfgPath := filepath.Join(dir, "reflow.yaml")
+	if err := os.WriteFile(cfgPath, []byte(`
+sources:
+  - network: udp
+    address: ":18081"
+    type: json
+
+processor:
+  type: builtin
+
+encoder:
+  type: sflow
+  sflow:
+    counter_format: extended
+
+sink:
+  type: stdout
+`), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	_, err := Load(cfgPath)
+	if err == nil {
+		t.Fatalf("expected Load to reject unsupported sflow.counter_format")
+	}
+
+	want := `unsupported encoder.sflow.counter_format "extended" (valid options: "standard", "expanded")`
+	if !strings.Contains(err.Error(), want) {
+		t.Fatalf("expected error to contain %q, got %v", want, err)
 	}
 }
 
