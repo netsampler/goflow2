@@ -587,13 +587,12 @@ func (e *IPFIXEncoder) ipfixBatchRecord(evt *event.Event) (ipfixBatchRecord, err
 			return ipfixBatchRecord{}, err
 		}
 		return ipfixBatchRecord{
-			key:                  fmt.Sprintf("options-schema:%s:%d", stream, schema.templateID),
-			recordKind:           tflowBatchOptions,
-			exportTime:           exportTime,
-			observationDomainID:  obsDomainID,
-			templateID:           schema.templateID,
-			ipfixOptionsTemplate: &schema.ipfixTemplate,
-			options:              optionsRecord,
+			key:                 fmt.Sprintf("options-schema:%s:%d", stream, schema.templateID),
+			recordKind:          tflowBatchOptions,
+			exportTime:          exportTime,
+			observationDomainID: obsDomainID,
+			templateID:          schema.templateID,
+			options:             optionsRecord,
 		}, nil
 	}
 	if schema, ok := e.dataSchemas[stream]; ok {
@@ -693,14 +692,13 @@ func (e *NFv9Encoder) nfv9BatchRecord(evt *event.Event, timing nfv9BatchTiming) 
 			return nfv9BatchRecord{}, err
 		}
 		return nfv9BatchRecord{
-			key:             fmt.Sprintf("options-schema:%s:%d", stream, schema.templateID),
-			recordKind:      tflowBatchOptions,
-			unixSeconds:     timing.unixSeconds,
-			systemUptime:    timing.systemUptime,
-			sourceID:        sourceID,
-			templateID:      schema.templateID,
-			optionsTemplate: &schema.nfv9Template,
-			options:         optionsRecord,
+			key:          fmt.Sprintf("options-schema:%s:%d", stream, schema.templateID),
+			recordKind:   tflowBatchOptions,
+			unixSeconds:  timing.unixSeconds,
+			systemUptime: timing.systemUptime,
+			sourceID:     sourceID,
+			templateID:   schema.templateID,
+			options:      optionsRecord,
 		}, nil
 	}
 	if schema, ok := e.dataSchemas[stream]; ok {

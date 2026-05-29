@@ -2148,7 +2148,7 @@ func TestIPFIXAggregationOptionsBatchCombinesRecordsInOneSet(t *testing.T) {
 	}
 	enc := NewIPFIXEncoder(cfg)
 
-	if _, err := enc.Encode(&event.Event{
+	schemaPayloads, err := enc.Encode(&event.Event{
 		Kind: "control",
 		Control: &event.ControlMetadata{
 			Type:   "schema",
@@ -2164,7 +2164,8 @@ func TestIPFIXAggregationOptionsBatchCombinesRecordsInOneSet(t *testing.T) {
 			},
 			BaseTemplateID: 1300,
 		},
-	}); err != nil {
+	})
+	if err != nil {
 		t.Fatalf("schema Encode returned error: %v", err)
 	}
 
@@ -2202,19 +2203,22 @@ func TestIPFIXAggregationOptionsBatchCombinesRecordsInOneSet(t *testing.T) {
 
 	store := templates.NewTemplateFlowStore()
 	store.Start()
+	for _, payload := range schemaPayloads {
+		var schemaDecoded netflow.IPFIXPacket
+		if err := netflow.DecodeMessageVersion(bytes.NewBuffer(payload), store, netflow.FlowContext{RouterKey: "test-router"}, nil, &schemaDecoded); err != nil {
+			t.Fatalf("decode options schema payload: %v", err)
+		}
+	}
 	var decoded netflow.IPFIXPacket
 	if err := netflow.DecodeMessageVersion(bytes.NewBuffer(secondPayloads[0]), store, netflow.FlowContext{RouterKey: "test-router"}, nil, &decoded); err != nil {
 		t.Fatalf("decode batched options payload: %v", err)
 	}
-	if len(decoded.FlowSets) != 2 {
-		t.Fatalf("expected options template and one options data set, got %d flow sets", len(decoded.FlowSets))
+	if len(decoded.FlowSets) != 1 {
+		t.Fatalf("expected one options data set, got %d flow sets", len(decoded.FlowSets))
 	}
-	if _, ok := decoded.FlowSets[0].(netflow.IPFIXOptionsTemplateFlowSet); !ok {
-		t.Fatalf("expected first flow set to be options template, got %T", decoded.FlowSets[0])
-	}
-	optionsData, ok := decoded.FlowSets[1].(netflow.OptionsDataFlowSet)
+	optionsData, ok := decoded.FlowSets[0].(netflow.OptionsDataFlowSet)
 	if !ok {
-		t.Fatalf("expected second flow set to be options data, got %T", decoded.FlowSets[1])
+		t.Fatalf("expected flow set to be options data, got %T", decoded.FlowSets[0])
 	}
 	if optionsData.Id != 1300 {
 		t.Fatalf("expected options data set id 1300, got %d", optionsData.Id)
