@@ -2136,6 +2136,97 @@ func TestIPFIXAggregationSchemaOptionsDataUsesKeysAsScopes(t *testing.T) {
 	}
 }
 
+func TestIPFIXAggregationOptionsBatchCombinesRecordsInOneSet(t *testing.T) {
+	cfg := testTFlowEncoderConfig("ipfix")
+	cfg.TemplatedFlow.ObservationDomainID = 888
+	cfg.TemplatedFlow.Data.Catalog["observation_domain_id"] = config.IPFIXFieldDefinition{ID: 149, Length: 4, Type: "unsigned32"}
+	cfg.TemplatedFlow.Data.Catalog["if_index"] = config.IPFIXFieldDefinition{ID: 10, Length: 4, Type: "unsigned32"}
+	cfg.TemplatedFlow.Data.Catalog["if_name"] = config.IPFIXFieldDefinition{ID: 82, Length: 0xffff, Type: "string"}
+	cfg.Batch = config.BatchConfig{
+		Enabled:    testBoolPtr(true),
+		MaxRecords: 2,
+	}
+	enc := NewIPFIXEncoder(cfg)
+
+	if _, err := enc.Encode(&event.Event{
+		Kind: "control",
+		Control: &event.ControlMetadata{
+			Type:   "schema",
+			Stream: "interface_options",
+		},
+		Payload: event.AggregationSchema{
+			Stream: "interface_options",
+			Fields: []event.SchemaField{
+				{Role: "static", Name: "tflow_record_type", Value: "options"},
+				{Role: "key", Name: "observation_domain_id"},
+				{Role: "key", Name: "if_index"},
+				{Role: "current", Name: "if_name"},
+			},
+			BaseTemplateID: 1300,
+		},
+	}); err != nil {
+		t.Fatalf("schema Encode returned error: %v", err)
+	}
+
+	firstPayloads, err := enc.Encode(&event.Event{
+		ReceivedAt: testEventTime(),
+		Stream:     "interface_options",
+		Fields: map[string]any{
+			"observation_domain_id": uint32(777),
+			"if_index":              uint32(2),
+			"if_name":               "eth0",
+		},
+	})
+	if err != nil {
+		t.Fatalf("first Encode returned error: %v", err)
+	}
+	if len(firstPayloads) != 0 {
+		t.Fatalf("expected first options record to stay buffered, got %d payloads", len(firstPayloads))
+	}
+
+	secondPayloads, err := enc.Encode(&event.Event{
+		ReceivedAt: testEventTime(),
+		Stream:     "interface_options",
+		Fields: map[string]any{
+			"observation_domain_id": uint32(777),
+			"if_index":              uint32(3),
+			"if_name":               "eth1",
+		},
+	})
+	if err != nil {
+		t.Fatalf("second Encode returned error: %v", err)
+	}
+	if len(secondPayloads) != 1 {
+		t.Fatalf("expected one batched options payload, got %d", len(secondPayloads))
+	}
+
+	store := templates.NewTemplateFlowStore()
+	store.Start()
+	var decoded netflow.IPFIXPacket
+	if err := netflow.DecodeMessageVersion(bytes.NewBuffer(secondPayloads[0]), store, netflow.FlowContext{RouterKey: "test-router"}, nil, &decoded); err != nil {
+		t.Fatalf("decode batched options payload: %v", err)
+	}
+	if len(decoded.FlowSets) != 2 {
+		t.Fatalf("expected options template and one options data set, got %d flow sets", len(decoded.FlowSets))
+	}
+	if _, ok := decoded.FlowSets[0].(netflow.IPFIXOptionsTemplateFlowSet); !ok {
+		t.Fatalf("expected first flow set to be options template, got %T", decoded.FlowSets[0])
+	}
+	optionsData, ok := decoded.FlowSets[1].(netflow.OptionsDataFlowSet)
+	if !ok {
+		t.Fatalf("expected second flow set to be options data, got %T", decoded.FlowSets[1])
+	}
+	if optionsData.Id != 1300 {
+		t.Fatalf("expected options data set id 1300, got %d", optionsData.Id)
+	}
+	if len(optionsData.Records) != 2 {
+		t.Fatalf("expected two options records in one set, got %d", len(optionsData.Records))
+	}
+	if !bytes.Equal(optionsData.Records[0].OptionsValues[0].Value.([]byte), []byte("eth0")) || !bytes.Equal(optionsData.Records[1].OptionsValues[0].Value.([]byte), []byte("eth1")) {
+		t.Fatalf("expected eth0/eth1 options records, got %#v", optionsData.Records)
+	}
+}
+
 func TestIPFIXSourceOptionsRefreshMergesObservationPointRecords(t *testing.T) {
 	cfg := testTFlowEncoderConfig("ipfix")
 	cfg.TemplatedFlow.ObservationDomainID = 888
