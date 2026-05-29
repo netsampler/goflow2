@@ -696,13 +696,16 @@ func DecodeMessage(payload *bytes.Buffer, packetV5 *Packet) error {
 	}
 
 	packetV5.Samples = make([]interface{}, int(packetV5.SamplesCount)) // max size of 1000 for protection
-	for i := 0; i < int(packetV5.SamplesCount) && payload.Len() >= 8; i++ {
+	for i := 0; i < int(packetV5.SamplesCount); i++ {
+		if payload.Len() < 8 {
+			return &DecoderError{fmt.Errorf("sample %d header truncated: need 8 bytes, got %d", i, payload.Len())}
+		}
 		header := SampleHeader{}
 		if err := utils.BinaryDecoder(payload, &header.Format, &header.Length); err != nil {
 			return &DecoderError{fmt.Errorf("header [%w]", err)}
 		}
 		if int(header.Length) > payload.Len() {
-			break
+			return &DecoderError{fmt.Errorf("sample %d length %d exceeds remaining payload %d", i, header.Length, payload.Len())}
 		}
 		sampleReader := bytes.NewBuffer(payload.Next(int(header.Length)))
 

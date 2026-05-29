@@ -1518,6 +1518,58 @@ func TestSFlowEncoderEmitsEthernetCounterSample(t *testing.T) {
 	}
 }
 
+func TestSFlowEncoderBatchesInterfaceCounterSamples(t *testing.T) {
+	enc := NewSFlowEncoder(config.EncoderConfig{
+		Type: "sflow",
+		Batch: config.BatchConfig{
+			Enabled:    testBoolPtr(true),
+			MaxRecords: 4,
+		},
+	})
+
+	for i := 0; i < 4; i++ {
+		payloads, err := enc.Encode(&event.Event{
+			Fields: map[string]any{
+				"record_kind":   "interface_counter",
+				"agent_ip":      "192.168.0.172",
+				"source_id":     uint32(0),
+				"if_index":      uint32(15 + i),
+				"if_type":       uint32(6),
+				"if_status":     uint32(3),
+				"if_in_octets":  uint64(100 + i),
+				"if_out_octets": uint64(200 + i),
+			},
+		})
+		if err != nil {
+			t.Fatalf("Encode(%d) returned error: %v", i, err)
+		}
+		if i < 3 && len(payloads) != 0 {
+			t.Fatalf("expected event %d to stay buffered, got %d payloads", i, len(payloads))
+		}
+		if i == 3 {
+			if len(payloads) != 1 {
+				t.Fatalf("expected fourth event to flush one payload, got %d", len(payloads))
+			}
+			packet := decodeSFlowPacket(t, payloads[0])
+			if len(packet.Samples) != 4 {
+				t.Fatalf("expected four counter samples, got %d", len(packet.Samples))
+			}
+			for j, sample := range packet.Samples {
+				counter, ok := sample.(sflow.CounterSample)
+				if !ok {
+					t.Fatalf("sample %d expected CounterSample, got %T", j, sample)
+				}
+				if len(counter.Records) != 1 {
+					t.Fatalf("sample %d expected one record, got %d", j, len(counter.Records))
+				}
+				if _, ok := counter.Records[0].Data.(sflow.IfCounters); !ok {
+					t.Fatalf("sample %d expected IfCounters, got %T", j, counter.Records[0].Data)
+				}
+			}
+		}
+	}
+}
+
 func TestIPFIXEncoderEmitsTemplateAndDataRecord(t *testing.T) {
 	cfg := testTFlowEncoderConfig("ipfix")
 	cfg.TemplatedFlow.ObservationDomainID = 42
