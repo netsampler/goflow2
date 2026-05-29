@@ -252,7 +252,6 @@ fields:
     id: 10
     length: 4
     type: unsigned32
-    netflow_v9_scope_id: 2
 `), 0o644); err != nil {
 		t.Fatalf("write fields: %v", err)
 	}
@@ -313,9 +312,8 @@ sink:
 	if shared.ID != 1001 || shared.PEN != 32473 {
 		t.Fatalf("expected top-level override to apply to shared catalog, got %#v", shared)
 	}
-	sharedScope := cfg.TemplatedFields.Catalog["if_index"]
-	if sharedScope.ID != 10 || sharedScope.NetFlowV9ScopeID != 2 {
-		t.Fatalf("expected netflow_v9_scope_id to load in shared catalog, got %#v", sharedScope)
+	if sharedScope := cfg.TemplatedFields.Catalog["if_index"]; sharedScope.ID != 10 {
+		t.Fatalf("expected if_index to load in shared catalog, got %#v", sharedScope)
 	}
 	if _, ok := cfg.TemplatedFields.Catalog["export_only"]; ok {
 		t.Fatalf("expected encoder-only override not to change shared decode catalog")

@@ -169,7 +169,7 @@ func TestMapDataFieldsUsesNetFlowV9FieldIDs(t *testing.T) {
 func TestOptionsEventsUseCatalogForScopesAndOptions(t *testing.T) {
 	d := &builtIn{catalog: newDecodeCatalog(map[string]config.IPFIXFieldDefinition{
 		"packets":  {ID: 2, Length: 8, Type: "unsigned64"},
-		"if_index": {ID: 10, Length: 4, Type: "unsigned32", NetFlowV9ScopeID: 2},
+		"if_index": {ID: 10, Length: 4, Type: "unsigned32"},
 		"if_name":  {ID: 82, Length: 0xffff, Type: "string"},
 	})}
 	base := &event.Event{

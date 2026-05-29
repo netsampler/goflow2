@@ -3048,7 +3048,7 @@ func TestNFv9AggregationSchemaOptionsDataUsesScopeIDs(t *testing.T) {
 	cfg := testTFlowEncoderConfig("netflowv9")
 	cfg.TemplatedFlow.ObservationDomainID = 888
 	cfg.TemplatedFlow.Data.Catalog["observation_domain_id"] = config.IPFIXFieldDefinition{ID: 149, Length: 4, Type: "unsigned32"}
-	cfg.TemplatedFlow.Data.Catalog["if_index"] = config.IPFIXFieldDefinition{ID: 10, Length: 4, Type: "unsigned32", NetFlowV9ScopeID: 2}
+	cfg.TemplatedFlow.Data.Catalog["if_index"] = config.IPFIXFieldDefinition{ID: 10, Length: 4, Type: "unsigned32"}
 	cfg.TemplatedFlow.Data.Catalog["if_name"] = config.IPFIXFieldDefinition{ID: 82, Length: 0xffff, Type: "string"}
 	enc := NewNFv9Encoder(cfg)
 

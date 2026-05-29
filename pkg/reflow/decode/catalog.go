@@ -108,9 +108,6 @@ func decodeCatalogNetFlowV9IDs(name string, def config.IPFIXFieldDefinition) []u
 
 func decodeCatalogNetFlowV9ScopeIDs(name string, def config.IPFIXFieldDefinition) []uint16 {
 	ids := make([]uint16, 0, 1)
-	if def.NetFlowV9ScopeID != 0 {
-		ids = append(ids, def.NetFlowV9ScopeID)
-	}
 	if id := defaultNetFlowV9ScopeID(name); id != 0 {
 		ids = append(ids, id)
 	}

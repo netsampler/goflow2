@@ -459,7 +459,6 @@ type IPFIXFieldDefinition struct {
 	Length           uint16 `yaml:"length"`
 	Type             string `yaml:"type"`
 	Format           string `yaml:"format"`
-	NetFlowV9ScopeID uint16 `yaml:"netflow_v9_scope_id"`
 	EnterpriseScoped bool   `yaml:"enterprise_scoped"`
 }
 

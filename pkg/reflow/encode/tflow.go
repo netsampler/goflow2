@@ -2744,14 +2744,6 @@ func optionWireFieldDefinition(name string, def config.IPFIXFieldDefinition, net
 		return def
 	}
 	if scope {
-		if def.NetFlowV9ScopeID != 0 {
-			def.ID = def.NetFlowV9ScopeID
-			def.Length = 4
-			def.Type = "unsigned32"
-			def.PEN = 0
-			def.EnterpriseScoped = false
-			return def
-		}
 		if id := defaultNetFlowV9ScopeID(name); id != 0 {
 			def.ID = id
 			def.Length = 4
