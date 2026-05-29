@@ -1266,6 +1266,9 @@ func TestBuiltinProcessReFlowJSONPreservesCounterFieldsWithoutSFlowMetadata(t *t
 	if got := fields["if_index"]; got != int64(5) {
 		t.Fatalf("expected if_index=5, got %#v", got)
 	}
+	if _, ok := fields["input_if"]; ok {
+		t.Fatalf("did not expect interface_counter if_index to alias input_if, got %#v", fields["input_if"])
+	}
 	if events[0].SFlow != nil {
 		t.Fatalf("expected sflow metadata to remain unset, got %#v", events[0].SFlow)
 	}

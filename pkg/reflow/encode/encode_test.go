@@ -2350,6 +2350,184 @@ func TestIPFIXSourceOptionsUseObservationPointScope(t *testing.T) {
 	}
 }
 
+func TestIPFIXAggregationSchemaOptionsDataUsesKeysAsScopes(t *testing.T) {
+	cfg := testTFlowEncoderConfig("ipfix")
+	cfg.TemplatedFlow.ObservationDomainID = 888
+	cfg.TemplatedFlow.Data.Catalog["observation_domain_id"] = config.IPFIXFieldDefinition{ID: 149, Length: 4, Type: "unsigned32"}
+	cfg.TemplatedFlow.Data.Catalog["if_index"] = config.IPFIXFieldDefinition{ID: 10, Length: 4, Type: "unsigned32"}
+	cfg.TemplatedFlow.Data.Catalog["interface_name"] = config.IPFIXFieldDefinition{ID: 82, Length: 0xffff, Type: "string"}
+	enc := NewIPFIXEncoder(cfg)
+
+	schemaPayloads, err := enc.Encode(&event.Event{
+		Kind: "control",
+		Control: &event.ControlMetadata{
+			Type:   "schema",
+			Stream: "interface_options",
+		},
+		Payload: event.AggregationSchema{
+			Stream: "interface_options",
+			Fields: []event.SchemaField{
+				{Role: "static", Name: "tflow_record_type", Value: "options"},
+				{Role: "key", Name: "observation_domain_id"},
+				{Role: "key", Name: "if_index"},
+				{Role: "current", Name: "interface_name"},
+			},
+			BaseTemplateID: 1300,
+		},
+	})
+	if err != nil {
+		t.Fatalf("schema Encode returned error: %v", err)
+	}
+	if len(schemaPayloads) != 1 {
+		t.Fatalf("expected one options schema payload, got %d", len(schemaPayloads))
+	}
+
+	store := templates.NewTemplateFlowStore()
+	store.Start()
+	ctx := netflow.FlowContext{RouterKey: "test-router"}
+	var schemaDecoded netflow.IPFIXPacket
+	if err := netflow.DecodeMessageVersion(bytes.NewBuffer(schemaPayloads[0]), store, ctx, nil, &schemaDecoded); err != nil {
+		t.Fatalf("decode options schema payload: %v", err)
+	}
+	optionsTemplate, ok := schemaDecoded.FlowSets[0].(netflow.IPFIXOptionsTemplateFlowSet)
+	if !ok {
+		t.Fatalf("expected options template flow set, got %T", schemaDecoded.FlowSets[0])
+	}
+	record := optionsTemplate.Records[0]
+	if record.TemplateId != 1300 || record.FieldCount != 3 || record.ScopeFieldCount != 2 {
+		t.Fatalf("unexpected options template counts: %#v", record)
+	}
+	if record.Scopes[0].Type != 149 || record.Scopes[1].Type != 10 || record.Options[0].Type != 82 {
+		t.Fatalf("unexpected options template fields: scopes=%#v options=%#v", record.Scopes, record.Options)
+	}
+
+	dataPayloads, err := enc.Encode(&event.Event{
+		ReceivedAt: testEventTime(),
+		Stream:     "interface_options",
+		Fields: map[string]any{
+			"observation_domain_id": uint32(777),
+			"if_index":              uint32(2),
+			"interface_name":        "eth0",
+		},
+	})
+	if err != nil {
+		t.Fatalf("data Encode returned error: %v", err)
+	}
+	if len(dataPayloads) != 1 {
+		t.Fatalf("expected one options data payload, got %d", len(dataPayloads))
+	}
+	var dataDecoded netflow.IPFIXPacket
+	if err := netflow.DecodeMessageVersion(bytes.NewBuffer(dataPayloads[0]), store, ctx, nil, &dataDecoded); err != nil {
+		t.Fatalf("decode options data payload: %v", err)
+	}
+	optionsData, ok := dataDecoded.FlowSets[0].(netflow.OptionsDataFlowSet)
+	if !ok {
+		t.Fatalf("expected options data flow set, got %T", dataDecoded.FlowSets[0])
+	}
+	values := optionsData.Records[0]
+	if !bytes.Equal(values.ScopesValues[0].Value.([]byte), encodeU32(777)) || !bytes.Equal(values.ScopesValues[1].Value.([]byte), encodeU32(2)) {
+		t.Fatalf("unexpected options scope values: %#v", values.ScopesValues)
+	}
+	if !bytes.Equal(values.OptionsValues[0].Value.([]byte), []byte("eth0")) {
+		t.Fatalf("expected interface name option eth0, got %#v", values.OptionsValues[0].Value)
+	}
+}
+
+func TestIPFIXAggregationOptionsBatchCombinesRecordsInOneSet(t *testing.T) {
+	cfg := testTFlowEncoderConfig("ipfix")
+	cfg.TemplatedFlow.ObservationDomainID = 888
+	cfg.TemplatedFlow.Data.Catalog["observation_domain_id"] = config.IPFIXFieldDefinition{ID: 149, Length: 4, Type: "unsigned32"}
+	cfg.TemplatedFlow.Data.Catalog["if_index"] = config.IPFIXFieldDefinition{ID: 10, Length: 4, Type: "unsigned32"}
+	cfg.TemplatedFlow.Data.Catalog["interface_name"] = config.IPFIXFieldDefinition{ID: 82, Length: 0xffff, Type: "string"}
+	cfg.Batch = config.BatchConfig{
+		Enabled:    testBoolPtr(true),
+		MaxRecords: 2,
+	}
+	enc := NewIPFIXEncoder(cfg)
+
+	schemaPayloads, err := enc.Encode(&event.Event{
+		Kind: "control",
+		Control: &event.ControlMetadata{
+			Type:   "schema",
+			Stream: "interface_options",
+		},
+		Payload: event.AggregationSchema{
+			Stream: "interface_options",
+			Fields: []event.SchemaField{
+				{Role: "static", Name: "tflow_record_type", Value: "options"},
+				{Role: "key", Name: "observation_domain_id"},
+				{Role: "key", Name: "if_index"},
+				{Role: "current", Name: "interface_name"},
+			},
+			BaseTemplateID: 1300,
+		},
+	})
+	if err != nil {
+		t.Fatalf("schema Encode returned error: %v", err)
+	}
+
+	firstPayloads, err := enc.Encode(&event.Event{
+		ReceivedAt: testEventTime(),
+		Stream:     "interface_options",
+		Fields: map[string]any{
+			"observation_domain_id": uint32(777),
+			"if_index":              uint32(2),
+			"interface_name":        "eth0",
+		},
+	})
+	if err != nil {
+		t.Fatalf("first Encode returned error: %v", err)
+	}
+	if len(firstPayloads) != 0 {
+		t.Fatalf("expected first options record to stay buffered, got %d payloads", len(firstPayloads))
+	}
+
+	secondPayloads, err := enc.Encode(&event.Event{
+		ReceivedAt: testEventTime(),
+		Stream:     "interface_options",
+		Fields: map[string]any{
+			"observation_domain_id": uint32(777),
+			"if_index":              uint32(3),
+			"interface_name":        "eth1",
+		},
+	})
+	if err != nil {
+		t.Fatalf("second Encode returned error: %v", err)
+	}
+	if len(secondPayloads) != 1 {
+		t.Fatalf("expected one batched options payload, got %d", len(secondPayloads))
+	}
+
+	store := templates.NewTemplateFlowStore()
+	store.Start()
+	for _, payload := range schemaPayloads {
+		var schemaDecoded netflow.IPFIXPacket
+		if err := netflow.DecodeMessageVersion(bytes.NewBuffer(payload), store, netflow.FlowContext{RouterKey: "test-router"}, nil, &schemaDecoded); err != nil {
+			t.Fatalf("decode options schema payload: %v", err)
+		}
+	}
+	var decoded netflow.IPFIXPacket
+	if err := netflow.DecodeMessageVersion(bytes.NewBuffer(secondPayloads[0]), store, netflow.FlowContext{RouterKey: "test-router"}, nil, &decoded); err != nil {
+		t.Fatalf("decode batched options payload: %v", err)
+	}
+	if len(decoded.FlowSets) != 1 {
+		t.Fatalf("expected one options data set, got %d flow sets", len(decoded.FlowSets))
+	}
+	optionsData, ok := decoded.FlowSets[0].(netflow.OptionsDataFlowSet)
+	if !ok {
+		t.Fatalf("expected flow set to be options data, got %T", decoded.FlowSets[0])
+	}
+	if optionsData.Id != 1300 {
+		t.Fatalf("expected options data set id 1300, got %d", optionsData.Id)
+	}
+	if len(optionsData.Records) != 2 {
+		t.Fatalf("expected two options records in one set, got %d", len(optionsData.Records))
+	}
+	if !bytes.Equal(optionsData.Records[0].OptionsValues[0].Value.([]byte), []byte("eth0")) || !bytes.Equal(optionsData.Records[1].OptionsValues[0].Value.([]byte), []byte("eth1")) {
+		t.Fatalf("expected eth0/eth1 options records, got %#v", optionsData.Records)
+	}
+}
+
 func TestIPFIXSourceOptionsRefreshMergesObservationPointRecords(t *testing.T) {
 	cfg := testTFlowEncoderConfig("ipfix")
 	cfg.TemplatedFlow.ObservationDomainID = 888
@@ -3255,6 +3433,89 @@ func TestNFv9EncoderPassesThroughOptionsTemplate(t *testing.T) {
 
 	if _, ok := decoded.FlowSets[0].(netflow.NFv9OptionsTemplateFlowSet); !ok {
 		t.Fatalf("expected options template flow set, got %T", decoded.FlowSets[0])
+	}
+}
+
+func TestNFv9AggregationSchemaOptionsDataUsesScopeIDs(t *testing.T) {
+	cfg := testTFlowEncoderConfig("netflowv9")
+	cfg.TemplatedFlow.ObservationDomainID = 888
+	cfg.TemplatedFlow.Data.Catalog["observation_domain_id"] = config.IPFIXFieldDefinition{ID: 149, Length: 4, Type: "unsigned32"}
+	cfg.TemplatedFlow.Data.Catalog["if_index"] = config.IPFIXFieldDefinition{ID: 10, Length: 4, Type: "unsigned32"}
+	cfg.TemplatedFlow.Data.Catalog["interface_name"] = config.IPFIXFieldDefinition{ID: 82, Length: 0xffff, Type: "string"}
+	enc := NewNFv9Encoder(cfg)
+
+	schemaPayloads, err := enc.Encode(&event.Event{
+		Kind: "control",
+		Control: &event.ControlMetadata{
+			Type:   "schema",
+			Stream: "interface_options",
+		},
+		Payload: event.AggregationSchema{
+			Stream: "interface_options",
+			Fields: []event.SchemaField{
+				{Role: "static", Name: "tflow_record_type", Value: "options"},
+				{Role: "key", Name: "observation_domain_id"},
+				{Role: "key", Name: "if_index"},
+				{Role: "current", Name: "interface_name"},
+			},
+			BaseTemplateID: 1300,
+		},
+	})
+	if err != nil {
+		t.Fatalf("schema Encode returned error: %v", err)
+	}
+	if len(schemaPayloads) != 1 {
+		t.Fatalf("expected one options schema payload, got %d", len(schemaPayloads))
+	}
+
+	store := templates.NewTemplateFlowStore()
+	store.Start()
+	ctx := netflow.FlowContext{RouterKey: "test-router"}
+	var schemaDecoded netflow.NFv9Packet
+	if err := netflow.DecodeMessageVersion(bytes.NewBuffer(schemaPayloads[0]), store, ctx, &schemaDecoded, nil); err != nil {
+		t.Fatalf("decode options schema payload: %v", err)
+	}
+	optionsTemplate, ok := schemaDecoded.FlowSets[0].(netflow.NFv9OptionsTemplateFlowSet)
+	if !ok {
+		t.Fatalf("expected options template flow set, got %T", schemaDecoded.FlowSets[0])
+	}
+	record := optionsTemplate.Records[0]
+	if record.TemplateId != 1300 || record.ScopeLength != 8 || record.OptionLength != 4 {
+		t.Fatalf("unexpected options template lengths: %#v", record)
+	}
+	if record.Scopes[0].Type != 1 || record.Scopes[1].Type != 2 || record.Options[0].Type != 82 {
+		t.Fatalf("unexpected options template fields: scopes=%#v options=%#v", record.Scopes, record.Options)
+	}
+
+	dataPayloads, err := enc.Encode(&event.Event{
+		ReceivedAt: testEventTime(),
+		Stream:     "interface_options",
+		Fields: map[string]any{
+			"observation_domain_id": uint32(777),
+			"if_index":              uint32(2),
+			"interface_name":        "eth0",
+		},
+	})
+	if err != nil {
+		t.Fatalf("data Encode returned error: %v", err)
+	}
+	if len(dataPayloads) != 1 {
+		t.Fatalf("expected one options data payload, got %d", len(dataPayloads))
+	}
+	var dataDecoded netflow.NFv9Packet
+	if err := netflow.DecodeMessageVersion(bytes.NewBuffer(dataPayloads[0]), store, ctx, &dataDecoded, nil); err != nil {
+		t.Fatalf("decode options data payload: %v", err)
+	}
+	optionsData, ok := dataDecoded.FlowSets[0].(netflow.OptionsDataFlowSet)
+	if !ok {
+		t.Fatalf("expected options data flow set, got %T", dataDecoded.FlowSets[0])
+	}
+	values := optionsData.Records[0]
+	if !bytes.Equal(values.ScopesValues[0].Value.([]byte), encodeU32(777)) || !bytes.Equal(values.ScopesValues[1].Value.([]byte), encodeU32(2)) {
+		t.Fatalf("unexpected options scope values: %#v", values.ScopesValues)
+	}
+	if !bytes.Equal(values.OptionsValues[0].Value.([]byte), []byte("eth0")) {
+		t.Fatalf("expected interface name option eth0, got %#v", values.OptionsValues[0].Value)
 	}
 }
 

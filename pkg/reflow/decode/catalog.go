@@ -11,8 +11,9 @@ import (
 )
 
 type decodeCatalog struct {
-	ipfix     map[decodeCatalogIPFIXKey]decodeCatalogField
-	netflowV9 map[uint16]decodeCatalogField
+	ipfix           map[decodeCatalogIPFIXKey]decodeCatalogField
+	netflowV9       map[uint16]decodeCatalogField
+	netflowV9Scopes map[uint16]decodeCatalogField
 }
 
 type decodeCatalogIPFIXKey struct {
@@ -27,8 +28,9 @@ type decodeCatalogField struct {
 
 func newDecodeCatalog(catalog map[string]config.IPFIXFieldDefinition) decodeCatalog {
 	out := decodeCatalog{
-		ipfix:     make(map[decodeCatalogIPFIXKey]decodeCatalogField),
-		netflowV9: make(map[uint16]decodeCatalogField),
+		ipfix:           make(map[decodeCatalogIPFIXKey]decodeCatalogField),
+		netflowV9:       make(map[uint16]decodeCatalogField),
+		netflowV9Scopes: make(map[uint16]decodeCatalogField),
 	}
 	for key, def := range catalog {
 		field := decodeCatalogField{key: key, def: def}
@@ -38,12 +40,15 @@ func newDecodeCatalog(catalog map[string]config.IPFIXFieldDefinition) decodeCata
 		for _, id := range decodeCatalogNetFlowV9IDs(key, def) {
 			out.netflowV9[id] = field
 		}
+		for _, id := range decodeCatalogNetFlowV9ScopeIDs(key, def) {
+			out.netflowV9Scopes[id] = field
+		}
 	}
 	return out
 }
 
 func (c decodeCatalog) empty() bool {
-	return len(c.ipfix) == 0 && len(c.netflowV9) == 0
+	return len(c.ipfix) == 0 && len(c.netflowV9) == 0 && len(c.netflowV9Scopes) == 0
 }
 
 func (c decodeCatalog) lookup(field netflow.DataField, netflowV9 bool) (decodeCatalogField, bool) {
@@ -57,6 +62,14 @@ func (c decodeCatalog) lookup(field netflow.DataField, netflowV9 bool) (decodeCa
 	}
 	out, ok := c.ipfix[decodeCatalogIPFIXKey{id: field.Type, pen: pen}]
 	return out, ok
+}
+
+func (c decodeCatalog) lookupOptions(field netflow.DataField, netflowV9 bool, scope bool) (decodeCatalogField, bool) {
+	if netflowV9 && scope {
+		out, ok := c.netflowV9Scopes[field.Type]
+		return out, ok
+	}
+	return c.lookup(field, netflowV9)
 }
 
 func decodeCatalogIPFIXKeys(name string, def config.IPFIXFieldDefinition) []decodeCatalogIPFIXKey {
@@ -93,6 +106,25 @@ func decodeCatalogNetFlowV9IDs(name string, def config.IPFIXFieldDefinition) []u
 		ids = append(ids, netflow.NFV9_FIELD_LAST_SWITCHED)
 	}
 	return ids
+}
+
+func decodeCatalogNetFlowV9ScopeIDs(name string, def config.IPFIXFieldDefinition) []uint16 {
+	ids := make([]uint16, 0, 1)
+	if id := defaultNetFlowV9ScopeID(name); id != 0 {
+		ids = append(ids, id)
+	}
+	return ids
+}
+
+func defaultNetFlowV9ScopeID(name string) uint16 {
+	switch name {
+	case "observation_domain_id", "source_id":
+		return 1
+	case "if_index", "input_if":
+		return 2
+	default:
+		return 0
+	}
 }
 
 func applyCatalogDataField(fields map[string]any, field netflow.DataField, catalogField decodeCatalogField, sysUptime, unixSeconds uint32, netflowV9 bool) {

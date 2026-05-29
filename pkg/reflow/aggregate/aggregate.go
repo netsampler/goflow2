@@ -3,6 +3,7 @@ package aggregate
 import (
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/netip"
 	"sort"
 	"strconv"
@@ -189,6 +190,11 @@ func (a *Stateful) Process(evt *event.Event) ([]*event.Event, error) {
 	if err != nil {
 		var missingKeyErr *missingAggregationKeyError
 		if errors.As(err, &missingKeyErr) {
+			slog.Warn(
+				"dropping aggregate event with missing key field",
+				slog.String("stream", a.cfg.Stream),
+				slog.String("key", missingKeyErr.Key),
+			)
 			return nil, nil
 		}
 		return nil, err
