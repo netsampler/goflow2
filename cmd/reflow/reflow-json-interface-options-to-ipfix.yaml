@@ -1,0 +1,38 @@
+sources:
+  - network: udp
+    address: "127.0.0.1:18081"
+    type: json
+    json:
+      flavor: reflow
+
+processor:
+  type: builtin
+  builtin:
+    drop_message: true
+
+aggregators:
+  - stream: interface_options
+    match:
+      record_kind: interface_option
+    window:
+      idle_flush_after_ms: 500
+    template_id: 1300
+    fields:
+      - static:tflow_record_type:options
+      - key:observation_domain_id
+      - key:if_index
+      - current:if_name
+
+encoder:
+  type: ipfix
+  batch:
+    enabled: true
+    max_records: 32
+    flush_interval_ms: 500
+  templated_flow:
+    observation_domain_id: 777
+    options_refresh_ms: 30000
+
+sink:
+  type: udp
+  address: "127.0.0.1:14739"
