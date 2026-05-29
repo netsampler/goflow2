@@ -1,6 +1,6 @@
 sources:
   - network: udp
-    address: "127.0.0.1:18802"
+    address: "127.0.0.1:18082"
     type: json
     json:
       flavor: reflow
@@ -27,7 +27,7 @@ encoder:
   type: ipfix
   batch:
     enabled: true
-    max_records: 32
+    max_records: 2
     flush_interval_ms: 500
   templated_flow:
     observation_domain_id: 777
@@ -35,4 +35,4 @@ encoder:
 
 sink:
   type: udp
-  address: "127.0.0.1:6343"
+  address: "127.0.0.1:2055"
