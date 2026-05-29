@@ -1,6 +1,9 @@
 package aggregate
 
 import (
+	"bytes"
+	"log/slog"
+	"strings"
 	"testing"
 	"time"
 
@@ -65,6 +68,46 @@ func TestStatefulFlushSumsPacketCounters(t *testing.T) {
 	}
 	if got := out[0].Fields["bytes"]; got != int64(130) {
 		t.Fatalf("expected bytes=130, got %#v", got)
+	}
+}
+
+func TestStatefulWarnsAndDropsEventWithMissingKey(t *testing.T) {
+	var logs bytes.Buffer
+	previous := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&logs, nil)))
+	defer slog.SetDefault(previous)
+
+	agg, err := New(config.AggregatorConfig{
+		Stream:    "interface_options",
+		KeyFields: []string{"observation_domain_id", "input_if"},
+		Current:   []string{"if_name"},
+	})
+	if err != nil {
+		t.Fatalf("New returned error: %v", err)
+	}
+
+	out, err := agg.Process(&event.Event{
+		Fields: map[string]any{
+			"observation_domain_id": uint32(777),
+			"if_name":               "eth0",
+		},
+	})
+	if err != nil {
+		t.Fatalf("Process returned error: %v", err)
+	}
+	if len(out) != 0 {
+		t.Fatalf("expected missing-key event to be dropped, got %d events", len(out))
+	}
+
+	got := logs.String()
+	for _, want := range []string{
+		"dropping aggregate event with missing key field",
+		"stream=interface_options",
+		"key=input_if",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("expected log to contain %q, got %q", want, got)
+		}
 	}
 }
 
