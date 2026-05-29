@@ -2,6 +2,7 @@ package decode
 
 import (
 	"encoding/binary"
+	"reflect"
 	"testing"
 	"time"
 
@@ -169,6 +170,87 @@ func TestMapDataFieldsPopulatesTCPFlagsWithoutCatalog(t *testing.T) {
 
 	if fields["tcp_flags"] != uint32(0x12) {
 		t.Fatalf("expected tcp_flags to decode from field 6, got %#v", fields["tcp_flags"])
+	}
+}
+
+func TestMapDataFieldsFallsBackForUnmappedCanonicalFieldsWithCatalog(t *testing.T) {
+	d := &builtIn{catalog: newDecodeCatalog(map[string]config.IPFIXFieldDefinition{
+		"interface_name": {ID: 82, Type: "string"},
+	})}
+	fields := map[string]any{}
+	d.mapDataFields(fields, []netflow.DataField{
+		{Type: netflow.NFV9_FIELD_TCP_FLAGS, Value: []byte{0x12}},
+	}, 0, 0, true)
+
+	if fields["tcp_flags"] != uint32(0x12) {
+		t.Fatalf("expected unmapped canonical tcp_flags fallback, got %#v", fields["tcp_flags"])
+	}
+}
+
+func TestMapDataFieldsDecodesCatalogStringsAndUnknownTypes(t *testing.T) {
+	d := &builtIn{catalog: newDecodeCatalog(map[string]config.IPFIXFieldDefinition{
+		"interface_name": {ID: netflow.IPFIX_FIELD_interfaceName, Type: "string"},
+		"mystery":        {ID: 5000, Type: "frobnitz"},
+	})}
+	fields := map[string]any{}
+	keys := d.mapDataFields(fields, []netflow.DataField{
+		{Type: netflow.IPFIX_FIELD_interfaceName, Value: []byte("eth0")},
+		{Type: 5000, Value: []byte{1, 2, 3}},
+	}, 0, 0, false)
+
+	if fields["interface_name"] != "eth0" {
+		t.Fatalf("expected interface_name string decode, got %#v", fields["interface_name"])
+	}
+	if fields["mystery"] != "AQID" {
+		t.Fatalf("expected unknown catalog type as base64, got %#v", fields["mystery"])
+	}
+	if !reflect.DeepEqual(keys, []string{"interface_name", "mystery"}) {
+		t.Fatalf("expected decoded keys, got %#v", keys)
+	}
+}
+
+func TestOptionsEventsDecodeScopeAndOptionFields(t *testing.T) {
+	d := &builtIn{catalog: newDecodeCatalog(map[string]config.IPFIXFieldDefinition{
+		"observation_domain_id": {ID: netflow.IPFIX_FIELD_observationDomainId, Type: "unsigned32"},
+		"interface_name":        {ID: netflow.IPFIX_FIELD_interfaceName, Type: "string"},
+		"sampling_rate":         {ID: netflow.IPFIX_FIELD_samplingInterval, Type: "unsigned32"},
+	})}
+	base := &event.Event{
+		ReceivedAt: time.Unix(1, 0),
+		Source:     event.SourceMetadata{Type: "flow"},
+	}
+	events := d.optionsEventsFromIPFIX(base, &netflow.IPFIXPacket{Version: 10}, []netflow.OptionsDataFlowSet{
+		{
+			FlowSetHeader: netflow.FlowSetHeader{Id: 1024},
+			Records: []netflow.OptionsDataRecord{
+				{
+					ScopesValues: []netflow.DataField{
+						{Type: netflow.IPFIX_FIELD_observationDomainId, Value: []byte{0, 0, 0, 42}},
+					},
+					OptionsValues: []netflow.DataField{
+						{Type: netflow.IPFIX_FIELD_interfaceName, Value: []byte("eth0")},
+						{Type: netflow.IPFIX_FIELD_samplingInterval, Value: []byte{0, 0, 0, 100}},
+					},
+				},
+			},
+		},
+	})
+
+	if len(events) != 1 {
+		t.Fatalf("expected one options event, got %d", len(events))
+	}
+	fields := events[0].Fields
+	if fields["observation_domain_id"] != uint32(42) {
+		t.Fatalf("expected decoded scope observation_domain_id, got %#v", fields["observation_domain_id"])
+	}
+	if fields["interface_name"] != "eth0" {
+		t.Fatalf("expected decoded option interface_name, got %#v", fields["interface_name"])
+	}
+	if fields["sampling_rate"] != uint32(100) {
+		t.Fatalf("expected decoded sampling_rate, got %#v", fields["sampling_rate"])
+	}
+	if !reflect.DeepEqual(fields["tflow.scope"], []string{"observation_domain_id"}) {
+		t.Fatalf("expected tflow.scope to list scope keys, got %#v", fields["tflow.scope"])
 	}
 }
 

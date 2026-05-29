@@ -1,8 +1,10 @@
 package decode
 
 import (
+	"encoding/base64"
 	"fmt"
 	"math"
+	"net"
 
 	"github.com/netsampler/goflow2/v3/decoders/netflow"
 	"github.com/netsampler/goflow2/v3/pkg/reflow/config"
@@ -140,11 +142,26 @@ func decodeCatalogValue(def config.IPFIXFieldDefinition, val any) any {
 		return int32(decodeSigned64(val, def.Length))
 	case "signed64":
 		return decodeSigned64(val, def.Length)
-	case "bytes", "macAddress":
+	case "bytes":
 		return cloneRawBytes(val)
+	case "macAddress":
+		return decodeMACString(val)
+	case "boolean":
+		return decodeUint32(val) != 0
 	default:
-		return cloneRawBytes(val)
+		return base64RawValue(val)
 	}
+}
+
+func decodeMACString(val any) any {
+	raw, ok := val.([]byte)
+	if !ok {
+		return val
+	}
+	if len(raw) == 0 {
+		return ""
+	}
+	return net.HardwareAddr(raw).String()
 }
 
 func decodeSigned64(val any, length uint16) int64 {
@@ -183,4 +200,15 @@ func cloneRawBytes(val any) any {
 		return val
 	}
 	return append([]byte(nil), raw...)
+}
+
+func base64RawValue(val any) string {
+	switch v := val.(type) {
+	case []byte:
+		return base64.StdEncoding.EncodeToString(v)
+	case string:
+		return base64.StdEncoding.EncodeToString([]byte(v))
+	default:
+		return base64.StdEncoding.EncodeToString([]byte(fmt.Sprint(v)))
+	}
 }

@@ -284,6 +284,11 @@ func (d *builtIn) optionsEvents(base *event.Event, flowType string, version uint
 			fields["flow_version"] = version
 			fields["record_kind"] = "options_data"
 			fields["template_id"] = uint32(set.Id)
+			scopeKeys := d.mapDataFields(fields, record.ScopesValues, 0, 0, version == 9)
+			d.mapDataFields(fields, record.OptionsValues, 0, 0, version == 9)
+			if len(scopeKeys) > 0 {
+				fields["tflow.scope"] = scopeKeys
+			}
 			for _, dataField := range record.OptionsValues {
 				switch dataField.Type {
 				case 34, 50, 305:
@@ -299,46 +304,64 @@ func (d *builtIn) optionsEvents(base *event.Event, flowType string, version uint
 
 // mapDataFields keeps the first cut of canonical field mapping close to the
 // decode boundary so later stages can remain protocol-agnostic.
-func (d *builtIn) mapDataFields(fields map[string]any, values []netflow.DataField, sysUptime, unixSeconds uint32, netflowV9 bool) {
+func (d *builtIn) mapDataFields(fields map[string]any, values []netflow.DataField, sysUptime, unixSeconds uint32, netflowV9 bool) []string {
+	keys := make([]string, 0, len(values))
 	for _, field := range values {
 		if d != nil && !d.catalog.empty() {
 			if catalogField, ok := d.catalog.lookup(field, netflowV9); ok {
 				applyCatalogDataField(fields, field, catalogField, sysUptime, unixSeconds, netflowV9)
+				keys = append(keys, catalogField.key)
+				continue
 			}
-			continue
 		}
 		switch field.Type {
 		case 4:
 			fields["proto"] = decodeUint32(field.Value)
 			fields["proto_name"] = ipProtocolName(decodeUint32(field.Value))
+			keys = append(keys, "proto")
 		case netflow.NFV9_FIELD_TCP_FLAGS:
 			fields["tcp_flags"] = decodeUint32(field.Value)
+			keys = append(keys, "tcp_flags")
 		case 7:
 			fields["src_port"] = decodeUint32(field.Value)
+			keys = append(keys, "src_port")
 		case 11:
 			fields["dst_port"] = decodeUint32(field.Value)
+			keys = append(keys, "dst_port")
 		case 8, 27:
 			fields["src_addr"] = decodeIPString(field.Value)
+			keys = append(keys, "src_addr")
 		case 12, 28:
 			fields["dst_addr"] = decodeIPString(field.Value)
+			keys = append(keys, "dst_addr")
 		case 1:
 			fields["bytes"] = int64(decodeUint64(field.Value))
+			keys = append(keys, "bytes")
 		case 2:
 			fields["packets"] = int64(decodeUint64(field.Value))
+			keys = append(keys, "packets")
 		case 10:
 			fields["input_if"] = decodeUint32(field.Value)
+			keys = append(keys, "input_if")
 		case 14:
 			fields["output_if"] = decodeUint32(field.Value)
+			keys = append(keys, "output_if")
 		case 34:
 			fields["sampling_rate"] = decodeUint32(field.Value)
+			keys = append(keys, "sampling_rate")
 		case netflow.NFV9_FIELD_FIRST_SWITCHED:
 			fields["start_time_unix"] = flowTimeFromV9(sysUptime, unixSeconds, decodeUint32(field.Value))
+			keys = append(keys, "start_time_unix")
 		case netflow.NFV9_FIELD_LAST_SWITCHED:
 			fields["end_time_unix"] = flowTimeFromV9(sysUptime, unixSeconds, decodeUint32(field.Value))
+			keys = append(keys, "end_time_unix")
 		case netflow.IPFIX_FIELD_flowStartMilliseconds:
 			fields["start_time_unix"] = int64(decodeUint64(field.Value))
+			keys = append(keys, "start_time_unix")
 		case netflow.IPFIX_FIELD_flowEndMilliseconds:
 			fields["end_time_unix"] = int64(decodeUint64(field.Value))
+			keys = append(keys, "end_time_unix")
 		}
 	}
+	return keys
 }
