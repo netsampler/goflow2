@@ -6,17 +6,18 @@ import (
 )
 
 type Event struct {
-	ReceivedAt time.Time        `json:"received_at"`
-	Kind       string           `json:"kind,omitempty"`
-	Stream     string           `json:"stream,omitempty"`
-	Source     SourceMetadata   `json:"source"`
-	Control    *ControlMetadata `json:"control,omitempty"`
-	Message    json.RawMessage  `json:"message,omitempty"`
-	Fields     map[string]any   `json:"fields,omitempty"`
-	Packet     *PacketModel     `json:"packet,omitempty"`
-	SFlow      *SFlowMetadata   `json:"sflow,omitempty"`
-	Payload    any              `json:"-"`
-	Internal   map[string]any   `json:"-"`
+	ReceivedAt  time.Time            `json:"received_at"`
+	Kind        string               `json:"kind,omitempty"`
+	Stream      string               `json:"stream,omitempty"`
+	Source      SourceMetadata       `json:"source"`
+	Control     *ControlMetadata     `json:"control,omitempty"`
+	Message     json.RawMessage      `json:"message,omitempty"`
+	Fields      map[string]any       `json:"fields,omitempty"`
+	Packet      *PacketModel         `json:"packet,omitempty"`
+	SFlow       *SFlowMetadata       `json:"sflow,omitempty"`
+	Aggregation *AggregationMetadata `json:"aggregation,omitempty"`
+	Payload     any                  `json:"-"`
+	Internal    map[string]any       `json:"-"`
 }
 
 type ControlMetadata struct {
@@ -82,6 +83,12 @@ type SamplingMetadata struct {
 	Rate       uint32 `json:"rate,omitempty"`
 	SamplePool uint32 `json:"sample_pool,omitempty"`
 	Drops      uint32 `json:"drops,omitempty"`
+}
+
+type AggregationMetadata struct {
+	Key           string `json:"key,omitempty"`
+	FirstSeenUnix int64  `json:"first_seen_unix,omitempty"`
+	LastSeenUnix  int64  `json:"last_seen_unix,omitempty"`
 }
 
 type SFlowMetadata struct {

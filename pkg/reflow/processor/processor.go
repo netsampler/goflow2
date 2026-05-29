@@ -343,6 +343,14 @@ func (p *Builtin) processReFlowFields(evt *event.Event, record map[string]any) (
 			packet.ApplyModelFieldsWithHelpers(fields, model, p.aggregationHelpers())
 			continue
 		}
+		if key == "aggregation" {
+			meta, err := reFlowAggregationMetadataFromValue(value)
+			if err != nil {
+				return nil, err
+			}
+			evt.Aggregation = meta
+			continue
+		}
 		fields[key] = normalizeReFlowJSONValue(key, value)
 	}
 	setIPFamilyFromFields(fields)
@@ -485,12 +493,24 @@ func reFlowPacketModelFromValue(value any) (*event.PacketModel, error) {
 	return &model, nil
 }
 
+func reFlowAggregationMetadataFromValue(value any) (*event.AggregationMetadata, error) {
+	data, err := json.Marshal(value)
+	if err != nil {
+		return nil, fmt.Errorf("encode reflow aggregation metadata: %w", err)
+	}
+	var meta event.AggregationMetadata
+	if err := json.Unmarshal(data, &meta); err != nil {
+		return nil, fmt.Errorf("decode reflow aggregation metadata: %w", err)
+	}
+	return &meta, nil
+}
+
 func canonicalEventFields(record map[string]any) (map[string]any, bool) {
 	fields, ok := record["fields"].(map[string]any)
 	if !ok {
 		return nil, false
 	}
-	for _, key := range []string{"received_at", "kind", "stream", "source", "control", "message", "packet", "sflow"} {
+	for _, key := range []string{"received_at", "kind", "stream", "source", "control", "message", "packet", "sflow", "aggregation"} {
 		if _, ok := record[key]; ok {
 			return fields, true
 		}

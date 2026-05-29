@@ -679,7 +679,7 @@ func TestStatefulAggregatedEventsCarryConfiguredStream(t *testing.T) {
 	}
 }
 
-func TestStatefulPrefixesSyntheticMetadataFields(t *testing.T) {
+func TestStatefulStoresSyntheticMetadataInAggregationEnvelope(t *testing.T) {
 	agg, err := New(config.AggregatorConfig{
 		Periodic: config.AggregatorPeriodicConfig{
 			Every: 1,
@@ -708,18 +708,22 @@ func TestStatefulPrefixesSyntheticMetadataFields(t *testing.T) {
 		t.Fatalf("expected 1 aggregated event, got %d", len(out))
 	}
 
-	fields := out[0].Fields
-	if got := fields["_aggregation_key"]; got != "192.0.2.1" {
-		t.Fatalf("expected _aggregation_key=192.0.2.1, got %#v", got)
+	metadata := out[0].Aggregation
+	if metadata == nil {
+		t.Fatalf("expected aggregation metadata")
 	}
-	for _, key := range []string{"_first_seen_unix", "_last_seen_unix"} {
-		if _, ok := fields[key]; !ok {
-			t.Fatalf("expected %s field to be present", key)
-		}
+	if metadata.Key != "192.0.2.1" {
+		t.Fatalf("expected aggregation key 192.0.2.1, got %q", metadata.Key)
 	}
-	for _, key := range []string{"aggregation_key", "first_seen_unix", "last_seen_unix"} {
-		if _, ok := fields[key]; ok {
-			t.Fatalf("did not expect unprefixed synthetic metadata field %s", key)
+	if metadata.FirstSeenUnix == 0 {
+		t.Fatalf("expected first_seen_unix to be set")
+	}
+	if metadata.LastSeenUnix == 0 {
+		t.Fatalf("expected last_seen_unix to be set")
+	}
+	for _, key := range []string{"_aggregation_key", "_first_seen_unix", "_last_seen_unix", "aggregation_key", "first_seen_unix", "last_seen_unix"} {
+		if _, ok := out[0].Fields[key]; ok {
+			t.Fatalf("did not expect synthetic metadata field %s", key)
 		}
 	}
 }
