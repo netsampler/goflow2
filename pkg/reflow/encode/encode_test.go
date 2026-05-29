@@ -825,6 +825,141 @@ func TestSFlowEncoderUsesSourceSamplingMetadata(t *testing.T) {
 	}
 }
 
+func TestSFlowEncoderSynthesizesExtendedNATAndMPLSRecords(t *testing.T) {
+	enc := NewSFlowEncoder(config.EncoderConfig{Type: "sflow"})
+
+	payloads, err := enc.Encode(&event.Event{
+		Fields: map[string]any{
+			"agent_ip":                    "192.0.2.10",
+			"src_addr":                    "192.0.2.1",
+			"dst_addr":                    "198.51.100.2",
+			"proto":                       uint32(6),
+			"nat_src_addr":                "203.0.113.10",
+			"nat_dst_addr":                "203.0.113.20",
+			"mpls_next_hop_addr":          "192.0.2.254",
+			"mpls_label_stack_section_1":  []byte{0x00, 0x01, 0x11},
+			"mpls_out_label_stack":        []uint32{0x00022200},
+			"mpls_tunnel_lsp_name":        "lsp-a",
+			"mpls_tunnel_id":              uint32(12),
+			"mpls_vc_instance_name":       "vc-a",
+			"mpls_vll_vc_id":              uint32(13),
+			"mpls_ftn_descr":              "ftn-a",
+			"mpls_ftn_mask":               uint32(24),
+			"mpls_fec_addr_prefix_length": uint32(25),
+		},
+	})
+	if err != nil {
+		t.Fatalf("Encode returned error: %v", err)
+	}
+
+	packet := decodeSFlowPacket(t, payloads[0])
+	sample := packet.Samples[0].(sflow.FlowSample)
+	if len(sample.Records) != 7 {
+		t.Fatalf("expected sampled header plus 6 extended records, got %d", len(sample.Records))
+	}
+	nat, ok := sample.Records[1].Data.(sflow.ExtendedNAT)
+	if !ok {
+		t.Fatalf("expected record 1 ExtendedNAT, got %T", sample.Records[1].Data)
+	}
+	if !bytes.Equal(nat.SrcAddress, []byte{203, 0, 113, 10}) || !bytes.Equal(nat.DstAddress, []byte{203, 0, 113, 20}) {
+		t.Fatalf("unexpected NAT addresses: %#v", nat)
+	}
+	mpls, ok := sample.Records[2].Data.(sflow.ExtendedMPLS)
+	if !ok {
+		t.Fatalf("expected record 2 ExtendedMPLS, got %T", sample.Records[2].Data)
+	}
+	if !bytes.Equal(mpls.NextHop, []byte{192, 0, 2, 254}) || len(mpls.InLabelStack) != 1 || len(mpls.OutLabelStack) != 1 {
+		t.Fatalf("unexpected MPLS record: %#v", mpls)
+	}
+	if got := sample.Records[3].Data.(sflow.ExtendedMPLSTunnel).TunnelLSPName; got != "lsp-a" {
+		t.Fatalf("expected tunnel lsp name, got %q", got)
+	}
+	if got := sample.Records[4].Data.(sflow.ExtendedMPLSVC).VCInstanceName; got != "vc-a" {
+		t.Fatalf("expected vc name, got %q", got)
+	}
+	if got := sample.Records[5].Data.(sflow.ExtendedMPLSFTN).MPLSFTNDescr; got != "ftn-a" {
+		t.Fatalf("expected ftn descr, got %q", got)
+	}
+	if got := sample.Records[6].Data.(sflow.ExtendedMPLSLDPFEC).MPLSFecAddrPrefixLength; got != 25 {
+		t.Fatalf("expected fec prefix length 25, got %d", got)
+	}
+}
+
+func TestSFlowEncoderCanDisableSyntheticExtendedRecords(t *testing.T) {
+	emitExtended := false
+	enc := NewSFlowEncoder(config.EncoderConfig{
+		Type: "sflow",
+		SFlow: config.SFlowConfig{
+			EmitExtendedRecords: &emitExtended,
+		},
+	})
+
+	payloads, err := enc.Encode(&event.Event{
+		Fields: map[string]any{
+			"agent_ip":     "192.0.2.10",
+			"src_addr":     "192.0.2.1",
+			"dst_addr":     "198.51.100.2",
+			"proto":        uint32(6),
+			"nat_src_addr": "203.0.113.10",
+			"mpls_label_1": uint32(17),
+		},
+	})
+	if err != nil {
+		t.Fatalf("Encode returned error: %v", err)
+	}
+
+	packet := decodeSFlowPacket(t, payloads[0])
+	sample := packet.Samples[0].(sflow.FlowSample)
+	if len(sample.Records) != 1 {
+		t.Fatalf("expected only sampled header record, got %d", len(sample.Records))
+	}
+}
+
+func TestSFlowEncoderForwardsPreservedEnterpriseRecord(t *testing.T) {
+	enterpriseFormat := sflow.PackDataFormat(64512, 7)
+	enc := NewSFlowEncoder(config.EncoderConfig{Type: "sflow"})
+
+	payloads, err := enc.Encode(&event.Event{
+		Fields: map[string]any{
+			"agent_ip":        "192.0.2.10",
+			"protocol":        uint32(1),
+			"frame_length":    uint32(60),
+			"original_length": uint32(4),
+			"header_data":     []byte{1, 2, 3, 4},
+			"nat_src_addr":    "203.0.113.10",
+			"nat_dst_addr":    "203.0.113.20",
+		},
+		Internal: map[string]any{
+			sflowFlowRecordsInternalKey: []sflow.FlowRecord{
+				{Header: sflow.RecordHeader{DataFormat: enterpriseFormat}, Data: sflow.RawRecord{Data: []byte{0xde, 0xad, 0xbe, 0xef}}},
+				{Data: sflow.ExtendedNAT{SrcAddress: []byte{198, 51, 100, 10}, DstAddress: []byte{198, 51, 100, 20}}},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Encode returned error: %v", err)
+	}
+
+	packet := decodeSFlowPacket(t, payloads[0])
+	sample := packet.Samples[0].(sflow.FlowSample)
+	if len(sample.Records) != 3 {
+		t.Fatalf("expected sampled header plus preserved enterprise/NAT records, got %d", len(sample.Records))
+	}
+	raw := sample.Records[1].Data.(sflow.RawRecord)
+	if sample.Records[1].Header.DataFormat != enterpriseFormat || !bytes.Equal(raw.Data, []byte{0xde, 0xad, 0xbe, 0xef}) {
+		t.Fatalf("expected enterprise raw record to be forwarded, got %#v", sample.Records[1])
+	}
+	natCount := 0
+	for _, record := range sample.Records {
+		if _, ok := record.Data.(sflow.ExtendedNAT); ok {
+			natCount++
+		}
+	}
+	if natCount != 1 {
+		t.Fatalf("expected preserved NAT to suppress synthetic duplicate, got %d NAT records", natCount)
+	}
+}
+
 func TestSFlowEncoderBuildsPseudoHeaderFromTuple(t *testing.T) {
 	enc := NewSFlowEncoder(config.EncoderConfig{Type: "sflow"})
 
@@ -1248,6 +1383,43 @@ func TestSFlowCounterEventOverridesConfiguredFormat(t *testing.T) {
 	}
 	if sample.Header.SourceIdType != 3 {
 		t.Fatalf("expected source_id_type 3, got %d", sample.Header.SourceIdType)
+	}
+}
+
+func TestSFlowEncoderEmitsEthernetCounterSample(t *testing.T) {
+	enc := NewSFlowEncoder(config.EncoderConfig{
+		Type: "sflow",
+	})
+
+	payloads, err := enc.Encode(&event.Event{
+		Fields: map[string]any{
+			"record_kind":                            "ethernet_counter",
+			"agent_ip":                               "192.0.2.1",
+			"source_id":                              uint32(8),
+			"dot3_stats_fcs_errors":                  uint32(2),
+			"dot3_stats_frame_too_longs":             uint32(11),
+			"dot3_stats_internal_mac_receive_errors": uint32(12),
+			"dot3_stats_symbol_errors":               uint32(13),
+		},
+	})
+	if err != nil {
+		t.Fatalf("Encode returned error: %v", err)
+	}
+
+	packet := decodeSFlowPacket(t, payloads[0])
+	sample, ok := packet.Samples[0].(sflow.CounterSample)
+	if !ok {
+		t.Fatalf("expected counter sample, got %T", packet.Samples[0])
+	}
+	record, ok := sample.Records[0].Data.(sflow.EthernetCounters)
+	if !ok {
+		t.Fatalf("expected EthernetCounters record, got %T", sample.Records[0].Data)
+	}
+	if record.Dot3StatsFCSErrors != 2 {
+		t.Fatalf("expected FCS errors 2, got %d", record.Dot3StatsFCSErrors)
+	}
+	if record.Dot3StatsSymbolErrors != 13 {
+		t.Fatalf("expected symbol errors 13, got %d", record.Dot3StatsSymbolErrors)
 	}
 }
 

@@ -149,6 +149,16 @@ func encodeSample(sample interface{}) ([]byte, uint32, error) {
 		}
 		payload, err := encodeDropSample(s, format)
 		return payload, format, err
+	case RawSample:
+		if s.Header.Format == 0 {
+			return nil, 0, fmt.Errorf("sflow: raw sample format is not set")
+		}
+		return append([]byte(nil), s.Data...), s.Header.Format, nil
+	case *RawSample:
+		if s.Header.Format == 0 {
+			return nil, 0, fmt.Errorf("sflow: raw sample format is not set")
+		}
+		return append([]byte(nil), s.Data...), s.Header.Format, nil
 	default:
 		return nil, 0, fmt.Errorf("sflow: unsupported sample type %T", sample)
 	}
@@ -552,6 +562,90 @@ func encodeFlowRecord(buf *bytes.Buffer, record *FlowRecord) error {
 			dataFormat = FLOW_TYPE_EXT_GATEWAY
 		}
 		if err := encodeExtendedGateway(payload, data); err != nil {
+			return err
+		}
+	case ExtendedMPLS:
+		if dataFormat == 0 {
+			dataFormat = FLOW_TYPE_EXT_MPLS
+		}
+		if err := encodeExtendedMPLS(payload, &data); err != nil {
+			return err
+		}
+	case *ExtendedMPLS:
+		if dataFormat == 0 {
+			dataFormat = FLOW_TYPE_EXT_MPLS
+		}
+		if err := encodeExtendedMPLS(payload, data); err != nil {
+			return err
+		}
+	case ExtendedNAT:
+		if dataFormat == 0 {
+			dataFormat = FLOW_TYPE_EXT_NAT
+		}
+		if err := encodeExtendedNAT(payload, &data); err != nil {
+			return err
+		}
+	case *ExtendedNAT:
+		if dataFormat == 0 {
+			dataFormat = FLOW_TYPE_EXT_NAT
+		}
+		if err := encodeExtendedNAT(payload, data); err != nil {
+			return err
+		}
+	case ExtendedMPLSTunnel:
+		if dataFormat == 0 {
+			dataFormat = FLOW_TYPE_EXT_MPLS_TUNNEL
+		}
+		if err := encodeExtendedMPLSTunnel(payload, &data); err != nil {
+			return err
+		}
+	case *ExtendedMPLSTunnel:
+		if dataFormat == 0 {
+			dataFormat = FLOW_TYPE_EXT_MPLS_TUNNEL
+		}
+		if err := encodeExtendedMPLSTunnel(payload, data); err != nil {
+			return err
+		}
+	case ExtendedMPLSVC:
+		if dataFormat == 0 {
+			dataFormat = FLOW_TYPE_EXT_MPLS_VC
+		}
+		if err := encodeExtendedMPLSVC(payload, &data); err != nil {
+			return err
+		}
+	case *ExtendedMPLSVC:
+		if dataFormat == 0 {
+			dataFormat = FLOW_TYPE_EXT_MPLS_VC
+		}
+		if err := encodeExtendedMPLSVC(payload, data); err != nil {
+			return err
+		}
+	case ExtendedMPLSFTN:
+		if dataFormat == 0 {
+			dataFormat = FLOW_TYPE_EXT_MPLS_FEC
+		}
+		if err := encodeExtendedMPLSFTN(payload, &data); err != nil {
+			return err
+		}
+	case *ExtendedMPLSFTN:
+		if dataFormat == 0 {
+			dataFormat = FLOW_TYPE_EXT_MPLS_FEC
+		}
+		if err := encodeExtendedMPLSFTN(payload, data); err != nil {
+			return err
+		}
+	case ExtendedMPLSLDPFEC:
+		if dataFormat == 0 {
+			dataFormat = FLOW_TYPE_EXT_MPLS_LVP_FEC
+		}
+		if err := utils.WriteU32(payload, data.MPLSFecAddrPrefixLength); err != nil {
+			return err
+		}
+	case *ExtendedMPLSLDPFEC:
+		if dataFormat == 0 {
+			dataFormat = FLOW_TYPE_EXT_MPLS_LVP_FEC
+		}
+		if err := utils.WriteU32(payload, data.MPLSFecAddrPrefixLength); err != nil {
 			return err
 		}
 	case EgressQueue:
@@ -968,8 +1062,67 @@ func encodeExtendedGateway(buf *bytes.Buffer, data *ExtendedGateway) error {
 	return nil
 }
 
+func encodeExtendedMPLS(buf *bytes.Buffer, data *ExtendedMPLS) error {
+	if err := encodeIP(buf, data.NextHopIPVersion, data.NextHop); err != nil {
+		return err
+	}
+	if err := writeU32Vector(buf, data.InLabelStack); err != nil {
+		return err
+	}
+	return writeU32Vector(buf, data.OutLabelStack)
+}
+
+func encodeExtendedNAT(buf *bytes.Buffer, data *ExtendedNAT) error {
+	if err := encodeIP(buf, data.SrcAddressIPVersion, data.SrcAddress); err != nil {
+		return err
+	}
+	return encodeIP(buf, data.DstAddressIPVersion, data.DstAddress)
+}
+
+func encodeExtendedMPLSTunnel(buf *bytes.Buffer, data *ExtendedMPLSTunnel) error {
+	if err := writeXDRString(buf, data.TunnelLSPName); err != nil {
+		return err
+	}
+	if err := utils.WriteU32(buf, data.TunnelID); err != nil {
+		return err
+	}
+	return utils.WriteU32(buf, data.TunnelCOS)
+}
+
+func encodeExtendedMPLSVC(buf *bytes.Buffer, data *ExtendedMPLSVC) error {
+	if err := writeXDRString(buf, data.VCInstanceName); err != nil {
+		return err
+	}
+	if err := utils.WriteU32(buf, data.VLLVCID); err != nil {
+		return err
+	}
+	return utils.WriteU32(buf, data.VCLabelCOS)
+}
+
+func encodeExtendedMPLSFTN(buf *bytes.Buffer, data *ExtendedMPLSFTN) error {
+	if err := writeXDRString(buf, data.MPLSFTNDescr); err != nil {
+		return err
+	}
+	return utils.WriteU32(buf, data.MPLSFTNMask)
+}
+
+func writeU32Vector(buf *bytes.Buffer, values []uint32) error {
+	if err := utils.WriteU32(buf, uint32(len(values))); err != nil {
+		return err
+	}
+	for _, value := range values {
+		if err := utils.WriteU32(buf, value); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func encodeIP(buf *bytes.Buffer, ipVersion uint32, ip []byte) error {
 	if ipVersion == 0 {
+		if len(ip) == 0 {
+			return utils.WriteU32(buf, 0)
+		}
 		switch len(ip) {
 		case 4:
 			ipVersion = 1

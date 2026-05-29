@@ -1471,6 +1471,7 @@ encoder:
   type: sflow
   sflow:
     counter_format: expanded
+    emit_extended_records: false
     use_metadata_sequence_number: true
 
 sink:
@@ -1489,6 +1490,9 @@ sink:
 	}
 	if !cfg.Encoder.SFlow.UseMetadataSequenceNumber {
 		t.Fatalf("expected sflow.use_metadata_sequence_number=true")
+	}
+	if cfg.Encoder.SFlow.EmitExtendedRecords == nil || *cfg.Encoder.SFlow.EmitExtendedRecords {
+		t.Fatalf("expected sflow.emit_extended_records=false")
 	}
 	if cfg.Encoder.AllowTruncate == nil || !*cfg.Encoder.AllowTruncate {
 		t.Fatalf("expected sflow allow_truncate to default true")

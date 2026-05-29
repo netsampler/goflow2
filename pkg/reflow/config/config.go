@@ -381,6 +381,7 @@ func (c BatchConfig) IsEnabled() bool {
 type SFlowConfig struct {
 	AgentIP                   string               `yaml:"agent_ip"`
 	CounterFormat             string               `yaml:"counter_format"`
+	EmitExtendedRecords       *bool                `yaml:"emit_extended_records"`
 	UseMetadataSequenceNumber bool                 `yaml:"use_metadata_sequence_number"`
 	MaxHeaderBytes            int                  `yaml:"max_header_bytes"`
 	BatchOver                 SFlowBatchOverConfig `yaml:"batch_over"`
@@ -733,6 +734,7 @@ func (c *Config) setDefaults(configPath string) error {
 	defaultTrue(&c.Encoder.SFlow.BatchOver.SubAgentID)
 	defaultTrue(&c.Encoder.SFlow.BatchOver.SequenceNumber)
 	defaultTrue(&c.Encoder.SFlow.BatchOver.Uptime)
+	defaultTrue(&c.Encoder.SFlow.EmitExtendedRecords)
 	if c.Encoder.SFlow.MaxHeaderBytes < 0 {
 		return fmt.Errorf("encoder.sflow.max_header_bytes must be >= 0")
 	}

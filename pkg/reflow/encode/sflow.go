@@ -17,6 +17,10 @@ import (
 
 var ErrSFlowSampleTooLarge = errors.New("sflow sample exceeds max_datagram_bytes")
 
+const sflowFlowRecordsInternalKey = "sflow_flow_records"
+const sflowSampleInternalKey = "sflow_sample"
+const sflowCounterRecordsInternalKey = "sflow_counter_records"
+
 type sflowSampleTooLargeError struct {
 	MaxDatagramBytes int
 	CurrentSize      int
@@ -277,6 +281,12 @@ func (e *SFlowEncoder) batchDatagramLimit() int {
 
 // buildSample dispatches between flow-sample and counter-sample output.
 func (e *SFlowEncoder) buildSample(evt *event.Event) (interface{}, error) {
+	if sample, ok := evt.Internal[sflowSampleInternalKey].(sflow.RawSample); ok {
+		return sample, nil
+	}
+	if sample, ok := evt.Internal[sflowSampleInternalKey].(*sflow.RawSample); ok {
+		return sample, nil
+	}
 	if isSFlowCounterEvent(evt) {
 		return e.buildCounterSample(evt)
 	}
@@ -291,6 +301,22 @@ func (e *SFlowEncoder) buildFlowSample(evt *event.Event) (sflow.FlowSample, erro
 	}
 	headerData, protocol, frameLength, originalLength := e.sampledHeaderFields(evt, fields)
 
+	records := []sflow.FlowRecord{
+		{
+			Data: sflow.SampledHeader{
+				Protocol:       protocol,
+				FrameLength:    frameLength,
+				Stripped:       uint32Field(fields, "stripped"),
+				OriginalLength: originalLength,
+				HeaderData:     headerData,
+			},
+		},
+	}
+	records = append(records, preservedSFlowFlowRecords(evt)...)
+	if e.emitExtendedRecords() {
+		records = append(records, e.syntheticExtendedRecords(fields, records)...)
+	}
+
 	return sflow.FlowSample{
 		Header: sflow.SampleHeader{
 			Format:               sflow.SAMPLE_FORMAT_FLOW,
@@ -303,18 +329,238 @@ func (e *SFlowEncoder) buildFlowSample(evt *event.Event) (sflow.FlowSample, erro
 		Drops:        sflowDrops(evt),
 		Input:        uint32Field(fields, "input_if"),
 		Output:       uint32Field(fields, "output_if"),
-		Records: []sflow.FlowRecord{
-			{
-				Data: sflow.SampledHeader{
-					Protocol:       protocol,
-					FrameLength:    frameLength,
-					Stripped:       uint32Field(fields, "stripped"),
-					OriginalLength: originalLength,
-					HeaderData:     headerData,
-				},
-			},
-		},
+		Records:      records,
 	}, nil
+}
+
+func (e *SFlowEncoder) emitExtendedRecords() bool {
+	return e.cfg.EmitExtendedRecords == nil || *e.cfg.EmitExtendedRecords
+}
+
+func preservedSFlowFlowRecords(evt *event.Event) []sflow.FlowRecord {
+	if evt == nil || evt.Internal == nil {
+		return nil
+	}
+	records, _ := evt.Internal[sflowFlowRecordsInternalKey].([]sflow.FlowRecord)
+	if len(records) == 0 {
+		return nil
+	}
+	out := make([]sflow.FlowRecord, len(records))
+	copy(out, records)
+	return out
+}
+
+func (e *SFlowEncoder) syntheticExtendedRecords(fields map[string]any, existing []sflow.FlowRecord) []sflow.FlowRecord {
+	var records []sflow.FlowRecord
+	if !hasStandardSFlowRecord(existing, sflow.FLOW_TYPE_EXT_NAT) {
+		if record, ok := syntheticNATRecord(fields); ok {
+			records = append(records, record)
+		}
+	}
+	if !hasStandardSFlowRecord(existing, sflow.FLOW_TYPE_EXT_MPLS) {
+		if record, ok := syntheticMPLSRecord(fields); ok {
+			records = append(records, record)
+		}
+	}
+	if !hasStandardSFlowRecord(existing, sflow.FLOW_TYPE_EXT_MPLS_TUNNEL) {
+		if record, ok := syntheticMPLSTunnelRecord(fields); ok {
+			records = append(records, record)
+		}
+	}
+	if !hasStandardSFlowRecord(existing, sflow.FLOW_TYPE_EXT_MPLS_VC) {
+		if record, ok := syntheticMPLSVCRecord(fields); ok {
+			records = append(records, record)
+		}
+	}
+	if !hasStandardSFlowRecord(existing, sflow.FLOW_TYPE_EXT_MPLS_FEC) {
+		if record, ok := syntheticMPLSFTNRecord(fields); ok {
+			records = append(records, record)
+		}
+	}
+	if !hasStandardSFlowRecord(existing, sflow.FLOW_TYPE_EXT_MPLS_LVP_FEC) {
+		if record, ok := syntheticMPLSLDPFECRecord(fields); ok {
+			records = append(records, record)
+		}
+	}
+	return records
+}
+
+func hasStandardSFlowRecord(records []sflow.FlowRecord, format uint32) bool {
+	for _, record := range records {
+		dataFormat := flowRecordDataFormat(record)
+		if sflow.DataFormatEnterprise(dataFormat) == 0 && sflow.DataFormatFormat(dataFormat) == format {
+			return true
+		}
+	}
+	return false
+}
+
+func flowRecordDataFormat(record sflow.FlowRecord) uint32 {
+	if record.Header.DataFormat != 0 {
+		return record.Header.DataFormat
+	}
+	switch record.Data.(type) {
+	case sflow.ExtendedNAT, *sflow.ExtendedNAT:
+		return sflow.FLOW_TYPE_EXT_NAT
+	case sflow.ExtendedMPLS, *sflow.ExtendedMPLS:
+		return sflow.FLOW_TYPE_EXT_MPLS
+	case sflow.ExtendedMPLSTunnel, *sflow.ExtendedMPLSTunnel:
+		return sflow.FLOW_TYPE_EXT_MPLS_TUNNEL
+	case sflow.ExtendedMPLSVC, *sflow.ExtendedMPLSVC:
+		return sflow.FLOW_TYPE_EXT_MPLS_VC
+	case sflow.ExtendedMPLSFTN, *sflow.ExtendedMPLSFTN:
+		return sflow.FLOW_TYPE_EXT_MPLS_FEC
+	case sflow.ExtendedMPLSLDPFEC, *sflow.ExtendedMPLSLDPFEC:
+		return sflow.FLOW_TYPE_EXT_MPLS_LVP_FEC
+	default:
+		return 0
+	}
+}
+
+func syntheticNATRecord(fields map[string]any) (sflow.FlowRecord, bool) {
+	src := stringFieldOrZero(fields, "nat_src_addr")
+	dst := stringFieldOrZero(fields, "nat_dst_addr")
+	if src == "" && dst == "" {
+		return sflow.FlowRecord{}, false
+	}
+	if src == "" {
+		src = stringFieldOrZero(fields, "src_addr")
+	}
+	if dst == "" {
+		dst = stringFieldOrZero(fields, "dst_addr")
+	}
+	srcAddr, srcOK := parseSFlowIP(src)
+	dstAddr, dstOK := parseSFlowIP(dst)
+	if !srcOK || !dstOK {
+		return sflow.FlowRecord{}, false
+	}
+	return sflow.FlowRecord{Data: sflow.ExtendedNAT{
+		SrcAddress: srcAddr,
+		DstAddress: dstAddr,
+	}}, true
+}
+
+func syntheticMPLSRecord(fields map[string]any) (sflow.FlowRecord, bool) {
+	inStack := uint32SliceField(fields, "mpls_in_label_stack")
+	outStack := uint32SliceField(fields, "mpls_out_label_stack")
+	if len(inStack) == 0 {
+		inStack = mplsStackFromHelperFields(fields)
+	}
+	if len(inStack) == 0 && len(outStack) == 0 {
+		return sflow.FlowRecord{}, false
+	}
+	nextHop, _ := parseSFlowIP(stringFieldOrZero(fields, "mpls_next_hop_addr"))
+	return sflow.FlowRecord{Data: sflow.ExtendedMPLS{
+		NextHop:       nextHop,
+		InLabelStack:  inStack,
+		OutLabelStack: outStack,
+	}}, true
+}
+
+func syntheticMPLSTunnelRecord(fields map[string]any) (sflow.FlowRecord, bool) {
+	name := stringFieldOrZero(fields, "mpls_tunnel_lsp_name")
+	id := uint32Field(fields, "mpls_tunnel_id")
+	cos := uint32Field(fields, "mpls_tunnel_cos")
+	if name == "" && id == 0 && cos == 0 {
+		return sflow.FlowRecord{}, false
+	}
+	return sflow.FlowRecord{Data: sflow.ExtendedMPLSTunnel{
+		TunnelLSPName: name,
+		TunnelID:      id,
+		TunnelCOS:     cos,
+	}}, true
+}
+
+func syntheticMPLSVCRecord(fields map[string]any) (sflow.FlowRecord, bool) {
+	name := stringFieldOrZero(fields, "mpls_vc_instance_name")
+	id := uint32Field(fields, "mpls_vll_vc_id")
+	cos := uint32Field(fields, "mpls_vc_label_cos")
+	if name == "" && id == 0 && cos == 0 {
+		return sflow.FlowRecord{}, false
+	}
+	return sflow.FlowRecord{Data: sflow.ExtendedMPLSVC{
+		VCInstanceName: name,
+		VLLVCID:        id,
+		VCLabelCOS:     cos,
+	}}, true
+}
+
+func syntheticMPLSFTNRecord(fields map[string]any) (sflow.FlowRecord, bool) {
+	descr := stringFieldOrZero(fields, "mpls_ftn_descr")
+	mask := uint32Field(fields, "mpls_ftn_mask")
+	if descr == "" && mask == 0 {
+		return sflow.FlowRecord{}, false
+	}
+	return sflow.FlowRecord{Data: sflow.ExtendedMPLSFTN{
+		MPLSFTNDescr: descr,
+		MPLSFTNMask:  mask,
+	}}, true
+}
+
+func syntheticMPLSLDPFECRecord(fields map[string]any) (sflow.FlowRecord, bool) {
+	prefixLength := uint32Field(fields, "mpls_fec_addr_prefix_length")
+	if prefixLength == 0 {
+		return sflow.FlowRecord{}, false
+	}
+	return sflow.FlowRecord{Data: sflow.ExtendedMPLSLDPFEC{
+		MPLSFecAddrPrefixLength: prefixLength,
+	}}, true
+}
+
+func parseSFlowIP(value string) ([]byte, bool) {
+	if value == "" {
+		return nil, true
+	}
+	addr, err := netip.ParseAddr(value)
+	if err != nil {
+		return nil, false
+	}
+	return append([]byte(nil), addr.AsSlice()...), true
+}
+
+func uint32SliceField(fields map[string]any, key string) []uint32 {
+	if fields == nil {
+		return nil
+	}
+	val, ok := fields[key]
+	if !ok {
+		return nil
+	}
+	switch v := val.(type) {
+	case []uint32:
+		return append([]uint32(nil), v...)
+	case []any:
+		out := make([]uint32, 0, len(v))
+		for _, item := range v {
+			out = append(out, uint32(uint64FromAny(item)))
+		}
+		return out
+	default:
+		return nil
+	}
+}
+
+func mplsStackFromHelperFields(fields map[string]any) []uint32 {
+	var entries []uint32
+	for i := 1; i <= 16; i++ {
+		section := bytesField(fields, fmt.Sprintf("mpls_label_stack_section_%d", i))
+		if len(section) >= 3 {
+			entries = append(entries, (uint32(section[0])<<24)|(uint32(section[1])<<16)|(uint32(section[2])<<8))
+			continue
+		}
+		label := uint32Field(fields, fmt.Sprintf("mpls_label_%d", i))
+		if label == 0 {
+			label = uint32Field(fields, fmt.Sprintf("mpls_label%d", i))
+		}
+		if label == 0 {
+			continue
+		}
+		entries = append(entries, (label&0xfffff)<<12)
+	}
+	if len(entries) > 0 {
+		entries[len(entries)-1] |= 1 << 8
+	}
+	return entries
 }
 
 func (e *SFlowEncoder) sampledHeaderFields(evt *event.Event, fields map[string]any) ([]byte, uint32, uint32, uint32) {
@@ -374,6 +620,10 @@ func (e *SFlowEncoder) buildCounterSample(evt *event.Event) (sflow.CounterSample
 		return sflow.CounterSample{}, fmt.Errorf("event fields are empty")
 	}
 	format, sourceIDType := e.counterSampleFormat(fields)
+	records, err := e.counterRecords(evt, fields)
+	if err != nil {
+		return sflow.CounterSample{}, err
+	}
 
 	return sflow.CounterSample{
 		Header: sflow.SampleHeader{
@@ -382,33 +632,71 @@ func (e *SFlowEncoder) buildCounterSample(evt *event.Event) (sflow.CounterSample
 			SourceIdType:         sourceIDType,
 			SourceIdValue:        sflowSourceID(evt),
 		},
-		CounterRecordsCount: 1,
-		Records: []sflow.CounterRecord{
-			{
-				Data: sflow.IfCounters{
-					IfIndex:            uint32Field(fields, "if_index"),
-					IfType:             uint32Field(fields, "if_type"),
-					IfSpeed:            uint64Field(fields, "if_speed"),
-					IfDirection:        uint32Field(fields, "if_direction"),
-					IfStatus:           uint32Field(fields, "if_status"),
-					IfInOctets:         uint64Field(fields, "if_in_octets"),
-					IfInUcastPkts:      uint32Field(fields, "if_in_ucast_pkts"),
-					IfInMulticastPkts:  uint32Field(fields, "if_in_multicast_pkts"),
-					IfInBroadcastPkts:  uint32Field(fields, "if_in_broadcast_pkts"),
-					IfInDiscards:       uint32Field(fields, "if_in_discards"),
-					IfInErrors:         uint32Field(fields, "if_in_errors"),
-					IfInUnknownProtos:  uint32Field(fields, "if_in_unknown_protos"),
-					IfOutOctets:        uint64Field(fields, "if_out_octets"),
-					IfOutUcastPkts:     uint32Field(fields, "if_out_ucast_pkts"),
-					IfOutMulticastPkts: uint32Field(fields, "if_out_multicast_pkts"),
-					IfOutBroadcastPkts: uint32Field(fields, "if_out_broadcast_pkts"),
-					IfOutDiscards:      uint32Field(fields, "if_out_discards"),
-					IfOutErrors:        uint32Field(fields, "if_out_errors"),
-					IfPromiscuousMode:  uint32Field(fields, "if_promiscuous_mode"),
-				},
-			},
-		},
+		CounterRecordsCount: uint32(len(records)),
+		Records:             records,
 	}, nil
+}
+
+func (e *SFlowEncoder) counterRecords(evt *event.Event, fields map[string]any) ([]sflow.CounterRecord, error) {
+	if records := preservedSFlowCounterRecords(evt); len(records) > 0 {
+		return records, nil
+	}
+
+	switch stringFieldOrZero(fields, "record_kind") {
+	case "interface_counter":
+		return []sflow.CounterRecord{{Data: sflow.IfCounters{
+			IfIndex:            uint32Field(fields, "if_index"),
+			IfType:             uint32Field(fields, "if_type"),
+			IfSpeed:            uint64Field(fields, "if_speed"),
+			IfDirection:        uint32Field(fields, "if_direction"),
+			IfStatus:           uint32Field(fields, "if_status"),
+			IfInOctets:         uint64Field(fields, "if_in_octets"),
+			IfInUcastPkts:      uint32Field(fields, "if_in_ucast_pkts"),
+			IfInMulticastPkts:  uint32Field(fields, "if_in_multicast_pkts"),
+			IfInBroadcastPkts:  uint32Field(fields, "if_in_broadcast_pkts"),
+			IfInDiscards:       uint32Field(fields, "if_in_discards"),
+			IfInErrors:         uint32Field(fields, "if_in_errors"),
+			IfInUnknownProtos:  uint32Field(fields, "if_in_unknown_protos"),
+			IfOutOctets:        uint64Field(fields, "if_out_octets"),
+			IfOutUcastPkts:     uint32Field(fields, "if_out_ucast_pkts"),
+			IfOutMulticastPkts: uint32Field(fields, "if_out_multicast_pkts"),
+			IfOutBroadcastPkts: uint32Field(fields, "if_out_broadcast_pkts"),
+			IfOutDiscards:      uint32Field(fields, "if_out_discards"),
+			IfOutErrors:        uint32Field(fields, "if_out_errors"),
+			IfPromiscuousMode:  uint32Field(fields, "if_promiscuous_mode"),
+		}}}, nil
+	case "ethernet_counter":
+		return []sflow.CounterRecord{{Data: sflow.EthernetCounters{
+			Dot3StatsAlignmentErrors:           uint32Field(fields, "dot3_stats_alignment_errors"),
+			Dot3StatsFCSErrors:                 uint32Field(fields, "dot3_stats_fcs_errors"),
+			Dot3StatsSingleCollisionFrames:     uint32Field(fields, "dot3_stats_single_collision_frames"),
+			Dot3StatsMultipleCollisionFrames:   uint32Field(fields, "dot3_stats_multiple_collision_frames"),
+			Dot3StatsSQETestErrors:             uint32Field(fields, "dot3_stats_sqe_test_errors"),
+			Dot3StatsDeferredTransmissions:     uint32Field(fields, "dot3_stats_deferred_transmissions"),
+			Dot3StatsLateCollisions:            uint32Field(fields, "dot3_stats_late_collisions"),
+			Dot3StatsExcessiveCollisions:       uint32Field(fields, "dot3_stats_excessive_collisions"),
+			Dot3StatsInternalMacTransmitErrors: uint32Field(fields, "dot3_stats_internal_mac_transmit_errors"),
+			Dot3StatsCarrierSenseErrors:        uint32Field(fields, "dot3_stats_carrier_sense_errors"),
+			Dot3StatsFrameTooLongs:             uint32Field(fields, "dot3_stats_frame_too_longs"),
+			Dot3StatsInternalMacReceiveErrors:  uint32Field(fields, "dot3_stats_internal_mac_receive_errors"),
+			Dot3StatsSymbolErrors:              uint32Field(fields, "dot3_stats_symbol_errors"),
+		}}}, nil
+	default:
+		return nil, fmt.Errorf("unsupported sflow counter record_kind %q", stringFieldOrZero(fields, "record_kind"))
+	}
+}
+
+func preservedSFlowCounterRecords(evt *event.Event) []sflow.CounterRecord {
+	if evt == nil || evt.Internal == nil {
+		return nil
+	}
+	records, _ := evt.Internal[sflowCounterRecordsInternalKey].([]sflow.CounterRecord)
+	if len(records) == 0 {
+		return nil
+	}
+	out := make([]sflow.CounterRecord, len(records))
+	copy(out, records)
+	return out
 }
 
 // counterSampleFormat chooses the sFlow counter record format and source index
@@ -498,10 +786,18 @@ func (e *SFlowEncoder) sampleSequence(evt *event.Event) uint32 {
 // isSFlowCounterEvent identifies events that should become counter samples
 // instead of raw-header flow samples.
 func isSFlowCounterEvent(evt *event.Event) bool {
-	if evt == nil || evt.Fields == nil {
+	if evt == nil {
 		return false
 	}
-	return stringFieldOrZero(evt.Fields, "record_kind") == "interface_counter"
+	if len(preservedSFlowCounterRecords(evt)) > 0 {
+		return true
+	}
+	switch stringFieldOrZero(evt.Fields, "record_kind") {
+	case "interface_counter", "ethernet_counter":
+		return true
+	default:
+		return false
+	}
 }
 
 // truncateLastSampleToFit rewrites only the newest sample when that is enough to
@@ -512,7 +808,7 @@ func (e *SFlowEncoder) truncateLastSampleToFit(packet *sflow.Packet) (sflow.Flow
 		return sflow.FlowSample{}, false, nil
 	}
 	sample, ok := packet.Samples[lastIdx].(sflow.FlowSample)
-	if !ok || len(sample.Records) != 1 {
+	if !ok || len(sample.Records) == 0 {
 		return sflow.FlowSample{}, false, nil
 	}
 	header, ok := sample.Records[0].Data.(sflow.SampledHeader)
