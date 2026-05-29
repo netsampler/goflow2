@@ -960,6 +960,101 @@ func TestSFlowEncoderForwardsPreservedEnterpriseRecord(t *testing.T) {
 	}
 }
 
+func TestSFlowEncoderEncodesPublicRawFlowRecordEnvelope(t *testing.T) {
+	enterpriseFormat := sflow.PackDataFormat(64512, 7)
+	enc := NewSFlowEncoder(config.EncoderConfig{Type: "sflow"})
+
+	payloads, err := enc.Encode(&event.Event{
+		Fields: map[string]any{
+			"agent_ip":        "192.0.2.10",
+			"protocol":        uint32(1),
+			"frame_length":    uint32(60),
+			"original_length": uint32(4),
+			"header_data":     []byte{1, 2, 3, 4},
+		},
+		SFlow: &event.SFlowMetadata{
+			Samples: []event.SFlowSampleMetadata{
+				{
+					RawFlowRecords: []event.SFlowRawRecord{
+						{Enterprise: 64512, Format: 7, Data: []byte{0xde, 0xad, 0xbe, 0xef}},
+					},
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Encode returned error: %v", err)
+	}
+
+	packet := decodeSFlowPacket(t, payloads[0])
+	sample := packet.Samples[0].(sflow.FlowSample)
+	if len(sample.Records) != 2 {
+		t.Fatalf("expected sampled header plus raw enterprise record, got %d", len(sample.Records))
+	}
+	raw := sample.Records[1].Data.(sflow.RawRecord)
+	if sample.Records[1].Header.DataFormat != enterpriseFormat || !bytes.Equal(raw.Data, []byte{0xde, 0xad, 0xbe, 0xef}) {
+		t.Fatalf("expected public enterprise raw record to encode, got %#v", sample.Records[1])
+	}
+}
+
+func TestSFlowEncoderEncodesPublicRawCounterRecordEnvelope(t *testing.T) {
+	enterpriseFormat := sflow.PackDataFormat(64512, 9)
+	enc := NewSFlowEncoder(config.EncoderConfig{Type: "sflow"})
+
+	payloads, err := enc.Encode(&event.Event{
+		SFlow: &event.SFlowMetadata{
+			AgentIP:  "192.0.2.10",
+			SourceID: 7,
+			Samples: []event.SFlowSampleMetadata{
+				{
+					RawCounterRecords: []event.SFlowRawRecord{
+						{Enterprise: 64512, Format: 9, Data: []byte{0xca, 0xfe, 0xba, 0xbe}},
+					},
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Encode returned error: %v", err)
+	}
+
+	packet := decodeSFlowPacket(t, payloads[0])
+	sample := packet.Samples[0].(sflow.CounterSample)
+	if sample.Header.SourceIdValue != 7 {
+		t.Fatalf("expected source_id 7, got %d", sample.Header.SourceIdValue)
+	}
+	if len(sample.Records) != 1 {
+		t.Fatalf("expected one raw counter record, got %d", len(sample.Records))
+	}
+	raw := sample.Records[0].Data.(sflow.RawRecord)
+	if sample.Records[0].Header.DataFormat != enterpriseFormat || !bytes.Equal(raw.Data, []byte{0xca, 0xfe, 0xba, 0xbe}) {
+		t.Fatalf("expected public enterprise counter record to encode, got %#v", sample.Records[0])
+	}
+}
+
+func TestSFlowEncoderEncodesPublicRawSampleEnvelope(t *testing.T) {
+	enterpriseFormat := sflow.PackDataFormat(64512, 8)
+	enc := NewSFlowEncoder(config.EncoderConfig{Type: "sflow"})
+
+	payloads, err := enc.Encode(&event.Event{
+		SFlow: &event.SFlowMetadata{
+			AgentIP: "192.0.2.10",
+			Samples: []event.SFlowSampleMetadata{
+				{Enterprise: 64512, Format: 8, Data: []byte{1, 2, 3, 4}},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Encode returned error: %v", err)
+	}
+
+	packet := decodeSFlowPacket(t, payloads[0])
+	sample := packet.Samples[0].(sflow.RawSample)
+	if sample.Header.Format != enterpriseFormat || !bytes.Equal(sample.Data, []byte{1, 2, 3, 4}) {
+		t.Fatalf("expected public raw sample to encode, got %#v", sample)
+	}
+}
+
 func TestSFlowEncoderBuildsPseudoHeaderFromTuple(t *testing.T) {
 	enc := NewSFlowEncoder(config.EncoderConfig{Type: "sflow"})
 

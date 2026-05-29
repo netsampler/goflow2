@@ -287,6 +287,9 @@ func (e *SFlowEncoder) buildSample(evt *event.Event) (interface{}, error) {
 	if sample, ok := evt.Internal[sflowSampleInternalKey].(*sflow.RawSample); ok {
 		return sample, nil
 	}
+	if sample, ok := publicSFlowRawSample(evt); ok {
+		return sample, nil
+	}
 	if isSFlowCounterEvent(evt) {
 		return e.buildCounterSample(evt)
 	}
@@ -313,6 +316,7 @@ func (e *SFlowEncoder) buildFlowSample(evt *event.Event) (sflow.FlowSample, erro
 		},
 	}
 	records = append(records, preservedSFlowFlowRecords(evt)...)
+	records = append(records, publicSFlowFlowRecords(evt)...)
 	if e.emitExtendedRecords() {
 		records = append(records, e.syntheticExtendedRecords(fields, records)...)
 	}
@@ -348,6 +352,53 @@ func preservedSFlowFlowRecords(evt *event.Event) []sflow.FlowRecord {
 	out := make([]sflow.FlowRecord, len(records))
 	copy(out, records)
 	return out
+}
+
+func publicSFlowRawSample(evt *event.Event) (sflow.RawSample, bool) {
+	if evt == nil || evt.SFlow == nil || len(evt.SFlow.Samples) == 0 {
+		return sflow.RawSample{}, false
+	}
+	sample := evt.SFlow.Samples[0]
+	if len(sample.Data) == 0 {
+		return sflow.RawSample{}, false
+	}
+	dataFormat, ok := publicSFlowDataFormat(sample.Enterprise, sample.Format, sample.DataFormat)
+	if !ok {
+		return sflow.RawSample{}, false
+	}
+	return sflow.RawSample{
+		Header: sflow.SampleHeader{Format: dataFormat},
+		Data:   append([]byte(nil), sample.Data...),
+	}, true
+}
+
+func publicSFlowFlowRecords(evt *event.Event) []sflow.FlowRecord {
+	if evt == nil || evt.SFlow == nil || len(evt.SFlow.Samples) == 0 {
+		return nil
+	}
+	rawRecords := evt.SFlow.Samples[0].RawFlowRecords
+	records := make([]sflow.FlowRecord, 0, len(rawRecords))
+	for _, raw := range rawRecords {
+		dataFormat, ok := publicSFlowDataFormat(raw.Enterprise, raw.Format, raw.DataFormat)
+		if !ok {
+			continue
+		}
+		records = append(records, sflow.FlowRecord{
+			Header: sflow.RecordHeader{DataFormat: dataFormat},
+			Data:   sflow.RawRecord{Data: append([]byte(nil), raw.Data...)},
+		})
+	}
+	return records
+}
+
+func publicSFlowDataFormat(enterprise, format, dataFormat uint32) (uint32, bool) {
+	if dataFormat != 0 {
+		return dataFormat, true
+	}
+	if enterprise == 0 && format == 0 {
+		return 0, false
+	}
+	return sflow.PackDataFormat(enterprise, format), true
 }
 
 func (e *SFlowEncoder) syntheticExtendedRecords(fields map[string]any, existing []sflow.FlowRecord) []sflow.FlowRecord {
@@ -617,7 +668,10 @@ func sampledHeaderProtocolForPacket(evt *event.Event, headerData []byte) uint32 
 func (e *SFlowEncoder) buildCounterSample(evt *event.Event) (sflow.CounterSample, error) {
 	fields := evt.Fields
 	if fields == nil {
-		return sflow.CounterSample{}, fmt.Errorf("event fields are empty")
+		if len(publicSFlowCounterRecords(evt)) == 0 && len(preservedSFlowCounterRecords(evt)) == 0 {
+			return sflow.CounterSample{}, fmt.Errorf("event fields are empty")
+		}
+		fields = map[string]any{}
 	}
 	format, sourceIDType := e.counterSampleFormat(fields)
 	records, err := e.counterRecords(evt, fields)
@@ -641,10 +695,14 @@ func (e *SFlowEncoder) counterRecords(evt *event.Event, fields map[string]any) (
 	if records := preservedSFlowCounterRecords(evt); len(records) > 0 {
 		return records, nil
 	}
+	publicRecords := publicSFlowCounterRecords(evt)
+	if len(publicRecords) > 0 && stringFieldOrZero(fields, "record_kind") == "" {
+		return publicRecords, nil
+	}
 
 	switch stringFieldOrZero(fields, "record_kind") {
 	case "interface_counter":
-		return []sflow.CounterRecord{{Data: sflow.IfCounters{
+		records := []sflow.CounterRecord{{Data: sflow.IfCounters{
 			IfIndex:            uint32Field(fields, "if_index"),
 			IfType:             uint32Field(fields, "if_type"),
 			IfSpeed:            uint64Field(fields, "if_speed"),
@@ -664,9 +722,10 @@ func (e *SFlowEncoder) counterRecords(evt *event.Event, fields map[string]any) (
 			IfOutDiscards:      uint32Field(fields, "if_out_discards"),
 			IfOutErrors:        uint32Field(fields, "if_out_errors"),
 			IfPromiscuousMode:  uint32Field(fields, "if_promiscuous_mode"),
-		}}}, nil
+		}}}
+		return append(records, publicRecords...), nil
 	case "ethernet_counter":
-		return []sflow.CounterRecord{{Data: sflow.EthernetCounters{
+		records := []sflow.CounterRecord{{Data: sflow.EthernetCounters{
 			Dot3StatsAlignmentErrors:           uint32Field(fields, "dot3_stats_alignment_errors"),
 			Dot3StatsFCSErrors:                 uint32Field(fields, "dot3_stats_fcs_errors"),
 			Dot3StatsSingleCollisionFrames:     uint32Field(fields, "dot3_stats_single_collision_frames"),
@@ -680,7 +739,8 @@ func (e *SFlowEncoder) counterRecords(evt *event.Event, fields map[string]any) (
 			Dot3StatsFrameTooLongs:             uint32Field(fields, "dot3_stats_frame_too_longs"),
 			Dot3StatsInternalMacReceiveErrors:  uint32Field(fields, "dot3_stats_internal_mac_receive_errors"),
 			Dot3StatsSymbolErrors:              uint32Field(fields, "dot3_stats_symbol_errors"),
-		}}}, nil
+		}}}
+		return append(records, publicRecords...), nil
 	default:
 		return nil, fmt.Errorf("unsupported sflow counter record_kind %q", stringFieldOrZero(fields, "record_kind"))
 	}
@@ -697,6 +757,25 @@ func preservedSFlowCounterRecords(evt *event.Event) []sflow.CounterRecord {
 	out := make([]sflow.CounterRecord, len(records))
 	copy(out, records)
 	return out
+}
+
+func publicSFlowCounterRecords(evt *event.Event) []sflow.CounterRecord {
+	if evt == nil || evt.SFlow == nil || len(evt.SFlow.Samples) == 0 {
+		return nil
+	}
+	rawRecords := evt.SFlow.Samples[0].RawCounterRecords
+	records := make([]sflow.CounterRecord, 0, len(rawRecords))
+	for _, raw := range rawRecords {
+		dataFormat, ok := publicSFlowDataFormat(raw.Enterprise, raw.Format, raw.DataFormat)
+		if !ok {
+			continue
+		}
+		records = append(records, sflow.CounterRecord{
+			Header: sflow.RecordHeader{DataFormat: dataFormat},
+			Data:   sflow.RawRecord{Data: append([]byte(nil), raw.Data...)},
+		})
+	}
+	return records
 }
 
 // counterSampleFormat chooses the sFlow counter record format and source index
@@ -790,6 +869,9 @@ func isSFlowCounterEvent(evt *event.Event) bool {
 		return false
 	}
 	if len(preservedSFlowCounterRecords(evt)) > 0 {
+		return true
+	}
+	if len(publicSFlowCounterRecords(evt)) > 0 {
 		return true
 	}
 	switch stringFieldOrZero(evt.Fields, "record_kind") {

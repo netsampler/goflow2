@@ -311,6 +311,11 @@ func (p *Builtin) processReFlowJSON(evt *event.Event, payload any) ([]*event.Eve
 	if !ok {
 		return nil, fmt.Errorf("reflow expects a JSON object")
 	}
+	if sflowValue, ok := record["sflow"]; ok && reFlowSFlowEnvelopeHasSamples(sflowValue) {
+		if err := applyReFlowSFlowEnvelope(evt, sflowValue); err != nil {
+			return nil, err
+		}
+	}
 	if fields, ok := canonicalEventFields(record); ok {
 		return p.processReFlowFields(evt, fields)
 	}
@@ -321,6 +326,14 @@ func (p *Builtin) processReFlowJSON(evt *event.Event, payload any) ([]*event.Eve
 func (p *Builtin) processReFlowFields(evt *event.Event, record map[string]any) ([]*event.Event, error) {
 	fields := ensureFields(evt, len(record))
 	for key, value := range record {
+		if key == "sflow" {
+			if reFlowSFlowEnvelopeHasSamples(value) {
+				if err := applyReFlowSFlowEnvelope(evt, value); err != nil {
+					return nil, err
+				}
+			}
+			continue
+		}
 		if key == "packet" {
 			model, err := reFlowPacketModelFromValue(value)
 			if err != nil {
@@ -338,6 +351,28 @@ func (p *Builtin) processReFlowFields(evt *event.Event, record map[string]any) (
 		evt.Message = nil
 	}
 	return []*event.Event{evt}, nil
+}
+
+func reFlowSFlowEnvelopeHasSamples(value any) bool {
+	record, ok := value.(map[string]any)
+	if !ok {
+		return false
+	}
+	samples, ok := record["samples"].([]any)
+	return ok && len(samples) > 0
+}
+
+func applyReFlowSFlowEnvelope(evt *event.Event, value any) error {
+	raw, err := json.Marshal(value)
+	if err != nil {
+		return fmt.Errorf("encode reflow sflow envelope: %w", err)
+	}
+	var meta event.SFlowMetadata
+	if err := json.Unmarshal(raw, &meta); err != nil {
+		return fmt.Errorf("decode reflow sflow envelope: %w", err)
+	}
+	evt.SFlow = &meta
+	return nil
 }
 
 func (p *Builtin) applyDerivedFieldMappings(evt *event.Event) {

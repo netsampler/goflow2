@@ -85,12 +85,29 @@ type SamplingMetadata struct {
 }
 
 type SFlowMetadata struct {
-	AgentIP        string `json:"agent_ip,omitempty"`
-	SubAgentID     uint32 `json:"sub_agent_id,omitempty"`
-	SequenceNumber uint32 `json:"sequence_number,omitempty"`
-	Uptime         uint32 `json:"uptime,omitempty"`
-	SourceID       uint32 `json:"source_id,omitempty"`
-	SamplingRate   uint32 `json:"sampling_rate,omitempty"`
-	SamplePool     uint32 `json:"sample_pool,omitempty"`
-	Drops          uint32 `json:"drops,omitempty"`
+	AgentIP        string                `json:"agent_ip,omitempty"`
+	SubAgentID     uint32                `json:"sub_agent_id,omitempty"`
+	SequenceNumber uint32                `json:"sequence_number,omitempty"`
+	Uptime         uint32                `json:"uptime,omitempty"`
+	SourceID       uint32                `json:"source_id,omitempty"`
+	SamplingRate   uint32                `json:"sampling_rate,omitempty"`
+	SamplePool     uint32                `json:"sample_pool,omitempty"`
+	Drops          uint32                `json:"drops,omitempty"`
+	Samples        []SFlowSampleMetadata `json:"samples,omitempty"`
+}
+
+type SFlowSampleMetadata struct {
+	Enterprise        uint32           `json:"enterprise,omitempty"`
+	Format            uint32           `json:"format,omitempty"`
+	DataFormat        uint32           `json:"data_format,omitempty"`
+	Data              []byte           `json:"data,omitempty"`
+	RawFlowRecords    []SFlowRawRecord `json:"raw_flow_records,omitempty"`
+	RawCounterRecords []SFlowRawRecord `json:"raw_counter_records,omitempty"`
+}
+
+type SFlowRawRecord struct {
+	Enterprise uint32 `json:"enterprise,omitempty"`
+	Format     uint32 `json:"format,omitempty"`
+	DataFormat uint32 `json:"data_format,omitempty"`
+	Data       []byte `json:"data,omitempty"`
 }

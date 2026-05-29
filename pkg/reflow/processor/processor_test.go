@@ -1271,6 +1271,62 @@ func TestBuiltinProcessReFlowJSONPreservesCounterFieldsWithoutSFlowMetadata(t *t
 	}
 }
 
+func TestBuiltinProcessReFlowJSONParsesSFlowSampleEnvelope(t *testing.T) {
+	proc := NewBuiltin(config.ProcessorConfig{})
+
+	msg := []byte(`{
+		"fields": {
+			"agent_ip": "192.0.2.10",
+			"record_kind": "packet",
+			"protocol": 1,
+			"frame_length": 4,
+			"original_length": 4,
+			"header_data": "AQIDBA=="
+		},
+		"sflow": {
+			"agent_ip": "198.51.100.1",
+			"source_id": 7,
+			"samples": [
+				{
+					"raw_flow_records": [
+						{"enterprise": 64512, "format": 7, "data": "3q2+7w=="}
+					],
+					"raw_counter_records": [
+						{"data_format": 264241161, "data": "yv66vg=="}
+					]
+				}
+			]
+		}
+	}`)
+
+	events, err := proc.Process(&event.Event{
+		Source: event.SourceMetadata{
+			Type: "json",
+			JSON: event.JSONMetadata{Flavor: "reflow"},
+		},
+		Message: msg,
+	})
+	if err != nil {
+		t.Fatalf("Process returned error: %v", err)
+	}
+	if len(events) != 1 {
+		t.Fatalf("expected 1 event, got %d", len(events))
+	}
+	sf := events[0].SFlow
+	if sf == nil || sf.AgentIP != "198.51.100.1" || sf.SourceID != 7 {
+		t.Fatalf("expected parsed sflow metadata, got %#v", sf)
+	}
+	if len(sf.Samples) != 1 || len(sf.Samples[0].RawFlowRecords) != 1 || len(sf.Samples[0].RawCounterRecords) != 1 {
+		t.Fatalf("expected parsed raw records, got %#v", sf.Samples)
+	}
+	if got := sf.Samples[0].RawFlowRecords[0].Data; !bytes.Equal(got, []byte{0xde, 0xad, 0xbe, 0xef}) {
+		t.Fatalf("expected decoded raw flow record bytes, got %#v", got)
+	}
+	if got := sf.Samples[0].RawCounterRecords[0].Data; !bytes.Equal(got, []byte{0xca, 0xfe, 0xba, 0xbe}) {
+		t.Fatalf("expected decoded raw counter record bytes, got %#v", got)
+	}
+}
+
 func TestBuiltinProcessReFlowJSONUsesCanonicalEventFieldsWithoutEnvelopeMetadata(t *testing.T) {
 	proc := NewBuiltin(config.ProcessorConfig{})
 
