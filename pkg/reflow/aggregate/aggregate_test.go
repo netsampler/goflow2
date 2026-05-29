@@ -679,6 +679,51 @@ func TestStatefulAggregatedEventsCarryConfiguredStream(t *testing.T) {
 	}
 }
 
+func TestStatefulPrefixesSyntheticMetadataFields(t *testing.T) {
+	agg, err := New(config.AggregatorConfig{
+		Periodic: config.AggregatorPeriodicConfig{
+			Every: 1,
+		},
+		KeyFields: []string{"src_addr"},
+		Sum:       []string{"bytes"},
+	})
+	if err != nil {
+		t.Fatalf("New returned error: %v", err)
+	}
+
+	if _, err := agg.Process(&event.Event{
+		Fields: map[string]any{
+			"src_addr": "192.0.2.1",
+			"bytes":    int64(64),
+		},
+	}); err != nil {
+		t.Fatalf("Process returned error: %v", err)
+	}
+
+	out, err := agg.Close()
+	if err != nil {
+		t.Fatalf("Close returned error: %v", err)
+	}
+	if len(out) != 1 {
+		t.Fatalf("expected 1 aggregated event, got %d", len(out))
+	}
+
+	fields := out[0].Fields
+	if got := fields["_aggregation_key"]; got != "192.0.2.1" {
+		t.Fatalf("expected _aggregation_key=192.0.2.1, got %#v", got)
+	}
+	for _, key := range []string{"_first_seen_unix", "_last_seen_unix"} {
+		if _, ok := fields[key]; !ok {
+			t.Fatalf("expected %s field to be present", key)
+		}
+	}
+	for _, key := range []string{"aggregation_key", "first_seen_unix", "last_seen_unix"} {
+		if _, ok := fields[key]; ok {
+			t.Fatalf("did not expect unprefixed synthetic metadata field %s", key)
+		}
+	}
+}
+
 func TestStatefulTTLFlushSumsPacketCounters(t *testing.T) {
 	agg, err := New(config.AggregatorConfig{
 		Window: config.AggregatorWindowConfig{

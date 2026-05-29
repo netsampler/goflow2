@@ -597,9 +597,9 @@ func writeKeyValue(b *strings.Builder, val any) {
 // buildAggregatedEvent materializes one bucket into a regular runtime event.
 func buildAggregatedEvent(stream, key string, record aggregateRecord) *event.Event {
 	fields := cloneFields(record.Fields)
-	fields["aggregation_key"] = key
-	fields["first_seen_unix"] = record.FirstSeen.UnixMilli()
-	fields["last_seen_unix"] = record.LastSeen.UnixMilli()
+	fields["_aggregation_key"] = key
+	fields["_first_seen_unix"] = record.FirstSeen.UnixMilli()
+	fields["_last_seen_unix"] = record.LastSeen.UnixMilli()
 
 	return &event.Event{
 		ReceivedAt: time.Now(),
