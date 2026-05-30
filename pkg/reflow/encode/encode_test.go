@@ -2022,6 +2022,118 @@ func TestIPFIXEncoderFallbackUsesConfiguredSelectWidth(t *testing.T) {
 	}
 }
 
+func TestIPFIXEncoderFallbackUsesConfiguredFieldMatch(t *testing.T) {
+	cfg := testTFlowEncoderConfig("ipfix")
+	cfg.TemplatedFlow.Data.Select = []string{"source_id"}
+	cfg.TemplatedFlow.Data.Matches = []config.TemplatedFlowFieldMatch{
+		{Field: "source_id", From: "tid"},
+	}
+	cfg.TemplatedFlow.Data.Catalog["source_id"] = config.IPFIXFieldDefinition{
+		ID:     netflow.IPFIX_FIELD_observationPointId,
+		Length: 8,
+		Type:   "unsigned64",
+	}
+	enc := NewIPFIXEncoder(cfg)
+	evt := testTemplatedFlowEvent()
+	delete(evt.Fields, "source_id")
+	evt.Fields["tid"] = uint32(99)
+
+	payloads, err := enc.Encode(evt)
+	if err != nil {
+		t.Fatalf("Encode returned error: %v", err)
+	}
+	if len(payloads) != 1 {
+		t.Fatalf("expected one IPFIX payload, got %d", len(payloads))
+	}
+
+	store := templates.NewTemplateFlowStore()
+	store.Start()
+	var decoded netflow.IPFIXPacket
+	if err := netflow.DecodeMessageVersion(bytes.NewBuffer(payloads[0]), store, netflow.FlowContext{RouterKey: "test-router"}, nil, &decoded); err != nil {
+		t.Fatalf("decode ipfix payload: %v", err)
+	}
+	dataSet, ok := decoded.FlowSets[1].(netflow.DataFlowSet)
+	if !ok {
+		t.Fatalf("expected second flow set to be DataFlowSet, got %T", decoded.FlowSets[1])
+	}
+	values := dataSet.Records[0].Values
+	if len(values) != 1 {
+		t.Fatalf("expected one matched value, got %#v", values)
+	}
+	if got := values[0].Value.([]byte); !bytes.Equal(got, encodeU64(99)) {
+		t.Fatalf("expected source_id value remapped from tid=99, got %v", got)
+	}
+}
+
+func TestIPFIXEncoderSchemaUsesConfiguredFieldMatch(t *testing.T) {
+	cfg := testTFlowEncoderConfig("ipfix")
+	cfg.TemplatedFlow.Data.Matches = []config.TemplatedFlowFieldMatch{
+		{Field: "source_id", From: "tid"},
+	}
+	cfg.TemplatedFlow.Data.Catalog["source_id"] = config.IPFIXFieldDefinition{
+		ID:     netflow.IPFIX_FIELD_observationPointId,
+		Length: 8,
+		Type:   "unsigned64",
+	}
+	enc := NewIPFIXEncoder(cfg)
+
+	templatePayloads, err := enc.Encode(&event.Event{
+		Kind:   "control",
+		Stream: "flow_data",
+		Control: &event.ControlMetadata{
+			Type:   "schema",
+			Stream: "flow_data",
+		},
+		Payload: event.AggregationSchema{
+			Stream:         "flow_data",
+			BaseTemplateID: 256,
+			Fields: []event.SchemaField{
+				{Role: "current", Name: "source_id"},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("schema Encode returned error: %v", err)
+	}
+
+	evt := testTemplatedFlowEvent()
+	evt.Stream = "flow_data"
+	delete(evt.Fields, "source_id")
+	evt.Fields["tid"] = uint32(99)
+	payloads, err := enc.Encode(evt)
+	if err != nil {
+		t.Fatalf("data Encode returned error: %v", err)
+	}
+	if len(payloads) != 1 {
+		t.Fatalf("expected one IPFIX payload, got %d", len(payloads))
+	}
+
+	store := templates.NewTemplateFlowStore()
+	store.Start()
+	ctx := netflow.FlowContext{RouterKey: "test-router"}
+	for _, payload := range templatePayloads {
+		var templateDecoded netflow.IPFIXPacket
+		if err := netflow.DecodeMessageVersion(bytes.NewBuffer(payload), store, ctx, nil, &templateDecoded); err != nil {
+			t.Fatalf("decode schema payload: %v", err)
+		}
+	}
+	var decoded netflow.IPFIXPacket
+	if err := netflow.DecodeMessageVersion(bytes.NewBuffer(payloads[0]), store, ctx, nil, &decoded); err != nil {
+		t.Fatalf("decode data payload: %v", err)
+	}
+	dataSet, ok := decoded.FlowSets[0].(netflow.DataFlowSet)
+	if !ok {
+		t.Fatalf("expected data flow set, got %T", decoded.FlowSets[0])
+	}
+	values := dataSet.Records[0].Values
+	if len(values) != 1 {
+		t.Fatalf("expected one matched value, got %#v", values)
+	}
+	if got := values[0].Value.([]byte); !bytes.Equal(got, encodeU64(99)) {
+		t.Fatalf("expected source_id value remapped from tid=99, got %v", got)
+	}
+}
+
 func TestIPFIXEncoderBatchesMultipleDataSetsInOnePacket(t *testing.T) {
 	cfg := testTFlowEncoderConfig("ipfix")
 	cfg.Batch = config.BatchConfig{

@@ -569,6 +569,7 @@ func (e *IPFIXEncoder) ipfixBatchRecord(evt *event.Event) (ipfixBatchRecord, err
 		return ipfixBatchRecord{}, fmt.Errorf("event fields are empty")
 	}
 	fieldMap := eventFieldsWithMetadata(evt)
+	applyTemplatedFlowDataMatches(e.cfg.TemplatedFlow.Data, fieldMap)
 	templateID := uint16Field(fieldMap, "template_id")
 	if templateID == 0 {
 		templateID = 256
@@ -582,6 +583,7 @@ func (e *IPFIXEncoder) ipfixBatchRecord(evt *event.Event) (ipfixBatchRecord, err
 	stream := eventStream(evt, "flow_data")
 	if schema, ok := e.optionsSchemas[stream]; ok {
 		fieldMap = eventFieldsWithMetadataForSchema(evt, optionsSchemaFields(schema))
+		applyTemplatedFlowDataMatches(e.cfg.TemplatedFlow.Data, fieldMap)
 		optionsRecord, err := buildOptionsDataRecordFromSchemaFields(e.cfg.TemplatedFlow.Data, fieldMap, schema.scopes, schema.options, templatedEncodingContext{})
 		if err != nil {
 			return ipfixBatchRecord{}, err
@@ -597,6 +599,7 @@ func (e *IPFIXEncoder) ipfixBatchRecord(evt *event.Event) (ipfixBatchRecord, err
 	}
 	if schema, ok := e.dataSchemas[stream]; ok {
 		fieldMap = eventFieldsWithMetadataForSchema(evt, schema.fields)
+		applyTemplatedFlowDataMatches(e.cfg.TemplatedFlow.Data, fieldMap)
 		mask := schema.addressVariantMask(fieldMap)
 		templateRecord := schema.templateForMask(mask)
 		dataRecord, err := buildTemplatedValuesFromSchemaFieldsForMask(e.cfg.TemplatedFlow.Data, fieldMap, schema.fields, templatedEncodingContext{}, schema.addressGroups, mask)
@@ -665,6 +668,7 @@ func (e *NFv9Encoder) nfv9BatchRecord(evt *event.Event, timing nfv9BatchTiming) 
 		return nfv9BatchRecord{}, fmt.Errorf("event fields are empty")
 	}
 	fieldMap := eventFieldsWithMetadata(evt)
+	applyTemplatedFlowDataMatches(e.cfg.TemplatedFlow.Data, fieldMap)
 	templateID := uint16Field(fieldMap, "template_id")
 	if templateID == 0 {
 		templateID = 256
@@ -687,6 +691,7 @@ func (e *NFv9Encoder) nfv9BatchRecord(evt *event.Event, timing nfv9BatchTiming) 
 	stream := eventStream(evt, "flow_data")
 	if schema, ok := e.optionsSchemas[stream]; ok {
 		fieldMap = eventFieldsWithMetadataForSchema(evt, optionsSchemaFields(schema))
+		applyTemplatedFlowDataMatches(e.cfg.TemplatedFlow.Data, fieldMap)
 		optionsRecord, err := buildOptionsDataRecordFromSchemaFields(e.cfg.TemplatedFlow.Data, fieldMap, schema.scopes, schema.options, encodingCtx)
 		if err != nil {
 			return nfv9BatchRecord{}, err
@@ -703,6 +708,7 @@ func (e *NFv9Encoder) nfv9BatchRecord(evt *event.Event, timing nfv9BatchTiming) 
 	}
 	if schema, ok := e.dataSchemas[stream]; ok {
 		fieldMap = eventFieldsWithMetadataForSchema(evt, schema.fields)
+		applyTemplatedFlowDataMatches(e.cfg.TemplatedFlow.Data, fieldMap)
 		mask := schema.addressVariantMask(fieldMap)
 		templateRecord := schema.templateForMask(mask)
 		dataRecord, err := buildTemplatedValuesFromSchemaFieldsForMask(e.cfg.TemplatedFlow.Data, fieldMap, schema.fields, encodingCtx, schema.addressGroups, mask)
@@ -1025,6 +1031,7 @@ func (e *IPFIXEncoder) buildPacket(evt *event.Event) (*netflow.IPFIXPacket, erro
 	}
 
 	fieldMap := eventFieldsWithMetadata(evt)
+	applyTemplatedFlowDataMatches(e.cfg.TemplatedFlow.Data, fieldMap)
 	templateID := uint16Field(fieldMap, "template_id")
 	if templateID == 0 {
 		templateID = 256
@@ -1105,6 +1112,7 @@ func (e *IPFIXEncoder) buildPacket(evt *event.Event) (*netflow.IPFIXPacket, erro
 	stream := eventStream(evt, "flow_data")
 	if schema, ok := e.optionsSchemas[stream]; ok {
 		fieldMap = eventFieldsWithMetadataForSchema(evt, optionsSchemaFields(schema))
+		applyTemplatedFlowDataMatches(e.cfg.TemplatedFlow.Data, fieldMap)
 		optionsRecord, err := buildOptionsDataRecordFromSchemaFields(e.cfg.TemplatedFlow.Data, fieldMap, schema.scopes, schema.options, templatedEncodingContext{})
 		if err != nil {
 			return nil, err
@@ -1126,6 +1134,7 @@ func (e *IPFIXEncoder) buildPacket(evt *event.Event) (*netflow.IPFIXPacket, erro
 	}
 	if schema, ok := e.dataSchemas[stream]; ok {
 		fieldMap = eventFieldsWithMetadataForSchema(evt, schema.fields)
+		applyTemplatedFlowDataMatches(e.cfg.TemplatedFlow.Data, fieldMap)
 		mask := schema.addressVariantMask(fieldMap)
 		templateRecord := schema.templateForMask(mask)
 		dataRecord, err := buildTemplatedValuesFromSchemaFieldsForMask(e.cfg.TemplatedFlow.Data, fieldMap, schema.fields, templatedEncodingContext{}, schema.addressGroups, mask)
@@ -1181,6 +1190,7 @@ func (e *NFv9Encoder) buildPacket(evt *event.Event) (*netflow.NFv9Packet, error)
 	}
 
 	fieldMap := eventFieldsWithMetadata(evt)
+	applyTemplatedFlowDataMatches(e.cfg.TemplatedFlow.Data, fieldMap)
 	templateID := uint16Field(fieldMap, "template_id")
 	if templateID == 0 {
 		templateID = 256
@@ -1262,6 +1272,7 @@ func (e *NFv9Encoder) buildPacket(evt *event.Event) (*netflow.NFv9Packet, error)
 	stream := eventStream(evt, "flow_data")
 	if schema, ok := e.optionsSchemas[stream]; ok {
 		fieldMap = eventFieldsWithMetadataForSchema(evt, optionsSchemaFields(schema))
+		applyTemplatedFlowDataMatches(e.cfg.TemplatedFlow.Data, fieldMap)
 		optionsRecord, err := buildOptionsDataRecordFromSchemaFields(e.cfg.TemplatedFlow.Data, fieldMap, schema.scopes, schema.options, encodingCtx)
 		if err != nil {
 			return nil, err
@@ -1284,6 +1295,7 @@ func (e *NFv9Encoder) buildPacket(evt *event.Event) (*netflow.NFv9Packet, error)
 	}
 	if schema, ok := e.dataSchemas[stream]; ok {
 		fieldMap = eventFieldsWithMetadataForSchema(evt, schema.fields)
+		applyTemplatedFlowDataMatches(e.cfg.TemplatedFlow.Data, fieldMap)
 		mask := schema.addressVariantMask(fieldMap)
 		templateRecord := schema.templateForMask(mask)
 		dataRecord, err := buildTemplatedValuesFromSchemaFieldsForMask(e.cfg.TemplatedFlow.Data, fieldMap, schema.fields, encodingCtx, schema.addressGroups, mask)
@@ -2310,6 +2322,23 @@ func selectPresentFlowFields(cfg config.TemplatedFlowDataConfig, fieldMap map[st
 	}
 	sort.Strings(names)
 	return names
+}
+
+func applyTemplatedFlowDataMatches(cfg config.TemplatedFlowDataConfig, fieldMap map[string]any) {
+	if len(cfg.Matches) == 0 || len(fieldMap) == 0 {
+		return
+	}
+	for _, match := range cfg.Matches {
+		if match.Field == "" || match.From == "" {
+			continue
+		}
+		if _, exists := fieldMap[match.Field]; exists {
+			continue
+		}
+		if val, ok := fieldMap[match.From]; ok {
+			fieldMap[match.Field] = val
+		}
+	}
 }
 
 func fallbackAddressGroups(cfg config.TemplatedFlowDataConfig, names []string, netflowV9 bool) []string {
