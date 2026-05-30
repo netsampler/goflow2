@@ -2,6 +2,7 @@ package decode
 
 import (
 	"encoding/binary"
+	"path/filepath"
 	"reflect"
 	"testing"
 	"time"
@@ -569,6 +570,87 @@ func TestIPFIXCustomCatalogFieldRoundTrip(t *testing.T) {
 	}
 	if flowFields["tenant_id"] != uint64(99) {
 		t.Fatalf("expected tenant_id to survive round trip, got %#v", flowFields["tenant_id"])
+	}
+}
+
+func TestDecoderCachePersistsTemplatesAcrossRestart(t *testing.T) {
+	catalog := map[string]config.IPFIXFieldDefinition{
+		"bytes": {ID: 1, Length: 8, Type: "unsigned64"},
+	}
+	enc := encode.NewIPFIXEncoder(config.EncoderConfig{
+		Type: "ipfix",
+		TemplatedFlow: config.TemplatedFlowConfig{
+			TemplateBaseID:  256,
+			TemplateRefresh: 60000,
+			Data: config.TemplatedFlowDataConfig{
+				Select:  []string{"bytes"},
+				Catalog: catalog,
+			},
+		},
+	})
+
+	firstPayloads, err := enc.Encode(&event.Event{
+		ReceivedAt: time.Unix(1, 0),
+		Fields: map[string]any{
+			"bytes": int64(1234),
+		},
+	})
+	if err != nil {
+		t.Fatalf("first Encode returned error: %v", err)
+	}
+	secondPayloads, err := enc.Encode(&event.Event{
+		ReceivedAt: time.Unix(2, 0),
+		Fields: map[string]any{
+			"bytes": int64(5678),
+		},
+	})
+	if err != nil {
+		t.Fatalf("second Encode returned error: %v", err)
+	}
+
+	cachePath := filepath.Join(t.TempDir(), "reflow-cache.json")
+	dec, err := NewWithOptions(Options{
+		Catalog:       catalog,
+		CachePath:     cachePath,
+		CacheInterval: time.Hour,
+	})
+	if err != nil {
+		t.Fatalf("NewWithOptions returned error: %v", err)
+	}
+	for _, payload := range firstPayloads {
+		if _, err := dec.Decode(&event.Event{Source: event.SourceMetadata{Type: "flow"}, Payload: payload}); err != nil {
+			t.Fatalf("Decode first payload returned error: %v", err)
+		}
+	}
+	dec.Close()
+
+	restarted, err := NewWithOptions(Options{
+		Catalog:       catalog,
+		CachePath:     cachePath,
+		CacheInterval: time.Hour,
+	})
+	if err != nil {
+		t.Fatalf("NewWithOptions after restart returned error: %v", err)
+	}
+	defer restarted.Close()
+
+	var flowFields map[string]any
+	for _, payload := range secondPayloads {
+		events, err := restarted.Decode(&event.Event{Source: event.SourceMetadata{Type: "flow"}, Payload: payload})
+		if err != nil {
+			t.Fatalf("Decode cached payload returned error: %v", err)
+		}
+		for _, item := range events {
+			if item.Fields["flow_type"] == "ipfix" {
+				flowFields = item.Fields
+			}
+		}
+	}
+	if flowFields == nil {
+		t.Fatalf("expected cached decoder to decode IPFIX data")
+	}
+	if flowFields["bytes"] != int64(5678) {
+		t.Fatalf("expected cached bytes 5678, got %#v", flowFields["bytes"])
 	}
 }
 

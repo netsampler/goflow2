@@ -40,11 +40,29 @@ type Config struct {
 	LogLevel        string                `yaml:"-"`
 	LogFormat       string                `yaml:"-"`
 	Sources         []SourceConfig        `yaml:"sources"`
+	TFlow           TFlowConfig           `yaml:"tflow,omitempty"`
 	Processor       ProcessorConfig       `yaml:"processor"`
 	Aggregators     []AggregatorConfig    `yaml:"aggregators"`
 	TemplatedFields TemplatedFieldsConfig `yaml:"templated_fields,omitempty"`
 	Encoder         EncoderConfig         `yaml:"encoder"`
 	Sink            SinkConfig            `yaml:"sink"`
+}
+
+type CacheConfig struct {
+	Path          string `yaml:"path"`
+	FlushInterval int    `yaml:"flush_interval_ms"`
+}
+
+func (c CacheConfig) IsZero() bool {
+	return c.Path == "" && c.FlushInterval == 0
+}
+
+type TFlowConfig struct {
+	Cache CacheConfig `yaml:"cache,omitempty"`
+}
+
+func (c TFlowConfig) IsZero() bool {
+	return c.Cache.IsZero()
 }
 
 type SourceConfig struct {
@@ -407,10 +425,16 @@ type PcapConfig struct {
 
 type TemplatedFlowDataConfig struct {
 	Select        []string                        `yaml:"fields"`
+	Matches       []TemplatedFlowFieldMatch       `yaml:"matches,omitempty"`
 	FieldsPath    string                          `yaml:"fields_path"`
 	Catalog       map[string]IPFIXFieldDefinition `yaml:"-"`
 	Overrides     map[string]IPFIXFieldDefinition `yaml:"overrides"`
 	fieldsPathSet bool
+}
+
+type TemplatedFlowFieldMatch struct {
+	Field string `yaml:"field"`
+	From  string `yaml:"from"`
 }
 
 type TemplatedFieldsConfig struct {
@@ -633,11 +657,16 @@ func Load(path string) (*Config, error) {
 	if err != nil {
 		return nil, fmt.Errorf("load config %s: %w", path, err)
 	}
+	return LoadBytes(path, raw)
+}
+
+// LoadBytes decodes, defaults, and validates a runtime config from in-memory YAML.
+func LoadBytes(name string, raw []byte) (*Config, error) {
 	cfg := &Config{}
 	if err := yaml.Unmarshal(raw, cfg); err != nil {
-		return nil, fmt.Errorf("decode config %s: %w", path, err)
+		return nil, fmt.Errorf("decode config %s: %w", name, err)
 	}
-	if err := cfg.setDefaults(path); err != nil {
+	if err := cfg.setDefaults(name); err != nil {
 		return nil, err
 	}
 	return cfg, nil
@@ -686,7 +715,13 @@ func (c *Config) setDefaults(configPath string) error {
 			}
 		}
 	}
+	if err := c.applyCacheDefaults(configPath); err != nil {
+		return err
+	}
 	if err := c.loadFlowDataCatalog(configPath); err != nil {
+		return err
+	}
+	if err := validateTemplatedFlowDataMatches(c.Encoder.TemplatedFlow.Data); err != nil {
 		return err
 	}
 	if c.Encoder.Type == "" {
@@ -839,6 +874,23 @@ func (c *Config) setDefaults(configPath string) error {
 	return nil
 }
 
+func (c *Config) applyCacheDefaults(configPath string) error {
+	cache := &c.TFlow.Cache
+	if cache.FlushInterval < 0 {
+		return fmt.Errorf("tflow.cache.flush_interval_ms must be >= 0")
+	}
+	if cache.Path == "" {
+		return nil
+	}
+	if cache.FlushInterval == 0 {
+		cache.FlushInterval = 10000
+	}
+	if !filepath.IsAbs(cache.Path) {
+		cache.Path = filepath.Join(filepath.Dir(configPath), cache.Path)
+	}
+	return nil
+}
+
 func assignDefaultSourceIDs(sources []SourceConfig) {
 	var next uint32
 	for i := range sources {
@@ -900,7 +952,7 @@ func applySourceDefaults(src *SourceConfig) error {
 			src.Address = "-"
 		}
 		switch src.Type {
-		case "pcap", "pcapng", "json":
+		case "pcap", "pcapng", "json", "bytes", "flow":
 		case "":
 			return fmt.Errorf("source.type is required when source.network=stream")
 		default:
@@ -1057,6 +1109,21 @@ func mergeIPFIXFields(sources ...map[string]IPFIXFieldDefinition) map[string]IPF
 		}
 	}
 	return merged
+}
+
+func validateTemplatedFlowDataMatches(cfg TemplatedFlowDataConfig) error {
+	for i, match := range cfg.Matches {
+		if match.Field == "" {
+			return fmt.Errorf("encoder.templated_flow.data.matches[%d].field is required", i)
+		}
+		if match.From == "" {
+			return fmt.Errorf("encoder.templated_flow.data.matches[%d].from is required", i)
+		}
+		if _, ok := cfg.Catalog[match.Field]; !ok {
+			return fmt.Errorf("encoder.templated_flow.data.matches[%d].field %q is not defined in templated field catalog", i, match.Field)
+		}
+	}
+	return nil
 }
 
 type decodeIPFIXKey struct {

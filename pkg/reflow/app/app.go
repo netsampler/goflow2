@@ -73,14 +73,20 @@ func New(cfg *config.Config) (*App, error) {
 			slog.Int("requested_workers", int(cfg.Encoder.Workers)),
 		)
 	}
+	dec, err := decode.NewWithOptions(decode.Options{
+		Catalog:             cfg.TemplatedFields.Catalog,
+		EmbedTemplateFields: cfg.Processor.Builtin.TFlow.EmbedTemplateFields || cfg.TemplatedFields.EmbedTemplateFields,
+		CachePath:           cfg.TFlow.Cache.Path,
+		CacheInterval:       time.Duration(cfg.TFlow.Cache.FlushInterval) * time.Millisecond,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("init decoder: %w", err)
+	}
 
 	return &App{
-		logger:  logger,
-		sources: sources,
-		decoder: decode.NewWithOptions(decode.Options{
-			Catalog:             cfg.TemplatedFields.Catalog,
-			EmbedTemplateFields: cfg.Processor.Builtin.TFlow.EmbedTemplateFields || cfg.TemplatedFields.EmbedTemplateFields,
-		}),
+		logger:           logger,
+		sources:          sources,
+		decoder:          dec,
 		processor:        proc,
 		processorWorkers: processorWorkers,
 		aggregatorCfgs:   cfg.Aggregators,
@@ -98,10 +104,22 @@ func (a *App) Run(ctx context.Context) error {
 			a.logger.Error("sink close error", slog.String("error", err.Error()))
 		}
 	}()
-	defer a.decoder.Close()
 
 	sourceCtx, stopSource := context.WithCancel(ctx)
 	defer stopSource()
+
+	var decoderErrWG sync.WaitGroup
+	if errCh := a.decoder.Errors(); errCh != nil {
+		decoderErrWG.Add(1)
+		go func() {
+			defer decoderErrWG.Done()
+			for err := range errCh {
+				a.logger.Error("decoder cache error", slog.String("error", err.Error()))
+			}
+		}()
+		defer decoderErrWG.Wait()
+	}
+	defer a.decoder.Close()
 
 	decodeJobs := make(chan *event.Event, a.processorWorkers*2)
 	processJobs := make(chan *event.Event, a.processorWorkers*2)

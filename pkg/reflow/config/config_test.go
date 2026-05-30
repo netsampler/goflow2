@@ -143,6 +143,128 @@ sink:
 	}
 }
 
+func TestLoadSupportsTFlowCacheConfig(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "reflow.yaml")
+	if err := os.WriteFile(cfgPath, []byte(`
+sources:
+  - network: udp
+    address: ":18081"
+    type: flow
+
+tflow:
+  cache:
+    path: reflow-cache.json
+    flush_interval_ms: 250
+
+encoder:
+  type: json
+
+sink:
+  type: stdout
+`), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	cfg, err := Load(cfgPath)
+	if err != nil {
+		t.Fatalf("Load returned error: %v", err)
+	}
+	if cfg.TFlow.Cache.Path != filepath.Join(dir, "reflow-cache.json") {
+		t.Fatalf("expected cache path relative to config dir, got %q", cfg.TFlow.Cache.Path)
+	}
+	if cfg.TFlow.Cache.FlushInterval != 250 {
+		t.Fatalf("expected cache flush interval 250, got %d", cfg.TFlow.Cache.FlushInterval)
+	}
+}
+
+func TestLoadDefaultsCacheFlushIntervalWhenPathSet(t *testing.T) {
+	cfg, err := LoadBytes("reflow.yaml", []byte(`
+sources:
+  - network: udp
+    type: flow
+
+tflow:
+  cache:
+    path: reflow-cache.json
+
+encoder:
+  type: json
+
+sink:
+  type: stdout
+`))
+	if err != nil {
+		t.Fatalf("LoadBytes returned error: %v", err)
+	}
+	if cfg.TFlow.Cache.FlushInterval != 10000 {
+		t.Fatalf("expected default cache flush interval 10000, got %d", cfg.TFlow.Cache.FlushInterval)
+	}
+}
+
+func TestLoadBytesMatchesLoad(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "reflow.yaml")
+	raw := []byte(`
+sources:
+  - network: stream
+    type: json
+    json:
+      flavor: reflow
+
+processor:
+  type: builtin
+
+encoder:
+  type: json
+
+sink:
+  type: stdout
+`)
+	if err := os.WriteFile(cfgPath, raw, 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	fromFile, err := Load(cfgPath)
+	if err != nil {
+		t.Fatalf("Load returned error: %v", err)
+	}
+	fromBytes, err := LoadBytes(cfgPath, raw)
+	if err != nil {
+		t.Fatalf("LoadBytes returned error: %v", err)
+	}
+	if fromBytes.Sources[0].Network != fromFile.Sources[0].Network ||
+		fromBytes.Sources[0].Type != fromFile.Sources[0].Type ||
+		fromBytes.Encoder.Type != fromFile.Encoder.Type ||
+		fromBytes.Sink.Type != fromFile.Sink.Type {
+		t.Fatalf("LoadBytes did not match Load: %#v vs %#v", fromBytes, fromFile)
+	}
+}
+
+func TestLoadSupportsStreamBytesAndFlowSources(t *testing.T) {
+	for _, sourceType := range []string{"bytes", "flow"} {
+		t.Run(sourceType, func(t *testing.T) {
+			_, err := LoadBytes("browser.yaml", []byte(`
+sources:
+  - network: stream
+    type: `+sourceType+`
+
+processor:
+  type: builtin
+
+encoder:
+  type: json
+
+sink:
+  type: stdout
+`))
+			if err != nil {
+				t.Fatalf("LoadBytes returned error: %v", err)
+			}
+		})
+	}
+}
+
 func TestLoadUsesEmbeddedFlowDataCatalogWhenFieldsPathEmpty(t *testing.T) {
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, "reflow.yaml")
@@ -159,6 +281,9 @@ encoder:
   type: ipfix
   templated_flow:
     data:
+      matches:
+        - field: source_id
+          from: tid
       overrides:
         custom_counter:
           name: customCounter
@@ -197,6 +322,11 @@ sink:
 	if cfg.Encoder.TemplatedFlow.Data.Catalog["custom_counter"].ID != 2000 {
 		t.Fatalf("expected override to merge over embedded catalog, got %#v", cfg.Encoder.TemplatedFlow.Data.Catalog["custom_counter"])
 	}
+	if len(cfg.Encoder.TemplatedFlow.Data.Matches) != 1 ||
+		cfg.Encoder.TemplatedFlow.Data.Matches[0].Field != "source_id" ||
+		cfg.Encoder.TemplatedFlow.Data.Matches[0].From != "tid" {
+		t.Fatalf("expected source_id match from tid, got %#v", cfg.Encoder.TemplatedFlow.Data.Matches)
+	}
 
 	emptyCatalog := filepath.Join(dir, "empty-fields.yaml")
 	if err := os.WriteFile(emptyCatalog, nil, 0o644); err != nil {
@@ -232,6 +362,38 @@ sink:
 	}
 	if got := emptyFile.Encoder.TemplatedFlow.Data.Catalog["agent_ipv6"]; got.ID != 131 || got.Length != 16 || got.Type != "ipv6Address" {
 		t.Fatalf("expected embedded agent_ipv6 exporter IPv6 field, got %#v", got)
+	}
+}
+
+func TestLoadRejectsUnknownTemplatedFlowDataMatchField(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "match.yaml")
+	if err := os.WriteFile(cfgPath, []byte(`
+sources:
+  - network: udp
+    address: ":18081"
+    type: flow
+
+processor:
+  type: builtin
+
+encoder:
+  type: ipfix
+  templated_flow:
+    data:
+      matches:
+        - field: not_in_catalog
+          from: tid
+
+sink:
+  type: stdout
+`), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	_, err := Load(cfgPath)
+	if err == nil || !strings.Contains(err.Error(), `field "not_in_catalog" is not defined`) {
+		t.Fatalf("expected unknown match field error, got %v", err)
 	}
 }
 

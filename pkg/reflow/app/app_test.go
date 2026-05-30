@@ -144,6 +144,8 @@ func (noopDecoder) Decode(evt *event.Event) ([]*event.Event, error) {
 	return []*event.Event{evt}, nil
 }
 
+func (noopDecoder) Errors() <-chan error { return nil }
+
 func (noopDecoder) Close() {}
 
 var _ decode.Decoder = noopDecoder{}

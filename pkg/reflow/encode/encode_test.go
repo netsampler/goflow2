@@ -3,6 +3,7 @@ package encode
 import (
 	"bytes"
 	"encoding/binary"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/netip"
@@ -1052,6 +1053,51 @@ func TestSFlowEncoderEncodesPublicRawSampleEnvelope(t *testing.T) {
 	sample := packet.Samples[0].(sflow.RawSample)
 	if sample.Header.Format != enterpriseFormat || !bytes.Equal(sample.Data, []byte{1, 2, 3, 4}) {
 		t.Fatalf("expected public raw sample to encode, got %#v", sample)
+	}
+}
+
+func TestSFlowEncoderFallsBackWhenStandardRawSampleEnvelopeIsPartial(t *testing.T) {
+	enc := NewSFlowEncoder(config.EncoderConfig{Type: "sflow"})
+	headerData := mustDecodeHex(t, "00112233445566778899aabb8847000641404500004a00030000402f027ecb007101cb00710200006558aabbccddeeff020000000001810000640800450000200002000040018e93c000020ac633640a0800600d12340001cafebabe")
+
+	// This is the malformed shape reported from reflow-squash: it is tagged as a
+	// standard flow sample, but the bytes are only raw flow-record payload bytes.
+	partialStandardSampleData := mustDecodeHex(t, "000000010000005c000000000000005c"+
+		"00112233445566778899aabb8847000641404500004a00030000402f027ecb007101cb00710200006558aabbccddeeff020000000001810000640800450000200002000040018e93c000020ac633640a0800600d12340001cafebabe"+
+		"000003ee0000001000000000000000010006410000000000")
+
+	payloads, err := enc.Encode(&event.Event{
+		Fields: map[string]any{
+			"agent_ip":        "127.0.0.1",
+			"protocol":        uint32(1),
+			"frame_length":    uint32(len(headerData)),
+			"original_length": uint32(len(headerData)),
+			"header_data":     headerData,
+		},
+		SFlow: &event.SFlowMetadata{
+			Samples: []event.SFlowSampleMetadata{
+				{Format: sflow.SAMPLE_FORMAT_FLOW, Data: partialStandardSampleData},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Encode returned error: %v", err)
+	}
+	if len(payloads) != 1 {
+		t.Fatalf("expected one payload, got %d", len(payloads))
+	}
+
+	packet := decodeSFlowPacket(t, payloads[0])
+	sample, ok := packet.Samples[0].(sflow.FlowSample)
+	if !ok {
+		t.Fatalf("expected valid flow sample, got %T", packet.Samples[0])
+	}
+	if len(sample.Records) != 1 {
+		t.Fatalf("expected one sampled-header record, got %d", len(sample.Records))
+	}
+	header := sample.Records[0].Data.(sflow.SampledHeader)
+	if !bytes.Equal(header.HeaderData, headerData) {
+		t.Fatalf("expected sampled header bytes to round-trip")
 	}
 }
 
@@ -4064,6 +4110,15 @@ func decodeSFlowPacket(t *testing.T, payload []byte) *sflow.Packet {
 		t.Fatalf("decode sflow payload: %v", err)
 	}
 	return packet
+}
+
+func mustDecodeHex(t *testing.T, value string) []byte {
+	t.Helper()
+	data, err := hex.DecodeString(value)
+	if err != nil {
+		t.Fatalf("decode hex: %v", err)
+	}
+	return data
 }
 
 func decodeDelimitedFlowMessage(t *testing.T, payload []byte) *flowpb.FlowMessage {
