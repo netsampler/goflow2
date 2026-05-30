@@ -1,6 +1,7 @@
 package encode
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -366,10 +367,30 @@ func publicSFlowRawSample(evt *event.Event) (sflow.RawSample, bool) {
 	if !ok {
 		return sflow.RawSample{}, false
 	}
+	if !validPublicRawSamplePayload(dataFormat, sample.Data) {
+		return sflow.RawSample{}, false
+	}
 	return sflow.RawSample{
 		Header: sflow.SampleHeader{Format: dataFormat},
 		Data:   append([]byte(nil), sample.Data...),
 	}, true
+}
+
+func validPublicRawSamplePayload(dataFormat uint32, data []byte) bool {
+	if sflow.DataFormatEnterprise(dataFormat) != 0 {
+		return true
+	}
+	switch sflow.DataFormatFormat(dataFormat) {
+	case sflow.SAMPLE_FORMAT_FLOW, sflow.SAMPLE_FORMAT_COUNTER, sflow.SAMPLE_FORMAT_EXPANDED_FLOW, sflow.SAMPLE_FORMAT_EXPANDED_COUNTER, sflow.SAMPLE_FORMAT_DROP:
+		header := sflow.SampleHeader{Format: dataFormat, Length: uint32(len(data))}
+		payload := bytes.NewBuffer(data)
+		if _, err := sflow.DecodeSample(&header, payload); err != nil {
+			return false
+		}
+		return payload.Len() == 0
+	default:
+		return true
+	}
 }
 
 func publicSFlowFlowRecords(evt *event.Event) []sflow.FlowRecord {
