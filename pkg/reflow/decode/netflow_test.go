@@ -49,7 +49,7 @@ func TestTemplateAndOptionsEventsAreEmitted(t *testing.T) {
 		[]netflow.TemplateFlowSet{
 			{
 				Records: []netflow.TemplateRecord{
-					{TemplateId: 256, FieldCount: 3},
+					{TemplateId: 256, FieldCount: 3, Fields: []netflow.Field{{Type: 1, Length: 8}}},
 				},
 			},
 		},
@@ -72,6 +72,9 @@ func TestTemplateAndOptionsEventsAreEmitted(t *testing.T) {
 	}
 	if got := templateEvents[1].Fields["tflow_record_type"]; got != "options" {
 		t.Fatalf("expected options template tflow_record_type=options, got %#v", got)
+	}
+	if _, ok := templateEvents[0].Fields["tflow.fields"]; ok {
+		t.Fatalf("expected compact template event by default, got %#v", templateEvents[0].Fields["tflow.fields"])
 	}
 
 	optionsEvents := d.optionsEventsFromIPFIX(base, packet, []netflow.OptionsDataFlowSet{
@@ -96,6 +99,103 @@ func TestTemplateAndOptionsEventsAreEmitted(t *testing.T) {
 	}
 	if got := optionsEvents[0].Fields["sampling_rate"]; got != uint32(100) {
 		t.Fatalf("expected sampling_rate=100, got %#v", got)
+	}
+}
+
+func TestTemplateEventsEmbedFieldsWhenConfigured(t *testing.T) {
+	d := &builtIn{
+		embedTemplateFields: true,
+		catalog: newDecodeCatalog(map[string]config.IPFIXFieldDefinition{
+			"bytes": {
+				ID:     1,
+				Length: 8,
+				Type:   "unsigned64",
+				Format: "delta",
+			},
+			"custom_counter": {
+				Name:             "customCounter",
+				ID:               4000,
+				PEN:              32473,
+				Length:           4,
+				Type:             "unsigned32",
+				EnterpriseScoped: true,
+			},
+			"input_if": {
+				ID:     10,
+				Length: 4,
+				Type:   "unsigned32",
+			},
+			"sampling_rate": {
+				ID:     34,
+				Length: 4,
+				Type:   "unsigned32",
+			},
+		}),
+	}
+	base := &event.Event{
+		ReceivedAt: time.Unix(1, 0),
+		Source:     event.SourceMetadata{Type: "flow"},
+	}
+	packet := &netflow.IPFIXPacket{Version: 10}
+
+	templateEvents := d.templateEventsFromIPFIX(base, packet,
+		[]netflow.TemplateFlowSet{
+			{
+				Records: []netflow.TemplateRecord{
+					{
+						TemplateId: 256,
+						FieldCount: 3,
+						Fields: []netflow.Field{
+							{Type: 1, Length: 8},
+							{PenProvided: true, Type: 4000, Length: 4, Pen: 32473},
+							{Type: 999, Length: 2},
+						},
+					},
+				},
+			},
+		},
+		[]netflow.IPFIXOptionsTemplateFlowSet{
+			{
+				Records: []netflow.IPFIXOptionsTemplateRecord{
+					{
+						TemplateId:      300,
+						FieldCount:      2,
+						ScopeFieldCount: 1,
+						Scopes:          []netflow.Field{{Type: 10, Length: 4}},
+						Options:         []netflow.Field{{Type: 34, Length: 4}},
+					},
+				},
+			},
+		},
+	)
+	if len(templateEvents) != 2 {
+		t.Fatalf("expected 2 template events, got %d", len(templateEvents))
+	}
+
+	fields, ok := templateEvents[0].Fields["tflow.fields"].([]map[string]any)
+	if !ok {
+		t.Fatalf("expected tflow.fields, got %#v", templateEvents[0].Fields["tflow.fields"])
+	}
+	if len(fields) != 3 {
+		t.Fatalf("expected 3 embedded fields, got %#v", fields)
+	}
+	if fields[0]["name"] != "bytes" || fields[0]["data_type"] != "unsigned64" || fields[0]["format"] != "delta" {
+		t.Fatalf("expected catalog-enriched bytes field, got %#v", fields[0])
+	}
+	if fields[1]["name"] != "customCounter" || fields[1]["key"] != "custom_counter" || fields[1]["pen"] != uint32(32473) {
+		t.Fatalf("expected enterprise catalog field, got %#v", fields[1])
+	}
+	if _, ok := fields[2]["name"]; ok {
+		t.Fatalf("expected unknown field to stay raw, got %#v", fields[2])
+	}
+
+	scopes, ok := templateEvents[1].Fields["tflow.scopes"].([]map[string]any)
+	if !ok || len(scopes) != 1 || scopes[0]["name"] != "input_if" {
+		t.Fatalf("expected embedded scope field, got %#v", templateEvents[1].Fields["tflow.scopes"])
+	}
+	options, ok := templateEvents[1].Fields["tflow.options"].([]map[string]any)
+	if !ok || len(options) != 1 || options[0]["name"] != "sampling_rate" {
+		t.Fatalf("expected embedded option field, got %#v", templateEvents[1].Fields["tflow.options"])
 	}
 }
 

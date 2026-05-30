@@ -329,6 +329,39 @@ sink:
 	}
 }
 
+func TestLoadSupportsEmbedTemplateFields(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "reflow.yaml")
+	if err := os.WriteFile(cfgPath, []byte(`
+sources:
+  - network: udp
+    address: ":18081"
+    type: flow
+
+processor:
+  type: builtin
+  builtin:
+    tflow:
+      embed_template_fields: true
+
+encoder:
+  type: json
+
+sink:
+  type: stdout
+`), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	cfg, err := Load(cfgPath)
+	if err != nil {
+		t.Fatalf("Load returned error: %v", err)
+	}
+	if !cfg.Processor.Builtin.TFlow.EmbedTemplateFields {
+		t.Fatalf("expected processor.builtin.tflow.embed_template_fields=true")
+	}
+}
+
 func TestLoadTreatsExplicitEmptySharedTemplatedFieldsPathAsEmptyCatalog(t *testing.T) {
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, "reflow.yaml")

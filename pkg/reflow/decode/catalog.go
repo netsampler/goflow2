@@ -72,6 +72,16 @@ func (c decodeCatalog) lookupOptions(field netflow.DataField, netflowV9 bool, sc
 	return c.lookup(field, netflowV9)
 }
 
+func (c decodeCatalog) lookupTemplateField(field netflow.Field, netflowV9 bool, scope bool) (decodeCatalogField, bool) {
+	dataField := netflow.DataField{
+		PenProvided: field.PenProvided,
+		Type:        field.Type,
+		Length:      field.Length,
+		Pen:         field.Pen,
+	}
+	return c.lookupOptions(dataField, netflowV9, scope)
+}
+
 func decodeCatalogIPFIXKeys(name string, def config.IPFIXFieldDefinition) []decodeCatalogIPFIXKey {
 	if def.ID == 0 {
 		return nil

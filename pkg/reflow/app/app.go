@@ -75,9 +75,12 @@ func New(cfg *config.Config) (*App, error) {
 	}
 
 	return &App{
-		logger:           logger,
-		sources:          sources,
-		decoder:          decode.NewWithCatalog(cfg.TemplatedFields.Catalog),
+		logger:  logger,
+		sources: sources,
+		decoder: decode.NewWithOptions(decode.Options{
+			Catalog:             cfg.TemplatedFields.Catalog,
+			EmbedTemplateFields: cfg.Processor.Builtin.TFlow.EmbedTemplateFields || cfg.TemplatedFields.EmbedTemplateFields,
+		}),
 		processor:        proc,
 		processorWorkers: processorWorkers,
 		aggregatorCfgs:   cfg.Aggregators,

@@ -15,29 +15,42 @@ type Decoder interface {
 	Close()
 }
 
+// Options configures the built-in decoder.
+type Options struct {
+	Catalog             map[string]config.IPFIXFieldDefinition
+	EmbedTemplateFields bool
+}
+
 // New returns the built-in decoder used by the current runtime.
 func New() Decoder {
-	return NewWithCatalog(nil)
+	return NewWithOptions(Options{})
 }
 
 // NewWithCatalog returns a decoder that uses the shared templated field catalog
 // for IPFIX and NetFlow v9 data record expansion.
 func NewWithCatalog(catalog map[string]config.IPFIXFieldDefinition) Decoder {
+	return NewWithOptions(Options{Catalog: catalog})
+}
+
+// NewWithOptions returns a decoder with optional template event expansion.
+func NewWithOptions(opts Options) Decoder {
 	store := templates.NewTemplateFlowStore()
 	store.Start()
 	sampling := samplingrate.NewSamplingRateFlowStore()
 	sampling.Start()
 	return &builtIn{
-		templates: store,
-		sampling:  sampling,
-		catalog:   newDecodeCatalog(catalog),
+		templates:           store,
+		sampling:            sampling,
+		catalog:             newDecodeCatalog(opts.Catalog),
+		embedTemplateFields: opts.EmbedTemplateFields,
 	}
 }
 
 type builtIn struct {
-	templates *templates.TemplateFlowStore
-	sampling  samplingrate.Store
-	catalog   decodeCatalog
+	templates           *templates.TemplateFlowStore
+	sampling            samplingrate.Store
+	catalog             decodeCatalog
+	embedTemplateFields bool
 }
 
 // Close stops decoder-owned stores and their background sweepers.

@@ -222,6 +222,9 @@ func (d *builtIn) templateEventsFromV9(base *event.Event, packet *netflow.NFv9Pa
 			fields["record_kind"] = "template"
 			fields["template_id"] = uint32(record.TemplateId)
 			fields["field_count"] = uint32(record.FieldCount)
+			if d.embedTemplateFields {
+				fields["tflow.fields"] = d.templateFieldSpecs(record.Fields, true, false)
+			}
 			item.Payload = record
 			out = append(out, item)
 		}
@@ -237,6 +240,10 @@ func (d *builtIn) templateEventsFromV9(base *event.Event, packet *netflow.NFv9Pa
 			fields["template_id"] = uint32(record.TemplateId)
 			fields["scope_field_count"] = uint32(len(record.Scopes))
 			fields["option_field_count"] = uint32(len(record.Options))
+			if d.embedTemplateFields {
+				fields["tflow.scopes"] = d.templateFieldSpecs(record.Scopes, true, true)
+				fields["tflow.options"] = d.templateFieldSpecs(record.Options, true, false)
+			}
 			item.Payload = record
 			out = append(out, item)
 		}
@@ -256,6 +263,9 @@ func (d *builtIn) templateEventsFromIPFIX(base *event.Event, packet *netflow.IPF
 			fields["record_kind"] = "template"
 			fields["template_id"] = uint32(record.TemplateId)
 			fields["field_count"] = uint32(record.FieldCount)
+			if d.embedTemplateFields {
+				fields["tflow.fields"] = d.templateFieldSpecs(record.Fields, false, false)
+			}
 			item.Payload = record
 			out = append(out, item)
 		}
@@ -271,11 +281,48 @@ func (d *builtIn) templateEventsFromIPFIX(base *event.Event, packet *netflow.IPF
 			fields["template_id"] = uint32(record.TemplateId)
 			fields["scope_field_count"] = uint32(record.ScopeFieldCount)
 			fields["option_field_count"] = uint32(int(record.FieldCount) - int(record.ScopeFieldCount))
+			if d.embedTemplateFields {
+				fields["tflow.scopes"] = d.templateFieldSpecs(record.Scopes, false, true)
+				fields["tflow.options"] = d.templateFieldSpecs(record.Options, false, false)
+			}
 			item.Payload = record
 			out = append(out, item)
 		}
 	}
 	return out
+}
+
+func (d *builtIn) templateFieldSpecs(templateFields []netflow.Field, netflowV9 bool, scope bool) []map[string]any {
+	specs := make([]map[string]any, 0, len(templateFields))
+	for _, field := range templateFields {
+		spec := map[string]any{
+			"id":           uint32(field.Type),
+			"length":       uint32(field.Length),
+			"pen":          field.Pen,
+			"pen_provided": field.PenProvided,
+		}
+		if catalogField, ok := d.catalog.lookupTemplateField(field, netflowV9, scope); ok {
+			spec["name"] = catalogFieldName(catalogField)
+			if catalogField.key != "" {
+				spec["key"] = catalogField.key
+			}
+			if catalogField.def.Type != "" {
+				spec["data_type"] = catalogField.def.Type
+			}
+			if catalogField.def.Format != "" {
+				spec["format"] = catalogField.def.Format
+			}
+		}
+		specs = append(specs, spec)
+	}
+	return specs
+}
+
+func catalogFieldName(field decodeCatalogField) string {
+	if field.def.Name != "" {
+		return field.def.Name
+	}
+	return field.key
 }
 
 // optionsEventsFromV9 wraps NetFlow v9 options records in runtime events.

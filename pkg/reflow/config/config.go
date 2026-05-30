@@ -168,8 +168,13 @@ type BuiltinProcessorConfig struct {
 	DisablePacketMapping bool                    `yaml:"disable_packet_mapping"`
 	TruncatePacketBytes  int                     `yaml:"truncate_packet_bytes"`
 	PacketDecoder        PacketDecoderConfig     `yaml:"packet_decoder"`
+	TFlow                TFlowProcessorConfig    `yaml:"tflow"`
 	AggregationHelpers   AggregationHelperConfig `yaml:"aggregation_helpers"`
 	NAT                  NATProcessorConfig      `yaml:"nat"`
+}
+
+type TFlowProcessorConfig struct {
+	EmbedTemplateFields bool `yaml:"embed_template_fields"`
 }
 
 type NATProcessorConfig struct {
@@ -409,14 +414,15 @@ type TemplatedFlowDataConfig struct {
 }
 
 type TemplatedFieldsConfig struct {
-	FieldsPath    string                          `yaml:"fields_path"`
-	Catalog       map[string]IPFIXFieldDefinition `yaml:"-"`
-	Overrides     map[string]IPFIXFieldDefinition `yaml:"overrides"`
-	fieldsPathSet bool
+	FieldsPath          string                          `yaml:"fields_path"`
+	EmbedTemplateFields bool                            `yaml:"embed_template_fields"`
+	Catalog             map[string]IPFIXFieldDefinition `yaml:"-"`
+	Overrides           map[string]IPFIXFieldDefinition `yaml:"overrides"`
+	fieldsPathSet       bool
 }
 
 func (c TemplatedFieldsConfig) IsZero() bool {
-	return !c.fieldsPathSet && c.FieldsPath == "" && len(c.Overrides) == 0
+	return !c.fieldsPathSet && c.FieldsPath == "" && !c.EmbedTemplateFields && len(c.Overrides) == 0
 }
 
 func (c *TemplatedFlowDataConfig) UnmarshalYAML(value *yaml.Node) error {
