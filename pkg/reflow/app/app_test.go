@@ -67,6 +67,32 @@ func TestAggregatorMatchesByFieldsAndMetadata(t *testing.T) {
 	}, evt) {
 		t.Fatalf("expected missing layer match to fail")
 	}
+
+	sourceInit := &event.Event{
+		Kind: "control",
+		Control: &event.ControlMetadata{
+			Type:   "source_init",
+			Stream: "options_data",
+		},
+		Source: event.SourceMetadata{
+			SourceID:    7,
+			SourceIDSet: true,
+			Sampling: &event.SamplingMetadata{
+				Rate: 100,
+			},
+		},
+	}
+	if !aggregatorMatches(config.AggregatorConfig{
+		Match: map[string]string{
+			"kind":                 "control",
+			"control.type":         "source_init",
+			"control.stream":       "options_data",
+			"source.source_id":     "7",
+			"source.sampling.rate": "100",
+		},
+	}, sourceInit) {
+		t.Fatalf("expected source_init control match to succeed")
+	}
 }
 
 func TestRunClosesStdoutLikeSinkOnContextCancel(t *testing.T) {

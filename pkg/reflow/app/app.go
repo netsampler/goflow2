@@ -209,6 +209,7 @@ func (a *App) Run(ctx context.Context) error {
 		}(worker)
 	}
 	hasAggregators := len(aggregateWorkers) > 0
+	routeSourceInitControls := aggregateWorkersRouteSourceInit(aggregateWorkers)
 	var aggregateRouteJobs chan *event.Event
 	if hasAggregators {
 		aggregateRouteJobs = make(chan *event.Event, a.processorWorkers*2)
@@ -245,7 +246,7 @@ func (a *App) Run(ctx context.Context) error {
 				if evt == nil {
 					continue
 				}
-				if evt.Kind == "control" {
+				if evt.Kind == "control" && (!routeSourceInitControls || !controlEventCanRouteThroughAggregator(evt)) {
 					encodeJobs <- evt
 					continue
 				}
@@ -346,8 +347,14 @@ func (a *App) Run(ctx context.Context) error {
 		}
 		sourceInitEvents = append(sourceInitEvents, initEvents...)
 	}
-	for _, evt := range sourceInitEventsForEncoder(a.encoderCfg.Type, sourceInitEvents) {
-		encodeJobs <- evt
+	if hasAggregators && routeSourceInitControls {
+		for _, evt := range sourceInitEvents {
+			aggregateRouteJobs <- evt
+		}
+	} else {
+		for _, evt := range sourceInitEventsForEncoder(a.encoderCfg.Type, sourceInitEvents) {
+			encodeJobs <- evt
+		}
 	}
 
 	sourceDone := make(chan error, len(a.sources))
@@ -432,6 +439,18 @@ type aggregateWorker struct {
 	jobs chan *event.Event
 }
 
+func aggregateWorkersRouteSourceInit(workers []aggregateWorker) bool {
+	for _, worker := range workers {
+		if worker.cfg.EmitAs == "data" {
+			return true
+		}
+		if worker.cfg.Match["kind"] == "control" || worker.cfg.Match["control.type"] == "source_init" {
+			return true
+		}
+	}
+	return false
+}
+
 // aggregatorMatches applies the optional aggregator.match filter to a processed event.
 func aggregatorMatches(cfg config.AggregatorConfig, evt *event.Event) bool {
 	if len(cfg.Match) == 0 {
@@ -443,6 +462,13 @@ func aggregatorMatches(cfg config.AggregatorConfig, evt *event.Event) bool {
 		}
 	}
 	return true
+}
+
+func controlEventCanRouteThroughAggregator(evt *event.Event) bool {
+	if evt == nil || evt.Control == nil {
+		return false
+	}
+	return evt.Control.Type == "source_init"
 }
 
 // eventMatchValue exposes a small set of envelope metadata alongside event fields
@@ -462,12 +488,44 @@ func eventMatchValue(evt *event.Event, key string) string {
 		return evt.Stream
 	case "kind":
 		return evt.Kind
+	case "control.type":
+		if evt.Control != nil {
+			return evt.Control.Type
+		}
+		return ""
+	case "control.stream":
+		if evt.Control != nil {
+			return evt.Control.Stream
+		}
+		return ""
 	case "source.type":
 		return evt.Source.Type
 	case "source.network":
 		return evt.Source.Network
 	case "source.address":
 		return evt.Source.Address
+	case "source.agent_ip":
+		return evt.Source.AgentIP
+	case "source.source_id":
+		if evt.Source.SourceIDSet || evt.Source.SourceID != 0 {
+			return fmt.Sprint(evt.Source.SourceID)
+		}
+		return ""
+	case "source.sampling.rate":
+		if evt.Source.Sampling != nil {
+			return fmt.Sprint(evt.Source.Sampling.Rate)
+		}
+		return ""
+	case "source.sampling.sample_pool":
+		if evt.Source.Sampling != nil {
+			return fmt.Sprint(evt.Source.Sampling.SamplePool)
+		}
+		return ""
+	case "source.sampling.drops":
+		if evt.Source.Sampling != nil {
+			return fmt.Sprint(evt.Source.Sampling.Drops)
+		}
+		return ""
 	}
 	if evt.Fields == nil {
 		return ""

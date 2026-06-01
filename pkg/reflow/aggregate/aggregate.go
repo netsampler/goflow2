@@ -41,7 +41,7 @@ func (p schemaPassthrough) InitEvents() ([]*event.Event, error) {
 }
 
 func (p schemaPassthrough) Process(evt *event.Event) ([]*event.Event, error) {
-	if len(p.cfg.StaticFields) == 0 {
+	if len(p.cfg.StaticFields) == 0 && p.cfg.EmitAs == "" && (evt == nil || evt.Stream == p.cfg.Stream || p.cfg.Stream == "") {
 		return []*event.Event{evt}, nil
 	}
 	if evt == nil {
@@ -49,6 +49,13 @@ func (p schemaPassthrough) Process(evt *event.Event) ([]*event.Event, error) {
 	}
 	out := *evt
 	out.Fields = cloneFields(evt.Fields)
+	if p.cfg.Stream != "" {
+		out.Stream = p.cfg.Stream
+	}
+	if p.cfg.EmitAs == "data" {
+		out.Kind = "data"
+		out.Control = nil
+	}
 	for key, val := range p.cfg.StaticFields {
 		out.Fields[key] = val
 	}

@@ -1295,6 +1295,64 @@ func TestGeneratedIPFIXConfigExcludesDataLinkFrameByDefault(t *testing.T) {
 	}
 }
 
+func TestGeneratedTemplatedOutputAddsSourceOptionsAggregator(t *testing.T) {
+	for _, output := range []string{
+		"ipfix:udp:127.0.0.1:4739",
+		"netflowv9:udp:127.0.0.1:2055",
+	} {
+		t.Run(output, func(t *testing.T) {
+			fs := flag.NewFlagSet("test", flag.ContinueOnError)
+			flags, _ := BindFlags(fs)
+			if err := fs.Parse([]string{"-output=" + output, "-genconf"}); err != nil {
+				t.Fatalf("Parse returned error: %v", err)
+			}
+
+			cfg, generated, err := LoadFromFlags(flags)
+			if err != nil {
+				t.Fatalf("LoadFromFlags returned error: %v", err)
+			}
+			if !generated {
+				t.Fatalf("expected generated config")
+			}
+			agg := sourceOptionsAggregator(t, cfg)
+			if !agg.Passthrough {
+				t.Fatalf("expected source options aggregator to be passthrough")
+			}
+			if agg.EmitAs != "data" {
+				t.Fatalf("expected emit_as=data, got %q", agg.EmitAs)
+			}
+			if agg.TemplateID != 1024 {
+				t.Fatalf("expected source options template 1024, got %d", agg.TemplateID)
+			}
+			if agg.Match["kind"] != "control" || agg.Match["control.type"] != "source_init" {
+				t.Fatalf("unexpected source options match: %#v", agg.Match)
+			}
+			if !aggregatorHasField(agg, "key", "source_id") || !aggregatorHasField(agg, "current", "sampling_rate") {
+				t.Fatalf("expected source options sampling fields, got %#v", agg.Fields)
+			}
+		})
+	}
+}
+
+func TestGeneratedTemplatedOutputAggNoneDisablesSourceOptionsAggregator(t *testing.T) {
+	fs := flag.NewFlagSet("test", flag.ContinueOnError)
+	flags, _ := BindFlags(fs)
+	if err := fs.Parse([]string{"-output=ipfix:udp:127.0.0.1:4739", "-agg=none", "-genconf"}); err != nil {
+		t.Fatalf("Parse returned error: %v", err)
+	}
+
+	cfg, generated, err := LoadFromFlags(flags)
+	if err != nil {
+		t.Fatalf("LoadFromFlags returned error: %v", err)
+	}
+	if !generated {
+		t.Fatalf("expected generated config")
+	}
+	if len(cfg.Aggregators) != 0 {
+		t.Fatalf("expected -agg=none to disable generated aggregators, got %#v", cfg.Aggregators)
+	}
+}
+
 func TestGeneratedTemplatedFlowPickerOrdersAgentFields(t *testing.T) {
 	agentIP := slices.Index(generatedTemplatedFlowFields, "agent_ip")
 	agentIPv6 := slices.Index(generatedTemplatedFlowFields, "agent_ipv6")
@@ -1320,10 +1378,7 @@ func TestGeneratedAggregateConfigPayloadPresetEnablesDataLinkFrame(t *testing.T)
 	if !generated {
 		t.Fatalf("expected generated config")
 	}
-	if len(cfg.Aggregators) != 1 {
-		t.Fatalf("expected generated aggregator, got %d", len(cfg.Aggregators))
-	}
-	agg := cfg.Aggregators[0]
+	agg := primaryPacketAggregator(t, cfg)
 	if agg.Passthrough {
 		t.Fatalf("expected payload preset alone to keep stateful aggregation")
 	}
@@ -1353,10 +1408,7 @@ func TestGeneratedAggregateConfigLimitedPresetRemovesParsedPacketFields(t *testi
 	if !generated {
 		t.Fatalf("expected generated config")
 	}
-	if len(cfg.Aggregators) != 1 {
-		t.Fatalf("expected generated aggregator, got %d", len(cfg.Aggregators))
-	}
-	agg := cfg.Aggregators[0]
+	agg := primaryPacketAggregator(t, cfg)
 	fields := cfg.Encoder.TemplatedFlow.Data.Select
 	if !aggregatorHasField(agg, "current", "frame_length") || !aggregatorHasField(agg, "current", "header_data") {
 		t.Fatalf("expected payload fields to remain, got %#v", agg.Fields)
@@ -1387,10 +1439,7 @@ func TestGeneratedAggregateConfigLimitedKeepsIPFieldsWithNATPreset(t *testing.T)
 	if !generated {
 		t.Fatalf("expected generated config")
 	}
-	if len(cfg.Aggregators) != 1 {
-		t.Fatalf("expected generated aggregator, got %d", len(cfg.Aggregators))
-	}
-	agg := cfg.Aggregators[0]
+	agg := primaryPacketAggregator(t, cfg)
 	fields := cfg.Encoder.TemplatedFlow.Data.Select
 	for _, name := range []string{"src_addr", "dst_addr", "nat_src_addr", "nat_dst_addr", "nat_src_port", "nat_dst_port"} {
 		if !aggregatorHasFieldName(agg, name) || !slices.Contains(fields, name) {
@@ -1418,13 +1467,10 @@ func TestGeneratedAggregateConfigEncapPresetEnablesOuterFields(t *testing.T) {
 	if !generated {
 		t.Fatalf("expected generated config")
 	}
-	if len(cfg.Aggregators) != 1 {
-		t.Fatalf("expected generated aggregator, got %d", len(cfg.Aggregators))
-	}
 	if cfg.Processor.Builtin.PacketDecoder.DecodeBeyondL4 == nil || !*cfg.Processor.Builtin.PacketDecoder.DecodeBeyondL4 {
 		t.Fatalf("expected encap preset to enable decode_beyond_l4, got %#v", cfg.Processor.Builtin.PacketDecoder.DecodeBeyondL4)
 	}
-	agg := cfg.Aggregators[0]
+	agg := primaryPacketAggregator(t, cfg)
 	fields := cfg.Encoder.TemplatedFlow.Data.Select
 	for _, name := range []string{"outer_proto", "outer_src_port", "outer_src_addr", "outer_dst_port", "outer_dst_addr"} {
 		if !aggregatorHasField(agg, "key", name) || !slices.Contains(fields, name) {
@@ -1457,10 +1503,7 @@ func TestGeneratedAggregateConfigNATPresetEnablesNATFields(t *testing.T) {
 	if !generated {
 		t.Fatalf("expected generated config")
 	}
-	if len(cfg.Aggregators) != 1 {
-		t.Fatalf("expected generated aggregator, got %d", len(cfg.Aggregators))
-	}
-	agg := cfg.Aggregators[0]
+	agg := primaryPacketAggregator(t, cfg)
 	fields := cfg.Encoder.TemplatedFlow.Data.Select
 	if !aggregatorHasField(agg, "current", "nat_src_addr") || !slices.Contains(fields, "nat_src_addr") {
 		t.Fatalf("expected nat preset to add and select NAT fields, agg=%#v fields=%#v", agg.Fields, fields)
@@ -1484,13 +1527,10 @@ func TestGeneratedAggregateConfigMPLSPresetEnablesMPLSFields(t *testing.T) {
 	if !generated {
 		t.Fatalf("expected generated config")
 	}
-	if len(cfg.Aggregators) != 1 {
-		t.Fatalf("expected generated aggregator, got %d", len(cfg.Aggregators))
-	}
 	if cfg.Processor.Builtin.AggregationHelpers.MPLSLabels != len(generatedTemplatedFlowMPLSFields) {
 		t.Fatalf("expected mpls aggregation helpers to be enabled, got %d", cfg.Processor.Builtin.AggregationHelpers.MPLSLabels)
 	}
-	agg := cfg.Aggregators[0]
+	agg := primaryPacketAggregator(t, cfg)
 	fields := cfg.Encoder.TemplatedFlow.Data.Select
 	if !aggregatorHasField(agg, "current", "mpls_label_stack_section_1") || !slices.Contains(fields, "mpls_label_stack_section_1") {
 		t.Fatalf("expected mpls preset to add and select MPLS fields, agg=%#v fields=%#v", agg.Fields, fields)
@@ -2323,6 +2363,28 @@ func aggregatorHasFieldName(agg AggregatorConfig, name string) bool {
 		}
 	}
 	return false
+}
+
+func primaryPacketAggregator(t *testing.T, cfg *Config) AggregatorConfig {
+	t.Helper()
+	for _, agg := range cfg.Aggregators {
+		if agg.Match["record_kind"] == "packet" {
+			return agg
+		}
+	}
+	t.Fatalf("expected generated packet aggregator, got %#v", cfg.Aggregators)
+	return AggregatorConfig{}
+}
+
+func sourceOptionsAggregator(t *testing.T, cfg *Config) AggregatorConfig {
+	t.Helper()
+	for _, agg := range cfg.Aggregators {
+		if agg.Stream == "options_data" && agg.Match["control.type"] == "source_init" {
+			return agg
+		}
+	}
+	t.Fatalf("expected generated source options aggregator, got %#v", cfg.Aggregators)
+	return AggregatorConfig{}
 }
 
 func aggregatorHasRole(agg AggregatorConfig, role string) bool {

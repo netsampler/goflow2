@@ -380,6 +380,9 @@ func (c *FlagConfig) generatedConfig() (*Config, error) {
 			)...)
 		}
 	}
+	if generatedSourceOptionsAggregatorEnabled(c, encoder.Type) {
+		cfg.ensureSourceOptionsAggregator()
+	}
 	return cfg, nil
 }
 
@@ -962,6 +965,50 @@ func defaultGeneratedAggregator() AggregatorConfig {
 		},
 		TemplateID: 256,
 	}
+}
+
+func defaultSourceOptionsAggregator() AggregatorConfig {
+	return AggregatorConfig{
+		Stream: "options_data",
+		EmitAs: "data",
+		Match: map[string]string{
+			"kind":         "control",
+			"control.type": "source_init",
+		},
+		Fields: []AggregatorField{
+			{Role: "static", Name: "tflow_record_type", Value: "options"},
+			{Role: "key", Name: "source_id"},
+			{Role: "current", Name: "agent_ip"},
+			{Role: "current", Name: "agent_ipv6"},
+			{Role: "current", Name: "sampling_rate"},
+			{Role: "current", Name: "sample_pool"},
+			{Role: "current", Name: "drops"},
+			{Role: "current", Name: "input_if"},
+			{Role: "current", Name: "output_if"},
+		},
+		TemplateID: 1024,
+	}
+}
+
+func generatedSourceOptionsAggregatorEnabled(flags *FlagConfig, encoderType string) bool {
+	switch encoderType {
+	case "ipfix", "netflowv9":
+	default:
+		return false
+	}
+	return lastAggregatePreset(flags) != "none"
+}
+
+func (c *Config) ensureSourceOptionsAggregator() {
+	if c == nil {
+		return
+	}
+	for _, agg := range c.Aggregators {
+		if agg.Stream == "options_data" && agg.Match["control.type"] == "source_init" {
+			return
+		}
+	}
+	c.Aggregators = append(c.Aggregators, defaultSourceOptionsAggregator())
 }
 
 func applyGeneratedAggregatorOverrides(cfg *AggregatorConfig, flags *FlagConfig) {

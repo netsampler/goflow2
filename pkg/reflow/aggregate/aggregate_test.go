@@ -577,6 +577,53 @@ func TestSchemaPassthroughEmitsSchemaAndForwardsEvents(t *testing.T) {
 	}
 }
 
+func TestSchemaPassthroughCanEmitControlAsData(t *testing.T) {
+	agg, err := New(config.AggregatorConfig{
+		Passthrough:      true,
+		Stream:           "options_data",
+		EmitAs:           "data",
+		FieldsConfigured: true,
+		Fields: []config.AggregatorField{
+			{Role: "static", Name: "tflow_record_type", Value: "options"},
+			{Role: "key", Name: "source_id"},
+			{Role: "current", Name: "sampling_rate"},
+		},
+		KeyFields: []string{"source_id"},
+		StaticFields: map[string]any{
+			"tflow_record_type": "options",
+		},
+	})
+	if err != nil {
+		t.Fatalf("New returned error: %v", err)
+	}
+
+	out, err := agg.Process(&event.Event{
+		Kind: "control",
+		Control: &event.ControlMetadata{
+			Type: "source_init",
+		},
+		Fields: map[string]any{
+			"source_id":     uint32(7),
+			"sampling_rate": uint32(100),
+		},
+	})
+	if err != nil {
+		t.Fatalf("Process returned error: %v", err)
+	}
+	if len(out) != 1 {
+		t.Fatalf("expected 1 forwarded event, got %d", len(out))
+	}
+	if out[0].Kind != "data" || out[0].Control != nil {
+		t.Fatalf("expected control event to be emitted as data, got kind=%q control=%#v", out[0].Kind, out[0].Control)
+	}
+	if out[0].Stream != "options_data" {
+		t.Fatalf("expected options_data stream, got %q", out[0].Stream)
+	}
+	if out[0].Fields["tflow_record_type"] != "options" {
+		t.Fatalf("expected static options marker, got %#v", out[0].Fields)
+	}
+}
+
 func TestSchemaFieldsDeduplicateConfiguredNames(t *testing.T) {
 	agg, err := New(config.AggregatorConfig{
 		Passthrough:      true,

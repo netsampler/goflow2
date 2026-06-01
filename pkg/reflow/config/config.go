@@ -233,6 +233,9 @@ type AggregatorConfig struct {
 	// Passthrough is derived from config. When no stateful rollup is required,
 	// matching events are forwarded immediately after schema registration.
 	Passthrough bool `yaml:"-"`
+	// EmitAs rewrites passthrough events into another pipeline kind. The primary
+	// use is converting source_init control records into schema-backed data.
+	EmitAs string `yaml:"emit_as,omitempty"`
 	// Window controls bucket closure based on activity and age.
 	Window AggregatorWindowConfig `yaml:"window"`
 	// Periodic controls snapshot-style exports of current bucket state.
@@ -268,6 +271,7 @@ func (cfg AggregatorConfig) MarshalYAML() (any, error) {
 	}
 	return struct {
 		Stream     string                   `yaml:"stream,omitempty"`
+		EmitAs     string                   `yaml:"emit_as,omitempty"`
 		Window     AggregatorWindowConfig   `yaml:"window,omitempty"`
 		Periodic   AggregatorPeriodicConfig `yaml:"periodic,omitempty"`
 		Fields     []AggregatorField        `yaml:"fields"`
@@ -275,6 +279,7 @@ func (cfg AggregatorConfig) MarshalYAML() (any, error) {
 		TemplateID uint16                   `yaml:"template_id,omitempty"`
 	}{
 		Stream:     cfg.Stream,
+		EmitAs:     cfg.EmitAs,
 		Window:     cfg.Window,
 		Periodic:   cfg.Periodic,
 		Fields:     cfg.Fields,
@@ -1293,7 +1298,13 @@ func validateAggregatorConfig(cfg AggregatorConfig) error {
 		return fmt.Errorf("aggregator.periodic.every_ms must be >= 0")
 	}
 	if cfg.Passthrough {
-		return nil
+		if cfg.EmitAs == "" || cfg.EmitAs == "data" {
+			return nil
+		}
+		return fmt.Errorf("aggregator.emit_as must be \"data\" when set")
+	}
+	if cfg.EmitAs != "" {
+		return fmt.Errorf("aggregator.emit_as is only supported for passthrough aggregators")
 	}
 	if cfg.Periodic.ResetBuckets && cfg.Periodic.Every == 0 {
 		return fmt.Errorf("aggregator.periodic.reset_buckets requires aggregator.periodic.every_ms > 0")
