@@ -1075,6 +1075,12 @@ func buildTemplatedValues(cfg config.TFlowDataConfig, fieldMap map[string]any, n
 				return netflow.DataRecord{}, fmt.Errorf("default field %q: %w", name, err)
 			}
 		}
+		if templateFieldLength(def) == 0xffff {
+			encoded, err = encodeVariableLengthValue(encoded)
+			if err != nil {
+				return netflow.DataRecord{}, fmt.Errorf("encode variable-length field %q: %w", name, err)
+			}
+		}
 
 		fieldType := def.ID
 		if netflowV9 {
@@ -1115,7 +1121,7 @@ func buildTemplateRecordFromFields(cfg config.TFlowDataConfig, names []string, t
 		fields = append(fields, netflow.Field{
 			PenProvided: def.EnterpriseScoped || def.PEN != 0,
 			Type:        fieldType,
-			Length:      def.Length,
+			Length:      templateFieldLength(def),
 			Pen:         def.PEN,
 		})
 	}
@@ -1330,10 +1336,73 @@ func ipfixFieldLength(def config.IPFIXFieldDefinition, encoded []byte) uint16 {
 	if def.Length != 0 {
 		return def.Length
 	}
+	if fixed, ok := fixedIPFIXFieldLength(def.Type); ok {
+		return fixed
+	}
+	if variableLengthIPFIXType(def.Type) {
+		return 0xffff
+	}
 	if len(encoded) > 65535 {
 		return 0xffff
 	}
+	if len(encoded) == 0 {
+		return 0xffff
+	}
 	return uint16(len(encoded))
+}
+
+func templateFieldLength(def config.IPFIXFieldDefinition) uint16 {
+	if def.Length != 0 {
+		return def.Length
+	}
+	if fixed, ok := fixedIPFIXFieldLength(def.Type); ok {
+		return fixed
+	}
+	return 0xffff
+}
+
+func fixedIPFIXFieldLength(kind string) (uint16, bool) {
+	switch kind {
+	case "ipv4Address", "unsigned32", "signed32":
+		return 4, true
+	case "ipv6Address":
+		return 16, true
+	case "unsigned8", "signed8":
+		return 1, true
+	case "unsigned16", "signed16":
+		return 2, true
+	case "unsigned64", "signed64":
+		return 8, true
+	default:
+		return 0, false
+	}
+}
+
+func variableLengthIPFIXType(kind string) bool {
+	switch kind {
+	case "string", "octetArray":
+		return true
+	default:
+		return false
+	}
+}
+
+func encodeVariableLengthValue(value []byte) ([]byte, error) {
+	if len(value) > 65535 {
+		return nil, fmt.Errorf("value length %d exceeds 65535", len(value))
+	}
+	if len(value) < 255 {
+		out := make([]byte, 1, len(value)+1)
+		out[0] = byte(len(value))
+		out = append(out, value...)
+		return out, nil
+	}
+	out := make([]byte, 3, len(value)+3)
+	out[0] = 0xff
+	out[1] = byte(len(value) >> 8)
+	out[2] = byte(len(value))
+	out = append(out, value...)
+	return out, nil
 }
 
 // encodeUnsigned serializes unsigned integer field kinds in big-endian order.

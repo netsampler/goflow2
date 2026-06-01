@@ -1159,6 +1159,73 @@ func TestIPFIXSchemaDrivenDataRecordKeepsTemplateWidth(t *testing.T) {
 	}
 }
 
+func TestIPFIXSchemaDrivenStringFieldUsesVariableLength(t *testing.T) {
+	cfg := testTFlowEncoderConfig("ipfix")
+	cfg.TFlowData.Catalog["observation_domain_id"] = config.IPFIXFieldDefinition{ID: netflow.IPFIX_FIELD_observationDomainId, Type: "unsigned32"}
+	cfg.TFlowData.Catalog["input_if"] = config.IPFIXFieldDefinition{ID: netflow.IPFIX_FIELD_ingressInterface, Type: "unsigned32"}
+	cfg.TFlowData.Catalog["interface_name"] = config.IPFIXFieldDefinition{ID: netflow.IPFIX_FIELD_interfaceName, Type: "string"}
+	enc := NewIPFIXEncoder(cfg)
+
+	templatePayloads, err := enc.Encode(&event.Event{
+		Kind:   "control",
+		Stream: "interface_options",
+		Control: &event.ControlMetadata{
+			Type:   "schema",
+			Stream: "interface_options",
+		},
+		Payload: event.AggregationSchema{
+			Stream:         "interface_options",
+			FieldNames:     []string{"observation_domain_id", "input_if", "interface_name"},
+			BaseTemplateID: 1300,
+		},
+	})
+	if err != nil {
+		t.Fatalf("schema Encode returned error: %v", err)
+	}
+
+	store := templates.NewTemplateFlowStore()
+	store.Start()
+	ctx := netflow.FlowContext{RouterKey: "test-router"}
+	var templateDecoded netflow.IPFIXPacket
+	if err := netflow.DecodeMessageVersion(bytes.NewBuffer(templatePayloads[0]), store, ctx, nil, &templateDecoded); err != nil {
+		t.Fatalf("decode schema template payload: %v", err)
+	}
+	templateSet := templateDecoded.FlowSets[0].(netflow.TemplateFlowSet)
+	if got := templateSet.Records[0].Fields[2].Length; got != 0xffff {
+		t.Fatalf("expected interface_name template length 65535, got %d", got)
+	}
+
+	payloads, err := enc.Encode(&event.Event{
+		ReceivedAt: testEventTime(),
+		Stream:     "interface_options",
+		Fields: map[string]any{
+			"observation_domain_id": uint32(0),
+			"input_if":              uint32(5),
+			"interface_name":        "xe-0/0/0",
+		},
+	})
+	if err != nil {
+		t.Fatalf("data Encode returned error: %v", err)
+	}
+
+	var decoded netflow.IPFIXPacket
+	if err := netflow.DecodeMessageVersion(bytes.NewBuffer(payloads[0]), store, ctx, nil, &decoded); err != nil {
+		t.Fatalf("decode ipfix data payload: %v", err)
+	}
+	dataSet := decoded.FlowSets[0].(netflow.DataFlowSet)
+	if len(dataSet.Records) != 1 {
+		t.Fatalf("expected 1 data record, got %d", len(dataSet.Records))
+	}
+	gotNameBytes, ok := dataSet.Records[0].Values[2].Value.([]byte)
+	if !ok {
+		t.Fatalf("expected interface_name value bytes, got %T", dataSet.Records[0].Values[2].Value)
+	}
+	gotName := string(gotNameBytes)
+	if gotName != "xe-0/0/0" {
+		t.Fatalf("expected interface_name xe-0/0/0, got %q", gotName)
+	}
+}
+
 func TestIPFIXEncoderUsesIPv6InformationElementsForIPv6Addresses(t *testing.T) {
 	enc := NewIPFIXEncoder(testTFlowEncoderConfig("ipfix"))
 	evt := testTemplatedFlowEvent()
