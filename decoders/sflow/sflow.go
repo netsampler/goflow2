@@ -226,9 +226,15 @@ func DecodeFlowRecord(header *RecordHeader, payload *bytes.Buffer) (FlowRecord, 
 		); err != nil {
 			return flowRecord, &RecordError{header.DataFormat, err}
 		}
-		headerData, err := readXDROpaqueWithLength(payload, headerLength)
-		if err != nil {
-			return flowRecord, &RecordError{header.DataFormat, err}
+		var headerData []byte
+		if int(headerLength) > payload.Len() {
+			headerData = append([]byte(nil), payload.Bytes()...)
+			payload.Next(payload.Len())
+		} else {
+			headerData, err = readXDROpaqueWithLength(payload, headerLength)
+			if err != nil {
+				return flowRecord, &RecordError{header.DataFormat, err}
+			}
 		}
 		sampledHeader.OriginalLength = headerLength
 		sampledHeader.HeaderData = headerData
