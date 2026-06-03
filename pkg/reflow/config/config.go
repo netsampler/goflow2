@@ -33,6 +33,7 @@ type FlagConfig struct {
 	AggResetBuckets   *bool
 	AggPresets        []string
 	GenConf           bool
+	GenProto          bool
 	ListOptions       bool
 }
 
@@ -652,6 +653,7 @@ func BindFlags(fs *flag.FlagSet) (*FlagConfig, *bool) {
 	fs.Var(out, "o", "Output helper spec encoder:sink[:target]")
 	fs.Var(aggregateFlag{cfg: cfg}, "agg", "Generate packet aggregation config or apply aggregation presets")
 	fs.BoolVar(&cfg.GenConf, "genconf", false, "Print generated config and exit")
+	fs.BoolVar(&cfg.GenProto, "genproto", false, "Print ReFlow protobuf definition and exit")
 	fs.BoolVar(&cfg.ListOptions, "list-options", false, "List helper -input/-output/-agg options and exit")
 	return cfg, version
 }

@@ -3,6 +3,7 @@ package encode
 import (
 	"fmt"
 	"net/netip"
+	"strings"
 
 	flowpb "github.com/netsampler/goflow2/v3/pb"
 	"github.com/netsampler/goflow2/v3/pkg/reflow/config"
@@ -11,8 +12,10 @@ import (
 )
 
 type protobufFieldSpec struct {
-	name   string
-	append func([]byte, *event.Event) ([]byte, bool, error)
+	name      string
+	number    protowire.Number
+	protoType string
+	append    func([]byte, *event.Event) ([]byte, bool, error)
 }
 
 type ProtobufEncoder struct {
@@ -56,6 +59,31 @@ func (e *ProtobufEncoder) Encode(evt *event.Event) ([][]byte, error) {
 
 func (e *ProtobufEncoder) Flush() ([][]byte, error) {
 	return nil, nil
+}
+
+func GenerateProtobufDefinition(flavor string) (string, error) {
+	fields, err := compileProtobufFieldPlan(flavor)
+	if err != nil {
+		return "", err
+	}
+
+	var b strings.Builder
+	b.WriteString("syntax = \"proto3\";\n")
+	b.WriteString("package flowpb;\n")
+	b.WriteString("option go_package = \"github.com/netsampler/goflow2/pb;flowpb\";\n\n")
+	b.WriteString("message FlowMessage {\n\n")
+	b.WriteString("  enum FlowType {\n")
+	b.WriteString("    FLOWUNKNOWN = 0;\n")
+	b.WriteString("    SFLOW_5 = 1;\n")
+	b.WriteString("    NETFLOW_V5 = 2;\n")
+	b.WriteString("    NETFLOW_V9 = 3;\n")
+	b.WriteString("    IPFIX = 4;\n")
+	b.WriteString("  }\n\n")
+	for _, field := range fields {
+		fmt.Fprintf(&b, "  %s %s = %d;\n", field.protoType, field.name, field.number)
+	}
+	b.WriteString("\n}\n")
+	return b.String(), nil
 }
 
 func compileProtobufFieldPlan(flavor string) ([]protobufFieldSpec, error) {
@@ -139,7 +167,9 @@ func compileProtobufFieldPlan(flavor string) ([]protobufFieldSpec, error) {
 
 func protobufUint32Field(name string, num protowire.Number, get func(*event.Event) uint32) protobufFieldSpec {
 	return protobufFieldSpec{
-		name: name,
+		name:      name,
+		number:    num,
+		protoType: "uint32",
 		append: func(dst []byte, evt *event.Event) ([]byte, bool, error) {
 			val := get(evt)
 			if val == 0 {
@@ -154,7 +184,9 @@ func protobufUint32Field(name string, num protowire.Number, get func(*event.Even
 
 func protobufUint64Field(name string, num protowire.Number, get func(*event.Event) uint64) protobufFieldSpec {
 	return protobufFieldSpec{
-		name: name,
+		name:      name,
+		number:    num,
+		protoType: "uint64",
 		append: func(dst []byte, evt *event.Event) ([]byte, bool, error) {
 			val := get(evt)
 			if val == 0 {
@@ -169,7 +201,9 @@ func protobufUint64Field(name string, num protowire.Number, get func(*event.Even
 
 func protobufIPField(name string, num protowire.Number, get func(*event.Event) string) protobufFieldSpec {
 	return protobufFieldSpec{
-		name: name,
+		name:      name,
+		number:    num,
+		protoType: "bytes",
 		append: func(dst []byte, evt *event.Event) ([]byte, bool, error) {
 			ip := get(evt)
 			if ip == "" {
@@ -188,7 +222,9 @@ func protobufIPField(name string, num protowire.Number, get func(*event.Event) s
 
 func protobufEnumField(name string, num protowire.Number, get func(*event.Event) uint64) protobufFieldSpec {
 	return protobufFieldSpec{
-		name: name,
+		name:      name,
+		number:    num,
+		protoType: "FlowType",
 		append: func(dst []byte, evt *event.Event) ([]byte, bool, error) {
 			val := get(evt)
 			if val == 0 {

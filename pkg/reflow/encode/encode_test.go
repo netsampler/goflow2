@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/netip"
+	"strings"
 	"testing"
 	"time"
 
@@ -292,6 +293,34 @@ func TestProtobufEncoderSupportsGoFlow2V2Flavor(t *testing.T) {
 	}
 	if msg.Bytes != 321 {
 		t.Fatalf("expected bytes=321, got %d", msg.Bytes)
+	}
+}
+
+func TestGenerateProtobufDefinitionDescribesReFlowFields(t *testing.T) {
+	definition, err := GenerateProtobufDefinition("canonical")
+	if err != nil {
+		t.Fatalf("GenerateProtobufDefinition returned error: %v", err)
+	}
+
+	for _, want := range []string{
+		"syntax = \"proto3\";",
+		"enum FlowType {",
+		"FlowType type = 1;",
+		"uint64 time_received_ns = 110;",
+		"bytes src_addr = 6;",
+		"bytes dst_addr = 7;",
+		"uint32 proto = 20;",
+		"uint32 observation_domain_id = 70;",
+	} {
+		if !strings.Contains(definition, want) {
+			t.Fatalf("expected generated protobuf definition to contain %q:\n%s", want, definition)
+		}
+	}
+}
+
+func TestGenerateProtobufDefinitionRejectsUnsupportedFlavor(t *testing.T) {
+	if _, err := GenerateProtobufDefinition("custom"); err == nil {
+		t.Fatalf("expected unsupported flavor error")
 	}
 }
 

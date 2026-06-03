@@ -12,6 +12,7 @@ import (
 
 	"github.com/netsampler/goflow2/v3/pkg/reflow/app"
 	"github.com/netsampler/goflow2/v3/pkg/reflow/config"
+	"github.com/netsampler/goflow2/v3/pkg/reflow/encode"
 	"gopkg.in/yaml.v3"
 )
 
@@ -54,6 +55,14 @@ func main() {
 		if _, err := os.Stdout.Write(raw); err != nil {
 			log.Fatal(err)
 		}
+		return
+	}
+	if cfg.GenProto {
+		raw, err := encode.GenerateProtobufDefinition(loadedCfg.Encoder.Protobuf.Flavor)
+		if err != nil {
+			log.Fatal(err)
+		}
+		fmt.Print(raw)
 		return
 	}
 
