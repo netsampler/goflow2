@@ -1,8 +1,11 @@
 package encode
 
 import (
+	"encoding/json"
 	"fmt"
+	"math"
 	"net/netip"
+	"sort"
 	"strings"
 
 	flowpb "github.com/netsampler/goflow2/v3/pb"
@@ -21,6 +24,7 @@ type protobufFieldSpec struct {
 type ProtobufEncoder struct {
 	flavor         string
 	lengthPrefixed bool
+	exportAll      bool
 	fields         []protobufFieldSpec
 }
 
@@ -32,6 +36,7 @@ func NewProtobufEncoder(cfg config.EncoderConfig) (*ProtobufEncoder, error) {
 	return &ProtobufEncoder{
 		flavor:         cfg.Protobuf.Flavor,
 		lengthPrefixed: cfg.Protobuf.LengthPrefixed,
+		exportAll:      cfg.Protobuf.ExportAll,
 		fields:         fields,
 	}, nil
 }
@@ -48,6 +53,13 @@ func (e *ProtobufEncoder) Encode(evt *event.Event) ([][]byte, error) {
 		}
 		buf = next
 	}
+	if e.exportAll {
+		var err error
+		buf, err = appendProtobufExtraFields(buf, evt)
+		if err != nil {
+			return nil, err
+		}
+	}
 
 	if e.lengthPrefixed {
 		framed := protowire.AppendVarint(make([]byte, 0, len(buf)+10), uint64(len(buf)))
@@ -61,8 +73,8 @@ func (e *ProtobufEncoder) Flush() ([][]byte, error) {
 	return nil, nil
 }
 
-func GenerateProtobufDefinition(flavor string) (string, error) {
-	fields, err := compileProtobufFieldPlan(flavor)
+func GenerateProtobufDefinition(cfg config.ProtobufConfig) (string, error) {
+	fields, err := compileProtobufFieldPlan(cfg.Flavor)
 	if err != nil {
 		return "", err
 	}
@@ -81,6 +93,21 @@ func GenerateProtobufDefinition(flavor string) (string, error) {
 	b.WriteString("  }\n\n")
 	for _, field := range fields {
 		fmt.Fprintf(&b, "  %s %s = %d;\n", field.protoType, field.name, field.number)
+	}
+	if cfg.ExportAll {
+		b.WriteString("  repeated ExtraField extra = 1000;\n\n")
+		b.WriteString("  message ExtraField {\n")
+		b.WriteString("    string key = 1;\n")
+		b.WriteString("    oneof value {\n")
+		b.WriteString("      string string_value = 2;\n")
+		b.WriteString("      uint64 uint64_value = 3;\n")
+		b.WriteString("      sint64 int64_value = 4;\n")
+		b.WriteString("      bool bool_value = 5;\n")
+		b.WriteString("      bytes bytes_value = 6;\n")
+		b.WriteString("      double double_value = 7;\n")
+		b.WriteString("      string json_value = 8;\n")
+		b.WriteString("    }\n")
+		b.WriteString("  }\n")
 	}
 	b.WriteString("\n}\n")
 	return b.String(), nil
@@ -235,6 +262,109 @@ func protobufEnumField(name string, num protowire.Number, get func(*event.Event)
 			return dst, true, nil
 		},
 	}
+}
+
+func appendProtobufExtraFields(dst []byte, evt *event.Event) ([]byte, error) {
+	if evt == nil || len(evt.Fields) == 0 {
+		return dst, nil
+	}
+	keys := make([]string, 0, len(evt.Fields))
+	for key := range evt.Fields {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		msg, ok, err := protobufExtraFieldMessage(key, evt.Fields[key])
+		if err != nil {
+			return nil, fmt.Errorf("encode protobuf extra field %s: %w", key, err)
+		}
+		if !ok {
+			continue
+		}
+		dst = protowire.AppendTag(dst, 1000, protowire.BytesType)
+		dst = protowire.AppendBytes(dst, msg)
+	}
+	return dst, nil
+}
+
+func protobufExtraFieldMessage(key string, val any) ([]byte, bool, error) {
+	if key == "" {
+		return nil, false, nil
+	}
+	msg := protowire.AppendTag(nil, 1, protowire.BytesType)
+	msg = protowire.AppendString(msg, key)
+	return appendProtobufExtraValue(msg, val)
+}
+
+func appendProtobufExtraValue(dst []byte, val any) ([]byte, bool, error) {
+	switch v := val.(type) {
+	case nil:
+		return appendProtobufExtraJSONValue(dst, nil)
+	case string:
+		dst = protowire.AppendTag(dst, 2, protowire.BytesType)
+		dst = protowire.AppendString(dst, v)
+	case []byte:
+		dst = protowire.AppendTag(dst, 6, protowire.BytesType)
+		dst = protowire.AppendBytes(dst, v)
+	case bool:
+		dst = protowire.AppendTag(dst, 5, protowire.VarintType)
+		dst = protowire.AppendVarint(dst, protowire.EncodeBool(v))
+	case int:
+		dst = appendProtobufExtraInt64Value(dst, int64(v))
+	case int8:
+		dst = appendProtobufExtraInt64Value(dst, int64(v))
+	case int16:
+		dst = appendProtobufExtraInt64Value(dst, int64(v))
+	case int32:
+		dst = appendProtobufExtraInt64Value(dst, int64(v))
+	case int64:
+		dst = appendProtobufExtraInt64Value(dst, v)
+	case uint:
+		dst = appendProtobufExtraUint64Value(dst, uint64(v))
+	case uint8:
+		dst = appendProtobufExtraUint64Value(dst, uint64(v))
+	case uint16:
+		dst = appendProtobufExtraUint64Value(dst, uint64(v))
+	case uint32:
+		dst = appendProtobufExtraUint64Value(dst, uint64(v))
+	case uint64:
+		dst = appendProtobufExtraUint64Value(dst, v)
+	case float32:
+		dst = appendProtobufExtraDoubleValue(dst, float64(v))
+	case float64:
+		dst = appendProtobufExtraDoubleValue(dst, v)
+	default:
+		return appendProtobufExtraJSONValue(dst, v)
+	}
+	return dst, true, nil
+}
+
+func appendProtobufExtraUint64Value(dst []byte, val uint64) []byte {
+	dst = protowire.AppendTag(dst, 3, protowire.VarintType)
+	return protowire.AppendVarint(dst, val)
+}
+
+func appendProtobufExtraInt64Value(dst []byte, val int64) []byte {
+	dst = protowire.AppendTag(dst, 4, protowire.VarintType)
+	return protowire.AppendVarint(dst, protowire.EncodeZigZag(val))
+}
+
+func appendProtobufExtraDoubleValue(dst []byte, val float64) []byte {
+	dst = protowire.AppendTag(dst, 7, protowire.Fixed64Type)
+	return protowire.AppendFixed64(dst, math.Float64bits(val))
+}
+
+func appendProtobufExtraJSONValue(dst []byte, val any) ([]byte, bool, error) {
+	raw, err := json.Marshal(val)
+	if err != nil {
+		raw, err = json.Marshal(fmt.Sprint(val))
+		if err != nil {
+			return nil, false, err
+		}
+	}
+	dst = protowire.AppendTag(dst, 8, protowire.BytesType)
+	dst = protowire.AppendBytes(dst, raw)
+	return dst, true, nil
 }
 
 func protobufFlowTypeValue(evt *event.Event) uint64 {

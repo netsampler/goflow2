@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"math"
 	"net/netip"
 	"strings"
 	"testing"
@@ -297,7 +298,7 @@ func TestProtobufEncoderSupportsGoFlow2V2Flavor(t *testing.T) {
 }
 
 func TestGenerateProtobufDefinitionDescribesReFlowFields(t *testing.T) {
-	definition, err := GenerateProtobufDefinition("canonical")
+	definition, err := GenerateProtobufDefinition(config.ProtobufConfig{Flavor: "canonical"})
 	if err != nil {
 		t.Fatalf("GenerateProtobufDefinition returned error: %v", err)
 	}
@@ -319,8 +320,85 @@ func TestGenerateProtobufDefinitionDescribesReFlowFields(t *testing.T) {
 }
 
 func TestGenerateProtobufDefinitionRejectsUnsupportedFlavor(t *testing.T) {
-	if _, err := GenerateProtobufDefinition("custom"); err == nil {
+	if _, err := GenerateProtobufDefinition(config.ProtobufConfig{Flavor: "custom"}); err == nil {
 		t.Fatalf("expected unsupported flavor error")
+	}
+}
+
+func TestProtobufEncoderExportAllFieldsAsExtraKVs(t *testing.T) {
+	enc, err := New(config.EncoderConfig{
+		Type: "protobuf",
+		Protobuf: config.ProtobufConfig{
+			Flavor:    "canonical",
+			ExportAll: true,
+		},
+	})
+	if err != nil {
+		t.Fatalf("New returned error: %v", err)
+	}
+
+	payloads, err := enc.Encode(&event.Event{
+		Fields: map[string]any{
+			"src_addr":     "192.0.2.10",
+			"custom_name":  "edge-a",
+			"custom_count": uint64(42),
+			"custom_delta": int64(-7),
+			"custom_ok":    true,
+			"custom_raw":   []byte{0xde, 0xad},
+			"custom_load":  float64(1.5),
+			"custom_tags":  []string{"wan", "sampled"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Encode returned error: %v", err)
+	}
+	extras := decodeProtobufExtraFields(t, payloads[0])
+
+	if got := extras["custom_name"]; got != "edge-a" {
+		t.Fatalf("expected custom_name=edge-a, got %#v", got)
+	}
+	if got := extras["custom_count"]; got != uint64(42) {
+		t.Fatalf("expected custom_count=42, got %#v", got)
+	}
+	if got := extras["custom_delta"]; got != int64(-7) {
+		t.Fatalf("expected custom_delta=-7, got %#v", got)
+	}
+	if got := extras["custom_ok"]; got != true {
+		t.Fatalf("expected custom_ok=true, got %#v", got)
+	}
+	if got := extras["custom_raw"]; !bytes.Equal(got.([]byte), []byte{0xde, 0xad}) {
+		t.Fatalf("expected custom_raw bytes, got %#v", got)
+	}
+	if got := extras["custom_load"]; got != float64(1.5) {
+		t.Fatalf("expected custom_load=1.5, got %#v", got)
+	}
+	if got := extras["custom_tags"]; got != `["wan","sampled"]` {
+		t.Fatalf("expected custom_tags JSON, got %#v", got)
+	}
+	if got := extras["src_addr"]; got != "192.0.2.10" {
+		t.Fatalf("expected export_all to include src_addr extra, got %#v", got)
+	}
+}
+
+func TestGenerateProtobufDefinitionIncludesExtraKVSchema(t *testing.T) {
+	definition, err := GenerateProtobufDefinition(config.ProtobufConfig{
+		Flavor:    "canonical",
+		ExportAll: true,
+	})
+	if err != nil {
+		t.Fatalf("GenerateProtobufDefinition returned error: %v", err)
+	}
+
+	for _, want := range []string{
+		"repeated ExtraField extra = 1000;",
+		"message ExtraField {",
+		"oneof value {",
+		"string string_value = 2;",
+		"string json_value = 8;",
+	} {
+		if !strings.Contains(definition, want) {
+			t.Fatalf("expected generated protobuf definition to contain %q:\n%s", want, definition)
+		}
 	}
 }
 
@@ -4282,6 +4360,108 @@ func decodeFlowMessage(t *testing.T, payload []byte) *flowpb.FlowMessage {
 		t.Fatalf("unmarshal flow message: %v", err)
 	}
 	return msg
+}
+
+func decodeProtobufExtraFields(t *testing.T, payload []byte) map[string]any {
+	t.Helper()
+	extras := map[string]any{}
+	for len(payload) > 0 {
+		num, typ, n := protowire.ConsumeTag(payload)
+		if n < 0 {
+			t.Fatalf("consume top-level tag: %v", protowire.ParseError(n))
+		}
+		payload = payload[n:]
+		if num != 1000 {
+			n = protowire.ConsumeFieldValue(num, typ, payload)
+			if n < 0 {
+				t.Fatalf("consume top-level field %d: %v", num, protowire.ParseError(n))
+			}
+			payload = payload[n:]
+			continue
+		}
+		if typ != protowire.BytesType {
+			t.Fatalf("expected extra field bytes type, got %v", typ)
+		}
+		raw, n := protowire.ConsumeBytes(payload)
+		if n < 0 {
+			t.Fatalf("consume extra field message: %v", protowire.ParseError(n))
+		}
+		payload = payload[n:]
+		key, value := decodeProtobufExtraField(t, raw)
+		extras[key] = value
+	}
+	return extras
+}
+
+func decodeProtobufExtraField(t *testing.T, payload []byte) (string, any) {
+	t.Helper()
+	var key string
+	var value any
+	for len(payload) > 0 {
+		num, typ, n := protowire.ConsumeTag(payload)
+		if n < 0 {
+			t.Fatalf("consume extra tag: %v", protowire.ParseError(n))
+		}
+		payload = payload[n:]
+		switch num {
+		case 1:
+			if typ != protowire.BytesType {
+				t.Fatalf("expected extra key bytes type, got %v", typ)
+			}
+			key, n = protowire.ConsumeString(payload)
+		case 2:
+			if typ != protowire.BytesType {
+				t.Fatalf("expected extra string bytes type, got %v", typ)
+			}
+			value, n = protowire.ConsumeString(payload)
+		case 3:
+			if typ != protowire.VarintType {
+				t.Fatalf("expected extra uint64 varint type, got %v", typ)
+			}
+			value, n = protowire.ConsumeVarint(payload)
+		case 4:
+			if typ != protowire.VarintType {
+				t.Fatalf("expected extra int64 varint type, got %v", typ)
+			}
+			var raw uint64
+			raw, n = protowire.ConsumeVarint(payload)
+			value = protowire.DecodeZigZag(raw)
+		case 5:
+			if typ != protowire.VarintType {
+				t.Fatalf("expected extra bool varint type, got %v", typ)
+			}
+			var raw uint64
+			raw, n = protowire.ConsumeVarint(payload)
+			value = raw != 0
+		case 6:
+			if typ != protowire.BytesType {
+				t.Fatalf("expected extra bytes type, got %v", typ)
+			}
+			value, n = protowire.ConsumeBytes(payload)
+		case 7:
+			if typ != protowire.Fixed64Type {
+				t.Fatalf("expected extra double fixed64 type, got %v", typ)
+			}
+			var raw uint64
+			raw, n = protowire.ConsumeFixed64(payload)
+			value = math.Float64frombits(raw)
+		case 8:
+			if typ != protowire.BytesType {
+				t.Fatalf("expected extra JSON bytes type, got %v", typ)
+			}
+			value, n = protowire.ConsumeString(payload)
+		default:
+			n = protowire.ConsumeFieldValue(num, typ, payload)
+		}
+		if n < 0 {
+			t.Fatalf("consume extra field %d: %v", num, protowire.ParseError(n))
+		}
+		payload = payload[n:]
+	}
+	if key == "" {
+		t.Fatalf("decoded extra field without key")
+	}
+	return key, value
 }
 
 func testBoolPtr(v bool) *bool {

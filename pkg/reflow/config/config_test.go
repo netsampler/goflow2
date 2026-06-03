@@ -1858,6 +1858,7 @@ encoder:
   protobuf:
     flavor: goflow2v2
     length_prefixed: true
+    export_all: true
 
 sink:
   type: stdout
@@ -1875,6 +1876,9 @@ sink:
 	}
 	if !cfg.Encoder.Protobuf.LengthPrefixed {
 		t.Fatalf("expected protobuf.length_prefixed=true")
+	}
+	if !cfg.Encoder.Protobuf.ExportAll {
+		t.Fatalf("expected protobuf.export_all=true")
 	}
 }
 

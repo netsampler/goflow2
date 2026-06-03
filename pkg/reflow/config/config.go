@@ -394,6 +394,7 @@ type JSONConfig struct {
 type ProtobufConfig struct {
 	Flavor         string `yaml:"flavor"`
 	LengthPrefixed bool   `yaml:"length_prefixed"`
+	ExportAll      bool   `yaml:"export_all"`
 }
 
 type BatchConfig struct {

@@ -58,7 +58,7 @@ func main() {
 		return
 	}
 	if cfg.GenProto {
-		raw, err := encode.GenerateProtobufDefinition(loadedCfg.Encoder.Protobuf.Flavor)
+		raw, err := encode.GenerateProtobufDefinition(loadedCfg.Encoder.Protobuf)
 		if err != nil {
 			log.Fatal(err)
 		}
