@@ -45,6 +45,7 @@ var (
 		"socket:<socket-path>",
 	}
 	outputHelperOptions = []string{
+		"protobuf:*[?export_all=<bool>]",
 		"sflow:*[?allow_truncate=<bool>&max_header_bytes=<bytes>]",
 		"sflow|ipfix|netflowv9:*[?batch=<bool>&batch_max_records=<n>&batch_max_bytes=<bytes>&batch_flush_interval_ms=<ms>]",
 	}
@@ -58,7 +59,7 @@ var (
 	outputHelperExamples = []string{
 		"json:stdout",
 		"ipfix:udp:127.0.0.1:4739",
-		"protobuf:file:/tmp/reflow.pb",
+		"'protobuf:file:/tmp/reflow.pb?export_all=true'",
 		"pcap:stdout",
 		"'sflow:udp:127.0.0.1:6343?allow_truncate=true&max_header_bytes=128'",
 		"'ipfix:udp:127.0.0.1:4739?batch=true&batch_max_records=32&batch_max_bytes=4096&batch_flush_interval_ms=250'",
@@ -838,6 +839,15 @@ func applyOutputParams(spec, encoderType string, params url.Values, encoder *Enc
 				return err
 			}
 			encoder.Batch.FlushInterval = parsed
+		case "export_all":
+			if encoderType != "protobuf" {
+				return fmt.Errorf("invalid -output %q: output parameter %q is only supported for protobuf", spec, key)
+			}
+			parsed, err := strconv.ParseBool(value)
+			if err != nil {
+				return fmt.Errorf("invalid -output %q: output parameter %q must be a boolean", spec, key)
+			}
+			encoder.Protobuf.ExportAll = parsed
 		default:
 			return fmt.Errorf("invalid -output %q: unsupported output parameter %q", spec, key)
 		}

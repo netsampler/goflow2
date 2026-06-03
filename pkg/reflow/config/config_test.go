@@ -1965,6 +1965,7 @@ func TestHelperOptionsTextListsInputOutputAndAggregationExamples(t *testing.T) {
 		"-agg mpls",
 		"-agg idle_flush_after_ms=<ms>,periodic_every_ms=<ms>",
 		"encoders: json, protobuf, sflow, ipfix, netflowv9, netflowv5, pcap, pcapng",
+		"protobuf:*[?export_all=<bool>]",
 	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("expected helper options to contain %q, got:\n%s", want, text)
@@ -2108,6 +2109,25 @@ func TestGeneratedOutputParsesBatchDisable(t *testing.T) {
 	}
 }
 
+func TestGeneratedProtobufOutputParsesExportAllParam(t *testing.T) {
+	cfg, generated, err := LoadFromFlags(&FlagConfig{
+		Output:    "protobuf:file:/tmp/reflow.pb?export_all=true",
+		OutputSet: true,
+	})
+	if err != nil {
+		t.Fatalf("LoadFromFlags returned error: %v", err)
+	}
+	if !generated {
+		t.Fatalf("expected generated config")
+	}
+	if cfg.Encoder.Type != "protobuf" {
+		t.Fatalf("expected protobuf encoder, got %q", cfg.Encoder.Type)
+	}
+	if !cfg.Encoder.Protobuf.ExportAll {
+		t.Fatalf("expected protobuf export_all=true")
+	}
+}
+
 func TestLoadDoesNotEnableIPFIXBatchingByDefault(t *testing.T) {
 	dir := t.TempDir()
 
@@ -2182,6 +2202,30 @@ func TestGeneratedOutputRejectsUnsupportedBatchParams(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "only supported for sflow, ipfix, and netflowv9") {
 		t.Fatalf("expected sflow/ipfix/netflowv9-only error, got %v", err)
+	}
+}
+
+func TestGeneratedOutputRejectsUnsupportedProtobufParams(t *testing.T) {
+	_, _, err := LoadFromFlags(&FlagConfig{
+		Output:    "json:stdout?export_all=true",
+		OutputSet: true,
+	})
+	if err == nil {
+		t.Fatalf("expected json output to reject export_all")
+	}
+	if !strings.Contains(err.Error(), "only supported for protobuf") {
+		t.Fatalf("expected protobuf-only error, got %v", err)
+	}
+
+	_, _, err = LoadFromFlags(&FlagConfig{
+		Output:    "protobuf:stdout?export_all=maybe",
+		OutputSet: true,
+	})
+	if err == nil {
+		t.Fatalf("expected protobuf output to reject invalid export_all")
+	}
+	if !strings.Contains(err.Error(), "must be a boolean") {
+		t.Fatalf("expected boolean parse error, got %v", err)
 	}
 }
 
