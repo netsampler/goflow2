@@ -133,6 +133,90 @@ func TestRunClosesStdoutLikeSinkOnContextCancel(t *testing.T) {
 	}
 }
 
+func TestRunRefreshesSourceInitEvents(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	src := &refreshingSource{}
+	out := &countingSink{
+		after:  2,
+		cancel: cancel,
+	}
+	app := &App{
+		logger:            slog.New(slog.NewTextHandler(io.Discard, nil)),
+		sources:           []source.Source{src},
+		sourceInitRefresh: []time.Duration{10 * time.Millisecond},
+		decoder:           noopDecoder{},
+		processor:         passthroughProcessor{},
+		processorWorkers:  1,
+		encoderCfg:        config.EncoderConfig{Type: "json"},
+		encoderWorkers:    1,
+		sink:              out,
+	}
+
+	done := make(chan error, 1)
+	go func() {
+		done <- app.Run(ctx)
+	}()
+
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("Run returned error: %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatalf("Run did not refresh source init events")
+	}
+	if got := src.initCount.Load(); got < 2 {
+		t.Fatalf("expected source InitEvents to be called at least twice, got %d", got)
+	}
+	if got := out.sendCount.Load(); got < 2 {
+		t.Fatalf("expected at least two encoded source init events, got %d", got)
+	}
+}
+
+func TestRunRefreshesSourceInitEventsAfterEmptyInitialSet(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	src := &refreshingSource{emptyFirst: true}
+	out := &countingSink{
+		after:  1,
+		cancel: cancel,
+	}
+	app := &App{
+		logger:            slog.New(slog.NewTextHandler(io.Discard, nil)),
+		sources:           []source.Source{src},
+		sourceInitRefresh: []time.Duration{10 * time.Millisecond},
+		decoder:           noopDecoder{},
+		processor:         passthroughProcessor{},
+		processorWorkers:  1,
+		encoderCfg:        config.EncoderConfig{Type: "json"},
+		encoderWorkers:    1,
+		sink:              out,
+	}
+
+	done := make(chan error, 1)
+	go func() {
+		done <- app.Run(ctx)
+	}()
+
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("Run returned error: %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatalf("Run did not refresh source init events after an empty initial set")
+	}
+	if got := src.initCount.Load(); got < 2 {
+		t.Fatalf("expected source InitEvents to be retried, got %d calls", got)
+	}
+	if got := out.sendCount.Load(); got != 1 {
+		t.Fatalf("expected one encoded refreshed source init event, got %d", got)
+	}
+}
+
 type blockingSource struct {
 	closeCount atomic.Int32
 }
@@ -151,6 +235,42 @@ func (s *blockingSource) Close() error {
 	return nil
 }
 
+type refreshingSource struct {
+	initCount  atomic.Int32
+	closeCount atomic.Int32
+	emptyFirst bool
+}
+
+func (s *refreshingSource) InitEvents() ([]*event.Event, error) {
+	count := s.initCount.Add(1)
+	if s.emptyFirst && count == 1 {
+		return nil, nil
+	}
+	return []*event.Event{
+		{
+			ReceivedAt: time.Now().UTC(),
+			Kind:       "control",
+			Control: &event.ControlMetadata{
+				Type:   "source_init",
+				Stream: "options_data",
+			},
+			Fields: map[string]any{
+				"init_count": count,
+			},
+		},
+	}, nil
+}
+
+func (s *refreshingSource) Start(ctx context.Context, _ func(*event.Event) error) error {
+	<-ctx.Done()
+	return ctx.Err()
+}
+
+func (s *refreshingSource) Close() error {
+	s.closeCount.Add(1)
+	return nil
+}
+
 type closeTrackingSink struct {
 	closeCount atomic.Int32
 }
@@ -161,6 +281,24 @@ func (s *closeTrackingSink) Send(_ []byte) error {
 
 func (s *closeTrackingSink) Close() error {
 	s.closeCount.Add(1)
+	return nil
+}
+
+type countingSink struct {
+	sendCount atomic.Int32
+	after     int32
+	cancel    context.CancelFunc
+}
+
+func (s *countingSink) Send(_ []byte) error {
+	count := s.sendCount.Add(1)
+	if s.cancel != nil && s.after > 0 && count >= s.after {
+		s.cancel()
+	}
+	return nil
+}
+
+func (s *countingSink) Close() error {
 	return nil
 }
 
@@ -176,7 +314,9 @@ func (noopDecoder) Close() {}
 
 var _ decode.Decoder = noopDecoder{}
 var _ sink.Sink = (*closeTrackingSink)(nil)
+var _ sink.Sink = (*countingSink)(nil)
 var _ source.Source = (*blockingSource)(nil)
+var _ source.Source = (*refreshingSource)(nil)
 
 type passthroughProcessor struct{}
 

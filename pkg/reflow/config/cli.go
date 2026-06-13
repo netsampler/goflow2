@@ -24,8 +24,8 @@ var (
 		"stream:<path-or-stdin>:pcap",
 		"stream:<path-or-stdin>:pcapng",
 		"stream:<path-or-stdin>:json",
-		"ebpf:<interface>:bytes[?snaplen=<bytes>&sample_every=<n>&sample_offset=<n>&direction=ingress|egress|both&skb_metadata=<bool>&conntrack=<bool>]",
-		"pcap_live:<interface>:bytes[?snaplen=<bytes>&sample_every=<n>&sample_offset=<n>]",
+		"ebpf:<interface|any>:bytes[?snaplen=<bytes>&sample_every=<n>&sample_offset=<n>&source_init_refresh_ms=<ms>&interface_filter=<regex>&direction=ingress|egress|both&skb_metadata=<bool>&conntrack=<bool>]",
+		"pcap_live:<interface|any>:bytes[?snaplen=<bytes>&sample_every=<n>&sample_offset=<n>&source_init_refresh_ms=<ms>&interface_filter=<regex>]",
 	}
 	outputEncoderOptions = []string{
 		"json",
@@ -529,6 +529,20 @@ func applyInputParams(source *SourceConfig, rawParams string) error {
 				return err
 			}
 			source.SampleOffset = parsed
+		case "source_init_refresh_ms":
+			parsed, err := parseNonNegativeInputParam(key, value)
+			if err != nil {
+				return err
+			}
+			source.SourceInitRefreshMS = &parsed
+		case "interface_filter":
+			if source.Network != "pcap_live" && source.Network != "ebpf" {
+				return fmt.Errorf("source parameter %q is only supported for pcap_live and ebpf inputs", key)
+			}
+			if value == "" {
+				return fmt.Errorf("source parameter %q cannot be empty", key)
+			}
+			source.InterfaceFilter = value
 		case "skb_metadata":
 			if source.Network != "ebpf" {
 				return fmt.Errorf("source parameter %q is only supported for ebpf inputs", key)

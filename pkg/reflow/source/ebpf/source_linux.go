@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"regexp"
 	"runtime"
 	"strconv"
 	"strings"
@@ -23,6 +24,8 @@ import (
 )
 
 const (
+	anyInterfaceName = "any"
+
 	ethPAll = 0x0003
 
 	packetHost      = 0
@@ -197,30 +200,54 @@ func New(cfg config.SourceConfig) (*Source, error) {
 	if cfg.SampleEvery <= 0 {
 		cfg.SampleEvery = 1
 	}
+	var interfaceFilter *regexp.Regexp
+	if cfg.InterfaceFilter != "" {
+		compiled, err := regexp.Compile(cfg.InterfaceFilter)
+		if err != nil {
+			return nil, fmt.Errorf("compile source.interface_filter: %w", err)
+		}
+		interfaceFilter = compiled
+	}
 	direction, err := config.NormalizeEBPFDirection(cfg.EBPF.Direction)
 	if err != nil {
 		return nil, err
 	}
 	cfg.EBPF.Direction = direction
-	iface, err := net.InterfaceByName(cfg.Interface)
-	if err != nil {
-		return nil, fmt.Errorf("lookup capture interface %s: %w", cfg.Interface, err)
-	}
 	var conntrack *conntrackTracker
 	if cfg.EBPF.ConntrackEnabled() {
 		conntrack = newConntrackTracker(cfg.EBPF.ConntrackPath)
+	}
+	if cfg.Interface == anyInterfaceName {
+		return &Source{
+			cfg:                   cfg,
+			agentIP:               firstSystemIP(),
+			captureAny:            true,
+			interfaceFilter:       interfaceFilter,
+			interfaceNames:        make(map[uint32]string),
+			initializedInterfaces: make(map[uint32]struct{}),
+			fd:                    -1,
+			progFD:                -1,
+			eventMapFD:            -1,
+			conntrack:             conntrack,
+		}, nil
+	}
+	iface, err := net.InterfaceByName(cfg.Interface)
+	if err != nil {
+		return nil, fmt.Errorf("lookup capture interface %s: %w", cfg.Interface, err)
 	}
 	return &Source{
 		cfg:                   cfg,
 		agentIP:               firstInterfaceIP(iface),
 		captureInterfaceIndex: iface.Index,
+		interfaceFilter:       interfaceFilter,
 		interfaceNames: map[uint32]string{
 			uint32(iface.Index): iface.Name,
 		},
-		fd:         -1,
-		progFD:     -1,
-		eventMapFD: -1,
-		conntrack:  conntrack,
+		initializedInterfaces: make(map[uint32]struct{}),
+		fd:                    -1,
+		progFD:                -1,
+		eventMapFD:            -1,
+		conntrack:             conntrack,
 	}, nil
 }
 
@@ -290,12 +317,12 @@ func (s *Source) packetEvent(data []byte, meta packetMetadata) *event.Event {
 			Network:               s.cfg.Network,
 			Address:               s.cfg.Interface,
 			Type:                  s.cfg.Type,
-			CaptureInterface:      s.cfg.Interface,
-			CaptureInterfaceIndex: s.captureInterfaceIndex,
+			CaptureInterface:      s.eventCaptureInterface(meta),
+			CaptureInterfaceIndex: s.eventCaptureInterfaceIndex(meta),
 			CaptureDirection:      meta.direction,
 			CapturePacketType:     meta.packetType,
 			AgentIP:               s.agentIP,
-			SourceID:              s.sourceID(),
+			SourceID:              s.eventSourceID(meta),
 			SourceIDSet:           true,
 			Sampling: &event.SamplingMetadata{
 				Rate:       uint32(s.cfg.SampleEvery),
@@ -362,6 +389,14 @@ func (s *Source) emitPerfSample(sample []byte, emit func(*event.Event) error) er
 	if !allowDirection(s.cfg.EBPF.DirectionFilter(), meta.direction) {
 		return nil
 	}
+	if !s.packetInterfaceAllowed(meta) {
+		return nil
+	}
+	if s.captureAny {
+		if err := s.emitFirstSeenInterfaceInits(meta, emit); err != nil {
+			return err
+		}
+	}
 	s.seenCount++
 	if !s.shouldEmitCurrentPacket() {
 		return nil
@@ -373,6 +408,124 @@ func (s *Source) emitPerfSample(sample []byte, emit func(*event.Event) error) er
 		}
 	}
 	return emit(s.packetEvent(packet, meta))
+}
+
+func (s *Source) emitFirstSeenInterfaceInits(meta packetMetadata, emit func(*event.Event) error) error {
+	for _, item := range []struct {
+		ifIndex uint32
+		name    string
+	}{
+		{ifIndex: meta.inputIf, name: meta.inputInterface},
+		{ifIndex: meta.outputIf, name: meta.outputInterface},
+	} {
+		if item.ifIndex == 0 || s.interfaceInitialized(item.ifIndex) {
+			continue
+		}
+		name := item.name
+		if name == "" {
+			name = s.interfaceName(item.ifIndex)
+		}
+		if name == "" {
+			name = fmt.Sprintf("ifindex-%d", item.ifIndex)
+		}
+		if !s.interfaceAllowed(name) {
+			continue
+		}
+		s.markInterfaceInitialized(item.ifIndex, name)
+		evt := s.sourceInitEvent(net.Interface{Index: int(item.ifIndex), Name: name}, s.agentIP, 0)
+		if err := emit(evt); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *Source) packetInterfaceAllowed(meta packetMetadata) bool {
+	if s.interfaceFilter == nil {
+		return true
+	}
+	for _, item := range []struct {
+		ifIndex uint32
+		name    string
+	}{
+		{ifIndex: meta.inputIf, name: meta.inputInterface},
+		{ifIndex: meta.outputIf, name: meta.outputInterface},
+	} {
+		name := item.name
+		if name == "" && item.ifIndex != 0 {
+			name = s.interfaceName(item.ifIndex)
+		}
+		if s.interfaceAllowed(name) {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *Source) eventCaptureInterface(meta packetMetadata) string {
+	switch meta.direction {
+	case "out":
+		if meta.outputInterface != "" {
+			return meta.outputInterface
+		}
+		if meta.outputIf != 0 {
+			if name := s.interfaceName(meta.outputIf); name != "" {
+				return name
+			}
+		}
+	default:
+		if meta.inputInterface != "" {
+			return meta.inputInterface
+		}
+		if meta.inputIf != 0 {
+			if name := s.interfaceName(meta.inputIf); name != "" {
+				return name
+			}
+		}
+		if meta.outputInterface != "" {
+			return meta.outputInterface
+		}
+		if meta.outputIf != 0 {
+			if name := s.interfaceName(meta.outputIf); name != "" {
+				return name
+			}
+		}
+	}
+	return s.cfg.Interface
+}
+
+func (s *Source) eventCaptureInterfaceIndex(meta packetMetadata) int {
+	switch meta.direction {
+	case "out":
+		if meta.outputIf != 0 {
+			return int(meta.outputIf)
+		}
+	default:
+		if meta.inputIf != 0 {
+			return int(meta.inputIf)
+		}
+		if meta.outputIf != 0 {
+			return int(meta.outputIf)
+		}
+	}
+	return s.captureInterfaceIndex
+}
+
+func (s *Source) eventSourceID(meta packetMetadata) uint32 {
+	switch meta.direction {
+	case "out":
+		if meta.outputIf != 0 {
+			return s.sourceIDForInterface(meta.outputIf)
+		}
+	default:
+		if meta.inputIf != 0 {
+			return s.sourceIDForInterface(meta.inputIf)
+		}
+		if meta.outputIf != 0 {
+			return s.sourceIDForInterface(meta.outputIf)
+		}
+	}
+	return s.sourceID()
 }
 
 func parsePerfPacketSample(sample []byte) (skbMetadata, []byte, error) {
@@ -532,13 +685,18 @@ func (s *Source) interfaceName(ifindex uint32) string {
 	if ifindex == 0 {
 		return ""
 	}
+	s.mu.Lock()
 	if name := s.interfaceNames[ifindex]; name != "" {
+		s.mu.Unlock()
 		return name
 	}
+	s.mu.Unlock()
 	iface, err := net.InterfaceByIndex(int(ifindex))
 	if err != nil || iface == nil {
 		return ""
 	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	if s.interfaceNames == nil {
 		s.interfaceNames = make(map[uint32]string)
 	}

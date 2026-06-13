@@ -20,15 +20,16 @@ import (
 )
 
 type App struct {
-	logger           *slog.Logger
-	sources          []source.Source
-	decoder          decode.Decoder
-	processor        processor.Processor
-	processorWorkers int
-	aggregatorCfgs   []config.AggregatorConfig
-	encoderCfg       config.EncoderConfig
-	encoderWorkers   int
-	sink             sink.Sink
+	logger            *slog.Logger
+	sources           []source.Source
+	sourceInitRefresh []time.Duration
+	decoder           decode.Decoder
+	processor         processor.Processor
+	processorWorkers  int
+	aggregatorCfgs    []config.AggregatorConfig
+	encoderCfg        config.EncoderConfig
+	encoderWorkers    int
+	sink              sink.Sink
 }
 
 // New wires the current ReFlow runtime from source to sink.
@@ -40,12 +41,14 @@ func New(cfg *config.Config) (*App, error) {
 	slog.SetDefault(logger)
 
 	sources := make([]source.Source, 0, len(cfg.Sources))
+	sourceInitRefresh := make([]time.Duration, 0, len(cfg.Sources))
 	for i, srcCfg := range cfg.Sources {
 		src, err := source.New(srcCfg)
 		if err != nil {
 			return nil, fmt.Errorf("init source %d: %w", i, err)
 		}
 		sources = append(sources, src)
+		sourceInitRefresh = append(sourceInitRefresh, sourceInitRefreshDuration(srcCfg))
 	}
 	proc, err := processor.New(cfg.Processor)
 	if err != nil {
@@ -84,15 +87,16 @@ func New(cfg *config.Config) (*App, error) {
 	}
 
 	return &App{
-		logger:           logger,
-		sources:          sources,
-		decoder:          dec,
-		processor:        proc,
-		processorWorkers: processorWorkers,
-		aggregatorCfgs:   cfg.Aggregators,
-		encoderCfg:       encoderCfg,
-		encoderWorkers:   encoderWorkers,
-		sink:             out,
+		logger:            logger,
+		sources:           sources,
+		sourceInitRefresh: sourceInitRefresh,
+		decoder:           dec,
+		processor:         proc,
+		processorWorkers:  processorWorkers,
+		aggregatorCfgs:    cfg.Aggregators,
+		encoderCfg:        encoderCfg,
+		encoderWorkers:    encoderWorkers,
+		sink:              out,
 	}, nil
 }
 
@@ -339,6 +343,30 @@ func (a *App) Run(ctx context.Context) error {
 			encodeJobs <- evt
 		}
 	}
+	emitSourceInitEvents := func(events []*event.Event) bool {
+		if len(events) == 0 {
+			return true
+		}
+		if hasAggregators && routeSourceInitControls {
+			for _, evt := range events {
+				select {
+				case aggregateRouteJobs <- evt:
+				case <-sourceCtx.Done():
+					return false
+				}
+			}
+			return true
+		}
+		for _, evt := range sourceInitEventsForEncoder(a.encoderCfg.Type, events) {
+			select {
+			case encodeJobs <- evt:
+			case <-sourceCtx.Done():
+				return false
+			}
+		}
+		return true
+	}
+
 	var sourceInitEvents []*event.Event
 	for i, src := range a.sources {
 		initEvents, err := src.InitEvents()
@@ -347,14 +375,37 @@ func (a *App) Run(ctx context.Context) error {
 		}
 		sourceInitEvents = append(sourceInitEvents, initEvents...)
 	}
-	if hasAggregators && routeSourceInitControls {
-		for _, evt := range sourceInitEvents {
-			aggregateRouteJobs <- evt
+	if ok := emitSourceInitEvents(sourceInitEvents); !ok {
+		return nil
+	}
+
+	var sourceInitWG sync.WaitGroup
+	for i, src := range a.sources {
+		interval := sourceInitRefreshInterval(a.sourceInitRefresh, i)
+		if interval <= 0 {
+			continue
 		}
-	} else {
-		for _, evt := range sourceInitEventsForEncoder(a.encoderCfg.Type, sourceInitEvents) {
-			encodeJobs <- evt
-		}
+		sourceInitWG.Add(1)
+		go func(i int, src source.Source, interval time.Duration) {
+			defer sourceInitWG.Done()
+			ticker := time.NewTicker(interval)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-ticker.C:
+					events, err := src.InitEvents()
+					if err != nil {
+						a.logger.Error("source init refresh error", slog.Int("source_index", i), slog.String("error", err.Error()))
+						continue
+					}
+					if ok := emitSourceInitEvents(events); !ok {
+						return
+					}
+				case <-sourceCtx.Done():
+					return
+				}
+			}
+		}(i, src, interval)
 	}
 
 	sourceDone := make(chan error, len(a.sources))
@@ -401,6 +452,7 @@ func (a *App) Run(ctx context.Context) error {
 			_ = src.Close()
 		}
 		sourceWG.Wait()
+		sourceInitWG.Wait()
 		shutdown()
 		if err != nil && sourceCtx.Err() == nil {
 			return fmt.Errorf("run source: %w", err)
@@ -412,9 +464,27 @@ func (a *App) Run(ctx context.Context) error {
 			_ = src.Close()
 		}
 		sourceWG.Wait()
+		sourceInitWG.Wait()
 		shutdown()
 		return nil
 	}
+}
+
+func sourceInitRefreshDuration(cfg config.SourceConfig) time.Duration {
+	if cfg.SourceInitRefreshMS == nil {
+		return 30 * time.Second
+	}
+	if *cfg.SourceInitRefreshMS <= 0 {
+		return 0
+	}
+	return time.Duration(*cfg.SourceInitRefreshMS) * time.Millisecond
+}
+
+func sourceInitRefreshInterval(intervals []time.Duration, sourceIndex int) time.Duration {
+	if sourceIndex < 0 || sourceIndex >= len(intervals) {
+		return 0
+	}
+	return intervals[sourceIndex]
 }
 
 func sourceInitEventsForEncoder(encoderType string, events []*event.Event) []*event.Event {

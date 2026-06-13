@@ -5,6 +5,7 @@ package ebpf
 import (
 	"encoding/binary"
 	"net/netip"
+	"regexp"
 	"testing"
 
 	"golang.org/x/sys/unix"
@@ -12,6 +13,28 @@ import (
 	"github.com/netsampler/goflow2/v3/pkg/reflow/config"
 	"github.com/netsampler/goflow2/v3/pkg/reflow/event"
 )
+
+func TestNewSupportsAnyInterface(t *testing.T) {
+	source, err := New(config.SourceConfig{
+		Network:         "ebpf",
+		Interface:       "any",
+		Type:            "bytes",
+		SampleEvery:     1,
+		InterfaceFilter: "^wan",
+	})
+	if err != nil {
+		t.Fatalf("New returned error: %v", err)
+	}
+	if !source.captureAny {
+		t.Fatalf("expected captureAny to be enabled")
+	}
+	if source.captureInterfaceIndex != 0 {
+		t.Fatalf("expected any capture interface index 0, got %d", source.captureInterfaceIndex)
+	}
+	if source.interfaceFilter == nil || !source.interfaceFilter.MatchString("wan0") {
+		t.Fatalf("expected compiled interface filter, got %#v", source.interfaceFilter)
+	}
+}
 
 func TestPacketMetadataMarksOutgoingCapture(t *testing.T) {
 	source := &Source{
@@ -139,6 +162,86 @@ func TestEmitPerfSampleAppliesDirectionBeforeSampling(t *testing.T) {
 	binary.LittleEndian.PutUint32(sample[24:28], 7)
 	if err := source.emitPerfSample(sample, func(*event.Event) error {
 		t.Fatalf("did not expect ingress packet to be emitted")
+		return nil
+	}); err != nil {
+		t.Fatalf("emit perf sample: %v", err)
+	}
+	if source.seenCount != 0 {
+		t.Fatalf("expected filtered packet not to advance sampling pool, got %d", source.seenCount)
+	}
+}
+
+func TestEmitPerfSampleOnAnyEmitsFirstSeenInterfaceInit(t *testing.T) {
+	source := &Source{
+		cfg: config.SourceConfig{
+			Network:     "ebpf",
+			Interface:   "any",
+			Type:        "bytes",
+			SampleEvery: 1,
+			EBPF:        config.EBPFConfig{Direction: "both"},
+		},
+		agentIP:               "192.0.2.10",
+		captureAny:            true,
+		interfaceFilter:       regexp.MustCompile(`^wan`),
+		initializedInterfaces: make(map[uint32]struct{}),
+		interfaceNames: map[uint32]string{
+			9: "wan0",
+		},
+	}
+	sample := make([]byte, testSKBMetadataSize()+4)
+	binary.LittleEndian.PutUint32(sample[4:8], packetOutgoing)
+	binary.LittleEndian.PutUint32(sample[28:32], 9)
+	var events []*event.Event
+	if err := source.emitPerfSample(sample, func(evt *event.Event) error {
+		events = append(events, evt)
+		return nil
+	}); err != nil {
+		t.Fatalf("emit perf sample: %v", err)
+	}
+	if len(events) != 2 {
+		t.Fatalf("expected source_init and packet events, got %d", len(events))
+	}
+	if events[0].Control == nil || events[0].Control.Type != "source_init" {
+		t.Fatalf("expected first event to be source_init, got %#v", events[0])
+	}
+	if events[0].Source.CaptureInterface != "wan0" || events[0].Source.CaptureInterfaceIndex != 9 {
+		t.Fatalf("unexpected source_init metadata: %#v", events[0].Source)
+	}
+	if events[0].Source.SourceID != 9 || !events[0].Source.SourceIDSet {
+		t.Fatalf("expected source_init source_id from interface index, got %#v", events[0].Source)
+	}
+	if events[1].Source.CaptureInterface != "wan0" || events[1].Source.CaptureInterfaceIndex != 9 {
+		t.Fatalf("unexpected packet source metadata: %#v", events[1].Source)
+	}
+	if events[1].Source.SourceID != 9 || !events[1].Source.SourceIDSet {
+		t.Fatalf("expected packet source_id from interface index, got %#v", events[1].Source)
+	}
+	if !source.interfaceInitialized(9) {
+		t.Fatalf("expected interface 9 to be marked initialized")
+	}
+}
+
+func TestEmitPerfSampleOnAnyAppliesInterfaceFilterBeforeSampling(t *testing.T) {
+	source := &Source{
+		cfg: config.SourceConfig{
+			Network:     "ebpf",
+			Interface:   "any",
+			Type:        "bytes",
+			SampleEvery: 1,
+			EBPF:        config.EBPFConfig{Direction: "both"},
+		},
+		agentIP:         "192.0.2.10",
+		captureAny:      true,
+		interfaceFilter: regexp.MustCompile(`^wan`),
+		interfaceNames: map[uint32]string{
+			9: "lan0",
+		},
+	}
+	sample := make([]byte, testSKBMetadataSize()+4)
+	binary.LittleEndian.PutUint32(sample[4:8], packetOutgoing)
+	binary.LittleEndian.PutUint32(sample[28:32], 9)
+	if err := source.emitPerfSample(sample, func(*event.Event) error {
+		t.Fatalf("did not expect filtered interface packet to be emitted")
 		return nil
 	}); err != nil {
 		t.Fatalf("emit perf sample: %v", err)

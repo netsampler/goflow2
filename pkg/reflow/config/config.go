@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"sort"
 	"strconv"
@@ -67,16 +68,18 @@ func (c TFlowConfig) IsZero() bool {
 }
 
 type SourceConfig struct {
-	Network      string     `yaml:"network"`
-	Address      string     `yaml:"address"`
-	Interface    string     `yaml:"interface"`
-	SnapLen      int        `yaml:"snaplen"`
-	SampleEvery  int        `yaml:"sample_every"`
-	SampleOffset int        `yaml:"sample_offset"`
-	SourceID     *uint32    `yaml:"source_id,omitempty"`
-	Type         string     `yaml:"type"`
-	JSON         JSONConfig `yaml:"json"`
-	EBPF         EBPFConfig `yaml:"ebpf,omitempty"`
+	Network             string     `yaml:"network"`
+	Address             string     `yaml:"address"`
+	Interface           string     `yaml:"interface"`
+	SnapLen             int        `yaml:"snaplen"`
+	SampleEvery         int        `yaml:"sample_every"`
+	SampleOffset        int        `yaml:"sample_offset"`
+	InterfaceFilter     string     `yaml:"interface_filter,omitempty"`
+	SourceInitRefreshMS *int       `yaml:"source_init_refresh_ms,omitempty"`
+	SourceID            *uint32    `yaml:"source_id,omitempty"`
+	Type                string     `yaml:"type"`
+	JSON                JSONConfig `yaml:"json"`
+	EBPF                EBPFConfig `yaml:"ebpf,omitempty"`
 }
 
 type EBPFConfig struct {
@@ -952,6 +955,13 @@ func validateUDPPorts(name string, ports []uint32) error {
 
 // applySourceDefaults normalizes per-source defaults that depend on source.network.
 func applySourceDefaults(src *SourceConfig) error {
+	if src.SourceInitRefreshMS == nil {
+		v := 30000
+		src.SourceInitRefreshMS = &v
+	}
+	if *src.SourceInitRefreshMS < 0 {
+		return fmt.Errorf("source.source_init_refresh_ms must be >= 0")
+	}
 	if src.Network == "" {
 		src.Network = "udp"
 	}
@@ -983,6 +993,11 @@ func applySourceDefaults(src *SourceConfig) error {
 		}
 		if src.SampleOffset < 0 || src.SampleOffset >= src.SampleEvery {
 			return fmt.Errorf("source.sample_offset must be >= 0 and < source.sample_every")
+		}
+		if src.InterfaceFilter != "" {
+			if _, err := regexp.Compile(src.InterfaceFilter); err != nil {
+				return fmt.Errorf("source.interface_filter is invalid: %w", err)
+			}
 		}
 		if src.Address == "" {
 			src.Address = src.Interface

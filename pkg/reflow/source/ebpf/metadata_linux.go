@@ -4,6 +4,8 @@ package ebpf
 
 import (
 	"net"
+	"regexp"
+	"sort"
 	"sync"
 
 	"github.com/netsampler/goflow2/v3/pkg/reflow/config"
@@ -13,7 +15,10 @@ type Source struct {
 	cfg                   config.SourceConfig
 	agentIP               string
 	captureInterfaceIndex int
+	captureAny            bool
+	interfaceFilter       *regexp.Regexp
 	interfaceNames        map[uint32]string
+	initializedInterfaces map[uint32]struct{}
 	seenCount             uint64
 	mu                    sync.Mutex
 	fd                    int
@@ -59,6 +64,22 @@ func firstInterfaceIP(iface *net.Interface) string {
 	}
 	if fallback != "" {
 		return fallback
+	}
+	return "127.0.0.1"
+}
+
+func firstSystemIP() string {
+	ifaces, err := net.Interfaces()
+	if err != nil {
+		return "127.0.0.1"
+	}
+	sort.Slice(ifaces, func(i, j int) bool {
+		return ifaces[i].Index < ifaces[j].Index
+	})
+	for i := range ifaces {
+		if ip := firstInterfaceIP(&ifaces[i]); ip != "127.0.0.1" {
+			return ip
+		}
 	}
 	return "127.0.0.1"
 }

@@ -1931,6 +1931,97 @@ sink:
 	}
 }
 
+func TestLoadDefaultsSourceInitRefresh(t *testing.T) {
+	dir := t.TempDir()
+
+	cfgPath := filepath.Join(dir, "reflow.yaml")
+	if err := os.WriteFile(cfgPath, []byte(`
+sources:
+  - network: udp
+    address: ":18081"
+    type: flow
+
+processor:
+  type: builtin
+
+encoder:
+  type: json
+
+sink:
+  type: stdout
+`), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	cfg, err := Load(cfgPath)
+	if err != nil {
+		t.Fatalf("Load returned error: %v", err)
+	}
+	if cfg.Sources[0].SourceInitRefreshMS == nil || *cfg.Sources[0].SourceInitRefreshMS != 30000 {
+		t.Fatalf("expected source_init_refresh_ms default 30000, got %#v", cfg.Sources[0].SourceInitRefreshMS)
+	}
+}
+
+func TestLoadAllowsDisablingSourceInitRefresh(t *testing.T) {
+	dir := t.TempDir()
+
+	cfgPath := filepath.Join(dir, "reflow.yaml")
+	if err := os.WriteFile(cfgPath, []byte(`
+sources:
+  - network: udp
+    address: ":18081"
+    type: flow
+    source_init_refresh_ms: 0
+
+processor:
+  type: builtin
+
+encoder:
+  type: json
+
+sink:
+  type: stdout
+`), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	cfg, err := Load(cfgPath)
+	if err != nil {
+		t.Fatalf("Load returned error: %v", err)
+	}
+	if cfg.Sources[0].SourceInitRefreshMS == nil || *cfg.Sources[0].SourceInitRefreshMS != 0 {
+		t.Fatalf("expected source_init_refresh_ms=0, got %#v", cfg.Sources[0].SourceInitRefreshMS)
+	}
+}
+
+func TestLoadRejectsNegativeSourceInitRefresh(t *testing.T) {
+	dir := t.TempDir()
+
+	cfgPath := filepath.Join(dir, "reflow.yaml")
+	if err := os.WriteFile(cfgPath, []byte(`
+sources:
+  - network: udp
+    address: ":18081"
+    type: flow
+    source_init_refresh_ms: -1
+
+processor:
+  type: builtin
+
+encoder:
+  type: json
+
+sink:
+  type: stdout
+`), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	if _, err := Load(cfgPath); err == nil || !strings.Contains(err.Error(), "source.source_init_refresh_ms must be >= 0") {
+		t.Fatalf("expected source_init_refresh_ms validation error, got %v", err)
+	}
+}
+
 func TestLoadRejectsMissingSources(t *testing.T) {
 	dir := t.TempDir()
 
@@ -2352,7 +2443,7 @@ func TestParseInputSpecSupportsEBPF(t *testing.T) {
 }
 
 func TestParseInputSpecSupportsCaptureParams(t *testing.T) {
-	src, err := parseInputSpec("pcap_live:en0:bytes?snaplen=262144&sample_every=10&sample_offset=3")
+	src, err := parseInputSpec("pcap_live:en0:bytes?snaplen=262144&sample_every=10&sample_offset=3&source_init_refresh_ms=0")
 	if err != nil {
 		t.Fatalf("parseInputSpec returned error: %v", err)
 	}
@@ -2361,6 +2452,29 @@ func TestParseInputSpecSupportsCaptureParams(t *testing.T) {
 	}
 	if src.SnapLen != 262144 || src.SampleEvery != 10 || src.SampleOffset != 3 {
 		t.Fatalf("unexpected capture params: snaplen=%d sample_every=%d sample_offset=%d", src.SnapLen, src.SampleEvery, src.SampleOffset)
+	}
+	if src.SourceInitRefreshMS == nil || *src.SourceInitRefreshMS != 0 {
+		t.Fatalf("expected source_init_refresh_ms=0, got %#v", src.SourceInitRefreshMS)
+	}
+}
+
+func TestParseInputSpecSupportsPcapLiveInterfaceFilter(t *testing.T) {
+	src, err := parseInputSpec(`pcap_live:any:bytes?interface_filter=^(eth|wan)`)
+	if err != nil {
+		t.Fatalf("parseInputSpec returned error: %v", err)
+	}
+	if src.Network != "pcap_live" || src.Interface != "any" || src.InterfaceFilter != "^(eth|wan)" {
+		t.Fatalf("unexpected pcap_live source config: %#v", src)
+	}
+}
+
+func TestParseInputSpecSupportsEBPFInterfaceFilter(t *testing.T) {
+	src, err := parseInputSpec(`ebpf:any:bytes?interface_filter=^(eth|wan)`)
+	if err != nil {
+		t.Fatalf("parseInputSpec returned error: %v", err)
+	}
+	if src.Network != "ebpf" || src.Interface != "any" || src.InterfaceFilter != "^(eth|wan)" {
+		t.Fatalf("unexpected ebpf source config: %#v", src)
 	}
 }
 
