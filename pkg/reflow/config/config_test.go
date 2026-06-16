@@ -1184,6 +1184,9 @@ func TestGeneratedAggregateConfigUsesFieldDSL(t *testing.T) {
 	if agg.TemplateID != 256 {
 		t.Fatalf("expected generated template_id 256, got %d", agg.TemplateID)
 	}
+	if !agg.AggregateMissing {
+		t.Fatalf("expected generated -agg config to default aggregate_missing=true")
+	}
 	for _, field := range []struct {
 		role string
 		name string
@@ -1215,7 +1218,7 @@ func TestGeneratedAggregateConfigSupportsCLIParams(t *testing.T) {
 	fs := flag.NewFlagSet("test", flag.ContinueOnError)
 	flags, _ := BindFlags(fs)
 	if err := fs.Parse([]string{
-		"-agg=idle_flush_after_ms=0,max_flush_after_ms=45000,periodic_every_ms=15000,reset_buckets=true",
+		"-agg=idle_flush_after_ms=0,max_flush_after_ms=45000,periodic_every_ms=15000,reset_buckets=true,aggregate_missing=false",
 		"-genconf",
 	}); err != nil {
 		t.Fatalf("Parse returned error: %v", err)
@@ -1246,6 +1249,9 @@ func TestGeneratedAggregateConfigSupportsCLIParams(t *testing.T) {
 	}
 	if !agg.Periodic.ResetBuckets {
 		t.Fatalf("expected reset_buckets=true")
+	}
+	if agg.AggregateMissing {
+		t.Fatalf("expected aggregate_missing=false")
 	}
 }
 
@@ -1628,6 +1634,9 @@ func TestGeneratedAggregateConfigSupportsPassthroughPreset(t *testing.T) {
 	if agg.Window.IdleFlushAfter != 0 || agg.Periodic.Every != 0 {
 		t.Fatalf("expected passthrough preset to remove export timers, got window=%#v periodic=%#v", agg.Window, agg.Periodic)
 	}
+	if agg.AggregateMissing {
+		t.Fatalf("expected passthrough preset to disable aggregate_missing")
+	}
 }
 
 func TestConfigModeAllowsAggregationPresets(t *testing.T) {
@@ -1673,6 +1682,57 @@ sink:
 	}
 	if !aggregatorHasField(agg, "current", "frame_length") || !aggregatorHasField(agg, "current", "header_data") {
 		t.Fatalf("expected payload fields, got %#v", agg.Fields)
+	}
+}
+
+func TestConfigModeAggDefaultsAggregateMissingUnlessDisabled(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "reflow.yaml")
+	if err := os.WriteFile(cfgPath, []byte(`
+sources:
+  - network: udp
+    address: ":18081"
+    type: json
+
+processor:
+  type: builtin
+
+encoder:
+  type: json
+
+sink:
+  type: stdout
+`), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	for _, tt := range []struct {
+		args string
+		want bool
+	}{
+		{args: "payload", want: true},
+		{args: "payload,aggregate_missing=false", want: false},
+	} {
+		t.Run(tt.args, func(t *testing.T) {
+			fs := flag.NewFlagSet("test", flag.ContinueOnError)
+			flags, _ := BindFlags(fs)
+			if err := fs.Parse([]string{"-config", cfgPath, "-agg=" + tt.args}); err != nil {
+				t.Fatalf("Parse returned error: %v", err)
+			}
+			cfg, generated, err := LoadFromFlags(flags)
+			if err != nil {
+				t.Fatalf("LoadFromFlags returned error: %v", err)
+			}
+			if generated {
+				t.Fatalf("expected explicit config mode")
+			}
+			if len(cfg.Aggregators) != 1 {
+				t.Fatalf("expected one overlay aggregator, got %d", len(cfg.Aggregators))
+			}
+			if cfg.Aggregators[0].AggregateMissing != tt.want {
+				t.Fatalf("aggregate_missing=%t, want %t", cfg.Aggregators[0].AggregateMissing, tt.want)
+			}
+		})
 	}
 }
 

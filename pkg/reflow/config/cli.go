@@ -74,7 +74,7 @@ var (
 		"-agg mpls",
 		"-agg passthrough",
 		"-agg idle_flush_after_ms=<ms>,periodic_every_ms=<ms>",
-		"-agg max_flush_after_ms=<ms>,idle_erase_after_ms=<ms>,reset_buckets=<bool>",
+		"-agg max_flush_after_ms=<ms>,idle_erase_after_ms=<ms>,reset_buckets=<bool>,aggregate_missing=<bool>",
 	}
 	aggregateHelperExamples = []string{
 		"-agg payload",
@@ -87,6 +87,7 @@ var (
 		"-agg passthrough",
 		"-agg idle_flush_after_ms=5000,periodic_every_ms=30000",
 		"-agg periodic_every_ms=10000,reset_buckets=true",
+		"-agg aggregate_missing=false",
 	}
 	generatedTemplatedFlowFields = []string{
 		"bytes",
@@ -254,6 +255,9 @@ func (f aggregateFlag) String() string {
 	}
 	if f.cfg.AggResetBuckets != nil {
 		parts = append(parts, fmt.Sprintf("reset_buckets=%t", *f.cfg.AggResetBuckets))
+	}
+	if f.cfg.AggAggregateMissing != nil {
+		parts = append(parts, fmt.Sprintf("aggregate_missing=%t", *f.cfg.AggAggregateMissing))
 	}
 	parts = append(parts, f.cfg.AggPresets...)
 	if len(parts) == 0 {
@@ -648,6 +652,12 @@ func parseAggregateParams(cfg *FlagConfig, rawParams string) error {
 				return fmt.Errorf("aggregate parameter %q must be a boolean", key)
 			}
 			cfg.AggResetBuckets = &parsed
+		case "aggregate_missing":
+			parsed, err := strconv.ParseBool(value)
+			if err != nil {
+				return fmt.Errorf("aggregate parameter %q must be a boolean", key)
+			}
+			cfg.AggAggregateMissing = &parsed
 		default:
 			return fmt.Errorf("unsupported aggregate parameter %q", key)
 		}
@@ -969,6 +979,7 @@ func defaultGeneratedAggregator() AggregatorConfig {
 		Match: map[string]string{
 			"record_kind": "packet",
 		},
+		AggregateMissing: true,
 		Window: AggregatorWindowConfig{
 			IdleFlushAfter: 10000,
 		},
@@ -1064,6 +1075,9 @@ func applyGeneratedAggregatorOverrides(cfg *AggregatorConfig, flags *FlagConfig)
 	if flags.AggResetBuckets != nil {
 		cfg.Periodic.ResetBuckets = *flags.AggResetBuckets
 	}
+	if flags.AggAggregateMissing != nil {
+		cfg.AggregateMissing = *flags.AggAggregateMissing
+	}
 }
 
 // ApplyAggregationFlags applies -agg overlays to an explicit YAML config.
@@ -1123,6 +1137,9 @@ func (c *Config) ApplyAggregationFlags(flags *FlagConfig) error {
 			return fmt.Errorf("aggregators[%d]: %w", i, err)
 		}
 		c.Aggregators[i].Passthrough = !aggregatorNeedsState(&c.Aggregators[i])
+		if i == 0 {
+			applyAggregateMissingFlagDefault(&c.Aggregators[i], flags)
+		}
 		if err := validateAggregatorConfig(c.Aggregators[i]); err != nil {
 			return fmt.Errorf("aggregators[%d]: %w", i, err)
 		}
@@ -1168,6 +1185,7 @@ func makeAggregatorPassthrough(cfg *AggregatorConfig) {
 	cfg.Periodic = AggregatorPeriodicConfig{}
 	cfg.ResetInterval = 0
 	cfg.PeriodicInterval = 0
+	cfg.AggregateMissing = false
 	cfg.Sum = nil
 	cfg.First = nil
 	cfg.Min = nil
@@ -1183,6 +1201,17 @@ func makeAggregatorPassthrough(cfg *AggregatorConfig) {
 		}
 		cfg.Fields = out
 	}
+}
+
+func applyAggregateMissingFlagDefault(cfg *AggregatorConfig, flags *FlagConfig) {
+	if cfg == nil || flags == nil || cfg.Passthrough {
+		return
+	}
+	if flags.AggAggregateMissing != nil {
+		cfg.AggregateMissing = *flags.AggAggregateMissing
+		return
+	}
+	cfg.AggregateMissing = true
 }
 
 func addPayloadFields(cfg *AggregatorConfig) {
@@ -1308,7 +1337,7 @@ func aggregatePresets(flags *FlagConfig) []string {
 }
 
 func hasAggregateOverrides(flags *FlagConfig) bool {
-	return flags != nil && (flags.AggIdleFlushAfter != nil || flags.AggMaxFlushAfter != nil || flags.AggIdleEraseAfter != nil || flags.AggPeriodicEvery != nil || flags.AggResetBuckets != nil)
+	return flags != nil && (flags.AggIdleFlushAfter != nil || flags.AggMaxFlushAfter != nil || flags.AggIdleEraseAfter != nil || flags.AggPeriodicEvery != nil || flags.AggResetBuckets != nil || flags.AggAggregateMissing != nil)
 }
 
 func aggregatePresetRequested(flags *FlagConfig, want string) bool {

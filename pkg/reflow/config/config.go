@@ -20,22 +20,23 @@ import (
 var defaultFlowFields []byte
 
 type FlagConfig struct {
-	ConfigPath        string
-	LogLevel          string
-	LogFormat         string
-	Inputs            []string
-	Output            string
-	OutputSet         bool
-	Aggregate         bool
-	AggIdleFlushAfter *int
-	AggMaxFlushAfter  *int
-	AggIdleEraseAfter *int
-	AggPeriodicEvery  *int
-	AggResetBuckets   *bool
-	AggPresets        []string
-	GenConf           bool
-	GenProto          bool
-	ListOptions       bool
+	ConfigPath          string
+	LogLevel            string
+	LogFormat           string
+	Inputs              []string
+	Output              string
+	OutputSet           bool
+	Aggregate           bool
+	AggIdleFlushAfter   *int
+	AggMaxFlushAfter    *int
+	AggIdleEraseAfter   *int
+	AggPeriodicEvery    *int
+	AggResetBuckets     *bool
+	AggAggregateMissing *bool
+	AggPresets          []string
+	GenConf             bool
+	GenProto            bool
+	ListOptions         bool
 }
 
 type Config struct {
