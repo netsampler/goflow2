@@ -24,6 +24,7 @@ type Aggregator interface {
 
 // New builds the configured aggregation stage. Disabled aggregation keeps the input stream unchanged.
 func New(cfg config.AggregatorConfig) (Aggregator, error) {
+	cfg.Fields = effectiveAggregatorFields(cfg)
 	if cfg.Passthrough {
 		return schemaPassthrough{cfg: cfg}, nil
 	}
@@ -124,6 +125,7 @@ type Stateful struct {
 }
 
 func NewStateful(cfg config.AggregatorConfig) *Stateful {
+	cfg.Fields = effectiveAggregatorFields(cfg)
 	return &Stateful{
 		cfg:            cfg,
 		recordCapacity: aggregateRecordCapacity(cfg),
@@ -473,7 +475,7 @@ func aggregateFromEvent(cfg config.AggregatorConfig, recordCapacity int, evt *ev
 		return "", aggregateRecord{}, fmt.Errorf("event fields are empty")
 	}
 
-	key, err := buildKey(evt, cfg.KeyFields, cfg.AggregateMissing)
+	key, err := buildKey(evt, cfg.Fields, cfg.AggregateMissing)
 	if err != nil {
 		return "", aggregateRecord{}, err
 	}
@@ -490,37 +492,34 @@ func aggregateFromEvent(cfg config.AggregatorConfig, recordCapacity int, evt *ev
 	for key, val := range cfg.StaticFields {
 		recordFields[key] = val
 	}
-	for _, keyField := range cfg.KeyFields {
-		if val, ok := eventFieldValue(evt, keyField); ok {
-			recordFields[keyField] = val
-		}
-	}
-	for _, sumField := range cfg.Sum {
-		recordFields[sumField] = sumValue{Value: int64EventField(evt, sumField)}
-	}
-	for _, firstField := range cfg.First {
-		if val, ok := eventFieldValue(evt, firstField); ok {
-			recordFields[firstField] = firstValue{Value: val}
-		}
-	}
-	for _, currentField := range cfg.Current {
-		if val, ok := eventFieldValue(evt, currentField); ok {
-			recordFields[currentField] = currentValue{Value: val}
-		}
-	}
-	for _, minField := range cfg.Min {
-		if val, ok := eventFieldValue(evt, minField); ok {
-			recordFields[minField] = minValue{Value: val}
-		}
-	}
-	for _, maxField := range cfg.Max {
-		if val, ok := eventFieldValue(evt, maxField); ok {
-			recordFields[maxField] = maxValue{Value: val}
-		}
-	}
-	for _, andField := range cfg.And {
-		if val, ok := eventFieldValue(evt, andField); ok {
-			recordFields[andField] = andValue{Value: val}
+	for _, field := range cfg.Fields {
+		switch field.Role {
+		case "key":
+			if val, ok := eventFieldValueForSpec(evt, field); ok {
+				recordFields[field.Name] = val
+			}
+		case "sum":
+			recordFields[field.Name] = sumValue{Value: int64EventFieldForSpec(evt, field)}
+		case "first":
+			if val, ok := eventFieldValueForSpec(evt, field); ok {
+				recordFields[field.Name] = firstValue{Value: val}
+			}
+		case "current":
+			if val, ok := eventFieldValueForSpec(evt, field); ok {
+				recordFields[field.Name] = currentValue{Value: val}
+			}
+		case "min":
+			if val, ok := eventFieldValueForSpec(evt, field); ok {
+				recordFields[field.Name] = minValue{Value: val}
+			}
+		case "max":
+			if val, ok := eventFieldValueForSpec(evt, field); ok {
+				recordFields[field.Name] = maxValue{Value: val}
+			}
+		case "and":
+			if val, ok := eventFieldValueForSpec(evt, field); ok {
+				recordFields[field.Name] = andValue{Value: val}
+			}
 		}
 	}
 	seedTimestamps(recordFields, fields, now)
@@ -533,7 +532,7 @@ func aggregateFromEvent(cfg config.AggregatorConfig, recordCapacity int, evt *ev
 }
 
 func aggregateRecordCapacity(cfg config.AggregatorConfig) int {
-	return len(cfg.StaticFields) + len(cfg.KeyFields) + len(cfg.Sum) + len(cfg.First) + len(cfg.Current) + len(cfg.Min) + len(cfg.Max) + len(cfg.And) + 2
+	return len(cfg.StaticFields) + len(cfg.Fields) + 2
 }
 
 // seedTimestamps ensures aggregates always have start/end fields even when the
@@ -546,17 +545,18 @@ func seedTimestamps(dst, src map[string]any, now time.Time) {
 }
 
 // buildKey joins the configured key fields into one stable bucket identifier.
-func buildKey(evt *event.Event, keyFields []string, aggregateMissing bool) (string, error) {
+func buildKey(evt *event.Event, fields []config.AggregatorField, aggregateMissing bool) (string, error) {
+	keyFields := aggregatorFieldsByRole(fields, "key")
 	if len(keyFields) == 0 {
 		return "__global__", nil
 	}
 	var b strings.Builder
 	b.Grow(len(keyFields) * 16)
-	for i, key := range keyFields {
-		val, ok := eventFieldValue(evt, key)
+	for i, field := range keyFields {
+		val, ok := eventFieldValueForSpec(evt, field)
 		if !ok {
 			if !aggregateMissing {
-				return "", &missingAggregationKeyError{Key: key}
+				return "", &missingAggregationKeyError{Key: field.Name}
 			}
 			val = nil
 		}
@@ -578,9 +578,9 @@ func MissingRequiredKeyField(cfg config.AggregatorConfig, evt *event.Event) stri
 	if cfg.AggregateMissing {
 		return ""
 	}
-	for _, key := range cfg.KeyFields {
-		if _, ok := eventFieldValue(evt, key); !ok {
-			return key
+	for _, field := range aggregatorFieldsByRole(effectiveAggregatorFields(cfg), "key") {
+		if _, ok := eventFieldValueForSpec(evt, field); !ok {
+			return field.Name
 		}
 	}
 	return ""
@@ -785,6 +785,119 @@ func int64EventField(evt *event.Event, key string) int64 {
 		return 0
 	}
 	return int64FromAny(val)
+}
+
+func int64EventFieldForSpec(evt *event.Event, field config.AggregatorField) int64 {
+	val, ok := eventFieldValueForSpec(evt, field)
+	if !ok {
+		return 0
+	}
+	return int64FromAny(val)
+}
+
+func eventFieldValueForSpec(evt *event.Event, field config.AggregatorField) (any, bool) {
+	val, ok := eventFieldValue(evt, field.Name)
+	if !ok {
+		return nil, false
+	}
+	return applyFieldFamily(val, aggregatorFieldFamily(field))
+}
+
+func applyFieldFamily(val any, family string) (any, bool) {
+	if family == "" {
+		return val, true
+	}
+	ip, ok := val.(string)
+	if !ok {
+		return nil, false
+	}
+	addr, err := netip.ParseAddr(ip)
+	if err != nil {
+		return nil, false
+	}
+	switch family {
+	case "ip4":
+		if !addr.Is4() {
+			return nil, false
+		}
+		return addr.String(), true
+	case "ip6":
+		if !addr.Is6() {
+			return nil, false
+		}
+		return addr.String(), true
+	case "ip4in6":
+		if addr.Is6() {
+			return addr.String(), true
+		}
+		if !addr.Is4() {
+			return nil, false
+		}
+		raw := addr.As4()
+		mapped := netip.AddrFrom16([16]byte{10: 0xff, 11: 0xff, 12: raw[0], 13: raw[1], 14: raw[2], 15: raw[3]})
+		return mapped.String(), true
+	default:
+		return nil, false
+	}
+}
+
+func aggregatorFieldFamily(field config.AggregatorField) string {
+	if field.Role == "static" {
+		return ""
+	}
+	family, _ := ipFamilyModifier(field.Value)
+	return family
+}
+
+func ipFamilyModifier(value any) (string, bool) {
+	family, ok := value.(string)
+	if !ok {
+		return "", false
+	}
+	switch family {
+	case "ip4", "ip6", "ip4in6":
+		return family, true
+	default:
+		return "", false
+	}
+}
+
+func aggregatorFieldsByRole(fields []config.AggregatorField, role string) []config.AggregatorField {
+	out := make([]config.AggregatorField, 0, len(fields))
+	for _, field := range fields {
+		if field.Role == role {
+			out = append(out, field)
+		}
+	}
+	return out
+}
+
+func effectiveAggregatorFields(cfg config.AggregatorConfig) []config.AggregatorField {
+	if len(cfg.Fields) > 0 {
+		return cfg.Fields
+	}
+	fields := make([]config.AggregatorField, 0, len(cfg.KeyFields)+len(cfg.Sum)+len(cfg.First)+len(cfg.Current)+len(cfg.Min)+len(cfg.Max)+len(cfg.And)+len(cfg.StaticFields))
+	appendRole := func(role string, names []string) {
+		for _, name := range names {
+			fields = append(fields, config.AggregatorField{Role: role, Name: name})
+		}
+	}
+	appendRole("key", cfg.KeyFields)
+	appendRole("sum", cfg.Sum)
+	appendRole("first", cfg.First)
+	appendRole("current", cfg.Current)
+	appendRole("min", cfg.Min)
+	appendRole("max", cfg.Max)
+	appendRole("and", cfg.And)
+	staticFields := make([]string, 0, len(cfg.StaticFields))
+	for name := range cfg.StaticFields {
+		staticFields = append(staticFields, name)
+	}
+	sort.Strings(staticFields)
+	for _, name := range staticFields {
+		fields = append(fields, config.AggregatorField{Role: "static", Name: name, Value: cfg.StaticFields[name]})
+	}
+	return fields
 }
 
 func eventFieldValue(evt *event.Event, key string) (any, bool) {

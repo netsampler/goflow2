@@ -42,15 +42,11 @@ type NFv9Encoder struct {
 }
 
 type templatedSchemaState struct {
-	stream           string
-	fieldNames       []string
-	fields           []event.SchemaField
-	baseTemplateID   uint16
-	ipv4Template     netflow.TemplateRecord
-	ipv6Template     netflow.TemplateRecord
-	hasIPv6Variant   bool
-	addressGroups    []string
-	templateVariants map[uint64]netflow.TemplateRecord
+	stream         string
+	fieldNames     []string
+	fields         []event.SchemaField
+	baseTemplateID uint16
+	template       netflow.TemplateRecord
 }
 
 type optionsSchemaState struct {
@@ -79,6 +75,7 @@ type fallbackTemplatePlan struct {
 	template netflow.TemplateRecord
 	names    []string
 	defs     []config.IPFIXFieldDefinition
+	families []string
 }
 
 type ipfixBatchRecord struct {
@@ -600,9 +597,8 @@ func (e *IPFIXEncoder) ipfixBatchRecord(evt *event.Event) (ipfixBatchRecord, err
 	if schema, ok := e.dataSchemas[stream]; ok {
 		fieldMap = eventFieldsWithMetadataForSchema(evt, schema.fields)
 		applyTemplatedFlowDataMatches(e.cfg.TemplatedFlow.Data, fieldMap)
-		mask := schema.addressVariantMask(fieldMap)
-		templateRecord := schema.templateForMask(mask)
-		dataRecord, err := buildTemplatedValuesFromSchemaFieldsForMask(e.cfg.TemplatedFlow.Data, fieldMap, schema.fields, templatedEncodingContext{}, schema.addressGroups, mask)
+		templateRecord := schema.template
+		dataRecord, err := buildTemplatedValuesFromSchemaFields(e.cfg.TemplatedFlow.Data, fieldMap, schema.fields, templatedEncodingContext{})
 		if err != nil {
 			return ipfixBatchRecord{}, err
 		}
@@ -709,9 +705,8 @@ func (e *NFv9Encoder) nfv9BatchRecord(evt *event.Event, timing nfv9BatchTiming) 
 	if schema, ok := e.dataSchemas[stream]; ok {
 		fieldMap = eventFieldsWithMetadataForSchema(evt, schema.fields)
 		applyTemplatedFlowDataMatches(e.cfg.TemplatedFlow.Data, fieldMap)
-		mask := schema.addressVariantMask(fieldMap)
-		templateRecord := schema.templateForMask(mask)
-		dataRecord, err := buildTemplatedValuesFromSchemaFieldsForMask(e.cfg.TemplatedFlow.Data, fieldMap, schema.fields, encodingCtx, schema.addressGroups, mask)
+		templateRecord := schema.template
+		dataRecord, err := buildTemplatedValuesFromSchemaFields(e.cfg.TemplatedFlow.Data, fieldMap, schema.fields, encodingCtx)
 		if err != nil {
 			return nfv9BatchRecord{}, err
 		}
@@ -1135,9 +1130,8 @@ func (e *IPFIXEncoder) buildPacket(evt *event.Event) (*netflow.IPFIXPacket, erro
 	if schema, ok := e.dataSchemas[stream]; ok {
 		fieldMap = eventFieldsWithMetadataForSchema(evt, schema.fields)
 		applyTemplatedFlowDataMatches(e.cfg.TemplatedFlow.Data, fieldMap)
-		mask := schema.addressVariantMask(fieldMap)
-		templateRecord := schema.templateForMask(mask)
-		dataRecord, err := buildTemplatedValuesFromSchemaFieldsForMask(e.cfg.TemplatedFlow.Data, fieldMap, schema.fields, templatedEncodingContext{}, schema.addressGroups, mask)
+		templateRecord := schema.template
+		dataRecord, err := buildTemplatedValuesFromSchemaFields(e.cfg.TemplatedFlow.Data, fieldMap, schema.fields, templatedEncodingContext{})
 		if err != nil {
 			return nil, err
 		}
@@ -1296,9 +1290,8 @@ func (e *NFv9Encoder) buildPacket(evt *event.Event) (*netflow.NFv9Packet, error)
 	if schema, ok := e.dataSchemas[stream]; ok {
 		fieldMap = eventFieldsWithMetadataForSchema(evt, schema.fields)
 		applyTemplatedFlowDataMatches(e.cfg.TemplatedFlow.Data, fieldMap)
-		mask := schema.addressVariantMask(fieldMap)
-		templateRecord := schema.templateForMask(mask)
-		dataRecord, err := buildTemplatedValuesFromSchemaFieldsForMask(e.cfg.TemplatedFlow.Data, fieldMap, schema.fields, encodingCtx, schema.addressGroups, mask)
+		templateRecord := schema.template
+		dataRecord, err := buildTemplatedValuesFromSchemaFields(e.cfg.TemplatedFlow.Data, fieldMap, schema.fields, encodingCtx)
 		if err != nil {
 			return nil, err
 		}
@@ -1412,7 +1405,7 @@ func (e *IPFIXEncoder) registerSchema(evt *event.Event) ([][]byte, error) {
 	if state.baseTemplateID == 0 {
 		state.baseTemplateID = e.cfg.TemplatedFlow.TemplateBaseID
 	}
-	if state.ipv4Template.TemplateId == 0 || state.baseTemplateID != state.ipv4Template.TemplateId {
+	if state.template.TemplateId == 0 || state.baseTemplateID != state.template.TemplateId {
 		state, err = buildSchemaStateWithBase(e.cfg.TemplatedFlow.Data, schema, false, state.baseTemplateID)
 		if err != nil {
 			return nil, err
@@ -1457,7 +1450,7 @@ func (e *NFv9Encoder) registerSchema(evt *event.Event) ([][]byte, error) {
 	if state.baseTemplateID == 0 {
 		state.baseTemplateID = e.cfg.TemplatedFlow.TemplateBaseID
 	}
-	if state.ipv4Template.TemplateId == 0 || state.baseTemplateID != state.ipv4Template.TemplateId {
+	if state.template.TemplateId == 0 || state.baseTemplateID != state.template.TemplateId {
 		state, err = buildSchemaStateWithBase(e.cfg.TemplatedFlow.Data, schema, true, state.baseTemplateID)
 		if err != nil {
 			return nil, err
@@ -1907,8 +1900,9 @@ func optionsSchemaFields(schema optionsSchemaState) []event.SchemaField {
 	return fields
 }
 
-// buildSchemaStateWithBase precomputes IPv4 and optional IPv6 template variants
-// for one aggregated stream schema.
+// buildSchemaStateWithBase precomputes the single template for one aggregated
+// stream schema. Address-family choices are carried by SchemaField.Value; an
+// unmodified address field expands to both IPv4 and IPv6 wire fields.
 func buildSchemaStateWithBase(cfg config.TemplatedFlowDataConfig, schema event.AggregationSchema, netflowV9 bool, baseTemplateID uint16) (templatedSchemaState, error) {
 	stream := schema.Stream
 	if stream == "" {
@@ -1923,59 +1917,12 @@ func buildSchemaStateWithBase(cfg config.TemplatedFlowDataConfig, schema event.A
 		fields:         schemaFieldsOrNames(schema),
 		baseTemplateID: baseTemplateID,
 	}
-	state.addressGroups = schemaAddressGroups(cfg, state.fields, netflowV9)
-	if len(state.addressGroups) > 8 {
-		return templatedSchemaState{}, fmt.Errorf("schema has %d address groups; maximum is 8", len(state.addressGroups))
+	template, err := buildTemplateRecordFromSchemaFields(cfg, state.fields, baseTemplateID, netflowV9)
+	if err != nil {
+		return templatedSchemaState{}, err
 	}
-	if mask, ok := fixedAddressMask(schema, len(state.addressGroups)); ok {
-		template, err := buildTemplateRecordFromSchemaFieldsForMask(cfg, state.fields, baseTemplateID, netflowV9, state.addressGroups, mask)
-		if err != nil {
-			return templatedSchemaState{}, err
-		}
-		state.templateVariants = map[uint64]netflow.TemplateRecord{mask: template}
-		state.ipv4Template = template
-		state.ipv6Template = template
-		state.hasIPv6Variant = mask != 0
-		return state, nil
-	}
-	variantCount := uint64(1)
-	if len(state.addressGroups) > 0 {
-		variantCount = 1 << len(state.addressGroups)
-	}
-	if uint64(baseTemplateID)+variantCount-1 > 0xffff {
-		return templatedSchemaState{}, fmt.Errorf("template id range %d..%d exceeds 65535", baseTemplateID, uint64(baseTemplateID)+variantCount-1)
-	}
-	variantMasks := orderedAddressVariantMasks(state.addressGroups)
-	state.templateVariants = make(map[uint64]netflow.TemplateRecord, variantCount)
-	for i, mask := range variantMasks {
-		template, err := buildTemplateRecordFromSchemaFieldsForMask(cfg, state.fields, baseTemplateID+uint16(i), netflowV9, state.addressGroups, mask)
-		if err != nil {
-			return templatedSchemaState{}, err
-		}
-		state.templateVariants[mask] = template
-		if mask == 0 {
-			state.ipv4Template = template
-		}
-		if mask == variantCount-1 {
-			state.ipv6Template = template
-		}
-	}
-	state.hasIPv6Variant = variantCount > 1
+	state.template = template
 	return state, nil
-}
-
-func fixedAddressMask(schema event.AggregationSchema, groupCount int) (uint64, bool) {
-	if groupCount == 0 || len(schema.Match) == 0 {
-		return 0, false
-	}
-	switch strings.ToLower(schema.Match["ip_family"]) {
-	case "ipv4", "4":
-		return 0, true
-	case "ipv6", "6":
-		return (uint64(1) << groupCount) - 1, true
-	default:
-		return 0, false
-	}
 }
 
 func schemaFieldsOrNames(schema event.AggregationSchema) []event.SchemaField {
@@ -1989,114 +1936,18 @@ func schemaFieldsOrNames(schema event.AggregationSchema) []event.SchemaField {
 	return fields
 }
 
-// templateForFields selects the address-family variant needed by the current event.
+// templateForFields returns the schema template for compatibility with tests and
+// older call sites that inspect schema state.
 func (s templatedSchemaState) templateForFields(fields map[string]any) netflow.TemplateRecord {
-	return s.templateForMask(s.addressVariantMask(fields))
-}
-
-func (s templatedSchemaState) templateForMask(mask uint64) netflow.TemplateRecord {
-	if len(s.templateVariants) == 0 {
-		if mask != 0 && s.hasIPv6Variant {
-			return s.ipv6Template
-		}
-		return s.ipv4Template
-	}
-	if template, ok := s.templateVariants[mask]; ok {
-		return template
-	}
-	return s.templateVariants[0]
+	return s.template
 }
 
 // templates returns every template record that must be announced for this schema.
 func (s templatedSchemaState) templates() []netflow.TemplateRecord {
-	if len(s.templateVariants) == 0 {
-		if s.hasIPv6Variant {
-			return []netflow.TemplateRecord{s.ipv4Template, s.ipv6Template}
-		}
-		return []netflow.TemplateRecord{s.ipv4Template}
+	if s.template.FieldCount == 0 {
+		return nil
 	}
-	masks := make([]uint64, 0, len(s.templateVariants))
-	for mask := range s.templateVariants {
-		masks = append(masks, mask)
-	}
-	sort.Slice(masks, func(i, j int) bool {
-		return s.templateVariants[masks[i]].TemplateId < s.templateVariants[masks[j]].TemplateId
-	})
-	templates := make([]netflow.TemplateRecord, 0, len(masks))
-	for _, mask := range masks {
-		templates = append(templates, s.templateVariants[mask])
-	}
-	return templates
-}
-
-func (s templatedSchemaState) addressVariantMask(fields map[string]any) uint64 {
-	if len(s.addressGroups) == 0 || len(fields) == 0 {
-		return 0
-	}
-	groupIndexes := make(map[string]int, len(s.addressGroups))
-	for i, group := range s.addressGroups {
-		groupIndexes[group] = i
-	}
-	var mask uint64
-	for _, field := range s.fields {
-		group, ok := addressFieldGroup(field.Name)
-		if !ok {
-			continue
-		}
-		index, ok := groupIndexes[group]
-		if !ok {
-			continue
-		}
-		if fieldValueIsIPv6(fields[field.Name]) {
-			mask |= 1 << index
-		}
-	}
-	return mask
-}
-
-func orderedAddressVariantMasks(groups []string) []uint64 {
-	if len(groups) == 0 {
-		return []uint64{0}
-	}
-	variantCount := uint64(1) << len(groups)
-	out := make([]uint64, 0, variantCount)
-	seen := make(map[uint64]bool, variantCount)
-	appendMask := func(mask uint64) {
-		if seen[mask] {
-			return
-		}
-		seen[mask] = true
-		out = append(out, mask)
-	}
-
-	appendMask(0)
-	if mask, ok := preferredNATVariantMask(groups); ok {
-		appendMask(mask)
-	}
-	// Mixed original/NAT address-family variants follow the paired IPv4 and IPv6
-	// templates. With the generated NAT schema, those become template 258 for
-	// NAT64 and template 259 for NAT46.
-	for mask := uint64(1); mask < variantCount; mask++ {
-		appendMask(mask)
-	}
-	return out
-}
-
-func preferredNATVariantMask(groups []string) (uint64, bool) {
-	primaryIndex := -1
-	natIndex := -1
-	for i, group := range groups {
-		switch group {
-		case "":
-			primaryIndex = i
-		case "nat":
-			natIndex = i
-		}
-	}
-	if primaryIndex < 0 || natIndex < 0 {
-		return 0, false
-	}
-	return (uint64(1) << primaryIndex) | (uint64(1) << natIndex), true
+	return []netflow.TemplateRecord{s.template}
 }
 
 func sourceOptionsKey(state sourceOptionsState) string {
@@ -2207,61 +2058,61 @@ func (e *NFv9Encoder) fallbackDataRecord(fieldMap map[string]any, templateID uin
 
 func fallbackPlanKey(cfg config.TemplatedFlowDataConfig, fieldMap map[string]any, templateID uint16, netflowV9 bool) (string, error) {
 	names := selectPresentFlowFields(cfg, fieldMap)
-	groups := fallbackAddressGroups(cfg, names, netflowV9)
-	mask := fallbackAddressVariantMask(names, groups, fieldMap)
-	templateID, err := fallbackVariantTemplateID(templateID, mask)
-	if err != nil {
-		return "", err
-	}
 	var b strings.Builder
 	fmt.Fprintf(&b, "%t|%d", netflowV9, templateID)
 	for _, name := range names {
-		def := resolvedFieldDefinitionForAddressMask(name, cfg.Catalog[name], groups, mask)
-		def = wireFieldDefinition(name, def, netflowV9)
-		if !fieldAllowedForEncoding(def, netflowV9) {
-			continue
+		defs, err := fieldDefinitionsForFamily(name, cfg.Catalog[name], "")
+		if err != nil {
+			return "", err
 		}
-		length := def.Length
-		if length == 0 || length == 0xffff {
-			encoded, err := encodeFallbackValue(name, def, fieldMap, templatedEncodingContext{netflowV9: netflowV9})
-			if err == nil {
-				length = ipfixFieldLength(def, encoded)
+		for _, def := range defs {
+			def = wireFieldDefinition(name, def, netflowV9)
+			if !fieldAllowedForEncoding(def, netflowV9) {
+				continue
 			}
+			length := def.Length
+			if length == 0 || length == 0xffff {
+				encoded, err := encodeFallbackValue(name, def, fieldMap, templatedEncodingContext{netflowV9: netflowV9})
+				if err == nil {
+					length = ipfixFieldLength(def, encoded)
+				}
+			}
+			fmt.Fprintf(&b, "|%s:%d:%d:%d:%d:%t", name, def.ID, length, def.Length, def.PEN, def.EnterpriseScoped)
 		}
-		fmt.Fprintf(&b, "|%s:%d:%d:%d:%d:%t", name, def.ID, length, def.Length, def.PEN, def.EnterpriseScoped)
 	}
 	return b.String(), nil
 }
 
 func buildFallbackPlan(cfg config.TemplatedFlowDataConfig, fieldMap map[string]any, templateID uint16, netflowV9 bool) (fallbackTemplatePlan, error) {
 	names := selectPresentFlowFields(cfg, fieldMap)
-	groups := fallbackAddressGroups(cfg, names, netflowV9)
-	mask := fallbackAddressVariantMask(names, groups, fieldMap)
-	templateID, err := fallbackVariantTemplateID(templateID, mask)
-	if err != nil {
-		return fallbackTemplatePlan{}, err
-	}
 	fields := make([]netflow.Field, 0, len(names))
 	defs := make([]config.IPFIXFieldDefinition, 0, len(names))
 	keptNames := make([]string, 0, len(names))
+	families := make([]string, 0, len(names))
 	for _, name := range names {
-		def := resolvedFieldDefinitionForAddressMask(name, cfg.Catalog[name], groups, mask)
-		def = wireFieldDefinition(name, def, netflowV9)
-		if !fieldAllowedForEncoding(def, netflowV9) {
-			continue
-		}
-		encoded, err := encodeFallbackValue(name, def, fieldMap, templatedEncodingContext{netflowV9: netflowV9})
+		fieldDefs, err := fieldDefinitionsForFamily(name, cfg.Catalog[name], "")
 		if err != nil {
-			return fallbackTemplatePlan{}, fmt.Errorf("encode field %q: %w", name, err)
+			return fallbackTemplatePlan{}, err
 		}
-		fields = append(fields, netflow.Field{
-			PenProvided: def.EnterpriseScoped || def.PEN != 0,
-			Type:        def.ID,
-			Length:      ipfixFieldLength(def, encoded),
-			Pen:         def.PEN,
-		})
-		defs = append(defs, def)
-		keptNames = append(keptNames, name)
+		for _, def := range fieldDefs {
+			def = wireFieldDefinition(name, def, netflowV9)
+			if !fieldAllowedForEncoding(def, netflowV9) {
+				continue
+			}
+			encoded, err := encodeFallbackValue(name, def, fieldMap, templatedEncodingContext{netflowV9: netflowV9})
+			if err != nil {
+				return fallbackTemplatePlan{}, fmt.Errorf("encode field %q: %w", name, err)
+			}
+			fields = append(fields, netflow.Field{
+				PenProvided: def.EnterpriseScoped || def.PEN != 0,
+				Type:        def.ID,
+				Length:      ipfixFieldLength(def, encoded),
+				Pen:         def.PEN,
+			})
+			defs = append(defs, def)
+			keptNames = append(keptNames, name)
+			families = append(families, "")
+		}
 	}
 	if len(fields) == 0 {
 		return fallbackTemplatePlan{}, fmt.Errorf("no encodable fields found for ipfix packet")
@@ -2272,8 +2123,9 @@ func buildFallbackPlan(cfg config.TemplatedFlowDataConfig, fieldMap map[string]a
 			FieldCount: uint16(len(fields)),
 			Fields:     fields,
 		},
-		names: keptNames,
-		defs:  defs,
+		names:    keptNames,
+		defs:     defs,
+		families: families,
 	}, nil
 }
 
@@ -2285,7 +2137,7 @@ func buildFallbackValues(plan fallbackTemplatePlan, fieldMap map[string]any, enc
 		if _, ok := fieldMap[name]; ok {
 			present++
 		}
-		encoded, err := encodeFallbackValue(name, def, fieldMap, encodingCtx)
+		encoded, err := encodeFallbackValueWithFamily(name, def, fieldMap, plan.families[i], encodingCtx)
 		if err != nil {
 			return netflow.DataRecord{}, fmt.Errorf("encode field %q: %w", name, err)
 		}
@@ -2341,49 +2193,13 @@ func applyTemplatedFlowDataMatches(cfg config.TemplatedFlowDataConfig, fieldMap 
 	}
 }
 
-func fallbackAddressGroups(cfg config.TemplatedFlowDataConfig, names []string, netflowV9 bool) []string {
-	fields := make([]event.SchemaField, 0, len(names))
-	for _, name := range names {
-		fields = append(fields, event.SchemaField{Name: name})
-	}
-	return schemaAddressGroups(cfg, fields, netflowV9)
-}
-
-func fallbackAddressVariantMask(names []string, groups []string, fieldMap map[string]any) uint64 {
-	if len(groups) == 0 || len(fieldMap) == 0 {
-		return 0
-	}
-	groupIndexes := make(map[string]int, len(groups))
-	for i, group := range groups {
-		groupIndexes[group] = i
-	}
-	var mask uint64
-	for _, name := range names {
-		group, ok := addressFieldGroup(name)
-		if !ok {
-			continue
-		}
-		index, ok := groupIndexes[group]
-		if !ok {
-			continue
-		}
-		if fieldValueIsIPv6(fieldMap[name]) {
-			mask |= 1 << index
-		}
-	}
-	return mask
-}
-
-func fallbackVariantTemplateID(baseTemplateID uint16, mask uint64) (uint16, error) {
-	if uint64(baseTemplateID)+mask > 0xffff {
-		return 0, fmt.Errorf("template id range %d..%d exceeds 65535", baseTemplateID, uint64(baseTemplateID)+mask)
-	}
-	return baseTemplateID + uint16(mask), nil
-}
-
 func encodeFallbackValue(name string, def config.IPFIXFieldDefinition, fieldMap map[string]any, encodingCtx templatedEncodingContext) ([]byte, error) {
+	return encodeFallbackValueWithFamily(name, def, fieldMap, "", encodingCtx)
+}
+
+func encodeFallbackValueWithFamily(name string, def config.IPFIXFieldDefinition, fieldMap map[string]any, family string, encodingCtx templatedEncodingContext) ([]byte, error) {
 	if val, ok := fieldMap[name]; ok {
-		return encodeTemplatedValue(name, def, val, encodingCtx)
+		return encodeTemplatedValueForFamily(name, def, val, family, encodingCtx)
 	}
 	return defaultEncodedValue(def)
 }
@@ -2444,57 +2260,59 @@ func buildTemplatedDataRecordWithNames(cfg config.TemplatedFlowDataConfig, field
 		}, nil
 }
 
-func schemaFieldDefinitionForMask(cfg config.TemplatedFlowDataConfig, field event.SchemaField, groups []string, mask uint64) (config.IPFIXFieldDefinition, bool) {
+func schemaFieldDefinitions(cfg config.TemplatedFlowDataConfig, field event.SchemaField) ([]config.IPFIXFieldDefinition, bool, error) {
 	def, ok := cfg.Catalog[field.Name]
 	if !ok {
-		return config.IPFIXFieldDefinition{}, false
+		return nil, false, nil
 	}
 
-	def = resolvedFieldDefinitionForAddressMask(field.Name, def, groups, mask)
 	if def.Name == "" {
 		def.Name = field.Name
 	}
-	return def, true
+	defs, err := fieldDefinitionsForFamily(field.Name, def, schemaFieldFamily(field))
+	return defs, true, err
 }
 
-func buildTemplatedValuesFromSchemaFieldsForMask(cfg config.TemplatedFlowDataConfig, fieldMap map[string]any, fields []event.SchemaField, encodingCtx templatedEncodingContext, groups []string, mask uint64) (netflow.DataRecord, error) {
+func buildTemplatedValuesFromSchemaFields(cfg config.TemplatedFlowDataConfig, fieldMap map[string]any, fields []event.SchemaField, encodingCtx templatedEncodingContext) (netflow.DataRecord, error) {
 	values := make([]netflow.DataField, 0, len(fields))
 	for _, field := range fields {
-		def, ok := schemaFieldDefinitionForMask(cfg, field, groups, mask)
+		defs, ok, err := schemaFieldDefinitions(cfg, field)
+		if err != nil {
+			return netflow.DataRecord{}, err
+		}
 		if !ok {
 			continue
 		}
-		def = wireFieldDefinition(field.Name, def, encodingCtx.netflowV9)
-		if !fieldAllowedForEncoding(def, encodingCtx.netflowV9) {
-			continue
-		}
-
 		val, ok := fieldMap[field.Name]
 		if !ok && field.Role == "static" && field.Value != nil {
 			val = field.Value
 			ok = true
 		}
-		var encoded []byte
-		var err error
-		if ok {
-			encoded, err = encodeTemplatedValue(field.Name, def, val, encodingCtx)
-			if err != nil {
-				return netflow.DataRecord{}, fmt.Errorf("encode field %q: %w", field.Name, err)
+		for _, def := range defs {
+			def = wireFieldDefinition(field.Name, def, encodingCtx.netflowV9)
+			if !fieldAllowedForEncoding(def, encodingCtx.netflowV9) {
+				continue
 			}
-		} else {
-			encoded, err = defaultEncodedValue(def)
-			if err != nil {
-				return netflow.DataRecord{}, fmt.Errorf("default field %q: %w", field.Name, err)
+			var encoded []byte
+			if ok {
+				encoded, err = encodeTemplatedValueForFamily(field.Name, def, val, schemaFieldFamily(field), encodingCtx)
+				if err != nil {
+					return netflow.DataRecord{}, fmt.Errorf("encode field %q: %w", field.Name, err)
+				}
+			} else {
+				encoded, err = defaultEncodedValue(def)
+				if err != nil {
+					return netflow.DataRecord{}, fmt.Errorf("default field %q: %w", field.Name, err)
+				}
 			}
+			values = append(values, netflow.DataField{
+				PenProvided: def.EnterpriseScoped || def.PEN != 0,
+				Type:        def.ID,
+				Length:      def.Length,
+				Pen:         def.PEN,
+				Value:       encoded,
+			})
 		}
-
-		values = append(values, netflow.DataField{
-			PenProvided: def.EnterpriseScoped || def.PEN != 0,
-			Type:        def.ID,
-			Length:      def.Length,
-			Pen:         def.PEN,
-			Value:       encoded,
-		})
 	}
 	if len(values) == 0 {
 		return netflow.DataRecord{}, fmt.Errorf("no encodable values found for templated packet")
@@ -2563,23 +2381,28 @@ func buildOptionsDataFieldsFromSchemaFields(cfg config.TemplatedFlowDataConfig, 
 	return values, nil
 }
 
-func buildTemplateRecordFromSchemaFieldsForMask(cfg config.TemplatedFlowDataConfig, schemaFields []event.SchemaField, templateID uint16, netflowV9 bool, groups []string, mask uint64) (netflow.TemplateRecord, error) {
+func buildTemplateRecordFromSchemaFields(cfg config.TemplatedFlowDataConfig, schemaFields []event.SchemaField, templateID uint16, netflowV9 bool) (netflow.TemplateRecord, error) {
 	fields := make([]netflow.Field, 0, len(schemaFields))
 	for _, field := range schemaFields {
-		def, ok := schemaFieldDefinitionForMask(cfg, field, groups, mask)
+		defs, ok, err := schemaFieldDefinitions(cfg, field)
+		if err != nil {
+			return netflow.TemplateRecord{}, err
+		}
 		if !ok {
 			continue
 		}
-		def = wireFieldDefinition(field.Name, def, netflowV9)
-		if !fieldAllowedForEncoding(def, netflowV9) {
-			continue
+		for _, def := range defs {
+			def = wireFieldDefinition(field.Name, def, netflowV9)
+			if !fieldAllowedForEncoding(def, netflowV9) {
+				continue
+			}
+			fields = append(fields, netflow.Field{
+				PenProvided: def.EnterpriseScoped || def.PEN != 0,
+				Type:        def.ID,
+				Length:      def.Length,
+				Pen:         def.PEN,
+			})
 		}
-		fields = append(fields, netflow.Field{
-			PenProvided: def.EnterpriseScoped || def.PEN != 0,
-			Type:        def.ID,
-			Length:      def.Length,
-			Pen:         def.PEN,
-		})
 	}
 	if len(fields) == 0 {
 		return netflow.TemplateRecord{}, fmt.Errorf("no encodable fields found for schema template")
@@ -2818,6 +2641,38 @@ func encodeTemplatedValue(name string, def config.IPFIXFieldDefinition, val any,
 	return encodeIPFIXValue(def, val)
 }
 
+func encodeTemplatedValueForFamily(name string, def config.IPFIXFieldDefinition, val any, family string, encodingCtx templatedEncodingContext) ([]byte, error) {
+	if def.Type != "ipv4Address" && def.Type != "ipv6Address" {
+		if family != "" {
+			return nil, fmt.Errorf("family modifier %q requires IP address field", family)
+		}
+		return encodeTemplatedValue(name, def, val, encodingCtx)
+	}
+	ip, ok := val.(string)
+	if !ok {
+		return nil, fmt.Errorf("expected string IP, got %T", val)
+	}
+	addr, err := netip.ParseAddr(ip)
+	if err != nil {
+		return nil, err
+	}
+	if family == "ip4in6" && addr.Is4() {
+		ip = mappedIPv4String(addr)
+		addr, _ = netip.ParseAddr(ip)
+	}
+	switch def.Type {
+	case "ipv4Address":
+		if !addr.Is4() {
+			return defaultEncodedValue(def)
+		}
+	case "ipv6Address":
+		if !addr.Is6() {
+			return defaultEncodedValue(def)
+		}
+	}
+	return encodeTemplatedValue(name, def, ip, encodingCtx)
+}
+
 // defaultEncodedValue provides a zero representation for fields omitted from a
 // templated event but still required by the selected template.
 func defaultEncodedValue(def config.IPFIXFieldDefinition) ([]byte, error) {
@@ -2898,6 +2753,82 @@ func resolvedFieldDefinition(name string, def config.IPFIXFieldDefinition, val a
 	return def
 }
 
+func fieldDefinitionsForFamily(name string, def config.IPFIXFieldDefinition, family string) ([]config.IPFIXFieldDefinition, error) {
+	if def.Name == "" {
+		def.Name = name
+	}
+	switch family {
+	case "":
+		if isDualStackAddressDefinition(name, def) {
+			return []config.IPFIXFieldDefinition{
+				def,
+				resolvedFieldDefinitionForFamily(name, def, true),
+			}, nil
+		}
+		return []config.IPFIXFieldDefinition{def}, nil
+	case "ip4":
+		if !isIPAddressDefinition(def) {
+			return nil, fmt.Errorf("field %q family %q requires IP address field", name, family)
+		}
+		if def.Type != "ipv4Address" {
+			return nil, fmt.Errorf("field %q cannot be exported as IPv4", name)
+		}
+		return []config.IPFIXFieldDefinition{def}, nil
+	case "ip6", "ip4in6":
+		if !isIPAddressDefinition(def) {
+			return nil, fmt.Errorf("field %q family %q requires IP address field", name, family)
+		}
+		if def.Type == "ipv6Address" {
+			return []config.IPFIXFieldDefinition{def}, nil
+		}
+		promoted := resolvedFieldDefinitionForFamily(name, def, true)
+		if promoted.Type != "ipv6Address" || promoted.ID == def.ID {
+			return nil, fmt.Errorf("field %q cannot be exported as IPv6", name)
+		}
+		return []config.IPFIXFieldDefinition{promoted}, nil
+	default:
+		return nil, fmt.Errorf("unsupported field family %q", family)
+	}
+}
+
+func schemaFieldFamily(field event.SchemaField) string {
+	if field.Role == "static" {
+		return ""
+	}
+	family, _ := ipFamilyModifier(field.Value)
+	return family
+}
+
+func ipFamilyModifier(value any) (string, bool) {
+	family, ok := value.(string)
+	if !ok {
+		return "", false
+	}
+	switch family {
+	case "ip4", "ip6", "ip4in6":
+		return family, true
+	default:
+		return "", false
+	}
+}
+
+func isIPAddressDefinition(def config.IPFIXFieldDefinition) bool {
+	return def.Type == "ipv4Address" || def.Type == "ipv6Address"
+}
+
+func isDualStackAddressDefinition(name string, def config.IPFIXFieldDefinition) bool {
+	return isStandardSourceIPv4Definition(def) && isSourceAddressField(name) ||
+		isStandardDestinationIPv4Definition(def) && isDestinationAddressField(name) ||
+		isPostNATSourceIPv4Definition(def) && name == "nat_src_addr" ||
+		isPostNATDestinationIPv4Definition(def) && name == "nat_dst_addr"
+}
+
+func mappedIPv4String(addr netip.Addr) string {
+	raw := addr.As4()
+	mapped := netip.AddrFrom16([16]byte{10: 0xff, 11: 0xff, 12: raw[0], 13: raw[1], 14: raw[2], 15: raw[3]})
+	return mapped.String()
+}
+
 // resolvedFieldDefinitionForFamily performs the same promotion as
 // resolvedFieldDefinition, but from a preselected IP family.
 func resolvedFieldDefinitionForFamily(name string, def config.IPFIXFieldDefinition, ipv6 bool) config.IPFIXFieldDefinition {
@@ -2934,21 +2865,6 @@ func resolvedFieldDefinitionForFamily(name string, def config.IPFIXFieldDefiniti
 	return def
 }
 
-func resolvedFieldDefinitionForAddressMask(name string, def config.IPFIXFieldDefinition, groups []string, mask uint64) config.IPFIXFieldDefinition {
-	ipv6 := false
-	if len(groups) == 0 {
-		ipv6 = mask != 0
-	} else if group, ok := addressFieldGroup(name); ok {
-		for i, candidate := range groups {
-			if candidate == group {
-				ipv6 = mask&(1<<i) != 0
-				break
-			}
-		}
-	}
-	return resolvedFieldDefinitionForFamily(name, def, ipv6)
-}
-
 func isSourceAddressField(name string) bool {
 	return name == "src_addr" || strings.HasSuffix(name, "_src_addr")
 }
@@ -2971,55 +2887,6 @@ func isPostNATSourceIPv4Definition(def config.IPFIXFieldDefinition) bool {
 
 func isPostNATDestinationIPv4Definition(def config.IPFIXFieldDefinition) bool {
 	return def.Type == "ipv4Address" && (def.ID == netflow.IPFIX_FIELD_postNATDestinationIPv4Address || def.Name == "postNATDestinationIPv4Address")
-}
-
-func addressFieldGroup(name string) (string, bool) {
-	switch {
-	case name == "src_addr" || name == "dst_addr":
-		return "", true
-	case strings.HasSuffix(name, "_src_addr"):
-		return strings.TrimSuffix(name, "_src_addr"), true
-	case strings.HasSuffix(name, "_dst_addr"):
-		return strings.TrimSuffix(name, "_dst_addr"), true
-	default:
-		return "", false
-	}
-}
-
-func schemaAddressGroups(cfg config.TemplatedFlowDataConfig, fields []event.SchemaField, netflowV9 bool) []string {
-	var groups []string
-	seen := make(map[string]bool)
-	for _, field := range fields {
-		def, ok := cfg.Catalog[field.Name]
-		if !ok {
-			continue
-		}
-		if netflowV9 {
-			def = wireFieldDefinition(field.Name, def, true)
-			if !fieldAllowedForEncoding(def, true) {
-				continue
-			}
-		}
-		if !isStandardSourceIPv4Definition(def) && !isStandardDestinationIPv4Definition(def) && !isPostNATSourceIPv4Definition(def) && !isPostNATDestinationIPv4Definition(def) {
-			continue
-		}
-		group, ok := addressFieldGroup(field.Name)
-		if !ok || seen[group] {
-			continue
-		}
-		seen[group] = true
-		groups = append(groups, group)
-	}
-	return groups
-}
-
-func fieldValueIsIPv6(val any) bool {
-	ip, ok := val.(string)
-	if !ok {
-		return false
-	}
-	addr, err := netip.ParseAddr(ip)
-	return err == nil && addr.Is6()
 }
 
 func boolField(val any) bool {

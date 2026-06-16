@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"net/netip"
 	"strings"
 	"sync"
 	"time"
@@ -577,6 +578,9 @@ func eventMatchValue(evt *event.Event, key string) string {
 	if evt == nil {
 		return ""
 	}
+	if field, ok := strings.CutSuffix(key, ".ip_version"); ok {
+		return eventIPVersion(evt, field)
+	}
 	if layer, ok := strings.CutPrefix(key, "packet.has_layer."); ok {
 		if packetHasLayer(evt.Packet, layer) {
 			return "true"
@@ -632,6 +636,24 @@ func eventMatchValue(evt *event.Event, key string) string {
 	}
 	if val, ok := evt.Fields[key]; ok {
 		return fmt.Sprint(val)
+	}
+	return ""
+}
+
+func eventIPVersion(evt *event.Event, key string) string {
+	val := eventMatchValue(evt, key)
+	if val == "" {
+		return ""
+	}
+	addr, err := netip.ParseAddr(val)
+	if err != nil {
+		return ""
+	}
+	if addr.Is4() {
+		return "ipv4"
+	}
+	if addr.Is6() {
+		return "ipv6"
 	}
 	return ""
 }

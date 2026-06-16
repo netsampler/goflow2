@@ -95,6 +95,39 @@ func TestAggregatorMatchesByFieldsAndMetadata(t *testing.T) {
 	}
 }
 
+func TestAggregatorMatchesIPAddressVersion(t *testing.T) {
+	evt := &event.Event{
+		Kind: "data",
+		Fields: map[string]any{
+			"src_addr":     "2001:db8::1",
+			"nat_src_addr": "192.0.2.10",
+		},
+	}
+
+	if !aggregatorMatches(config.AggregatorConfig{
+		Match: map[string]string{
+			"src_addr.ip_version":     "ipv6",
+			"nat_src_addr.ip_version": "ipv4",
+		},
+	}, evt) {
+		t.Fatalf("expected IP version match to succeed")
+	}
+	if aggregatorMatches(config.AggregatorConfig{
+		Match: map[string]string{
+			"src_addr.ip_version": "ipv4",
+		},
+	}, evt) {
+		t.Fatalf("expected wrong IP version match to fail")
+	}
+	if aggregatorMatches(config.AggregatorConfig{
+		Match: map[string]string{
+			"missing_addr.ip_version": "ipv6",
+		},
+	}, evt) {
+		t.Fatalf("expected missing IP version match to fail")
+	}
+}
+
 func TestAggregatorMatchesMissingKeysOnlyWhenAggregateMissingEnabled(t *testing.T) {
 	evt := &event.Event{
 		Kind: "data",

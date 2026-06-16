@@ -421,10 +421,10 @@ func (d *builtIn) mapDataFields(fields map[string]any, values []netflow.DataFiel
 			fields["dst_port"] = decodeUint32(field.Value)
 			keys = append(keys, "dst_port")
 		case 8, 27:
-			fields["src_addr"] = decodeIPString(field.Value)
+			setDecodedIPField(fields, "src_addr", field.Value)
 			keys = append(keys, "src_addr")
 		case 12, 28:
-			fields["dst_addr"] = decodeIPString(field.Value)
+			setDecodedIPField(fields, "dst_addr", field.Value)
 			keys = append(keys, "dst_addr")
 		case 1:
 			fields["bytes"] = int64(decodeUint64(field.Value))

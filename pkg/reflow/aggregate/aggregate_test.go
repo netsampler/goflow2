@@ -600,6 +600,66 @@ func TestSchemaPassthroughEmitsSchemaAndForwardsEvents(t *testing.T) {
 	}
 }
 
+func TestSchemaInitEventsCarryFieldFamilyModifiers(t *testing.T) {
+	agg, err := New(config.AggregatorConfig{
+		Passthrough:      true,
+		Stream:           "flow_data",
+		FieldsConfigured: true,
+		Fields: []config.AggregatorField{
+			{Role: "key", Name: "src_addr", Value: "ip6"},
+			{Role: "current", Name: "nat_src_addr", Value: "ip4in6"},
+			{Role: "sum", Name: "bytes"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("New returned error: %v", err)
+	}
+
+	initEvents, err := agg.InitEvents()
+	if err != nil {
+		t.Fatalf("InitEvents returned error: %v", err)
+	}
+	schema := initEvents[0].Payload.(event.AggregationSchema)
+	if schema.Fields[0].Value != "ip6" || schema.Fields[1].Value != "ip4in6" {
+		t.Fatalf("expected schema values to preserve family modifiers, got %#v", schema.Fields)
+	}
+}
+
+func TestStatefulAppliesFieldFamilyModifiers(t *testing.T) {
+	agg, err := New(config.AggregatorConfig{
+		FieldsConfigured: true,
+		Fields: []config.AggregatorField{
+			{Role: "key", Name: "src_addr", Value: "ip4in6"},
+			{Role: "current", Name: "dst_addr", Value: "ip6"},
+			{Role: "sum", Name: "bytes"},
+		},
+		Periodic: config.AggregatorPeriodicConfig{Every: 1},
+	})
+	if err != nil {
+		t.Fatalf("New returned error: %v", err)
+	}
+
+	_, err = agg.Process(&event.Event{Fields: map[string]any{
+		"src_addr": "192.0.2.10",
+		"dst_addr": "2001:db8::20",
+		"bytes":    uint64(64),
+	}})
+	if err != nil {
+		t.Fatalf("Process returned error: %v", err)
+	}
+	out, err := agg.Close()
+	if err != nil {
+		t.Fatalf("Close returned error: %v", err)
+	}
+	fields := out[0].Fields
+	if fields["src_addr"] != "::ffff:192.0.2.10" {
+		t.Fatalf("expected IPv4 source to be mapped into IPv6, got %#v", fields["src_addr"])
+	}
+	if fields["dst_addr"] != "2001:db8::20" {
+		t.Fatalf("expected IPv6 destination to be kept, got %#v", fields["dst_addr"])
+	}
+}
+
 func TestSchemaPassthroughCanEmitControlAsData(t *testing.T) {
 	agg, err := New(config.AggregatorConfig{
 		Passthrough:      true,

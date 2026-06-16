@@ -331,6 +331,9 @@ func (f AggregatorField) MarshalYAML() (any, error) {
 			Value: f.Value,
 		}, nil
 	}
+	if family, ok := aggregatorFieldFamilyValue(f.Value); ok {
+		return f.Role + ":" + f.Name + ":" + family, nil
+	}
 	return f.Role + ":" + f.Name, nil
 }
 
@@ -1380,12 +1383,15 @@ func parseAggregatorField(raw string) (AggregatorField, error) {
 	}
 
 	parts := strings.Split(raw, ":")
-	if len(parts) != 2 {
+	if len(parts) != 2 && len(parts) != 3 {
 		return AggregatorField{}, fmt.Errorf("invalid aggregator field entry %q", raw)
 	}
 	field := AggregatorField{
 		Role: parts[0],
 		Name: parts[1],
+	}
+	if len(parts) == 3 {
+		field.Value = parts[2]
 	}
 	return field, validateAggregatorField(field)
 }
@@ -1399,7 +1405,33 @@ func validateAggregatorField(field AggregatorField) error {
 	if field.Name == "" {
 		return fmt.Errorf("aggregator field name is required for role %q", field.Role)
 	}
+	if field.Role == "static" {
+		return nil
+	}
+	if field.Value == nil {
+		return nil
+	}
+	value, ok := field.Value.(string)
+	if !ok {
+		return fmt.Errorf("aggregator field value is only supported for static fields or IP family modifiers")
+	}
+	if _, ok := aggregatorFieldFamilyValue(value); !ok {
+		return fmt.Errorf("unsupported aggregator field family %q", value)
+	}
 	return nil
+}
+
+func aggregatorFieldFamilyValue(value any) (string, bool) {
+	family, ok := value.(string)
+	if !ok {
+		return "", false
+	}
+	switch family {
+	case "ip4", "ip6", "ip4in6":
+		return family, true
+	default:
+		return "", false
+	}
 }
 
 func aggregatorNeedsState(cfg *AggregatorConfig) bool {

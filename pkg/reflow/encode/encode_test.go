@@ -1680,7 +1680,7 @@ func TestSFlowEncoderBatchesInterfaceCounterSamples(t *testing.T) {
 		},
 	})
 
-	for i := 0; i < 4; i++ {
+	for i := 0; i < 5; i++ {
 		payloads, err := enc.Encode(&event.Event{
 			Fields: map[string]any{
 				"record_kind":   "interface_counter",
@@ -1885,6 +1885,7 @@ func TestIPFIXEncoderBatchesCompatibleDataRecords(t *testing.T) {
 
 func TestIPFIXEncoderBatchMaxBytesUsesRenderedDataFields(t *testing.T) {
 	cfg := testTFlowEncoderConfig("ipfix")
+	cfg.TemplatedFlow.Data.Select = []string{"src_port", "dst_port", "proto", "bytes", "packets"}
 	cfg.Batch = config.BatchConfig{
 		Enabled:    testBoolPtr(true),
 		MaxRecords: 32,
@@ -1906,8 +1907,8 @@ func TestIPFIXEncoderBatchMaxBytesUsesRenderedDataFields(t *testing.T) {
 			t.Fatalf("expected event %d to stay buffered, got %d payloads", i, len(payloads))
 		}
 	}
-	if enc.estimatedBytes != 87 {
-		t.Fatalf("expected rendered field estimate 87, got %d", enc.estimatedBytes)
+	if enc.estimatedBytes != 63 {
+		t.Fatalf("expected rendered field estimate 63, got %d", enc.estimatedBytes)
 	}
 
 	payloads, err := enc.Flush()
@@ -1934,16 +1935,17 @@ func TestIPFIXEncoderBatchMaxBytesUsesRenderedDataFields(t *testing.T) {
 
 func TestIPFIXEncoderCapacityFlushKeepsSmallTailBuffered(t *testing.T) {
 	cfg := testTFlowEncoderConfig("ipfix")
+	cfg.TemplatedFlow.Data.Select = []string{"src_port", "dst_port", "proto", "bytes", "packets"}
 	cfg.MaxDatagramBytes = 150
 	cfg.Batch = config.BatchConfig{
 		Enabled:    testBoolPtr(true),
-		MaxRecords: 32,
-		MaxBytes:   100,
+		MaxRecords: 4,
+		MaxBytes:   70,
 	}
 	enc := NewIPFIXEncoder(cfg)
 
 	var payloads [][]byte
-	for i := 0; i < 4; i++ {
+	for i := 0; i < 5; i++ {
 		evt := testTemplatedFlowEvent()
 		evt.Fields["bytes"] = int64(i)
 		got, err := enc.Encode(evt)
@@ -1988,8 +1990,8 @@ func TestIPFIXEncoderPayloadBatchFlowSetLengthsAreConsistent(t *testing.T) {
 		Payload: event.AggregationSchema{
 			Stream: "flow_data",
 			Fields: []event.SchemaField{
-				{Role: "key", Name: "src_addr"},
-				{Role: "key", Name: "dst_addr"},
+				{Role: "key", Name: "src_addr", Value: "ip4"},
+				{Role: "key", Name: "dst_addr", Value: "ip4"},
 				{Role: "current", Name: "frame_length"},
 				{Role: "current", Name: "header_data"},
 			},
@@ -2022,7 +2024,6 @@ func TestIPFIXEncoderPayloadBatchFlowSetLengthsAreConsistent(t *testing.T) {
 		t.Fatalf("expected one batched payload, got %d", len(payloads))
 	}
 
-	firstSetLength := int(binary.BigEndian.Uint16(payloads[0][18:20]))
 	firstHeaderOffset := 16 + 4 + 4 + 4 + 2
 	if payloads[0][firstHeaderOffset] != byte(len(firstHeader)) {
 		t.Fatalf("expected first header_data short length prefix %d at offset %d, got %#x", len(firstHeader), firstHeaderOffset, payloads[0][firstHeaderOffset])
@@ -2030,10 +2031,6 @@ func TestIPFIXEncoderPayloadBatchFlowSetLengthsAreConsistent(t *testing.T) {
 	if got := payloads[0][firstHeaderOffset+1 : firstHeaderOffset+7]; !bytes.Equal(got, bytes.Repeat([]byte{0xff}, 6)) {
 		t.Fatalf("expected broadcast header_data after length prefix, got %x", got)
 	}
-	if got := payloads[0][16+firstSetLength-1 : 16+firstSetLength]; !bytes.Equal(got, []byte{0}) {
-		t.Fatalf("expected first data set padding before next set, got %x", got)
-	}
-
 	packetLength := int(binary.BigEndian.Uint16(payloads[0][2:4]))
 	if packetLength != len(payloads[0]) {
 		t.Fatalf("expected IPFIX packet length %d to equal payload bytes %d", packetLength, len(payloads[0]))
@@ -2073,10 +2070,13 @@ func TestIPFIXEncoderPayloadBatchFlowSetLengthsAreConsistent(t *testing.T) {
 	if err := netflow.DecodeMessageVersion(bytes.NewBuffer(payloads[0]), store, ctx, nil, &decoded); err != nil {
 		t.Fatalf("decode batched payload: %v", err)
 	}
-	if len(decoded.FlowSets) != 2 {
-		t.Fatalf("expected two data sets, got %d", len(decoded.FlowSets))
+	if len(decoded.FlowSets) != 1 {
+		t.Fatalf("expected one data set, got %d", len(decoded.FlowSets))
 	}
 	firstSet := decoded.FlowSets[0].(netflow.DataFlowSet)
+	if len(firstSet.Records) != 2 {
+		t.Fatalf("expected two records in one data set, got %d", len(firstSet.Records))
+	}
 	values := firstSet.Records[0].Values
 	if got := values[len(values)-1].Value.([]byte); !bytes.Equal(got, firstHeader) {
 		t.Fatalf("expected decoded broadcast header_data length %d, got %d", len(firstHeader), len(got))
@@ -2110,21 +2110,21 @@ func TestIPFIXEncoderFallbackUsesConfiguredSelectWidth(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected first flow set to be TemplateFlowSet, got %T", decoded.FlowSets[0])
 	}
-	if templateSet.Records[0].FieldCount != 7 {
-		t.Fatalf("expected configured 7-field template, got %d", templateSet.Records[0].FieldCount)
+	if templateSet.Records[0].FieldCount != 9 {
+		t.Fatalf("expected configured 9-field dual-stack template, got %d", templateSet.Records[0].FieldCount)
 	}
 	dataSet, ok := decoded.FlowSets[1].(netflow.DataFlowSet)
 	if !ok {
 		t.Fatalf("expected second flow set to be DataFlowSet, got %T", decoded.FlowSets[1])
 	}
 	values := dataSet.Records[0].Values
-	if len(values) != 7 {
-		t.Fatalf("expected configured 7-value data record, got %d", len(values))
+	if len(values) != 9 {
+		t.Fatalf("expected configured 9-value dual-stack data record, got %d", len(values))
 	}
-	if got := values[5].Value.([]byte); !bytes.Equal(got, make([]byte, 8)) {
+	if got := values[7].Value.([]byte); !bytes.Equal(got, make([]byte, 8)) {
 		t.Fatalf("expected missing bytes field to default to zero, got %v", got)
 	}
-	if got := values[6].Value.([]byte); !bytes.Equal(got, make([]byte, 8)) {
+	if got := values[8].Value.([]byte); !bytes.Equal(got, make([]byte, 8)) {
 		t.Fatalf("expected missing packets field to default to zero, got %v", got)
 	}
 }
@@ -2377,26 +2377,19 @@ func TestIPFIXEncoderBatchesSchemaDataSetsInOnePacket(t *testing.T) {
 	if err := netflow.DecodeMessageVersion(bytes.NewBuffer(payloads[0]), store, ctx, nil, &decoded); err != nil {
 		t.Fatalf("decode schema data payload: %v", err)
 	}
-	if len(decoded.FlowSets) != 2 {
-		t.Fatalf("expected two schema data sets, got %d", len(decoded.FlowSets))
+	if len(decoded.FlowSets) != 1 {
+		t.Fatalf("expected one dual-stack schema data set, got %d", len(decoded.FlowSets))
 	}
-	firstSet, ok := decoded.FlowSets[0].(netflow.DataFlowSet)
+	dataSet, ok := decoded.FlowSets[0].(netflow.DataFlowSet)
 	if !ok {
 		t.Fatalf("expected first flow set to be DataFlowSet, got %T", decoded.FlowSets[0])
 	}
-	secondSet, ok := decoded.FlowSets[1].(netflow.DataFlowSet)
-	if !ok {
-		t.Fatalf("expected second flow set to be DataFlowSet, got %T", decoded.FlowSets[1])
-	}
-	if firstSet.Id == secondSet.Id {
-		t.Fatalf("expected different data set ids, got %d", firstSet.Id)
-	}
-	if len(firstSet.Records) != 1 || len(secondSet.Records) != 1 {
-		t.Fatalf("expected one record per schema data set, got %d and %d", len(firstSet.Records), len(secondSet.Records))
+	if dataSet.Id != 256 || len(dataSet.Records) != 2 {
+		t.Fatalf("expected schema data set 256 with two records, got id=%d records=%d", dataSet.Id, len(dataSet.Records))
 	}
 }
 
-func TestIPFIXEncoderBatchesFallbackAddressFamiliesWithDistinctTemplateIDs(t *testing.T) {
+func TestIPFIXEncoderBatchesFallbackAddressFamiliesWithOneDualStackTemplate(t *testing.T) {
 	cfg := testTFlowEncoderConfig("ipfix")
 	cfg.Batch = config.BatchConfig{
 		Enabled:    testBoolPtr(true),
@@ -2428,35 +2421,28 @@ func TestIPFIXEncoderBatchesFallbackAddressFamiliesWithDistinctTemplateIDs(t *te
 	if err := netflow.DecodeMessageVersion(bytes.NewBuffer(payloads[0]), store, ctx, nil, &decoded); err != nil {
 		t.Fatalf("decode ipfix payload: %v", err)
 	}
-	if len(decoded.FlowSets) != 3 {
-		t.Fatalf("expected template set plus IPv4/IPv6 data sets, got %d", len(decoded.FlowSets))
+	if len(decoded.FlowSets) != 2 {
+		t.Fatalf("expected template set plus one dual-stack data set, got %d", len(decoded.FlowSets))
 	}
 	templateSet, ok := decoded.FlowSets[0].(netflow.TemplateFlowSet)
 	if !ok {
 		t.Fatalf("expected first flow set to be TemplateFlowSet, got %T", decoded.FlowSets[0])
 	}
-	if len(templateSet.Records) != 2 {
-		t.Fatalf("expected two address-family templates, got %d", len(templateSet.Records))
-	}
-	if templateSet.Records[0].TemplateId != 256 || templateSet.Records[1].TemplateId != 257 {
-		t.Fatalf("expected IPv4/IPv6 template ids 256/257, got %d/%d", templateSet.Records[0].TemplateId, templateSet.Records[1].TemplateId)
+	if len(templateSet.Records) != 1 {
+		t.Fatalf("expected one dual-stack address-family template, got %d", len(templateSet.Records))
 	}
 	if templateSet.Records[0].Fields[0].Type != netflow.IPFIX_FIELD_sourceIPv4Address {
-		t.Fatalf("expected first template sourceIPv4Address, got %d", templateSet.Records[0].Fields[0].Type)
+		t.Fatalf("expected first template field sourceIPv4Address, got %d", templateSet.Records[0].Fields[0].Type)
 	}
-	if templateSet.Records[1].Fields[0].Type != netflow.IPFIX_FIELD_sourceIPv6Address {
-		t.Fatalf("expected second template sourceIPv6Address, got %d", templateSet.Records[1].Fields[0].Type)
+	if templateSet.Records[0].Fields[1].Type != netflow.IPFIX_FIELD_sourceIPv6Address {
+		t.Fatalf("expected second template field sourceIPv6Address, got %d", templateSet.Records[0].Fields[1].Type)
 	}
-	firstSet, ok := decoded.FlowSets[1].(netflow.DataFlowSet)
+	dataSet, ok := decoded.FlowSets[1].(netflow.DataFlowSet)
 	if !ok {
 		t.Fatalf("expected second flow set to be DataFlowSet, got %T", decoded.FlowSets[1])
 	}
-	secondSet, ok := decoded.FlowSets[2].(netflow.DataFlowSet)
-	if !ok {
-		t.Fatalf("expected third flow set to be DataFlowSet, got %T", decoded.FlowSets[2])
-	}
-	if firstSet.Id != 256 || secondSet.Id != 257 {
-		t.Fatalf("expected IPv4/IPv6 data set ids 256/257, got %d/%d", firstSet.Id, secondSet.Id)
+	if dataSet.Id != 256 || len(dataSet.Records) != 2 {
+		t.Fatalf("expected dual-stack data set 256 with two records, got id=%d records=%d", dataSet.Id, len(dataSet.Records))
 	}
 }
 
@@ -3160,6 +3146,7 @@ func TestNFv9EncoderBatchesCompatibleDataRecords(t *testing.T) {
 
 func TestNFv9EncoderBatchMaxBytesUsesRenderedDataFields(t *testing.T) {
 	cfg := testTFlowEncoderConfig("netflowv9")
+	cfg.TemplatedFlow.Data.Select = []string{"src_port", "dst_port", "proto", "bytes", "packets"}
 	cfg.Batch = config.BatchConfig{
 		Enabled:    testBoolPtr(true),
 		MaxRecords: 32,
@@ -3181,8 +3168,8 @@ func TestNFv9EncoderBatchMaxBytesUsesRenderedDataFields(t *testing.T) {
 			t.Fatalf("expected event %d to stay buffered, got %d payloads", i, len(payloads))
 		}
 	}
-	if enc.estimatedBytes != 87 {
-		t.Fatalf("expected rendered field estimate 87, got %d", enc.estimatedBytes)
+	if enc.estimatedBytes != 63 {
+		t.Fatalf("expected rendered field estimate 63, got %d", enc.estimatedBytes)
 	}
 
 	payloads, err := enc.Flush()
@@ -3209,16 +3196,17 @@ func TestNFv9EncoderBatchMaxBytesUsesRenderedDataFields(t *testing.T) {
 
 func TestNFv9EncoderCapacityFlushKeepsSmallTailBuffered(t *testing.T) {
 	cfg := testTFlowEncoderConfig("netflowv9")
+	cfg.TemplatedFlow.Data.Select = []string{"src_port", "dst_port", "proto", "bytes", "packets"}
 	cfg.MaxDatagramBytes = 150
 	cfg.Batch = config.BatchConfig{
 		Enabled:    testBoolPtr(true),
-		MaxRecords: 32,
-		MaxBytes:   100,
+		MaxRecords: 4,
+		MaxBytes:   70,
 	}
 	enc := NewNFv9Encoder(cfg)
 
 	var payloads [][]byte
-	for i := 0; i < 4; i++ {
+	for i := 0; i < 5; i++ {
 		evt := testTemplatedFlowEvent()
 		evt.Fields["bytes"] = int64(i)
 		got, err := enc.Encode(evt)
@@ -3946,8 +3934,8 @@ func TestIPFIXSchemaDrivenDataRecordKeepsTemplateWidth(t *testing.T) {
 		t.Fatalf("decode ipfix data payload: %v", err)
 	}
 	dataSet := decoded.FlowSets[0].(netflow.DataFlowSet)
-	if len(dataSet.Records[0].Values) != 9 {
-		t.Fatalf("expected 9 values in data record, got %d", len(dataSet.Records[0].Values))
+	if len(dataSet.Records[0].Values) != 11 {
+		t.Fatalf("expected 11 values in dual-stack data record, got %d", len(dataSet.Records[0].Values))
 	}
 }
 
@@ -4022,7 +4010,7 @@ func TestIPFIXSchemaDrivenVariableLengthDataIsLengthPrefixed(t *testing.T) {
 	}
 }
 
-func TestIPFIXSchemaDrivenLayerAddressFieldsUseIndependentFamilies(t *testing.T) {
+func TestIPFIXSchemaDrivenLayerAddressFieldsDefaultToDualStackFields(t *testing.T) {
 	cfg := testTFlowEncoderConfig("ipfix")
 	cfg.TemplatedFlow.Data.Catalog["ip_1_src_addr"] = config.IPFIXFieldDefinition{ID: 8, Length: 4, Type: "ipv4Address"}
 	cfg.TemplatedFlow.Data.Catalog["ip_1_dst_addr"] = config.IPFIXFieldDefinition{ID: 12, Length: 4, Type: "ipv4Address"}
@@ -4045,8 +4033,8 @@ func TestIPFIXSchemaDrivenLayerAddressFieldsUseIndependentFamilies(t *testing.T)
 	if err != nil {
 		t.Fatalf("schema Encode returned error: %v", err)
 	}
-	if len(templatePayloads) != 4 {
-		t.Fatalf("expected four address-family template variants, got %d", len(templatePayloads))
+	if len(templatePayloads) != 1 {
+		t.Fatalf("expected one dual-stack template, got %d", len(templatePayloads))
 	}
 
 	evt := &event.Event{
@@ -4059,14 +4047,17 @@ func TestIPFIXSchemaDrivenLayerAddressFieldsUseIndependentFamilies(t *testing.T)
 		},
 	}
 	template := enc.dataSchemas["flow_data"].templateForFields(evt.Fields)
-	if template.TemplateId != 302 {
-		t.Fatalf("expected mixed-family template id 302, got %d", template.TemplateId)
+	if template.TemplateId != 300 {
+		t.Fatalf("expected single template id 300, got %d", template.TemplateId)
 	}
-	if template.Fields[0].Type != netflow.IPFIX_FIELD_sourceIPv4Address || template.Fields[1].Type != netflow.IPFIX_FIELD_destinationIPv4Address {
-		t.Fatalf("expected first IP layer to use IPv4 fields, got %#v", template.Fields[:2])
+	if len(template.Fields) != 8 {
+		t.Fatalf("expected v4/v6 field pair per logical address, got %#v", template.Fields)
 	}
-	if template.Fields[2].Type != netflow.IPFIX_FIELD_sourceIPv6Address || template.Fields[3].Type != netflow.IPFIX_FIELD_destinationIPv6Address {
-		t.Fatalf("expected second IP layer to use IPv6 fields, got %#v", template.Fields[2:])
+	if template.Fields[0].Type != netflow.IPFIX_FIELD_sourceIPv4Address || template.Fields[1].Type != netflow.IPFIX_FIELD_sourceIPv6Address {
+		t.Fatalf("expected first source layer to use IPv4/IPv6 fields, got %#v", template.Fields[:2])
+	}
+	if template.Fields[4].Type != netflow.IPFIX_FIELD_sourceIPv4Address || template.Fields[5].Type != netflow.IPFIX_FIELD_sourceIPv6Address {
+		t.Fatalf("expected second source layer to use IPv4/IPv6 fields, got %#v", template.Fields[4:6])
 	}
 	if _, err := enc.Encode(evt); err != nil {
 		t.Fatalf("data Encode returned error: %v", err)
@@ -4084,9 +4075,13 @@ func TestIPFIXSchemaDrivenFixedFamilyEmitsSingleTemplate(t *testing.T) {
 			Stream: "flow_data_ipv4",
 		},
 		Payload: event.AggregationSchema{
-			Stream:         "flow_data_ipv4",
+			Stream: "flow_data_ipv4",
+			Fields: []event.SchemaField{
+				{Role: "key", Name: "src_addr", Value: "ip4"},
+				{Role: "key", Name: "dst_addr", Value: "ip4"},
+				{Role: "sum", Name: "bytes"},
+			},
 			FieldNames:     []string{"src_addr", "dst_addr", "bytes"},
-			Match:          map[string]string{"ip_family": "ipv4"},
 			BaseTemplateID: 256,
 		},
 	})
@@ -4104,9 +4099,13 @@ func TestIPFIXSchemaDrivenFixedFamilyEmitsSingleTemplate(t *testing.T) {
 			Stream: "flow_data_ipv6",
 		},
 		Payload: event.AggregationSchema{
-			Stream:         "flow_data_ipv6",
+			Stream: "flow_data_ipv6",
+			Fields: []event.SchemaField{
+				{Role: "key", Name: "src_addr", Value: "ip6"},
+				{Role: "key", Name: "dst_addr", Value: "ip6"},
+				{Role: "sum", Name: "bytes"},
+			},
 			FieldNames:     []string{"src_addr", "dst_addr", "bytes"},
-			Match:          map[string]string{"ip_family": "ipv6"},
 			BaseTemplateID: 258,
 		},
 	})
@@ -4119,13 +4118,89 @@ func TestIPFIXSchemaDrivenFixedFamilyEmitsSingleTemplate(t *testing.T) {
 
 	if template := enc.dataSchemas["flow_data_ipv4"].templates()[0]; template.TemplateId != 256 {
 		t.Fatalf("expected ipv4 template id 256, got %d", template.TemplateId)
+	} else if template.Fields[0].Type != netflow.IPFIX_FIELD_sourceIPv4Address || template.Fields[1].Type != netflow.IPFIX_FIELD_destinationIPv4Address {
+		t.Fatalf("expected ipv4 template to use IPv4 source/destination fields, got %#v", template.Fields[:2])
 	}
 	if template := enc.dataSchemas["flow_data_ipv6"].templates()[0]; template.TemplateId != 258 {
 		t.Fatalf("expected ipv6 template id 258, got %d", template.TemplateId)
+	} else if template.Fields[0].Type != netflow.IPFIX_FIELD_sourceIPv6Address || template.Fields[1].Type != netflow.IPFIX_FIELD_destinationIPv6Address {
+		t.Fatalf("expected ipv6 template to use IPv6 source/destination fields, got %#v", template.Fields[:2])
 	}
 }
 
-func TestIPFIXSchemaDrivenNATVariantsPairPostNATWithPrimaryFamily(t *testing.T) {
+func TestIPFIXSchemaFieldFamiliesDriveWireDefinitions(t *testing.T) {
+	cfg := testTFlowEncoderConfig("ipfix")
+	cfg.TemplatedFlow.Data.Catalog["nat_src_addr"] = config.IPFIXFieldDefinition{ID: netflow.IPFIX_FIELD_postNATSourceIPv4Address, Length: 4, Type: "ipv4Address"}
+	enc := NewIPFIXEncoder(cfg)
+
+	if _, err := enc.Encode(&event.Event{
+		Kind: "control",
+		Control: &event.ControlMetadata{
+			Type:   "schema",
+			Stream: "flow_data",
+		},
+		Payload: event.AggregationSchema{
+			Stream: "flow_data",
+			Fields: []event.SchemaField{
+				{Role: "key", Name: "src_addr", Value: "ip4in6"},
+				{Role: "current", Name: "nat_src_addr", Value: "ip4in6"},
+				{Role: "sum", Name: "bytes"},
+			},
+			FieldNames:     []string{"src_addr", "nat_src_addr", "bytes"},
+			BaseTemplateID: 300,
+		},
+	}); err != nil {
+		t.Fatalf("schema Encode returned error: %v", err)
+	}
+
+	state := enc.dataSchemas["flow_data"]
+	template := state.templates()[0]
+	if template.Fields[0].Type != netflow.IPFIX_FIELD_sourceIPv6Address {
+		t.Fatalf("expected src_addr:ip4in6 to use sourceIPv6Address, got %d", template.Fields[0].Type)
+	}
+	if template.Fields[1].Type != netflow.IPFIX_FIELD_postNATSourceIPv6Address {
+		t.Fatalf("expected nat_src_addr:ip4in6 to use postNATSourceIPv6Address, got %d", template.Fields[1].Type)
+	}
+
+	record, err := buildTemplatedValuesFromSchemaFields(cfg.TemplatedFlow.Data, map[string]any{
+		"src_addr":     "192.0.2.10",
+		"nat_src_addr": "198.51.100.20",
+		"bytes":        uint64(64),
+	}, state.fields, templatedEncodingContext{})
+	if err != nil {
+		t.Fatalf("buildTemplatedValuesFromSchemaFields returned error: %v", err)
+	}
+	if got := record.Values[0].Value.([]byte); !bytes.Equal(got, netip.MustParseAddr("::ffff:192.0.2.10").AsSlice()) {
+		t.Fatalf("expected src_addr to be IPv4-mapped IPv6, got %x", got)
+	}
+	if got := record.Values[1].Value.([]byte); !bytes.Equal(got, netip.MustParseAddr("::ffff:198.51.100.20").AsSlice()) {
+		t.Fatalf("expected nat_src_addr to be IPv4-mapped IPv6, got %x", got)
+	}
+}
+
+func TestIPFIXSchemaRejectsFamilyModifierOnNonAddressField(t *testing.T) {
+	enc := NewIPFIXEncoder(testTFlowEncoderConfig("ipfix"))
+	_, err := enc.Encode(&event.Event{
+		Kind: "control",
+		Control: &event.ControlMetadata{
+			Type:   "schema",
+			Stream: "flow_data",
+		},
+		Payload: event.AggregationSchema{
+			Stream: "flow_data",
+			Fields: []event.SchemaField{
+				{Role: "sum", Name: "bytes", Value: "ip6"},
+			},
+			FieldNames:     []string{"bytes"},
+			BaseTemplateID: 300,
+		},
+	})
+	if err == nil {
+		t.Fatalf("expected schema with non-address family modifier to fail")
+	}
+}
+
+func TestIPFIXSchemaDrivenNATFieldsDefaultToDualStackFields(t *testing.T) {
 	cfg := testTFlowEncoderConfig("ipfix")
 	cfg.TemplatedFlow.Data.Catalog["nat_src_addr"] = config.IPFIXFieldDefinition{ID: netflow.IPFIX_FIELD_postNATSourceIPv4Address, Length: 4, Type: "ipv4Address"}
 	cfg.TemplatedFlow.Data.Catalog["nat_dst_addr"] = config.IPFIXFieldDefinition{ID: netflow.IPFIX_FIELD_postNATDestinationIPv4Address, Length: 4, Type: "ipv4Address"}
@@ -4146,23 +4221,23 @@ func TestIPFIXSchemaDrivenNATVariantsPairPostNATWithPrimaryFamily(t *testing.T) 
 	if err != nil {
 		t.Fatalf("schema Encode returned error: %v", err)
 	}
-	if len(payloads) != 4 {
-		t.Fatalf("expected four NAT address-family template variants, got %d", len(payloads))
+	if len(payloads) != 1 {
+		t.Fatalf("expected one NAT dual-stack template, got %d", len(payloads))
 	}
 
 	templates := enc.dataSchemas["flow_data"].templates()
-	for i, template := range templates {
-		if want := uint16(256 + i); template.TemplateId != want {
-			t.Fatalf("expected template %d to have id %d, got %d", i, want, template.TemplateId)
-		}
+	if len(templates) != 1 {
+		t.Fatalf("expected one template, got %d", len(templates))
 	}
-
-	firstIPv6 := templates[1]
-	if firstIPv6.Fields[0].Type != netflow.IPFIX_FIELD_sourceIPv6Address || firstIPv6.Fields[1].Type != netflow.IPFIX_FIELD_destinationIPv6Address {
-		t.Fatalf("expected template 257 to use IPv6 source/destination fields, got %#v", firstIPv6.Fields[:2])
+	template := templates[0]
+	if template.TemplateId != 256 || len(template.Fields) != 8 {
+		t.Fatalf("expected template 256 with 8 address fields, got id=%d fields=%#v", template.TemplateId, template.Fields)
 	}
-	if firstIPv6.Fields[2].Type != netflow.IPFIX_FIELD_postNATSourceIPv6Address || firstIPv6.Fields[3].Type != netflow.IPFIX_FIELD_postNATDestinationIPv6Address {
-		t.Fatalf("expected template 257 to use IPv6 post-NAT fields, got %#v", firstIPv6.Fields[2:])
+	if template.Fields[4].Type != netflow.IPFIX_FIELD_postNATSourceIPv4Address || template.Fields[5].Type != netflow.IPFIX_FIELD_postNATSourceIPv6Address {
+		t.Fatalf("expected NAT source to use post-NAT IPv4/IPv6 fields, got %#v", template.Fields[4:6])
+	}
+	if template.Fields[6].Type != netflow.IPFIX_FIELD_postNATDestinationIPv4Address || template.Fields[7].Type != netflow.IPFIX_FIELD_postNATDestinationIPv6Address {
+		t.Fatalf("expected NAT destination to use post-NAT IPv4/IPv6 fields, got %#v", template.Fields[6:8])
 	}
 }
 
@@ -4240,7 +4315,7 @@ func TestIPFIXSchemaFieldsUseEncoderCatalogForEnterpriseMapping(t *testing.T) {
 	}
 }
 
-func TestIPFIXEncoderUsesIPv6InformationElementsForIPv6Addresses(t *testing.T) {
+func TestIPFIXEncoderUsesDualStackInformationElementsForUnmodifiedAddresses(t *testing.T) {
 	enc := NewIPFIXEncoder(testTFlowEncoderConfig("ipfix"))
 	evt := testTemplatedFlowEvent()
 	evt.Fields["src_addr"] = "2001:db8::10"
@@ -4259,11 +4334,19 @@ func TestIPFIXEncoderUsesIPv6InformationElementsForIPv6Addresses(t *testing.T) {
 	}
 
 	templateSet := decoded.FlowSets[0].(netflow.TemplateFlowSet)
-	if templateSet.Records[0].Fields[0].Type != netflow.IPFIX_FIELD_sourceIPv6Address {
-		t.Fatalf("expected IPv6 src IE, got %d", templateSet.Records[0].Fields[0].Type)
+	if templateSet.Records[0].Fields[0].Type != netflow.IPFIX_FIELD_sourceIPv4Address {
+		t.Fatalf("expected IPv4 src IE, got %d", templateSet.Records[0].Fields[0].Type)
 	}
-	if templateSet.Records[0].Fields[1].Type != netflow.IPFIX_FIELD_destinationIPv6Address {
-		t.Fatalf("expected IPv6 dst IE, got %d", templateSet.Records[0].Fields[1].Type)
+	if templateSet.Records[0].Fields[1].Type != netflow.IPFIX_FIELD_sourceIPv6Address {
+		t.Fatalf("expected IPv6 src IE, got %d", templateSet.Records[0].Fields[1].Type)
+	}
+	dataSet := decoded.FlowSets[1].(netflow.DataFlowSet)
+	values := dataSet.Records[0].Values
+	if got := values[0].Value.([]byte); !bytes.Equal(got, make([]byte, 4)) {
+		t.Fatalf("expected IPv4 source slot to be zero-filled, got %x", got)
+	}
+	if got := values[1].Value.([]byte); !bytes.Equal(got, netip.MustParseAddr("2001:db8::10").AsSlice()) {
+		t.Fatalf("expected IPv6 source slot to contain address, got %x", got)
 	}
 }
 

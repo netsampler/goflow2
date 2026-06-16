@@ -848,7 +848,7 @@ sink:
 	}
 }
 
-func TestLoadRejectsAggregatorFieldModifier(t *testing.T) {
+func TestLoadAcceptsAggregatorFieldFamilyModifier(t *testing.T) {
 	dir := t.TempDir()
 
 	cfgPath := filepath.Join(dir, "reflow.yaml")
@@ -863,7 +863,42 @@ processor:
 
 aggregators:
   - fields:
-      - key:src_addr:4
+      - key:src_addr:ip4
+
+encoder:
+  type: json
+
+sink:
+  type: stdout
+`), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	cfg, err := Load(cfgPath)
+	if err != nil {
+		t.Fatalf("Load returned error: %v", err)
+	}
+	if got := cfg.Aggregators[0].Fields[0].Value; got != "ip4" {
+		t.Fatalf("expected field value ip4, got %q", got)
+	}
+}
+
+func TestLoadRejectsInvalidAggregatorFieldFamilyModifier(t *testing.T) {
+	dir := t.TempDir()
+
+	cfgPath := filepath.Join(dir, "reflow.yaml")
+	if err := os.WriteFile(cfgPath, []byte(`
+sources:
+  - network: udp
+    address: ":18081"
+    type: json
+
+processor:
+  type: builtin
+
+aggregators:
+  - fields:
+      - key:src_addr:ipv4
 
 encoder:
   type: json
@@ -875,7 +910,7 @@ sink:
 	}
 
 	if _, err := Load(cfgPath); err == nil {
-		t.Fatalf("expected Load to reject field modifier")
+		t.Fatalf("expected Load to reject invalid field family modifier")
 	}
 }
 

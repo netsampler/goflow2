@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math"
 	"net"
+	"net/netip"
 
 	"github.com/netsampler/goflow2/v3/decoders/netflow"
 	"github.com/netsampler/goflow2/v3/pkg/reflow/config"
@@ -158,9 +159,25 @@ func applyCatalogDataField(fields map[string]any, field netflow.DataField, catal
 		} else {
 			fields[key] = int64(decodeUint64(field.Value))
 		}
+	case "src_addr", "dst_addr", "nat_src_addr", "nat_dst_addr":
+		setDecodedIPField(fields, key, field.Value)
 	default:
 		fields[key] = decodeCatalogValue(catalogField.def, field.Value)
 	}
+}
+
+func setDecodedIPField(fields map[string]any, key string, val any) {
+	ip := decodeIPString(val)
+	if ip == "" {
+		return
+	}
+	addr, err := netip.ParseAddr(ip)
+	if err == nil && addr.IsUnspecified() {
+		if existing, ok := fields[key].(string); ok && existing != "" {
+			return
+		}
+	}
+	fields[key] = ip
 }
 
 func decodeCatalogValue(def config.IPFIXFieldDefinition, val any) any {
