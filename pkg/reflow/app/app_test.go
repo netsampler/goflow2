@@ -95,6 +95,77 @@ func TestAggregatorMatchesByFieldsAndMetadata(t *testing.T) {
 	}
 }
 
+func TestAggregatorMatchesMissingKeysOnlyWhenAggregateMissingEnabled(t *testing.T) {
+	evt := &event.Event{
+		Kind: "data",
+		Fields: map[string]any{
+			"dst_addr": "198.51.100.2",
+			"bytes":    int64(60),
+		},
+	}
+
+	first := config.AggregatorConfig{
+		KeyFields: []string{"src_addr", "dst_addr"},
+		Sum:       []string{"bytes"},
+	}
+	if aggregatorMatches(first, evt) {
+		t.Fatalf("expected aggregator without aggregate_missing to reject missing src_addr")
+	}
+
+	next := config.AggregatorConfig{
+		AggregateMissing: true,
+		KeyFields:        []string{"src_addr", "dst_addr"},
+		Sum:              []string{"bytes"},
+	}
+	if !aggregatorMatches(next, evt) {
+		t.Fatalf("expected aggregator with aggregate_missing to accept missing src_addr")
+	}
+}
+
+func TestMatchingAggregateWorkersWarnsOnlyWhenNoAggregatorAcceptsMissingKeys(t *testing.T) {
+	evt := &event.Event{
+		Kind: "data",
+		Fields: map[string]any{
+			"dst_addr": "198.51.100.2",
+			"bytes":    int64(60),
+		},
+	}
+	withoutAggregateMissing := aggregateWorker{
+		cfg: config.AggregatorConfig{
+			Stream:    "strict_flow_data",
+			KeyFields: []string{"src_addr", "dst_addr"},
+			Sum:       []string{"bytes"},
+		},
+	}
+	withAggregateMissing := aggregateWorker{
+		cfg: config.AggregatorConfig{
+			Stream:           "missing_flow_data",
+			AggregateMissing: true,
+			KeyFields:        []string{"src_addr", "dst_addr"},
+			Sum:              []string{"bytes"},
+		},
+	}
+
+	matched, stream, key := matchingAggregateWorkers([]aggregateWorker{
+		withoutAggregateMissing,
+		withAggregateMissing,
+	}, evt)
+	if len(matched) != 1 || matched[0].cfg.Stream != "missing_flow_data" {
+		t.Fatalf("expected only aggregate_missing worker to match, got %#v", matched)
+	}
+	if stream != "" || key != "" {
+		t.Fatalf("did not expect warning details when an aggregator matched, got stream=%q key=%q", stream, key)
+	}
+
+	matched, stream, key = matchingAggregateWorkers([]aggregateWorker{withoutAggregateMissing}, evt)
+	if len(matched) != 0 {
+		t.Fatalf("expected no workers to match, got %#v", matched)
+	}
+	if stream != "strict_flow_data" || key != "src_addr" {
+		t.Fatalf("expected warning details for unaggregated event, got stream=%q key=%q", stream, key)
+	}
+}
+
 func TestRunClosesStdoutLikeSinkOnContextCancel(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	src := &blockingSource{}

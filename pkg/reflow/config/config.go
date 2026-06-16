@@ -262,6 +262,9 @@ type AggregatorConfig struct {
 	TemplateID   uint16            `yaml:"template_id"`
 	StaticFields map[string]any    `yaml:"static_fields"`
 	KeyDefaults  map[string]any    `yaml:"key_defaults"`
+	// AggregateMissing controls whether events with missing key fields still
+	// contribute to a bucket. Missing key fields are not added to output events.
+	AggregateMissing bool `yaml:"aggregate_missing"`
 
 	// Deprecated compatibility knobs. They are still parsed so older configs keep
 	// loading, then mapped into the explicit window/periodic sections.
@@ -275,23 +278,25 @@ func (cfg AggregatorConfig) MarshalYAML() (any, error) {
 		return rawAggregatorConfig(cfg), nil
 	}
 	return struct {
-		Stream     string                   `yaml:"stream,omitempty"`
-		EmitAs     string                   `yaml:"emit_as,omitempty"`
-		Window     AggregatorWindowConfig   `yaml:"window,omitempty"`
-		Periodic   AggregatorPeriodicConfig `yaml:"periodic,omitempty"`
-		Fields     []AggregatorField        `yaml:"fields"`
-		Match      map[string]string        `yaml:"match,omitempty"`
-		TemplateID uint16                   `yaml:"template_id,omitempty"`
-		KeyDefaults map[string]any           `yaml:"key_defaults,omitempty"`
+		Stream           string                   `yaml:"stream,omitempty"`
+		EmitAs           string                   `yaml:"emit_as,omitempty"`
+		Window           AggregatorWindowConfig   `yaml:"window,omitempty"`
+		Periodic         AggregatorPeriodicConfig `yaml:"periodic,omitempty"`
+		Fields           []AggregatorField        `yaml:"fields"`
+		Match            map[string]string        `yaml:"match,omitempty"`
+		TemplateID       uint16                   `yaml:"template_id,omitempty"`
+		KeyDefaults      map[string]any           `yaml:"key_defaults,omitempty"`
+		AggregateMissing bool                     `yaml:"aggregate_missing,omitempty"`
 	}{
-		Stream:     cfg.Stream,
-		EmitAs:     cfg.EmitAs,
-		Window:     cfg.Window,
-		Periodic:   cfg.Periodic,
-		Fields:     cfg.Fields,
-		Match:      cfg.Match,
-		TemplateID: cfg.TemplateID,
-		KeyDefaults: cfg.KeyDefaults,
+		Stream:           cfg.Stream,
+		EmitAs:           cfg.EmitAs,
+		Window:           cfg.Window,
+		Periodic:         cfg.Periodic,
+		Fields:           cfg.Fields,
+		Match:            cfg.Match,
+		TemplateID:       cfg.TemplateID,
+		KeyDefaults:      cfg.KeyDefaults,
+		AggregateMissing: cfg.AggregateMissing,
 	}, nil
 }
 

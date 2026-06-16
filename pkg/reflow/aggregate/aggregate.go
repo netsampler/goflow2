@@ -1,9 +1,7 @@
 package aggregate
 
 import (
-	"errors"
 	"fmt"
-	"log/slog"
 	"net/netip"
 	"sort"
 	"strconv"
@@ -195,15 +193,6 @@ func (a *Stateful) Process(evt *event.Event) ([]*event.Event, error) {
 	}
 	key, record, err := aggregateFromEvent(a.cfg, a.recordCapacity, evt)
 	if err != nil {
-		var missingKeyErr *missingAggregationKeyError
-		if errors.As(err, &missingKeyErr) {
-			slog.Warn(
-				"dropping aggregate event with missing key field",
-				slog.String("stream", a.cfg.Stream),
-				slog.String("key", missingKeyErr.Key),
-			)
-			return nil, nil
-		}
 		return nil, err
 	}
 	a.mu.Lock()
@@ -484,7 +473,7 @@ func aggregateFromEvent(cfg config.AggregatorConfig, recordCapacity int, evt *ev
 		return "", aggregateRecord{}, fmt.Errorf("event fields are empty")
 	}
 
-	key, err := buildKey(evt, cfg.KeyFields)
+	key, err := buildKey(evt, cfg.KeyFields, cfg.AggregateMissing)
 	if err != nil {
 		return "", aggregateRecord{}, err
 	}
@@ -557,7 +546,7 @@ func seedTimestamps(dst, src map[string]any, now time.Time) {
 }
 
 // buildKey joins the configured key fields into one stable bucket identifier.
-func buildKey(evt *event.Event, keyFields []string) (string, error) {
+func buildKey(evt *event.Event, keyFields []string, aggregateMissing bool) (string, error) {
 	if len(keyFields) == 0 {
 		return "__global__", nil
 	}
@@ -566,7 +555,10 @@ func buildKey(evt *event.Event, keyFields []string) (string, error) {
 	for i, key := range keyFields {
 		val, ok := eventFieldValue(evt, key)
 		if !ok {
-			return "", &missingAggregationKeyError{Key: key}
+			if !aggregateMissing {
+				return "", &missingAggregationKeyError{Key: key}
+			}
+			val = nil
 		}
 		if i > 0 {
 			b.WriteByte('|')
@@ -576,8 +568,28 @@ func buildKey(evt *event.Event, keyFields []string) (string, error) {
 	return b.String(), nil
 }
 
+// EventHasRequiredKeyFields reports whether this event can enter the configured
+// aggregate bucket without relying on aggregate_missing fallback semantics.
+func EventHasRequiredKeyFields(cfg config.AggregatorConfig, evt *event.Event) bool {
+	return MissingRequiredKeyField(cfg, evt) == ""
+}
+
+func MissingRequiredKeyField(cfg config.AggregatorConfig, evt *event.Event) string {
+	if cfg.AggregateMissing {
+		return ""
+	}
+	for _, key := range cfg.KeyFields {
+		if _, ok := eventFieldValue(evt, key); !ok {
+			return key
+		}
+	}
+	return ""
+}
+
 func writeKeyValue(b *strings.Builder, val any) {
 	switch v := val.(type) {
+	case nil:
+		b.WriteString("nil")
 	case string:
 		b.WriteString(v)
 	case uint64:

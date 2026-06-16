@@ -4286,7 +4286,7 @@ func TestEncodeIPFIXBooleanValue(t *testing.T) {
 	}
 }
 
-func TestAggregatorDropsPacketsMissingConfiguredKeys(t *testing.T) {
+func TestAggregatorReturnsErrorForPacketsMissingConfiguredKeys(t *testing.T) {
 	agg, err := aggregate.New(config.AggregatorConfig{
 		KeyFields: []string{"src_addr", "dst_addr"},
 	})
@@ -4299,11 +4299,8 @@ func TestAggregatorDropsPacketsMissingConfiguredKeys(t *testing.T) {
 			"bytes": int64(64),
 		},
 	})
-	if err != nil {
-		t.Fatalf("Process returned error: %v", err)
-	}
-	if len(events) != 0 {
-		t.Fatalf("expected packet without aggregation keys to be dropped, got %d events", len(events))
+	if err == nil || !strings.Contains(err.Error(), `missing aggregation key field "src_addr"`) {
+		t.Fatalf("expected missing key error, got events=%d err=%v", len(events), err)
 	}
 }
 

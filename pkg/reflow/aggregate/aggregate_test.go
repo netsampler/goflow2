@@ -1,8 +1,6 @@
 package aggregate
 
 import (
-	"bytes"
-	"log/slog"
 	"strings"
 	"testing"
 	"time"
@@ -71,12 +69,7 @@ func TestStatefulFlushSumsPacketCounters(t *testing.T) {
 	}
 }
 
-func TestStatefulWarnsAndDropsEventWithMissingKey(t *testing.T) {
-	var logs bytes.Buffer
-	previous := slog.Default()
-	slog.SetDefault(slog.New(slog.NewTextHandler(&logs, nil)))
-	defer slog.SetDefault(previous)
-
+func TestStatefulReturnsErrorWithMissingKey(t *testing.T) {
 	agg, err := New(config.AggregatorConfig{
 		Stream:    "interface_options",
 		KeyFields: []string{"observation_domain_id", "input_if"},
@@ -92,22 +85,52 @@ func TestStatefulWarnsAndDropsEventWithMissingKey(t *testing.T) {
 			"interface_name":        "eth0",
 		},
 	})
+	if err == nil || !strings.Contains(err.Error(), `missing aggregation key field "input_if"`) {
+		t.Fatalf("expected missing key error, got out=%d err=%v", len(out), err)
+	}
+}
+
+func TestStatefulAggregatesMissingKeyWhenConfigured(t *testing.T) {
+	agg, err := New(config.AggregatorConfig{
+		AggregateMissing: true,
+		KeyFields:        []string{"src_addr", "dst_addr"},
+		Sum:              []string{"bytes"},
+	})
+	if err != nil {
+		t.Fatalf("New returned error: %v", err)
+	}
+
+	out, err := agg.Process(&event.Event{
+		Fields: map[string]any{
+			"dst_addr": "198.51.100.2",
+			"bytes":    int64(60),
+		},
+	})
 	if err != nil {
 		t.Fatalf("Process returned error: %v", err)
 	}
 	if len(out) != 0 {
-		t.Fatalf("expected missing-key event to be dropped, got %d events", len(out))
+		t.Fatalf("expected aggregation to buffer event, got %d events", len(out))
 	}
 
-	got := logs.String()
-	for _, want := range []string{
-		"dropping aggregate event with missing key field",
-		"stream=interface_options",
-		"key=input_if",
-	} {
-		if !strings.Contains(got, want) {
-			t.Fatalf("expected log to contain %q, got %q", want, got)
-		}
+	out, err = agg.Close()
+	if err != nil {
+		t.Fatalf("Close returned error: %v", err)
+	}
+	if len(out) != 1 {
+		t.Fatalf("expected 1 aggregated event, got %d", len(out))
+	}
+	if _, ok := out[0].Fields["src_addr"]; ok {
+		t.Fatalf("did not expect missing src_addr to be added to output fields: %#v", out[0].Fields)
+	}
+	if got := out[0].Fields["dst_addr"]; got != "198.51.100.2" {
+		t.Fatalf("expected dst_addr to be preserved, got %#v", got)
+	}
+	if got := out[0].Fields["bytes"]; got != int64(60) {
+		t.Fatalf("expected bytes=60, got %#v", got)
+	}
+	if got := out[0].Aggregation.Key; got != "nil|198.51.100.2" {
+		t.Fatalf("expected aggregate key to use missing marker, got %q", got)
 	}
 }
 

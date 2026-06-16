@@ -752,6 +752,70 @@ sink:
 	}
 }
 
+func TestLoadParsesAggregatorAggregateMissing(t *testing.T) {
+	cfg, err := LoadBytes("reflow.yaml", []byte(`
+sources:
+  - network: udp
+    address: ":18081"
+    type: json
+
+processor:
+  type: builtin
+
+aggregators:
+  - periodic:
+      every_ms: 1000
+    fields:
+      - key:src_addr
+      - key:dst_addr
+      - sum:bytes
+    aggregate_missing: true
+
+encoder:
+  type: json
+
+sink:
+  type: stdout
+`))
+	if err != nil {
+		t.Fatalf("LoadBytes returned error: %v", err)
+	}
+	if !cfg.Aggregators[0].AggregateMissing {
+		t.Fatalf("expected aggregate_missing=true")
+	}
+}
+
+func TestLoadDefaultsAggregatorAggregateMissingFalse(t *testing.T) {
+	cfg, err := LoadBytes("reflow.yaml", []byte(`
+sources:
+  - network: udp
+    address: ":18081"
+    type: json
+
+processor:
+  type: builtin
+
+aggregators:
+  - periodic:
+      every_ms: 1000
+    fields:
+      - key:dst_addr
+      - sum:bytes
+
+encoder:
+  type: json
+
+sink:
+  type: stdout
+`))
+	if err != nil {
+		t.Fatalf("LoadBytes returned error: %v", err)
+	}
+	if cfg.Aggregators[0].AggregateMissing {
+		t.Fatalf("expected aggregate_missing default false")
+	}
+}
+
 func TestLoadRejectsPlainAggregatorFieldRole(t *testing.T) {
 	dir := t.TempDir()
 

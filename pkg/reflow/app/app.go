@@ -254,16 +254,19 @@ func (a *App) Run(ctx context.Context) error {
 					encodeJobs <- evt
 					continue
 				}
-				matched := false
-				for _, worker := range aggregateWorkers {
-					if !aggregatorMatches(worker.cfg, evt) {
-						continue
-					}
-					matched = true
+				matchedWorkers, missingKeyStream, missingKey := matchingAggregateWorkers(aggregateWorkers, evt)
+				for _, worker := range matchedWorkers {
 					// One event may intentionally feed multiple aggregators.
 					worker.jobs <- evt
 				}
-				if !matched {
+				if len(matchedWorkers) == 0 {
+					if missingKey != "" {
+						a.logger.Warn(
+							"dropping aggregate event with missing key field",
+							slog.String("stream", missingKeyStream),
+							slog.String("key", missingKey),
+						)
+					}
 					encodeJobs <- evt
 				}
 			}
@@ -521,8 +524,35 @@ func aggregateWorkersRouteSourceInit(workers []aggregateWorker) bool {
 	return false
 }
 
+func matchingAggregateWorkers(workers []aggregateWorker, evt *event.Event) ([]aggregateWorker, string, string) {
+	matched := make([]aggregateWorker, 0, len(workers))
+	missingKey := ""
+	missingKeyStream := ""
+	for _, worker := range workers {
+		if !aggregatorFilterMatches(worker.cfg, evt) {
+			continue
+		}
+		if key := aggregate.MissingRequiredKeyField(worker.cfg, evt); key != "" {
+			if missingKey == "" {
+				missingKey = key
+				missingKeyStream = worker.cfg.Stream
+			}
+			continue
+		}
+		matched = append(matched, worker)
+	}
+	if len(matched) > 0 {
+		return matched, "", ""
+	}
+	return matched, missingKeyStream, missingKey
+}
+
 // aggregatorMatches applies the optional aggregator.match filter to a processed event.
 func aggregatorMatches(cfg config.AggregatorConfig, evt *event.Event) bool {
+	return aggregatorFilterMatches(cfg, evt) && aggregate.EventHasRequiredKeyFields(cfg, evt)
+}
+
+func aggregatorFilterMatches(cfg config.AggregatorConfig, evt *event.Event) bool {
 	if len(cfg.Match) == 0 {
 		return true
 	}
