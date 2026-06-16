@@ -101,6 +101,7 @@ type DataField struct {
 	// A numeric value that represents the type of field.
 	PenProvided bool   `json:"pen-provided"`
 	Type        uint16 `json:"type"`
+	Length      uint16 `json:"length,omitempty"`
 	Pen         uint32 `json:"pen"`
 
 	// The value (in bytes) of the field.

@@ -170,6 +170,106 @@ func TestEncodeDecodeSFlowExpandedFlowSample(t *testing.T) {
 	assert.Equal(t, []uint32{100, 200}, gw.Communities)
 }
 
+func TestEncodeDecodeSFlowExtendedNATMPLSAndMPLSFamily(t *testing.T) {
+	packet := Packet{
+		Version:        5,
+		IPVersion:      1,
+		AgentIP:        utils.IPAddress{192, 0, 2, 1},
+		SubAgentId:     1,
+		SequenceNumber: 2,
+		Uptime:         3,
+		Samples: []interface{}{
+			FlowSample{
+				Header: SampleHeader{
+					Format:               SAMPLE_FORMAT_FLOW,
+					SampleSequenceNumber: 42,
+					SourceIdValue:        7,
+				},
+				Records: []FlowRecord{
+					{Data: ExtendedNAT{
+						SrcAddress: utils.IPAddress{203, 0, 113, 10},
+						DstAddress: utils.IPAddress{198, 51, 100, 20},
+					}},
+					{Data: ExtendedMPLS{
+						NextHop:       utils.IPAddress{192, 0, 2, 254},
+						InLabelStack:  []uint32{0x00011100},
+						OutLabelStack: []uint32{0x00022200, 0x00033300},
+					}},
+					{Data: ExtendedMPLSTunnel{TunnelLSPName: "lsp-a", TunnelID: 11, TunnelCOS: 3}},
+					{Data: ExtendedMPLSVC{VCInstanceName: "vc-a", VLLVCID: 12, VCLabelCOS: 4}},
+					{Data: ExtendedMPLSFTN{MPLSFTNDescr: "ftn-a", MPLSFTNMask: 24}},
+					{Data: ExtendedMPLSLDPFEC{MPLSFecAddrPrefixLength: 25}},
+				},
+			},
+		},
+	}
+
+	encoded, err := EncodeMessage(&packet)
+	assert.NoError(t, err)
+
+	var decoded Packet
+	assert.NoError(t, DecodeMessageVersion(bytes.NewBuffer(encoded), &decoded))
+	sample := decoded.Samples[0].(FlowSample)
+	assert.Len(t, sample.Records, 6)
+
+	nat := sample.Records[0].Data.(ExtendedNAT)
+	assert.Equal(t, utils.IPAddress{203, 0, 113, 10}, nat.SrcAddress)
+	assert.Equal(t, utils.IPAddress{198, 51, 100, 20}, nat.DstAddress)
+	mpls := sample.Records[1].Data.(ExtendedMPLS)
+	assert.Equal(t, utils.IPAddress{192, 0, 2, 254}, mpls.NextHop)
+	assert.Equal(t, []uint32{0x00011100}, mpls.InLabelStack)
+	assert.Equal(t, []uint32{0x00022200, 0x00033300}, mpls.OutLabelStack)
+	assert.Equal(t, "lsp-a", sample.Records[2].Data.(ExtendedMPLSTunnel).TunnelLSPName)
+	assert.Equal(t, uint32(12), sample.Records[3].Data.(ExtendedMPLSVC).VLLVCID)
+	assert.Equal(t, "ftn-a", sample.Records[4].Data.(ExtendedMPLSFTN).MPLSFTNDescr)
+	assert.Equal(t, uint32(25), sample.Records[5].Data.(ExtendedMPLSLDPFEC).MPLSFecAddrPrefixLength)
+}
+
+func TestEncodeDecodeSFlowRawEnterpriseRecordAndSample(t *testing.T) {
+	enterpriseFormat := PackDataFormat(64512, 7)
+	packet := Packet{
+		Version:        5,
+		IPVersion:      1,
+		AgentIP:        utils.IPAddress{192, 0, 2, 1},
+		SubAgentId:     1,
+		SequenceNumber: 2,
+		Uptime:         3,
+		Samples: []interface{}{
+			FlowSample{
+				Header: SampleHeader{Format: SAMPLE_FORMAT_FLOW, SampleSequenceNumber: 1},
+				Records: []FlowRecord{
+					{Header: RecordHeader{DataFormat: enterpriseFormat}, Data: RawRecord{Data: []byte{0xde, 0xad, 0xbe, 0xef}}},
+				},
+			},
+			CounterSample{
+				Header: SampleHeader{Format: SAMPLE_FORMAT_COUNTER, SampleSequenceNumber: 2},
+				Records: []CounterRecord{
+					{Header: RecordHeader{DataFormat: enterpriseFormat}, Data: RawRecord{Data: []byte{0xca, 0xfe, 0xba, 0xbe}}},
+				},
+			},
+			RawSample{
+				Header: SampleHeader{Format: PackDataFormat(64512, 8)},
+				Data:   []byte{0x01, 0x02, 0x03, 0x04},
+			},
+		},
+	}
+
+	encoded, err := EncodeMessage(&packet)
+	assert.NoError(t, err)
+
+	var decoded Packet
+	assert.NoError(t, DecodeMessageVersion(bytes.NewBuffer(encoded), &decoded))
+	flow := decoded.Samples[0].(FlowSample)
+	assert.Equal(t, enterpriseFormat, flow.Records[0].Header.DataFormat)
+	assert.Equal(t, []byte{0xde, 0xad, 0xbe, 0xef}, flow.Records[0].Data.(RawRecord).Data)
+	counter := decoded.Samples[1].(CounterSample)
+	assert.Equal(t, enterpriseFormat, counter.Records[0].Header.DataFormat)
+	assert.Equal(t, []byte{0xca, 0xfe, 0xba, 0xbe}, counter.Records[0].Data.(RawRecord).Data)
+	raw := decoded.Samples[2].(RawSample)
+	assert.Equal(t, PackDataFormat(64512, 8), raw.Header.Format)
+	assert.Equal(t, []byte{0x01, 0x02, 0x03, 0x04}, raw.Data)
+}
+
 func TestEncodeDecodeSFlowCounterSample(t *testing.T) {
 	packet := Packet{
 		Version:        5,

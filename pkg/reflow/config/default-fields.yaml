@@ -1,0 +1,58 @@
+# Embedded default field catalog for templated IPFIX/NetFlow v9 exports.
+# Format: id:length:type[:format][pen=<enterprise-number>]
+# Type aliases: u8/u16/u32/u64, s8/s16/s32/s64, ip4, ip6, mac, str.
+# Enterprise-specific example, commented out:
+# custom_metric: 40000:4:u32[pen=42424242] # example enterprise field
+
+fields:
+  bytes: 1:8:u64:delta # octetDeltaCount
+  packets: 2:8:u64:delta # packetDeltaCount
+  proto: 4:1:u8 # protocolIdentifier
+  tcp_flags: 6:1:u8 # tcpControlBits
+  src_port: 7:2:u16 # sourceTransportPort
+  src_addr: 8:4:ip4 # sourceIPv4Address
+  input_if: 10:4:u32 # ingressInterface
+  dst_port: 11:2:u16 # destinationTransportPort
+  dst_addr: 12:4:ip4 # destinationIPv4Address
+  output_if: 14:4:u32 # egressInterface
+  sampling_rate: 34:4:u32 # samplingInterval
+  src_mac: 56:6:mac # sourceMacAddress
+  vlan_id: 58:2:u16 # vlanId
+  flow_direction: 61:1:u8 # flowDirection
+  mpls_label_stack_section_1: 70:3:bytes # mplsTopLabelStackSection
+  mpls_label_stack_section_2: 71:3:bytes # mplsLabelStackSection2
+  mpls_label_stack_section_3: 72:3:bytes # mplsLabelStackSection3
+  dst_mac: 80:6:mac # destinationMacAddress
+  interface_name: 82:0:str # interfaceName
+  interface_description: 83:0:str # interfaceDescription
+  sampler_name: 84:0:str # samplerName
+  agent_ip: 130:4:ip4 # exporterIPv4Address
+  agent_ipv6: 131:16:ip6 # exporterIPv6Address
+  drops: 133:8:u64:delta # droppedPacketDeltaCount
+  source_id: 138:8:u64 # observationPointId
+  sub_agent_id: 144:4:u32 # exportingProcessId
+  template_id: 145:2:u16 # templateId
+  observation_domain_id: 149:4:u32 # observationDomainId
+  start_time_unix: 152:8:u64 # flowStartMilliseconds
+  end_time_unix: 153:8:u64 # flowEndMilliseconds
+  nat_src_addr: 225:4:ip4 # postNATSourceIPv4Address
+  nat_dst_addr: 226:4:ip4 # postNATDestinationIPv4Address
+  nat_src_port: 227:2:u16 # postNAPTSourceTransportPort
+  nat_dst_port: 228:2:u16 # postNAPTDestinationTransportPort
+  ether_type: 256:2:u16 # ethernetType
+  sample_pool: 310:4:u32 # samplingPopulation
+  frame_length: 312:2:u16 # dataLinkFrameSize
+  header_data: 315:65535:bytes # dataLinkFrameSection
+  # Linux __sk_buff fields need a real implementation PEN before enabling.
+  # 32473 is reserved for documentation examples, so it is intentionally not used here.
+  # skb_len: 40000:4:u32[pen=<enterprise-number>] # Linux __sk_buff len
+  # skb_packet_type: 40001:4:u32[pen=<enterprise-number>] # Linux __sk_buff pkt_type
+  # skb_mark: 40002:4:u32[pen=<enterprise-number>] # Linux __sk_buff mark
+  # skb_queue_mapping: 40003:4:u32[pen=<enterprise-number>] # Linux __sk_buff queue_mapping
+  # skb_protocol: 40004:4:u32[pen=<enterprise-number>] # Linux __sk_buff protocol
+  # skb_priority: 40005:4:u32[pen=<enterprise-number>] # Linux __sk_buff priority
+  # skb_ingress_ifindex: 40006:4:u32[pen=<enterprise-number>] # Linux __sk_buff ingress_ifindex
+  # skb_ifindex: 40007:4:u32[pen=<enterprise-number>] # Linux __sk_buff ifindex
+  # skb_tc_index: 40008:4:u32[pen=<enterprise-number>] # Linux __sk_buff tc_index
+  # skb_hash: 40009:4:u32[pen=<enterprise-number>] # Linux __sk_buff hash
+  # skb_tc_classid: 40010:4:u32[pen=<enterprise-number>] # Linux __sk_buff tc_classid

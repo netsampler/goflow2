@@ -52,6 +52,23 @@ const (
 	COUNTER_TYPE_CPU       = 1001
 )
 
+const dataFormatFormatMask = 0x00000fff
+
+// PackDataFormat builds an sFlow data_format from enterprise and format parts.
+func PackDataFormat(enterprise, format uint32) uint32 {
+	return (enterprise << 12) | (format & dataFormatFormatMask)
+}
+
+// DataFormatEnterprise returns the enterprise number from a packed sFlow data_format.
+func DataFormatEnterprise(dataFormat uint32) uint32 {
+	return dataFormat >> 12
+}
+
+// DataFormatFormat returns the format number from a packed sFlow data_format.
+func DataFormatFormat(dataFormat uint32) uint32 {
+	return dataFormat & dataFormatFormatMask
+}
+
 // DecoderError wraps an sFlow decode error.
 type DecoderError struct {
 	Err error
@@ -126,7 +143,11 @@ func DecodeCounterRecord(header *RecordHeader, payload *bytes.Buffer) (CounterRe
 	counterRecord := CounterRecord{
 		Header: *header,
 	}
-	switch header.DataFormat {
+	if DataFormatEnterprise(header.DataFormat) != 0 {
+		counterRecord.Data = RawRecord{Data: append([]byte(nil), payload.Bytes()...)}
+		return counterRecord, nil
+	}
+	switch DataFormatFormat(header.DataFormat) {
 	case COUNTER_TYPE_IF:
 		var ifCounters IfCounters
 		if err := utils.BinaryDecoder(payload,
@@ -175,7 +196,7 @@ func DecodeCounterRecord(header *RecordHeader, payload *bytes.Buffer) (CounterRe
 		counterRecord.Data = ethernetCounters
 	default:
 		var rawRecord RawRecord
-		rawRecord.Data = payload.Bytes()
+		rawRecord.Data = append([]byte(nil), payload.Bytes()...)
 		counterRecord.Data = rawRecord
 	}
 
@@ -187,8 +208,13 @@ func DecodeFlowRecord(header *RecordHeader, payload *bytes.Buffer) (FlowRecord, 
 	flowRecord := FlowRecord{
 		Header: *header,
 	}
+	if DataFormatEnterprise(header.DataFormat) != 0 {
+		flowRecord.Data = RawRecord{Data: append([]byte(nil), payload.Bytes()...)}
+		return flowRecord, nil
+	}
+	format := DataFormatFormat(header.DataFormat)
 	var err error
-	switch header.DataFormat {
+	switch format {
 	case FLOW_TYPE_RAW:
 		sampledHeader := SampledHeader{}
 		var headerLength uint32
@@ -200,9 +226,15 @@ func DecodeFlowRecord(header *RecordHeader, payload *bytes.Buffer) (FlowRecord, 
 		); err != nil {
 			return flowRecord, &RecordError{header.DataFormat, err}
 		}
-		headerData, err := readXDROpaqueWithLength(payload, headerLength)
-		if err != nil {
-			return flowRecord, &RecordError{header.DataFormat, err}
+		var headerData []byte
+		if int(headerLength) > payload.Len() {
+			headerData = append([]byte(nil), payload.Bytes()...)
+			payload.Next(payload.Len())
+		} else {
+			headerData, err = readXDROpaqueWithLength(payload, headerLength)
+			if err != nil {
+				return flowRecord, &RecordError{header.DataFormat, err}
+			}
 		}
 		sampledHeader.OriginalLength = headerLength
 		sampledHeader.HeaderData = headerData
@@ -361,6 +393,63 @@ func DecodeFlowRecord(header *RecordHeader, payload *bytes.Buffer) (FlowRecord, 
 		extendedGateway.Communities = communities
 
 		flowRecord.Data = extendedGateway
+	case FLOW_TYPE_EXT_MPLS:
+		var mpls ExtendedMPLS
+		if mpls.NextHopIPVersion, mpls.NextHop, err = DecodeIP(payload); err != nil {
+			return flowRecord, &RecordError{header.DataFormat, err}
+		}
+		if mpls.InLabelStack, err = decodeU32Vector(payload, "mpls in label stack"); err != nil {
+			return flowRecord, &RecordError{header.DataFormat, err}
+		}
+		if mpls.OutLabelStack, err = decodeU32Vector(payload, "mpls out label stack"); err != nil {
+			return flowRecord, &RecordError{header.DataFormat, err}
+		}
+		flowRecord.Data = mpls
+	case FLOW_TYPE_EXT_NAT:
+		var nat ExtendedNAT
+		if nat.SrcAddressIPVersion, nat.SrcAddress, err = DecodeIP(payload); err != nil {
+			return flowRecord, &RecordError{header.DataFormat, err}
+		}
+		if nat.DstAddressIPVersion, nat.DstAddress, err = DecodeIP(payload); err != nil {
+			return flowRecord, &RecordError{header.DataFormat, err}
+		}
+		flowRecord.Data = nat
+	case FLOW_TYPE_EXT_MPLS_TUNNEL:
+		var tunnel ExtendedMPLSTunnel
+		tunnel.TunnelLSPName, err = readXDRString(payload)
+		if err != nil {
+			return flowRecord, &RecordError{header.DataFormat, err}
+		}
+		if err := utils.BinaryDecoder(payload, &tunnel.TunnelID, &tunnel.TunnelCOS); err != nil {
+			return flowRecord, &RecordError{header.DataFormat, err}
+		}
+		flowRecord.Data = tunnel
+	case FLOW_TYPE_EXT_MPLS_VC:
+		var vc ExtendedMPLSVC
+		vc.VCInstanceName, err = readXDRString(payload)
+		if err != nil {
+			return flowRecord, &RecordError{header.DataFormat, err}
+		}
+		if err := utils.BinaryDecoder(payload, &vc.VLLVCID, &vc.VCLabelCOS); err != nil {
+			return flowRecord, &RecordError{header.DataFormat, err}
+		}
+		flowRecord.Data = vc
+	case FLOW_TYPE_EXT_MPLS_FEC:
+		var ftn ExtendedMPLSFTN
+		ftn.MPLSFTNDescr, err = readXDRString(payload)
+		if err != nil {
+			return flowRecord, &RecordError{header.DataFormat, err}
+		}
+		if err := utils.BinaryDecoder(payload, &ftn.MPLSFTNMask); err != nil {
+			return flowRecord, &RecordError{header.DataFormat, err}
+		}
+		flowRecord.Data = ftn
+	case FLOW_TYPE_EXT_MPLS_LVP_FEC:
+		var fec ExtendedMPLSLDPFEC
+		if err := utils.BinaryDecoder(payload, &fec.MPLSFecAddrPrefixLength); err != nil {
+			return flowRecord, &RecordError{header.DataFormat, err}
+		}
+		flowRecord.Data = fec
 	case FLOW_TYPE_EGRESS_QUEUE:
 		var queue EgressQueue
 		if err := utils.BinaryDecoder(payload, &queue.Queue); err != nil {
@@ -391,10 +480,30 @@ func DecodeFlowRecord(header *RecordHeader, payload *bytes.Buffer) (FlowRecord, 
 		flowRecord.Data = function
 	default:
 		var rawRecord RawRecord
-		rawRecord.Data = payload.Bytes()
+		rawRecord.Data = append([]byte(nil), payload.Bytes()...)
 		flowRecord.Data = rawRecord
 	}
 	return flowRecord, nil
+}
+
+func decodeU32Vector(payload *bytes.Buffer, name string) ([]uint32, error) {
+	var length uint32
+	if err := utils.BinaryDecoder(payload, &length); err != nil {
+		return nil, err
+	}
+	if length > 1000 {
+		return nil, fmt.Errorf("%s length of %d seems quite large", name, length)
+	}
+	if int(length) > payload.Len()/4 {
+		return nil, fmt.Errorf("invalid %s length: %d", name, length)
+	}
+	values := make([]uint32, length)
+	if len(values) > 0 {
+		if err := utils.BinaryDecoder(payload, values); err != nil {
+			return nil, err
+		}
+	}
+	return values, nil
 }
 
 func DecodeSample(header *SampleHeader, payload *bytes.Buffer) (interface{}, error) {
@@ -593,16 +702,26 @@ func DecodeMessage(payload *bytes.Buffer, packetV5 *Packet) error {
 	}
 
 	packetV5.Samples = make([]interface{}, int(packetV5.SamplesCount)) // max size of 1000 for protection
-	for i := 0; i < int(packetV5.SamplesCount) && payload.Len() >= 8; i++ {
+	for i := 0; i < int(packetV5.SamplesCount); i++ {
+		if payload.Len() < 8 {
+			return &DecoderError{fmt.Errorf("sample %d header truncated: need 8 bytes, got %d", i, payload.Len())}
+		}
 		header := SampleHeader{}
 		if err := utils.BinaryDecoder(payload, &header.Format, &header.Length); err != nil {
 			return &DecoderError{fmt.Errorf("header [%w]", err)}
 		}
 		if int(header.Length) > payload.Len() {
-			break
+			return &DecoderError{fmt.Errorf("sample %d length %d exceeds remaining payload %d", i, header.Length, payload.Len())}
 		}
 		sampleReader := bytes.NewBuffer(payload.Next(int(header.Length)))
 
+		if DataFormatEnterprise(header.Format) != 0 || !isKnownSampleFormat(DataFormatFormat(header.Format)) {
+			packetV5.Samples[i] = RawSample{
+				Header: header,
+				Data:   append([]byte(nil), sampleReader.Bytes()...),
+			}
+			continue
+		}
 		sample, err := DecodeSample(&header, sampleReader)
 		if err != nil {
 			return &DecoderError{fmt.Errorf("sample [%w]", err)}
@@ -612,4 +731,13 @@ func DecodeMessage(payload *bytes.Buffer, packetV5 *Packet) error {
 	}
 
 	return nil
+}
+
+func isKnownSampleFormat(format uint32) bool {
+	switch format {
+	case SAMPLE_FORMAT_FLOW, SAMPLE_FORMAT_COUNTER, SAMPLE_FORMAT_EXPANDED_FLOW, SAMPLE_FORMAT_EXPANDED_COUNTER, SAMPLE_FORMAT_DROP:
+		return true
+	default:
+		return false
+	}
 }

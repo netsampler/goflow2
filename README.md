@@ -18,6 +18,22 @@ not provided.
 
 ![GoFlow2 System diagram](/graphics/diagram.png)
 
+## ReFlow
+
+This repository now also includes an experimental `reflow` binary under `cmd/reflow`.
+ReFlow keeps the collector roots of GoFlow2, but turns them into a small pipeline:
+ingest from sockets or live packet capture, decode into internal events, optionally
+process and aggregate them, then emit JSON, protobuf, sFlow, IPFIX, or NetFlow v9/v5.
+
+The goal is to make common traffic conversion and reshaping tasks easier to express in
+one config file. A ReFlow config can start from UDP flow messages, JSON events, or live
+packets, then write the result to stdout, a file, UDP, or a Unix datagram socket.
+
+ReFlow source framing is selected by `sources[].network`. `udp` and `unixgram`
+are packet-oriented sources and produce one event per datagram. `stream` is a
+byte-stream source; `address: "-"` means stdin, and JSON stream input is newline
+delimited with one JSON object per line.
+
 ## Origins
 
 This work is a fork of a previous [open-source GoFlow code](https://github.com/cloudflare/goflow) built and used at Cloudflare.
