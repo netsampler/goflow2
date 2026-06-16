@@ -40,7 +40,7 @@ var (
 	outputSinkOptions = []string{
 		"stdout",
 		"file:<path>",
-		"udp:<address>",
+		"udp:<address>[?resolve_interval_ms=<ms>]",
 		"unixgram:<socket-path>",
 		"socket:<socket-path>",
 	}
@@ -59,6 +59,7 @@ var (
 	outputHelperExamples = []string{
 		"json:stdout",
 		"ipfix:udp:127.0.0.1:4739",
+		"'ipfix:udp:collector.example.com:4739?resolve_interval_ms=0'",
 		"'protobuf:file:/tmp/reflow.pb?export_all=true'",
 		"pcap:stdout",
 		"'sflow:udp:127.0.0.1:6343?allow_truncate=true&max_header_bytes=128'",
@@ -783,13 +784,13 @@ func parseOutputSpec(spec string) (EncoderConfig, SinkConfig, error) {
 	if encoderType == "sflow" || encoderType == "ipfix" || encoderType == "netflowv9" {
 		encoder.Batch.Enabled = boolPtr(true)
 	}
-	if err := applyOutputParams(spec, encoderType, params, &encoder); err != nil {
+	if err := applyOutputParams(spec, encoderType, params, &encoder, &sink); err != nil {
 		return EncoderConfig{}, SinkConfig{}, err
 	}
 	return encoder, sink, nil
 }
 
-func applyOutputParams(spec, encoderType string, params url.Values, encoder *EncoderConfig) error {
+func applyOutputParams(spec, encoderType string, params url.Values, encoder *EncoderConfig, sink *SinkConfig) error {
 	for key, values := range params {
 		if len(values) == 0 {
 			return fmt.Errorf("invalid -output %q: output parameter %q cannot be empty", spec, key)
@@ -862,6 +863,15 @@ func applyOutputParams(spec, encoderType string, params url.Values, encoder *Enc
 				return fmt.Errorf("invalid -output %q: output parameter %q must be a boolean", spec, key)
 			}
 			encoder.Protobuf.ExportAll = parsed
+		case "resolve_interval_ms":
+			if sink.Type != "udp" {
+				return fmt.Errorf("invalid -output %q: output parameter %q is only supported for udp sinks", spec, key)
+			}
+			parsed, err := parseNonNegativeOutputParam(spec, key, value)
+			if err != nil {
+				return err
+			}
+			sink.ResolveIntervalMS = &parsed
 		default:
 			return fmt.Errorf("invalid -output %q: unsupported output parameter %q", spec, key)
 		}

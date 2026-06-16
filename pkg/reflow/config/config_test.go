@@ -1994,6 +1994,100 @@ sink:
 	}
 }
 
+func TestLoadDefaultsUDPSinkResolveInterval(t *testing.T) {
+	dir := t.TempDir()
+
+	cfgPath := filepath.Join(dir, "reflow.yaml")
+	if err := os.WriteFile(cfgPath, []byte(`
+sources:
+  - network: udp
+    address: ":18081"
+    type: flow
+
+processor:
+  type: builtin
+
+encoder:
+  type: json
+
+sink:
+  type: udp
+  address: "collector.example.com:4739"
+`), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	cfg, err := Load(cfgPath)
+	if err != nil {
+		t.Fatalf("Load returned error: %v", err)
+	}
+	if cfg.Sink.ResolveIntervalMS == nil || *cfg.Sink.ResolveIntervalMS != 60000 {
+		t.Fatalf("expected sink.resolve_interval_ms default 60000, got %#v", cfg.Sink.ResolveIntervalMS)
+	}
+}
+
+func TestLoadAllowsDisablingUDPSinkResolveInterval(t *testing.T) {
+	dir := t.TempDir()
+
+	cfgPath := filepath.Join(dir, "reflow.yaml")
+	if err := os.WriteFile(cfgPath, []byte(`
+sources:
+  - network: udp
+    address: ":18081"
+    type: flow
+
+processor:
+  type: builtin
+
+encoder:
+  type: json
+
+sink:
+  type: udp
+  address: "collector.example.com:4739"
+  resolve_interval_ms: 0
+`), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	cfg, err := Load(cfgPath)
+	if err != nil {
+		t.Fatalf("Load returned error: %v", err)
+	}
+	if cfg.Sink.ResolveIntervalMS == nil || *cfg.Sink.ResolveIntervalMS != 0 {
+		t.Fatalf("expected sink.resolve_interval_ms=0, got %#v", cfg.Sink.ResolveIntervalMS)
+	}
+}
+
+func TestLoadRejectsInvalidUDPSinkResolveInterval(t *testing.T) {
+	dir := t.TempDir()
+
+	cfgPath := filepath.Join(dir, "reflow.yaml")
+	if err := os.WriteFile(cfgPath, []byte(`
+sources:
+  - network: udp
+    address: ":18081"
+    type: flow
+
+processor:
+  type: builtin
+
+encoder:
+  type: json
+
+sink:
+  type: udp
+  address: "collector.example.com:4739"
+  resolve_interval_ms: -1
+`), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	if _, err := Load(cfgPath); err == nil || !strings.Contains(err.Error(), "sink.resolve_interval_ms must be >= 0") {
+		t.Fatalf("expected sink.resolve_interval_ms validation error, got %v", err)
+	}
+}
+
 func TestLoadRejectsNegativeSourceInitRefresh(t *testing.T) {
 	dir := t.TempDir()
 
@@ -2181,6 +2275,36 @@ func TestGeneratedOutputParsesBatchParams(t *testing.T) {
 	}
 	if netflowV9Cfg.Encoder.MaxDatagramBytes != 4096 {
 		t.Fatalf("expected netflowv9 max datagram bytes 4096, got %d", netflowV9Cfg.Encoder.MaxDatagramBytes)
+	}
+}
+
+func TestGeneratedOutputParsesUDPSinkResolveInterval(t *testing.T) {
+	cfg, generated, err := LoadFromFlags(&FlagConfig{
+		Output:    "ipfix:udp:collector.example.com:4739?resolve_interval_ms=0",
+		OutputSet: true,
+	})
+	if err != nil {
+		t.Fatalf("LoadFromFlags returned error: %v", err)
+	}
+	if !generated {
+		t.Fatalf("expected generated config")
+	}
+	if cfg.Sink.ResolveIntervalMS == nil || *cfg.Sink.ResolveIntervalMS != 0 {
+		t.Fatalf("expected resolve_interval_ms=0, got %#v", cfg.Sink.ResolveIntervalMS)
+	}
+
+	defaultCfg, generated, err := LoadFromFlags(&FlagConfig{
+		Output:    "ipfix:udp:collector.example.com:4739",
+		OutputSet: true,
+	})
+	if err != nil {
+		t.Fatalf("LoadFromFlags default returned error: %v", err)
+	}
+	if !generated {
+		t.Fatalf("expected generated config")
+	}
+	if defaultCfg.Sink.ResolveIntervalMS == nil || *defaultCfg.Sink.ResolveIntervalMS != 60000 {
+		t.Fatalf("expected default resolve_interval_ms=60000, got %#v", defaultCfg.Sink.ResolveIntervalMS)
 	}
 }
 

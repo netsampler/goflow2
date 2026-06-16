@@ -261,6 +261,7 @@ type AggregatorConfig struct {
 	Match        map[string]string `yaml:"match"`
 	TemplateID   uint16            `yaml:"template_id"`
 	StaticFields map[string]any    `yaml:"static_fields"`
+	KeyDefaults  map[string]any    `yaml:"key_defaults"`
 
 	// Deprecated compatibility knobs. They are still parsed so older configs keep
 	// loading, then mapped into the explicit window/periodic sections.
@@ -281,6 +282,7 @@ func (cfg AggregatorConfig) MarshalYAML() (any, error) {
 		Fields     []AggregatorField        `yaml:"fields"`
 		Match      map[string]string        `yaml:"match,omitempty"`
 		TemplateID uint16                   `yaml:"template_id,omitempty"`
+		KeyDefaults map[string]any           `yaml:"key_defaults,omitempty"`
 	}{
 		Stream:     cfg.Stream,
 		EmitAs:     cfg.EmitAs,
@@ -289,6 +291,7 @@ func (cfg AggregatorConfig) MarshalYAML() (any, error) {
 		Fields:     cfg.Fields,
 		Match:      cfg.Match,
 		TemplateID: cfg.TemplateID,
+		KeyDefaults: cfg.KeyDefaults,
 	}, nil
 }
 
@@ -636,11 +639,12 @@ func parsePENInfo(raw string) (uint32, bool, error) {
 }
 
 type SinkConfig struct {
-	Type    string `yaml:"type"`
-	Path    string `yaml:"path"`
-	Address string `yaml:"address"`
-	Framing string `yaml:"framing"`
-	Mode    string `yaml:"mode"`
+	Type              string `yaml:"type"`
+	Path              string `yaml:"path"`
+	Address           string `yaml:"address"`
+	ResolveIntervalMS *int   `yaml:"resolve_interval_ms,omitempty"`
+	Framing           string `yaml:"framing"`
+	Mode              string `yaml:"mode"`
 }
 
 // BindFlags defines CLI bootstrap flags. When -config is omitted, helper flags
@@ -881,6 +885,18 @@ func (c *Config) setDefaults(configPath string) error {
 	}
 	if (c.Sink.Type == "udp" || c.Sink.Type == "unixgram") && c.Sink.Address == "" {
 		return fmt.Errorf("sink.address is required when sink.type=%s", c.Sink.Type)
+	}
+	if c.Sink.Type == "udp" && c.Sink.ResolveIntervalMS == nil {
+		v := 60000
+		c.Sink.ResolveIntervalMS = &v
+	}
+	if c.Sink.ResolveIntervalMS != nil {
+		if *c.Sink.ResolveIntervalMS < 0 {
+			return fmt.Errorf("sink.resolve_interval_ms must be >= 0")
+		}
+		if c.Sink.Type != "udp" {
+			return fmt.Errorf("sink.resolve_interval_ms is only supported when sink.type=udp")
+		}
 	}
 	return nil
 }
@@ -1314,6 +1330,17 @@ func validateAggregatorConfig(cfg AggregatorConfig) error {
 	}
 	if cfg.Periodic.Every < 0 {
 		return fmt.Errorf("aggregator.periodic.every_ms must be >= 0")
+	}
+	if len(cfg.KeyDefaults) > 0 {
+		keyFields := make(map[string]struct{}, len(cfg.KeyFields))
+		for _, field := range cfg.KeyFields {
+			keyFields[field] = struct{}{}
+		}
+		for field := range cfg.KeyDefaults {
+			if _, ok := keyFields[field]; !ok {
+				return fmt.Errorf("aggregator.key_defaults.%s requires matching key field", field)
+			}
+		}
 	}
 	if cfg.Passthrough {
 		if cfg.EmitAs == "" || cfg.EmitAs == "data" {
