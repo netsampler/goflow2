@@ -17,7 +17,7 @@ import (
 
 	"github.com/netsampler/goflow2/v3/transport"
 
-	sarama "github.com/Shopify/sarama"
+	sarama "github.com/IBM/sarama"
 )
 
 // KafkaDriver sends formatted messages to Kafka topics.

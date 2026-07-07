@@ -154,7 +154,7 @@ To change the kafka compression type of the producer side configure the followin
 ```
 -transport.kafka.compression=gzip
 ```
-The list of codecs is available in the [Sarama documentation](https://pkg.go.dev/github.com/Shopify/sarama#CompressionCodec).
+The list of codecs is available in the [Sarama documentation](https://pkg.go.dev/github.com/IBM/sarama#CompressionCodec).
 
 
 By default, the collector will listen for IPFIX/NetFlow V9/NetFlow V5 on port 2055
