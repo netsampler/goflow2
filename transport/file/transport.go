@@ -81,21 +81,37 @@ func (d *FileDriver) Init() error {
 }
 
 // Send writes a formatted message and separator to the destination.
+//
+// The message and separator are written via a single Write() call rather
+// than two. With more than one decode worker (see the collector's `workers`
+// listen option), multiple goroutines can call Send() concurrently; two
+// separate Write() calls for data then separator can interleave with
+// another goroutine's writes landing between them, corrupting any framing
+// a consumer builds on top of the separator (or on a length-prefixed binary
+// format, since the separator no longer reliably follows each record). A
+// single Write() call for the combined buffer is atomic with respect to
+// other writers on a regular file opened O_APPEND, so concurrent Send()
+// calls can no longer interleave mid-record.
 func (d *FileDriver) Send(key, data []byte) error {
 	d.lock.RLock()
 	w := d.w
 	d.lock.RUnlock()
-	if len(data) > 0 {
+
+	if d.lineSeparator == "" {
+		if len(data) == 0 {
+			return nil
+		}
 		if _, err := w.Write(data); err != nil {
 			return fmt.Errorf("write message: %w", err)
 		}
-	}
-	if d.lineSeparator == "" {
 		return nil
 	}
-	_, err := w.Write([]byte(d.lineSeparator))
-	if err != nil {
-		return fmt.Errorf("write separator: %w", err)
+
+	buf := make([]byte, 0, len(data)+len(d.lineSeparator))
+	buf = append(buf, data...)
+	buf = append(buf, d.lineSeparator...)
+	if _, err := w.Write(buf); err != nil {
+		return fmt.Errorf("write message: %w", err)
 	}
 	return nil
 }
