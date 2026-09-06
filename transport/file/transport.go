@@ -81,21 +81,48 @@ func (d *FileDriver) Init() error {
 }
 
 // Send writes a formatted message and separator to the destination.
+//
+// The message and separator are written via a single Write() call rather
+// than two. With more than one decode worker (see the collector's `workers`
+// listen option), multiple goroutines can call Send() concurrently; two
+// separate Write() calls for data then separator can interleave with
+// another goroutine's writes landing between them, corrupting any framing
+// a consumer builds on top of the separator (or on a length-prefixed binary
+// format, since the separator no longer reliably follows each record). A
+// single Write() call for the combined buffer is atomic with respect to
+// other writers on a regular file opened O_APPEND, so concurrent Send()
+// calls can no longer interleave mid-record.
+//
+// The RLock is held for the duration of the write, not just the read of
+// d.w: a SIGHUP-triggered reopen (see Init's reload goroutine) takes the
+// write lock to Close() the current file and open a new one. If Send()
+// released the read lock right after snapshotting w, a reopen could close
+// that file between the snapshot and the Write() call, and the write would
+// fail with "file already closed" - losing whichever records were in
+// flight at the exact moment of rotation. Holding the RLock across the
+// write blocks the reopen until in-flight writes finish, and readers
+// (multiple Send() calls) can still run concurrently since RLock is
+// shared.
 func (d *FileDriver) Send(key, data []byte) error {
 	d.lock.RLock()
+	defer d.lock.RUnlock()
 	w := d.w
-	d.lock.RUnlock()
-	if len(data) > 0 {
+
+	if d.lineSeparator == "" {
+		if len(data) == 0 {
+			return nil
+		}
 		if _, err := w.Write(data); err != nil {
 			return fmt.Errorf("write message: %w", err)
 		}
-	}
-	if d.lineSeparator == "" {
 		return nil
 	}
-	_, err := w.Write([]byte(d.lineSeparator))
-	if err != nil {
-		return fmt.Errorf("write separator: %w", err)
+
+	buf := make([]byte, 0, len(data)+len(d.lineSeparator))
+	buf = append(buf, data...)
+	buf = append(buf, d.lineSeparator...)
+	if _, err := w.Write(buf); err != nil {
+		return fmt.Errorf("write message: %w", err)
 	}
 	return nil
 }
