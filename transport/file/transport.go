@@ -92,10 +92,21 @@ func (d *FileDriver) Init() error {
 // single Write() call for the combined buffer is atomic with respect to
 // other writers on a regular file opened O_APPEND, so concurrent Send()
 // calls can no longer interleave mid-record.
+//
+// The RLock is held for the duration of the write, not just the read of
+// d.w: a SIGHUP-triggered reopen (see Init's reload goroutine) takes the
+// write lock to Close() the current file and open a new one. If Send()
+// released the read lock right after snapshotting w, a reopen could close
+// that file between the snapshot and the Write() call, and the write would
+// fail with "file already closed" - losing whichever records were in
+// flight at the exact moment of rotation. Holding the RLock across the
+// write blocks the reopen until in-flight writes finish, and readers
+// (multiple Send() calls) can still run concurrently since RLock is
+// shared.
 func (d *FileDriver) Send(key, data []byte) error {
 	d.lock.RLock()
+	defer d.lock.RUnlock()
 	w := d.w
-	d.lock.RUnlock()
 
 	if d.lineSeparator == "" {
 		if len(data) == 0 {
