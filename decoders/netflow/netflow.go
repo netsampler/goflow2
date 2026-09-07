@@ -299,6 +299,14 @@ func DecodeMessageCommon(payload *bytes.Buffer, store TemplateStore, ctx FlowCon
 	startSize := payload.Len()
 	headerSize := binary.Size(FlowSetHeader{})
 	for i := 0; payload.Len() >= headerSize && (version == 9 || uint16(read) < size); i++ {
+		// Exporters may zero-pad the packet to a fixed size; that padding
+		// decodes as a bogus FlowSetHeader{Id: 0, Length: 0}. A genuine
+		// FlowSet's Length always covers at least its own header, so
+		// anything shorter than that can only be trailing padding -- stop
+		// instead of treating it as a malformed FlowSet.
+		if peeked := payload.Bytes(); len(peeked) >= headerSize && int(binary.BigEndian.Uint16(peeked[2:4])) < headerSize {
+			break
+		}
 		if flowSet, lerr := DecodeMessageCommonFlowSet(payload, store, ctx, obsDomainId, version); lerr != nil && !errors.Is(lerr, ErrorTemplateNotFound) {
 			return flowSets, fmt.Errorf("DecodeMessageCommon: %w", lerr)
 		} else {
