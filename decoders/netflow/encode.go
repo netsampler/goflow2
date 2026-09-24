@@ -472,10 +472,7 @@ func encodeField(buf *bytes.Buffer, field Field, pen bool) error {
 }
 
 func encodeDataFieldValue(buf *bytes.Buffer, field DataField, template *Field) error {
-	value, err := asBytes(field.Value)
-	if err != nil {
-		return fmt.Errorf("netflow: encode field %d: %w", field.Type, err)
-	}
+	value := field.Value
 
 	if template != nil && template.Length == 0xffff {
 		if len(value) < 255 {
@@ -494,7 +491,7 @@ func encodeDataFieldValue(buf *bytes.Buffer, field DataField, template *Field) e
 		return fmt.Errorf("length mismatch header:%d value:%d", template.Length, len(value))
 	}
 
-	_, err = buf.Write(value)
+	_, err := buf.Write(value)
 	return err
 }
 
@@ -534,17 +531,6 @@ func optionTemplateFields(template interface{}, scopes, options int) ([]Field, [
 		return tmpl.Scopes, tmpl.Options, nil
 	default:
 		return nil, nil, fmt.Errorf("netflow: invalid options template type %T", template)
-	}
-}
-
-func asBytes(v interface{}) ([]byte, error) {
-	switch data := v.(type) {
-	case []byte:
-		return data, nil
-	case string:
-		return []byte(data), nil
-	default:
-		return nil, fmt.Errorf("unsupported value type %T", v)
 	}
 }
 
