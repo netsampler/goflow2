@@ -3,7 +3,6 @@ package netflow
 
 import (
 	"bytes"
-	"encoding/binary"
 	"errors"
 	"fmt"
 
@@ -297,8 +296,7 @@ func DecodeDataSet(version uint16, payload *bytes.Buffer, listFields []Field) ([
 func DecodeMessageCommon(payload *bytes.Buffer, store TemplateStore, ctx FlowContext, obsDomainId uint32, size, version uint16) (flowSets []interface{}, err error) {
 	var read int
 	startSize := payload.Len()
-	headerSize := binary.Size(FlowSetHeader{})
-	for i := 0; payload.Len() >= headerSize && (version == 9 || uint16(read) < size); i++ {
+	for i := 0; payload.Len() >= flowSetHeaderSize && (version == 9 || uint16(read) < size); i++ {
 		if flowSet, lerr := DecodeMessageCommonFlowSet(payload, store, ctx, obsDomainId, version); lerr != nil && !errors.Is(lerr, ErrorTemplateNotFound) {
 			return flowSets, fmt.Errorf("DecodeMessageCommon: %w", lerr)
 		} else {
@@ -324,7 +322,7 @@ func DecodeMessageCommonFlowSet(payload *bytes.Buffer, store TemplateStore, ctx 
 		return flowSet, fmt.Errorf("header [%w]", err)
 	}
 
-	nextrelpos := int(fsheader.Length) - binary.Size(fsheader)
+	nextrelpos := int(fsheader.Length) - flowSetHeaderSize
 	if nextrelpos < 0 {
 		return flowSet, fmt.Errorf("negative length")
 	}
