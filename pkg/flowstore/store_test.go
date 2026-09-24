@@ -96,6 +96,41 @@ func TestStoreAddSetGet(t *testing.T) {
 	}
 }
 
+func TestStoreGetValue(t *testing.T) {
+	now := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+	var gets []string
+	store := NewStore[string, int64](
+		WithDefaultTTL[string, int64](time.Minute),
+		WithNow[string, int64](func() time.Time { return now }),
+		WithHooks[string, int64](Hooks[string, int64]{
+			OnGet: func(key string, _ int64) { gets = append(gets, key) },
+		}),
+	)
+
+	if _, err := store.Set("k1", 42); err != nil {
+		t.Fatalf("set: %v", err)
+	}
+
+	if v, ok := store.GetValue("k1"); !ok || v != 42 {
+		t.Fatalf("expected 42, got %d (ok=%v)", v, ok)
+	}
+	if v, ok := store.GetValue("missing"); ok || v != 0 {
+		t.Fatalf("expected zero value for missing key, got %d (ok=%v)", v, ok)
+	}
+	if len(gets) != 1 || gets[0] != "k1" {
+		t.Fatalf("expected one OnGet event for k1, got %v", gets)
+	}
+
+	// Expired entries are dropped like in Get.
+	now = now.Add(2 * time.Minute)
+	if _, ok := store.GetValue("k1"); ok {
+		t.Fatalf("expected expired key to be gone")
+	}
+	if store.Len() != 0 {
+		t.Fatalf("expected expired entry to be removed, len=%d", store.Len())
+	}
+}
+
 func TestStoreFIFOEviction(t *testing.T) {
 	store := NewStore[int, testValue](WithMaxSize[int, testValue](2))
 
