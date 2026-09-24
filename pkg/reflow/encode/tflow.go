@@ -308,10 +308,7 @@ func renderedDataRecordSize(record netflow.DataRecord) int {
 }
 
 func renderedDataFieldSize(field netflow.DataField) int {
-	value, ok := field.Value.([]byte)
-	if !ok {
-		return 0
-	}
+	value := field.Value
 	if field.Length == 0xffff {
 		if len(value) < 255 {
 			return 1 + len(value)
