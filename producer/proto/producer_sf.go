@@ -101,10 +101,11 @@ func SearchSFlowSampleConfig(flowMessage *ProtoProducerMessage, flowSample inter
 			ipNh = recordData.NextHop
 			flowMessage.BgpNextHop = ipNh
 			flowMessage.BgpCommunities = recordData.Communities
-			flowMessage.AsPath = recordData.ASPath
-			if len(recordData.ASPath) > 0 {
-				flowMessage.DstAs = recordData.ASPath[len(recordData.ASPath)-1]
-				flowMessage.NextHopAs = recordData.ASPath[0]
+			asPath := flattenASPath(recordData)
+			flowMessage.AsPath = asPath
+			if len(asPath) > 0 {
+				flowMessage.DstAs = asPath[len(asPath)-1]
+				flowMessage.NextHopAs = asPath[0]
 			} else {
 				flowMessage.DstAs = recordData.AS
 			}
@@ -120,6 +121,29 @@ func SearchSFlowSampleConfig(flowMessage *ProtoProducerMessage, flowSample inter
 	}
 	return nil
 
+}
+
+// flattenASPath returns the AS path of an ExtendedGateway record as a single
+// list of ASNs. All segments of DstASPath are concatenated in order, so the
+// first element is the neighbouring AS and the last element is the destination
+// AS (the last member when the final segment is an AS_SET). The legacy ASPath
+// field is used when DstASPath is empty.
+func flattenASPath(gw sflow.ExtendedGateway) []uint32 {
+	switch len(gw.DstASPath) {
+	case 0:
+		return gw.ASPath
+	case 1:
+		return gw.DstASPath[0].Path
+	}
+	var n int
+	for _, segment := range gw.DstASPath {
+		n += len(segment.Path)
+	}
+	asPath := make([]uint32, 0, n)
+	for _, segment := range gw.DstASPath {
+		asPath = append(asPath, segment.Path...)
+	}
+	return asPath
 }
 
 // SearchSFlowSamplesConfig maps sFlow samples into producer messages.
