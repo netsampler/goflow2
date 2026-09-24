@@ -123,6 +123,116 @@ func TestProcessIPv6HeaderRouting(t *testing.T) {
 	t.Log(string(b))
 }
 
+func TestProcessTCP(t *testing.T) {
+	tests := []struct {
+		name    string
+		dataStr string
+		size    int
+		flags   uint32
+		wantErr bool
+	}{
+		{
+			name: "no options with PSH|ACK",
+			dataStr: "c350" + "01bb" + // ports
+				"00000001" + "00000002" + // seq, ack
+				"5018" + // data offset 5, flags PSH|ACK
+				"ffff" + "0000" + "0000", // window, csum, urgent
+			size:  20,
+			flags: 0x18,
+		},
+		{
+			name: "12 bytes of options with SYN",
+			dataStr: "c350" + "01bb" +
+				"00000001" + "00000000" +
+				"8002" + // data offset 8, flags SYN
+				"ffff" + "0000" + "0000" +
+				"020405b4" + "0103030a" + "0101080a", // MSS, WS, NOP NOP + truncated TS
+			size:  32,
+			flags: 0x02,
+		},
+		{
+			name: "URG|ECE|CWR flags do not change size",
+			dataStr: "c350" + "01bb" +
+				"00000001" + "00000002" +
+				"50e0" + // data offset 5, flags CWR|ECE|URG
+				"ffff" + "0000" + "0000",
+			size:  20,
+			flags: 0xe0,
+		},
+		{
+			name: "invalid data offset",
+			dataStr: "c350" + "01bb" +
+				"00000001" + "00000002" +
+				"4010" + // data offset 4 (< 5), flags ACK
+				"ffff" + "0000" + "0000",
+			wantErr: true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			data, err := hex.DecodeString(tc.dataStr)
+			require.NoError(t, err)
+
+			var flowMessage ProtoProducerMessage
+			res, err := ParseTCP(&flowMessage, data, ParseConfig{})
+			if tc.wantErr {
+				assert.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+
+			assert.Equal(t, tc.size, res.Size)
+			assert.Equal(t, uint32(50000), flowMessage.SrcPort)
+			assert.Equal(t, uint32(443), flowMessage.DstPort)
+			assert.Equal(t, tc.flags, flowMessage.TcpFlags)
+		})
+	}
+}
+
+func TestProcessPacketTCPLayerSize(t *testing.T) {
+	dataStr := "005300000001" + // src mac
+		"005300000002" + // dst mac
+		"0800" + // etype
+
+		"45000064" + // ipv4
+		"abab" + // id
+		"0000ff06" + // flag, ttl, proto
+		"aaaa" + // csum
+		"0a000001" + // src
+		"0a000002" + // dst
+
+		// tcp
+		"c350" + "01bb" + // ports
+		"00000001" + "00000002" + // seq, ack
+		"8018" + // data offset 8, flags PSH|ACK
+		"ffff" + "0000" + "0000" + // window, csum, urgent
+		"0101080a" + "00000001" + "00000002" + // NOP NOP timestamps
+
+		"deadbeef" // payload
+
+	data, err := hex.DecodeString(dataStr)
+	require.NoError(t, err)
+
+	var payload []byte
+	pe := NewBaseParserEnvironment()
+	require.NoError(t, pe.RegisterPort("tcp", PortDirDst, 443, ParserInfo{
+		Parser: func(flowMessage *ProtoProducerMessage, data []byte, pc ParseConfig) (res ParseResult, err error) {
+			payload = data
+			flowMessage.AddLayer("Custom")
+			res.Size = len(data)
+			return res, err
+		},
+	}))
+
+	var flowMessage ProtoProducerMessage
+	require.NoError(t, ParsePacket(&flowMessage, data, nil, pe))
+
+	assert.Equal(t, []uint32{14, 20, 32, 4}, flowMessage.LayerSize)
+	assert.Equal(t, []byte{0xde, 0xad, 0xbe, 0xef}, payload)
+	assert.Equal(t, uint32(0x18), flowMessage.TcpFlags)
+}
+
 func TestProcessICMP(t *testing.T) {
 	dataStr := "01018cf7000627c4"
 
