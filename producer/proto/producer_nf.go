@@ -247,10 +247,7 @@ func ConvertNetFlowDataSet(flowMessage *ProtoProducerMessage, version uint16, ba
 			return fmt.Errorf("netflow field %d: %w", df.Type, err)
 		}
 
-		v, ok := df.Value.([]byte)
-		if !ok {
-			continue
-		}
+		v := df.Value
 
 		if err := MapCustomNetFlow(flowMessage, df, mapperNetFlow); err != nil {
 			return wrapFieldErr(err)

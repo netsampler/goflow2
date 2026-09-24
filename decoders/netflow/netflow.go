@@ -209,68 +209,125 @@ func GetTemplateSize(version uint16, template []Field) int {
 	return sum
 }
 
-func DecodeDataSetUsingFields(version uint16, payload *bytes.Buffer, listFields []Field) ([]DataField, error) {
-	dataFields := make([]DataField, len(listFields))
-	if payload.Len() >= GetTemplateSize(version, listFields) {
-
-		for i, templateField := range listFields {
-
-			finalLength := int(templateField.Length)
-			if templateField.Length == 0xffff {
-				var variableLen8 byte
-				var variableLen16 uint16
-				if err := utils.BinaryDecoder(payload,
-					&variableLen8,
-				); err != nil {
-					return nil, fmt.Errorf("DataSet: variable length header [%w]", err)
-				}
-				if variableLen8 == 0xff {
-					if err := utils.BinaryDecoder(payload,
-						&variableLen16,
-					); err != nil {
-						return nil, fmt.Errorf("DataSet: extended variable length [%w]", err)
-					}
-					finalLength = int(variableLen16)
-				} else {
-					finalLength = int(variableLen8)
-				}
-			}
-
-			value := payload.Next(finalLength)
-			nfvalue := DataField{
-				Type:        templateField.Type,
-				PenProvided: templateField.PenProvided,
-				Pen:         templateField.Pen,
-				Value:       value,
-			}
-			dataFields[i] = nfvalue
+// minRecordSize returns the smallest number of bytes a data record for the
+// template can occupy: the fixed fields plus one length byte per
+// variable-length field.
+func minRecordSize(version uint16, template []Field) int {
+	size := GetTemplateSize(version, template)
+	for _, templateField := range template {
+		if templateField.Length == 0xffff {
+			size++
 		}
 	}
-	return dataFields, nil
+	return size
+}
+
+// maxPreallocatedRecords bounds the arena reserved for one data set, since the
+// record count is estimated from the payload length.
+const maxPreallocatedRecords = 1024
+
+// estimateRecords returns an upper bound for the number of records of the
+// template that fit in payloadLen bytes, capped to keep preallocation small.
+func estimateRecords(payloadLen, recordSize int) int {
+	if recordSize <= 0 {
+		return 0
+	}
+	n := payloadLen / recordSize
+	if n > maxPreallocatedRecords {
+		n = maxPreallocatedRecords
+	}
+	return n
+}
+
+// DecodeDataSetUsingFields decodes one data record described by listFields.
+// When the payload is shorter than the template's fixed size the returned
+// fields are zero values.
+func DecodeDataSetUsingFields(version uint16, payload *bytes.Buffer, listFields []Field) ([]DataField, error) {
+	return appendDataFields(nil, version, payload, listFields)
+}
+
+// appendDataFields decodes one data record and appends its fields to dst,
+// which lets the caller share one backing array across the records of a set.
+func appendDataFields(dst []DataField, version uint16, payload *bytes.Buffer, listFields []Field) ([]DataField, error) {
+	if payload.Len() < GetTemplateSize(version, listFields) {
+		return append(dst, make([]DataField, len(listFields))...), nil
+	}
+
+	for _, templateField := range listFields {
+		finalLength := int(templateField.Length)
+		if templateField.Length == 0xffff {
+			variableLen8, err := payload.ReadByte()
+			if err != nil {
+				return dst, fmt.Errorf("DataSet: variable length header [%w]", err)
+			}
+			if variableLen8 == 0xff {
+				hi, err := payload.ReadByte()
+				if err != nil {
+					return dst, fmt.Errorf("DataSet: extended variable length [%w]", err)
+				}
+				lo, err := payload.ReadByte()
+				if err != nil {
+					return dst, fmt.Errorf("DataSet: extended variable length [%w]", err)
+				}
+				finalLength = int(hi)<<8 | int(lo)
+			} else {
+				finalLength = int(variableLen8)
+			}
+		}
+
+		dst = append(dst, DataField{
+			Type:        templateField.Type,
+			PenProvided: templateField.PenProvided,
+			Pen:         templateField.Pen,
+			Value:       payload.Next(finalLength),
+		})
+	}
+	return dst, nil
+}
+
+// sliceRecord returns the fields appended since start as an independent
+// slice: its capacity is clipped so that appending to it never writes into
+// the shared arena.
+func sliceRecord(arena []DataField, start int) []DataField {
+	return arena[start:len(arena):len(arena)]
 }
 
 func DecodeOptionsDataSet(version uint16, payload *bytes.Buffer, listFieldsScopes, listFieldsOption []Field) ([]OptionsDataRecord, error) {
 	var records []OptionsDataRecord
 
-	listFieldsScopesSize := GetTemplateSize(version, listFieldsScopes)
-	listFieldsOptionSize := GetTemplateSize(version, listFieldsOption)
+	// A record needs at least its fixed fields plus one length byte per
+	// variable-length field; requiring that much also guarantees progress.
+	recordSize := minRecordSize(version, listFieldsScopes) + minRecordSize(version, listFieldsOption)
+	if recordSize == 0 {
+		if payload.Len() > 0 {
+			return records, fmt.Errorf("OptionsDataSet: template without fields")
+		}
+		return records, nil
+	}
 
-	for payload.Len() >= listFieldsScopesSize+listFieldsOptionSize {
-		scopeValues, err := DecodeDataSetUsingFields(version, payload, listFieldsScopes)
-		if err != nil {
+	fieldsPerRecord := len(listFieldsScopes) + len(listFieldsOption)
+	estimate := estimateRecords(payload.Len(), recordSize)
+	arena := make([]DataField, 0, estimate*fieldsPerRecord)
+	records = make([]OptionsDataRecord, 0, estimate)
+
+	for payload.Len() >= recordSize {
+		var err error
+		start := len(arena)
+		if arena, err = appendDataFields(arena, version, payload, listFieldsScopes); err != nil {
 			return records, fmt.Errorf("OptionsDataSet: scope [%w]", err)
 		}
-		optionValues, err := DecodeDataSetUsingFields(version, payload, listFieldsOption)
-		if err != nil {
+		scopeValues := sliceRecord(arena, start)
+
+		start = len(arena)
+		if arena, err = appendDataFields(arena, version, payload, listFieldsOption); err != nil {
 			return records, fmt.Errorf("OptionsDataSet: options [%w]", err)
 		}
+		optionValues := sliceRecord(arena, start)
 
-		record := OptionsDataRecord{
+		records = append(records, OptionsDataRecord{
 			ScopesValues:  scopeValues,
 			OptionsValues: optionValues,
-		}
-
-		records = append(records, record)
+		})
 	}
 	return records, nil
 }
@@ -278,18 +335,31 @@ func DecodeOptionsDataSet(version uint16, payload *bytes.Buffer, listFieldsScope
 func DecodeDataSet(version uint16, payload *bytes.Buffer, listFields []Field) ([]DataRecord, error) {
 	var records []DataRecord
 
-	listFieldsSize := GetTemplateSize(version, listFields)
-	for payload.Len() >= listFieldsSize {
-		values, err := DecodeDataSetUsingFields(version, payload, listFields)
-		if err != nil {
+	// A record needs at least its fixed fields plus one length byte per
+	// variable-length field; requiring that much also guarantees progress.
+	recordSize := minRecordSize(version, listFields)
+	if recordSize == 0 {
+		if payload.Len() > 0 {
+			return records, fmt.Errorf("DataSet: template without fields")
+		}
+		return records, nil
+	}
+
+	// All records of the set share one backing array of fields, sized from
+	// the payload length instead of allocating one slice per record.
+	estimate := estimateRecords(payload.Len(), recordSize)
+	arena := make([]DataField, 0, estimate*len(listFields))
+	records = make([]DataRecord, 0, estimate)
+
+	for payload.Len() >= recordSize {
+		var err error
+		start := len(arena)
+		if arena, err = appendDataFields(arena, version, payload, listFields); err != nil {
 			return records, fmt.Errorf("DataSet: fields [%w]", err)
 		}
-
-		record := DataRecord{
-			Values: values,
-		}
-
-		records = append(records, record)
+		records = append(records, DataRecord{
+			Values: sliceRecord(arena, start),
+		})
 	}
 	return records, nil
 }
