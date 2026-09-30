@@ -133,7 +133,95 @@ func TestExpandedSFlowDecode(t *testing.T) {
 	assert.Equal(t, []byte{0x05, 0x05, 0x05, 0x05}, flowMessage.BgpNextHop)
 	assert.Equal(t, []uint32{3936619448, 3936619708, 3936623548}, flowMessage.BgpCommunities)
 	assert.Equal(t, []uint32{456}, flowMessage.AsPath)
+	assert.Equal(t, uint32(456), flowMessage.DstAs)
+	assert.Equal(t, uint32(456), flowMessage.NextHopAs)
+	assert.Equal(t, uint32(123), flowMessage.SrcAs)
 	assert.Equal(t, []byte{0x09, 0x09, 0x09, 0x09}, flowMessage.NextHop)
+}
+
+func TestSFlowExtendedGatewayASPath(t *testing.T) {
+	tests := []struct {
+		name          string
+		gateway       sflow.ExtendedGateway
+		wantAsPath    []uint32
+		wantDstAs     uint32
+		wantNextHopAs uint32
+	}{
+		{
+			name: "single segment via DstASPath",
+			gateway: sflow.ExtendedGateway{
+				AS: 65000,
+				DstASPath: []sflow.ASPathSegment{
+					{Type: 2, Path: []uint32{65001, 65002}},
+				},
+			},
+			wantAsPath:    []uint32{65001, 65002},
+			wantDstAs:     65002,
+			wantNextHopAs: 65001,
+		},
+		{
+			name: "AS_SEQUENCE followed by AS_SET",
+			gateway: sflow.ExtendedGateway{
+				AS: 65000,
+				DstASPath: []sflow.ASPathSegment{
+					{Type: 2, Path: []uint32{35434}},
+					{Type: 1, Path: []uint32{65010}},
+				},
+			},
+			wantAsPath:    []uint32{35434, 65010},
+			wantDstAs:     65010,
+			wantNextHopAs: 35434,
+		},
+		{
+			name: "three segments",
+			gateway: sflow.ExtendedGateway{
+				AS: 65000,
+				DstASPath: []sflow.ASPathSegment{
+					{Type: 2, Path: []uint32{1, 2}},
+					{Type: 1, Path: []uint32{3}},
+					{Type: 2, Path: []uint32{4, 5}},
+				},
+			},
+			wantAsPath:    []uint32{1, 2, 3, 4, 5},
+			wantDstAs:     5,
+			wantNextHopAs: 1,
+		},
+		{
+			name: "legacy ASPath only",
+			gateway: sflow.ExtendedGateway{
+				AS:     65000,
+				ASPath: []uint32{65001, 65002},
+			},
+			wantAsPath:    []uint32{65001, 65002},
+			wantDstAs:     65002,
+			wantNextHopAs: 65001,
+		},
+		{
+			name: "no path falls back to router AS",
+			gateway: sflow.ExtendedGateway{
+				AS: 65000,
+			},
+			wantAsPath:    nil,
+			wantDstAs:     65000,
+			wantNextHopAs: 0,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			sample := sflow.FlowSample{
+				Records: []sflow.FlowRecord{
+					{Data: tc.gateway},
+				},
+			}
+			var flowMessage ProtoProducerMessage
+			assert.NoError(t, SearchSFlowSampleConfig(&flowMessage, sample, nil))
+
+			assert.Equal(t, tc.wantAsPath, flowMessage.AsPath)
+			assert.Equal(t, tc.wantDstAs, flowMessage.DstAs)
+			assert.Equal(t, tc.wantNextHopAs, flowMessage.NextHopAs)
+		})
+	}
 }
 
 func getSflowPacket() *sflow.Packet {

@@ -921,27 +921,55 @@ func encodeExtendedGateway(buf *bytes.Buffer, data *ExtendedGateway) error {
 	if err := utils.WriteU32(buf, data.SrcPeerAS); err != nil {
 		return err
 	}
-	if err := utils.WriteU32(buf, data.ASDestinations); err != nil {
-		return err
-	}
-
-	asPathLen := data.ASPathLength
-	if asPathLen == 0 && len(data.ASPath) > 0 {
-		asPathLen = uint32(len(data.ASPath))
-	}
-	if asPathLen > 0 {
-		if int(asPathLen) != len(data.ASPath) {
-			return fmt.Errorf("sflow: AS path length mismatch header:%d path:%d", asPathLen, len(data.ASPath))
+	if len(data.DstASPath) > 0 {
+		// Multi-segment form: mirrors what the decoder fills into DstASPath.
+		asDestinations := data.ASDestinations
+		if asDestinations == 0 {
+			asDestinations = uint32(len(data.DstASPath))
 		}
-		if err := utils.WriteU32(buf, data.ASPathType); err != nil {
+		if int(asDestinations) != len(data.DstASPath) {
+			return fmt.Errorf("sflow: AS destinations mismatch header:%d segments:%d", asDestinations, len(data.DstASPath))
+		}
+		if err := utils.WriteU32(buf, asDestinations); err != nil {
 			return err
 		}
-		if err := utils.WriteU32(buf, asPathLen); err != nil {
-			return err
-		}
-		for _, asn := range data.ASPath {
-			if err := utils.WriteU32(buf, asn); err != nil {
+		for _, segment := range data.DstASPath {
+			if err := utils.WriteU32(buf, segment.Type); err != nil {
 				return err
+			}
+			if err := utils.WriteU32(buf, uint32(len(segment.Path))); err != nil {
+				return err
+			}
+			for _, asn := range segment.Path {
+				if err := utils.WriteU32(buf, asn); err != nil {
+					return err
+				}
+			}
+		}
+	} else {
+		// Legacy single-segment form.
+		if err := utils.WriteU32(buf, data.ASDestinations); err != nil {
+			return err
+		}
+
+		asPathLen := data.ASPathLength
+		if asPathLen == 0 && len(data.ASPath) > 0 {
+			asPathLen = uint32(len(data.ASPath))
+		}
+		if asPathLen > 0 {
+			if int(asPathLen) != len(data.ASPath) {
+				return fmt.Errorf("sflow: AS path length mismatch header:%d path:%d", asPathLen, len(data.ASPath))
+			}
+			if err := utils.WriteU32(buf, data.ASPathType); err != nil {
+				return err
+			}
+			if err := utils.WriteU32(buf, asPathLen); err != nil {
+				return err
+			}
+			for _, asn := range data.ASPath {
+				if err := utils.WriteU32(buf, asn); err != nil {
+					return err
+				}
 			}
 		}
 	}
