@@ -752,9 +752,14 @@ func ParseTCP(flowMessage *ProtoProducerMessage, data []byte, pc ParseConfig) (r
 		return res, nil
 	}
 
-	length := int(data[13]>>4) * 4
+	// Data offset (upper nibble of byte 12) is the header length in 32-bit
+	// words, including the fixed 20 bytes. Values below 5 are invalid.
+	headerLength := int(data[12]>>4) * 4
+	if headerLength < 20 {
+		return res, wrapParseErr("ParseTCP", fmt.Errorf("invalid TCP header length %d", headerLength))
+	}
 
-	res.Size = 20 + length
+	res.Size = headerLength
 
 	flowMessage.AddLayer("TCP")
 
