@@ -8,11 +8,6 @@ on:
   pull_request:
     branches: [ main ]
 
-env:
-  # Reuse consistent image names across packaging and manifests.
-  GHCR_IMAGE: ghcr.io/${{ github.repository_owner }}/goflow2
-  DOCKERHUB_IMAGE: docker.io/${{ github.repository_owner }}/goflow2
-
 jobs:
   test:
     name: Test
@@ -98,6 +93,12 @@ jobs:
       with:
         fetch-depth: 0
 
+    - name: Set image names
+      run: |
+        owner="${GITHUB_REPOSITORY_OWNER,,}"
+        echo "GHCR_IMAGE=ghcr.io/$owner/goflow2" >> "$GITHUB_ENV"
+        echo "DOCKERHUB_IMAGE=docker.io/$owner/goflow2" >> "$GITHUB_ENV"
+
     - name: Set up Go 1.x
       uses: actions/setup-go@v6
       with:
@@ -168,7 +169,7 @@ jobs:
           DOCKER_PUSH_FLAG="--push"
         fi
         DOCKER_SUFFIX=-${{ matrix.goarch }} \
-        DOCKER_IMAGE_PREFIXES="${{ env.DOCKERHUB_IMAGE }} ${{ env.GHCR_IMAGE }}" \
+        DOCKER_IMAGE_PREFIXES="$DOCKERHUB_IMAGE $GHCR_IMAGE" \
         DOCKER_CMD="buildx build $DOCKER_PUSH_FLAG --platform $DOCKER_PLATFORM --build-arg BIN_SOURCE=prebuilt --build-arg PREBUILT_BINARY=$PREBUILT_BINARY" \
         make docker
           
@@ -233,6 +234,12 @@ jobs:
       with:
         fetch-depth: 0
 
+    - name: Set image names
+      run: |
+        owner="${GITHUB_REPOSITORY_OWNER,,}"
+        echo "GHCR_IMAGE=ghcr.io/$owner/goflow2" >> "$GITHUB_ENV"
+        echo "DOCKERHUB_IMAGE=docker.io/$owner/goflow2" >> "$GITHUB_ENV"
+
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v4
 
@@ -254,7 +261,7 @@ jobs:
       shell: bash
       # Publish branch-specific and latest tags to both registries.
       run: |
-        images=("${{ env.DOCKERHUB_IMAGE }}" "${{ env.GHCR_IMAGE }}")
+        images=("$DOCKERHUB_IMAGE" "$GHCR_IMAGE")
         for image in "${images[@]}"; do
           DOCKER_IMAGE="$image" make docker-manifest
           DOCKER_IMAGE="$image" DOCKER_MANIFEST_TAG=latest make docker-manifest
@@ -265,7 +272,7 @@ jobs:
       shell: bash
       # Tag releases get a versioned manifest plus latest.
       run: |
-        images=("${{ env.DOCKERHUB_IMAGE }}" "${{ env.GHCR_IMAGE }}")
+        images=("$DOCKERHUB_IMAGE" "$GHCR_IMAGE")
         for image in "${images[@]}"; do
           DOCKER_IMAGE="$image" DOCKER_MANIFEST_TAG="${VERSION}" make docker-manifest
           DOCKER_IMAGE="$image" DOCKER_MANIFEST_TAG=latest make docker-manifest
