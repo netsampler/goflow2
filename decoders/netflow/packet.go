@@ -17,6 +17,9 @@ type FlowSetHeader struct {
 	Length uint16 `json:"length"`
 }
 
+// flowSetHeaderSize is the wire size of FlowSetHeader (two uint16 fields).
+const flowSetHeaderSize = 4
+
 // TemplateFlowSet is a collection of templates that describe structure of Data
 // Records (actual NetFlow data).
 type TemplateFlowSet struct {
