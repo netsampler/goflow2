@@ -4,12 +4,16 @@ import (
 	"bytes"
 	"context"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"sync"
 
 	"github.com/netsampler/goflow2/decoders/netflow/templates"
 	"github.com/netsampler/goflow2/decoders/utils"
 )
+
+// ErrorEmptyRecord is returned when decoding a record consumes no bytes.
+var ErrorEmptyRecord = errors.New("record of zero size")
 
 type FlowBaseTemplateSet map[uint16]map[uint32]map[uint16]interface{}
 
@@ -248,9 +252,13 @@ func DecodeOptionsDataSet(version uint16, payload *bytes.Buffer, listFieldsScope
 	listFieldsScopesSize := GetTemplateSize(version, listFieldsScopes)
 	listFieldsOptionSize := GetTemplateSize(version, listFieldsOption)
 
-	for payload.Len() >= listFieldsScopesSize+listFieldsOptionSize {
+	for payload.Len() > 0 && payload.Len() >= listFieldsScopesSize+listFieldsOptionSize {
+		before := payload.Len()
 		scopeValues := DecodeDataSetUsingFields(version, payload, listFieldsScopes)
 		optionValues := DecodeDataSetUsingFields(version, payload, listFieldsOption)
+		if payload.Len() == before {
+			return records, fmt.Errorf("OptionsDataSet: %w", ErrorEmptyRecord)
+		}
 
 		record := OptionsDataRecord{
 			ScopesValues:  scopeValues,
@@ -266,8 +274,13 @@ func DecodeDataSet(version uint16, payload *bytes.Buffer, listFields []Field) ([
 	var records []DataRecord
 
 	listFieldsSize := GetTemplateSize(version, listFields)
-	for payload.Len() >= listFieldsSize {
+	for payload.Len() > 0 && payload.Len() >= listFieldsSize {
+		before := payload.Len()
 		values := DecodeDataSetUsingFields(version, payload, listFields)
+		// Every record must consume input, including its variable-length headers.
+		if payload.Len() == before {
+			return records, fmt.Errorf("DataSet: %w", ErrorEmptyRecord)
+		}
 
 		record := DataRecord{
 			Values: values,
