@@ -1,8 +1,8 @@
 module github.com/netsampler/goflow2/v3
 
-go 1.24.0
+go 1.26.0
 
-toolchain go1.24.1
+toolchain go1.26.8
 
 require (
 	github.com/Shopify/sarama v1.38.1
