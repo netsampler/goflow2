@@ -101,6 +101,7 @@ func DecodeField(payload *bytes.Buffer, field *Field, pen bool) error {
 	}
 	if pen && field.Type&0x8000 != 0 {
 		field.PenProvided = true
+		field.Type ^= 0x8000
 		if err := utils.BinaryDecoder(payload,
 			&field.Pen,
 		); err != nil {
