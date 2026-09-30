@@ -237,6 +237,9 @@ The available pipelines are:
 
 ## Security notes and assumptions
 
+To report a suspected vulnerability, follow the [security policy](SECURITY.md).
+Please do not disclose vulnerability details in public issues or pull requests.
+
 By default, the buffer for UDP is 9000 bytes.
 Protections were added to avoid DOS on sFlow since the various length fields are 32 bits.
 There are assumptions on how many records and list items a sample can have (eg: AS-Path).
