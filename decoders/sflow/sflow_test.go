@@ -208,6 +208,25 @@ func TestSFlowDecodeSampledEthernet(t *testing.T) {
 	assert.Equal(t, 0, payload.Len())
 }
 
+func TestSFlowDecodeSampledHeaderUsesRemainingRecordBytesWhenHeaderLengthIsLarge(t *testing.T) {
+	payload := bytes.NewBuffer([]byte{
+		0x00, 0x00, 0x00, 0x01, // protocol
+		0x00, 0x00, 0x00, 0x95, // frame length
+		0x00, 0x00, 0x00, 0x04, // stripped
+		0x00, 0x00, 0x00, 0x22, // declared header length
+		0xde, 0xad, 0xbe, 0xef, // available header bytes
+	})
+
+	flowRecord, err := DecodeFlowRecord(&RecordHeader{DataFormat: FLOW_TYPE_RAW}, payload)
+	assert.NoError(t, err)
+	assert.Equal(t, 0, payload.Len())
+
+	sampledHeader, ok := flowRecord.Data.(SampledHeader)
+	assert.True(t, ok)
+	assert.Equal(t, uint32(0x22), sampledHeader.OriginalLength)
+	assert.Equal(t, []byte{0xde, 0xad, 0xbe, 0xef}, sampledHeader.HeaderData)
+}
+
 func TestSFlowDecodeDropExtendedFunction(t *testing.T) {
 	data := []byte{
 		0x00, 0x00, 0x00, 0x05, 0x00, 0x00, 0x00, 0x01, 0xc0, 0xa8, 0x77, 0xb8, 0x00, 0x01, 0x86, 0xa0,

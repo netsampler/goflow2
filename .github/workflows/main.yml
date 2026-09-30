@@ -33,6 +33,11 @@ jobs:
           go.sum
           go.mod
 
+    - name: Install libpcap
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y libpcap-dev
+
     - name: Tidy Go Modules
       run: go mod tidy
 
