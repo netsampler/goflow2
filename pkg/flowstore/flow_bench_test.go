@@ -234,3 +234,48 @@ func BenchmarkStoreAddMultipleKeys(b *testing.B) {
 	firstEnd := expectedEnd[keys[0]]
 	b.Logf("n=%d after Add: bytes=%d packets=%d start=%v end=%v", b.N, totalBytes, totalPackets, initial.Start, firstEnd)
 }
+
+func BenchmarkStoreGetNoHooks(b *testing.B) {
+	// Get on a store without hooks must not allocate beyond the value copy.
+	key := FlowIPv4Key{
+		Src: FlowIPv4Addr{192, 0, 2, 1},
+		Dst: FlowIPv4Addr{198, 51, 100, 2},
+	}
+	store := NewStore[FlowIPv4Key, int64](WithDefaultTTL[FlowIPv4Key, int64](time.Minute))
+	if _, err := store.Set(key, 42); err != nil {
+		b.Fatalf("set: %v", err)
+	}
+
+	var got int64
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if !store.Get(key, &got) {
+			b.Fatal("key not found")
+		}
+	}
+}
+
+func BenchmarkStoreGetWithHooks(b *testing.B) {
+	// Same as above but with an OnGet hook registered; one event is expected per call.
+	key := FlowIPv4Key{
+		Src: FlowIPv4Addr{192, 0, 2, 1},
+		Dst: FlowIPv4Addr{198, 51, 100, 2},
+	}
+	var seen int
+	store := NewStore[FlowIPv4Key, int64](WithHooks[FlowIPv4Key, int64](Hooks[FlowIPv4Key, int64]{
+		OnGet: func(FlowIPv4Key, int64) { seen++ },
+	}))
+	if _, err := store.Set(key, 42); err != nil {
+		b.Fatalf("set: %v", err)
+	}
+
+	var got int64
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if !store.Get(key, &got) {
+			b.Fatal("key not found")
+		}
+	}
+}
