@@ -340,7 +340,7 @@ func (a *App) Run(ctx context.Context) error {
 				case decodeJobs <- evt:
 					return nil
 				case <-sourceCtx.Done():
-					return ctx.Err()
+					return sourceCtx.Err()
 				}
 			})
 			sourceDone <- err
@@ -366,27 +366,30 @@ func (a *App) Run(ctx context.Context) error {
 		encodeWG.Wait()
 	}
 
-	select {
-	case err := <-sourceDone:
-		stopSource()
-		for _, src := range a.sources {
-			_ = src.Close()
+	var sourceErr error
+waitSources:
+	for remaining := len(a.sources); remaining > 0; remaining-- {
+		select {
+		case err := <-sourceDone:
+			// Normal EOF finishes only this source. Other finite inputs and live
+			// listeners keep running until they finish or shutdown is requested.
+			if err != nil {
+				if ctx.Err() == nil {
+					sourceErr = fmt.Errorf("run source: %w", err)
+				}
+				break waitSources
+			}
+		case <-ctx.Done():
+			break waitSources
 		}
-		sourceWG.Wait()
-		shutdown()
-		if err != nil && sourceCtx.Err() == nil {
-			return fmt.Errorf("run source: %w", err)
-		}
-		return nil
-	case <-ctx.Done():
-		stopSource()
-		for _, src := range a.sources {
-			_ = src.Close()
-		}
-		sourceWG.Wait()
-		shutdown()
-		return nil
 	}
+	stopSource()
+	for _, src := range a.sources {
+		_ = src.Close()
+	}
+	sourceWG.Wait()
+	shutdown()
+	return sourceErr
 }
 
 type aggregateWorker struct {

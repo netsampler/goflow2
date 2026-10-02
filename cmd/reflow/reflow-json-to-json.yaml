@@ -1,0 +1,25 @@
+# Accept json from network print the normalized packet/flow view as JSON.
+
+sources:
+  - network: udp
+    address: ":18081"
+    type: json
+    json:
+      flavor: reflow
+
+processor:
+  type: builtin
+  workers: 2
+  builtin:
+    drop_message: true
+    drop_payload: false
+
+encoder:
+  # Canonical JSON shows the internal event shape after packet parsing.
+  type: json
+  workers: 1
+  json:
+    flavor: canonical
+
+sink:
+  type: stdout

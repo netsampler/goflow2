@@ -58,6 +58,10 @@ func NewSFlowEncoder(cfg config.EncoderConfig) *SFlowEncoder {
 
 // Encode appends an event to the encoder-local batch or encodes it immediately.
 func (e *SFlowEncoder) Encode(evt *event.Event) ([][]byte, error) {
+	if evt == nil || evt.Kind == "control" {
+		return nil, nil
+	}
+
 	if !e.batch.Enabled {
 		packet, err := e.buildPacket([]*event.Event{evt})
 		if err != nil {
