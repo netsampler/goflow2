@@ -58,6 +58,12 @@ type ExtendedRouter struct {
 	DstMaskLen       uint32          `json:"dst-mask-len"`
 }
 
+// ASPathSegment represents a segment in an AS path.
+type ASPathSegment struct {
+	Type uint32   `json:"type"`
+	Path []uint32 `json:"path"`
+}
+
 // ExtendedGateway carries BGP gateway attributes and AS paths.
 type ExtendedGateway struct {
 	NextHopIPVersion  uint32          `json:"next-hop-ip-version"`
@@ -69,6 +75,7 @@ type ExtendedGateway struct {
 	ASPathType        uint32          `json:"as-path-type"`
 	ASPathLength      uint32          `json:"as-path-length"`
 	ASPath            []uint32        `json:"as-path"`
+	DstASPath         []ASPathSegment `json:"dst-as-path"`
 	CommunitiesLength uint32          `json:"communities-length"`
 	Communities       []uint32        `json:"communities"`
 	LocalPref         uint32          `json:"local-pref"`

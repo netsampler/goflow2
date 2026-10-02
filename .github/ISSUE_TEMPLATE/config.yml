@@ -1,0 +1,4 @@
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/netsampler/goflow2/security/policy
+    about: Read the security policy for private reporting instructions. Do not disclose vulnerability details in a public issue.

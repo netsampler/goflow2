@@ -7,6 +7,9 @@ assignees: ''
 
 ---
 
+For suspected security vulnerabilities, follow the [security policy](https://github.com/netsampler/goflow2/security/policy).
+Do not include vulnerability details or sensitive packet captures in a public issue.
+
 **Describe the bug**
 A clear and concise description of what the bug is.
 

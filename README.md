@@ -172,7 +172,7 @@ By default, compression is disabled when sending data to Kafka.
 To change the kafka compression type of the producer side configure the following option:
 
 ```
--transport.kafka.compression.type=gzip
+-transport.kafka.compression=gzip
 ```
 The list of codecs is available in the [Sarama documentation](https://pkg.go.dev/github.com/Shopify/sarama#CompressionCodec).
 
@@ -256,6 +256,9 @@ The available pipelines are:
 * [Logstash+Elastic+Kibana](./compose/elk)
 
 ## Security notes and assumptions
+
+To report a suspected vulnerability, follow the [security policy](SECURITY.md).
+Please do not disclose vulnerability details in public issues or pull requests.
 
 By default, the buffer for UDP is 9000 bytes.
 Protections were added to avoid DOS on sFlow since the various length fields are 32 bits.

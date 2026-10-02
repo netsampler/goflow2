@@ -282,7 +282,7 @@ func (e *SFlowEncoder) buildFlowSample(evt *event.Event) (sflow.FlowSample, erro
 		return sflow.FlowSample{}, fmt.Errorf("event fields are empty")
 	}
 	sf := evt.SFlow
-	headerData, protocol, frameLength, originalLength := e.sampledHeaderFields(evt, fields)
+	headerData, protocol, frameLength := e.sampledHeaderFields(evt, fields)
 
 	return sflow.FlowSample{
 		Header: sflow.SampleHeader{
@@ -299,10 +299,11 @@ func (e *SFlowEncoder) buildFlowSample(evt *event.Event) (sflow.FlowSample, erro
 		Records: []sflow.FlowRecord{
 			{
 				Data: sflow.SampledHeader{
-					Protocol:       protocol,
-					FrameLength:    frameLength,
-					Stripped:       uint32Field(fields, "stripped"),
-					OriginalLength: originalLength,
+					Protocol:    protocol,
+					FrameLength: frameLength,
+					Stripped:    uint32Field(fields, "stripped"),
+					// The sFlow header_length describes the retained bytes.
+					OriginalLength: uint32(len(headerData)),
 					HeaderData:     headerData,
 				},
 			},
@@ -310,11 +311,10 @@ func (e *SFlowEncoder) buildFlowSample(evt *event.Event) (sflow.FlowSample, erro
 	}, nil
 }
 
-func (e *SFlowEncoder) sampledHeaderFields(evt *event.Event, fields map[string]any) ([]byte, uint32, uint32, uint32) {
+func (e *SFlowEncoder) sampledHeaderFields(evt *event.Event, fields map[string]any) ([]byte, uint32, uint32) {
 	headerData := bytesField(fields, "header_data")
 	protocol := uint32Field(fields, "protocol")
 	frameLength := uint32Field(fields, "frame_length")
-	originalLength := uint32Field(fields, "original_length")
 	if len(headerData) == 0 {
 		if pseudoHeader, ok := packet.BuildPseudoHeader(evt, fields); ok {
 			headerData = pseudoHeader
@@ -324,12 +324,9 @@ func (e *SFlowEncoder) sampledHeaderFields(evt *event.Event, fields map[string]a
 			if frameLength == 0 {
 				frameLength = uint32(len(headerData))
 			}
-			if originalLength == 0 {
-				originalLength = uint32(len(headerData))
-			}
 		}
 	}
-	return headerData, protocol, frameLength, originalLength
+	return headerData, protocol, frameLength
 }
 
 func sampledHeaderProtocolForPacket(evt *event.Event, headerData []byte) uint32 {

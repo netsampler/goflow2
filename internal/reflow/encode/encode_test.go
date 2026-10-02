@@ -244,7 +244,7 @@ func TestSFlowEncoderFallsBackToLoopbackAgentIP(t *testing.T) {
 		Fields: map[string]any{
 			"protocol":        uint32(1),
 			"frame_length":    uint32(60),
-			"original_length": uint32(60),
+			"original_length": uint32(4),
 			"header_data":     []byte{0, 1, 2, 3},
 		},
 	})
@@ -366,6 +366,39 @@ func TestSFlowEncoderTruncatesOversizedSampleWhenEnabled(t *testing.T) {
 	}
 	if int(header.OriginalLength) != len(header.HeaderData) {
 		t.Fatalf("expected OriginalLength=%d to match truncated header_data length, got %d", len(header.HeaderData), header.OriginalLength)
+	}
+}
+
+func TestSFlowEncoderRoundTripsProcessorTruncatedHeader(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("..", "..", "..", "cmd", "reflow", "raw-packet-header.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	proc := processor.NewBuiltin(config.ProcessorConfig{
+		Builtin: config.BuiltinProcessorConfig{TruncatePacketBytes: 33},
+	})
+	events, err := proc.Process(&event.Event{
+		Source:  event.SourceMetadata{Type: "json", JSON: event.JSONMetadata{Flavor: "raw_packet_header"}},
+		Message: json.RawMessage(raw),
+	})
+	if err != nil {
+		t.Fatalf("Process returned error: %v", err)
+	}
+	enc := NewSFlowEncoder(config.EncoderConfig{Type: "sflow"})
+	payloads, err := enc.Encode(events[0])
+	if err != nil {
+		t.Fatalf("Encode returned error: %v", err)
+	}
+	packet := decodeSFlowPacket(t, payloads[0])
+	header := packet.Samples[0].(sflow.FlowSample).Records[0].Data.(sflow.SampledHeader)
+	if header.OriginalLength != 33 || len(header.HeaderData) != 33 {
+		t.Fatalf("expected 33 retained bytes, got length=%d data=%d", header.OriginalLength, len(header.HeaderData))
+	}
+	if header.FrameLength != 74 {
+		t.Fatalf("expected original frame length 74, got %d", header.FrameLength)
+	}
+	if !bytes.Equal(header.HeaderData, events[0].Fields["header_data"].([]byte)) {
+		t.Fatal("sampled header bytes changed during round trip")
 	}
 }
 
@@ -1281,7 +1314,7 @@ func testSFlowEvent(agentIP string) *event.Event {
 			"agent_ip":        "192.0.2.1",
 			"protocol":        uint32(1),
 			"frame_length":    uint32(60),
-			"original_length": uint32(60),
+			"original_length": uint32(4),
 			"header_data":     []byte{0, 1, 2, 3},
 		},
 		SFlow: &event.SFlowMetadata{
