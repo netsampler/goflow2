@@ -69,7 +69,8 @@ func (s *SingleSamplingRateSystem) GetSamplingRate(version uint16, obsDomainId u
 
 func NetFlowLookFor(dataFields []netflow.DataField, typeId uint16) (bool, interface{}) {
 	for _, dataField := range dataFields {
-		if dataField.Type == typeId {
+		// Standard lookups must exclude enterprise elements, including explicit PEN zero.
+		if !dataField.PenProvided && dataField.Type == typeId {
 			return true, dataField.Value
 		}
 	}
