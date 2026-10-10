@@ -1,6 +1,7 @@
 package utils
 
 import (
+	"bytes"
 	"encoding/binary"
 	"io"
 	"testing"
@@ -21,27 +22,36 @@ func testBinaryReadComparison(buf BytesBuffer, data any) error {
 
 type benchFct func(buf BytesBuffer, data any) error
 
-func TestBinaryReadInteger(t *testing.T) {
-	buf := newTestBuf([]byte{1, 2, 3, 4})
-	var dest uint32
-	err := testBinaryRead(buf, &dest)
-	require.NoError(t, err)
-	assert.Equal(t, uint32(0x1020304), dest)
+func TestBinaryRead(t *testing.T) {
+	wantInteger := uint32(0x01020304)
+	for _, tc := range []struct {
+		name string
+		data []byte
+		dest any
+		want any
+	}{
+		{"integer", []byte{1, 2, 3, 4}, new(uint32), &wantInteger},
+		{"bytes", []byte{1, 2, 3, 4}, make([]byte, 4), []byte{1, 2, 3, 4}},
+		{"uints", []byte{1, 2, 3, 4, 5, 6, 7, 8}, make([]uint32, 2), []uint32{0x01020304, 0x05060708}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			buf := bytes.NewBuffer(tc.data)
+			require.NoError(t, BinaryRead(buf, binary.BigEndian, tc.dest))
+			assert.Equal(t, tc.want, tc.dest)
+			assert.Empty(t, buf.Bytes())
+		})
+	}
 }
 
-func TestBinaryReadBytes(t *testing.T) {
-	buf := newTestBuf([]byte{1, 2, 3, 4})
-	dest := make([]byte, 4)
-	err := testBinaryRead(buf, dest)
-	require.NoError(t, err)
-}
-
-func TestBinaryReadUints(t *testing.T) {
-	buf := newTestBuf([]byte{1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4})
-	dest := make([]uint32, 4)
-	err := testBinaryRead(buf, dest)
-	require.NoError(t, err)
-	assert.Equal(t, uint32(0x1020304), dest[0])
+func TestBinaryDecoderConsumesValues(t *testing.T) {
+	buf := bytes.NewBuffer([]byte{1, 2, 3, 4, 5, 6})
+	var first uint16
+	var second uint32
+	require.NoError(t, BinaryDecoder(buf, &first, &second))
+	assert.Equal(t, uint16(0x0102), first)
+	assert.Equal(t, uint32(0x03040506), second)
+	assert.Empty(t, buf.Bytes())
+	assert.ErrorIs(t, BinaryDecoder(buf, &first), io.ErrUnexpectedEOF)
 }
 
 type testBuf struct {
@@ -56,10 +66,12 @@ func newTestBuf(data []byte) *testBuf {
 }
 
 func (b *testBuf) Next(n int) []byte {
-	if n > len(b.buf) {
-		return b.buf
+	if n > len(b.buf)-b.off {
+		n = len(b.buf) - b.off
 	}
-	return b.buf[0:n]
+	data := b.buf[b.off : b.off+n]
+	b.off += n
+	return data
 }
 
 func (b *testBuf) Reset() {
@@ -109,7 +121,7 @@ func BenchmarkBinaryReadByteBase(b *testing.B) {
 	benchBinaryRead(b, buf, &dest, false)
 }
 
-func BBenchmarkBinaryReadByteComparison(b *testing.B) {
+func BenchmarkBinaryReadByteComparison(b *testing.B) {
 	buf := newTestBuf([]byte{1, 2, 3, 4})
 	var dest byte
 	benchBinaryRead(b, buf, &dest, true)

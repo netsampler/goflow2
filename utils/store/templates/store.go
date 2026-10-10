@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/netsampler/goflow2/v3/decoders/netflow"
+	"github.com/netsampler/goflow2/v3/internal/flowkey"
 	"github.com/netsampler/goflow2/v3/pkg/flowstore"
 )
 
@@ -222,7 +223,7 @@ func (s *TemplateFlowStore) GetAll() map[string]netflow.FlowBaseTemplateSet {
 			bucket = make(netflow.FlowBaseTemplateSet)
 			ret[router] = bucket
 		}
-		bucket[composeTemplateKey(key.Version, key.ObsDomainID, key.TemplateID)] = val
+		bucket[flowkey.Template(key.Version, key.ObsDomainID, key.TemplateID)] = val
 		return true
 	})
 	return ret
@@ -251,9 +252,4 @@ func (s *TemplateFlowStore) buildStoreHooks() flowstore.Hooks[flowStoreTemplateK
 		}
 	}
 	return hooks
-}
-
-// composeTemplateKey packs version, observation domain, and template id for snapshots.
-func composeTemplateKey(version uint16, obsDomainId uint32, templateId uint16) uint64 {
-	return (uint64(version) << 48) | (uint64(obsDomainId) << 16) | uint64(templateId)
 }
