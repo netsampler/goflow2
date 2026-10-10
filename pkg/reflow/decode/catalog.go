@@ -18,8 +18,9 @@ type decodeCatalog struct {
 }
 
 type decodeCatalogIPFIXKey struct {
-	id  uint16
-	pen uint32
+	enterprise bool
+	id         uint16
+	pen        uint32
 }
 
 type decodeCatalogField struct {
@@ -61,7 +62,7 @@ func (c decodeCatalog) lookup(field netflow.DataField, netflowV9 bool) (decodeCa
 	if field.PenProvided {
 		pen = field.Pen
 	}
-	out, ok := c.ipfix[decodeCatalogIPFIXKey{id: field.Type, pen: pen}]
+	out, ok := c.ipfix[decodeCatalogIPFIXKey{id: field.Type, pen: pen, enterprise: field.PenProvided}]
 	return out, ok
 }
 
@@ -91,7 +92,7 @@ func decodeCatalogIPFIXKeys(name string, def config.IPFIXFieldDefinition) []deco
 	if def.EnterpriseScoped || def.PEN != 0 {
 		pen = def.PEN
 	}
-	keys := []decodeCatalogIPFIXKey{{id: def.ID, pen: pen}}
+	keys := []decodeCatalogIPFIXKey{{id: def.ID, pen: pen, enterprise: def.EnterpriseScoped || def.PEN != 0}}
 	switch name {
 	case "src_addr":
 		keys = append(keys, decodeCatalogIPFIXKey{id: 27})
