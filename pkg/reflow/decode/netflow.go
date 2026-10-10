@@ -200,7 +200,7 @@ func searchNetFlowOptionDataSets(dataFlowSet []netflow.OptionsDataFlowSet) (uint
 // netFlowPopulate copies one matching options field into the provided output.
 func netFlowPopulate(dataFields []netflow.DataField, typeID uint16, out *uint32) (bool, error) {
 	for _, dataField := range dataFields {
-		if dataField.Type != typeID {
+		if dataField.PenProvided || dataField.Type != typeID {
 			continue
 		}
 		*out = decodeUint32(dataField.Value)
@@ -354,6 +354,10 @@ func (d *builtIn) optionsEvents(base *event.Event, flowType string, version uint
 			for _, dataField := range record.OptionsValues {
 				if catalogField, ok := d.catalog.lookupOptions(dataField, netflowV9, false); ok {
 					applyCatalogDataField(fields, dataField, catalogField, 0, 0, netflowV9)
+					continue
+				}
+				if dataField.PenProvided {
+					fields[fmt.Sprintf("option_%d", dataField.Type)] = decodeOptionFallback(dataField.Value)
 					continue
 				}
 				switch dataField.Type {
