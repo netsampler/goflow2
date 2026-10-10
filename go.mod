@@ -2,6 +2,8 @@ module github.com/netsampler/goflow2
 
 go 1.25.0
 
+toolchain go1.26.9
+
 require (
 	github.com/IBM/sarama v1.50.3
 	github.com/golang/protobuf v1.5.3
