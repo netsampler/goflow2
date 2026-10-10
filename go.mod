@@ -2,6 +2,8 @@ module github.com/netsampler/goflow2/v3
 
 go 1.25.0
 
+toolchain go1.26.9
+
 require (
 	github.com/IBM/sarama v1.50.3
 	github.com/libp2p/go-reuseport v0.4.0
