@@ -1,0 +1,2998 @@
+package encode
+
+import (
+	"encoding/json"
+	"fmt"
+	"net"
+	"net/netip"
+	"sort"
+	"strings"
+	"sync/atomic"
+	"time"
+
+	"github.com/netsampler/goflow2/v3/decoders/netflow"
+	"github.com/netsampler/goflow2/v3/pkg/reflow/config"
+	"github.com/netsampler/goflow2/v3/pkg/reflow/event"
+)
+
+type IPFIXEncoder struct {
+	seq             atomic.Uint32
+	cfg             config.EncoderConfig
+	dataSchemas     map[string]templatedSchemaState
+	optionsSchemas  map[string]optionsSchemaState
+	fallbackPlans   map[string]fallbackTemplatePlan
+	sourceOptions   map[string]sourceOptionsState
+	lastTemplateRun time.Time
+	lastOptionsRun  time.Time
+	events          []*event.Event
+	estimatedBytes  int
+}
+
+type NFv9Encoder struct {
+	seq             atomic.Uint32
+	cfg             config.EncoderConfig
+	dataSchemas     map[string]templatedSchemaState
+	optionsSchemas  map[string]optionsSchemaState
+	fallbackPlans   map[string]fallbackTemplatePlan
+	sourceOptions   map[string]sourceOptionsState
+	lastTemplateRun time.Time
+	lastOptionsRun  time.Time
+	events          []*event.Event
+	estimatedBytes  int
+}
+
+type templatedSchemaState struct {
+	stream         string
+	fieldNames     []string
+	fields         []event.SchemaField
+	baseTemplateID uint16
+	template       netflow.TemplateRecord
+}
+
+type optionsSchemaState struct {
+	stream        string
+	templateID    uint16
+	scopes        []event.SchemaField
+	options       []event.SchemaField
+	ipfixTemplate netflow.IPFIXOptionsTemplateRecord
+	nfv9Template  netflow.NFv9OptionsTemplateRecord
+}
+
+type sourceOptionsState struct {
+	stream              string
+	agentIP             string
+	sourceID            uint32
+	observationDomainID uint32
+	samplingRate        uint32
+	samplePool          uint32
+	drops               uint32
+	inputIf             uint32
+	outputIf            uint32
+	templateID          uint16
+}
+
+type fallbackTemplatePlan struct {
+	template netflow.TemplateRecord
+	names    []string
+	defs     []config.IPFIXFieldDefinition
+	families []string
+}
+
+type ipfixBatchRecord struct {
+	key                  string
+	recordKind           tflowBatchRecordKind
+	exportTime           uint32
+	observationDomainID  uint32
+	templateID           uint16
+	template             *netflow.TemplateRecord
+	data                 netflow.DataRecord
+	ipfixOptionsTemplate *netflow.IPFIXOptionsTemplateRecord
+	nfv9OptionsTemplate  *netflow.NFv9OptionsTemplateRecord
+	options              netflow.OptionsDataRecord
+}
+
+type ipfixBatchSet struct {
+	key                  string
+	recordKind           tflowBatchRecordKind
+	templateID           uint16
+	template             *netflow.TemplateRecord
+	ipfixOptionsTemplate *netflow.IPFIXOptionsTemplateRecord
+	nfv9OptionsTemplate  *netflow.NFv9OptionsTemplateRecord
+	records              []netflow.DataRecord
+	optionsRecords       []netflow.OptionsDataRecord
+}
+
+type nfv9BatchRecord struct {
+	key             string
+	recordKind      tflowBatchRecordKind
+	unixSeconds     uint32
+	systemUptime    uint32
+	sourceID        uint32
+	templateID      uint16
+	template        *netflow.TemplateRecord
+	data            netflow.DataRecord
+	optionsTemplate *netflow.NFv9OptionsTemplateRecord
+	options         netflow.OptionsDataRecord
+}
+
+type nfv9BatchTiming struct {
+	packetExportMS int64
+	baseMS         int64
+	unixSeconds    uint32
+	systemUptime   uint32
+}
+
+type templatedEncodingContext struct {
+	netflowV9     bool
+	firstSwitched uint32
+	lastSwitched  uint32
+}
+
+type tflowBatchRecordKind int
+
+const (
+	tflowBatchData tflowBatchRecordKind = iota
+	tflowBatchOptions
+)
+
+const tflowRecordTypeField = "tflow_record_type"
+
+func NewIPFIXEncoder(cfg config.EncoderConfig) *IPFIXEncoder {
+	return &IPFIXEncoder{
+		cfg:            cfg,
+		dataSchemas:    make(map[string]templatedSchemaState),
+		optionsSchemas: make(map[string]optionsSchemaState),
+		fallbackPlans:  make(map[string]fallbackTemplatePlan),
+		sourceOptions:  make(map[string]sourceOptionsState),
+	}
+}
+
+func (e *IPFIXEncoder) Encode(evt *event.Event) ([][]byte, error) {
+	if evt != nil && evt.Kind == "control" {
+		payloads, err := e.flushDataPackets("control")
+		if err != nil {
+			return nil, err
+		}
+		controlPayloads, err := e.handleControl(evt)
+		if err != nil {
+			return nil, err
+		}
+		return append(payloads, controlPayloads...), nil
+	}
+	if !e.cfg.Batch.IsEnabled() {
+		packet, err := e.buildPacket(evt)
+		if err != nil {
+			return nil, err
+		}
+		data, err := netflow.EncodeMessage(packet)
+		if err != nil {
+			return nil, fmt.Errorf("encode ipfix packet: %w", err)
+		}
+		return [][]byte{data}, nil
+	}
+	e.appendEvent(evt)
+	if trigger := e.batchFlushTrigger(); trigger != "" {
+		return e.flushDataPackets(trigger)
+	}
+	return nil, nil
+}
+
+func (e *IPFIXEncoder) Flush() ([][]byte, error) {
+	payloads, err := e.flushDataPackets("flush")
+	if err != nil {
+		return nil, err
+	}
+	controlPayloads, err := e.flushControlPackets(time.Now().UTC())
+	if err != nil {
+		return nil, err
+	}
+	return append(payloads, controlPayloads...), nil
+}
+
+func (e *IPFIXEncoder) appendEvent(evt *event.Event) {
+	e.events = append(e.events, evt)
+	e.estimatedBytes += e.estimatedEventRenderedSize(evt)
+}
+
+func (e *IPFIXEncoder) batchFlushTrigger() string {
+	if len(e.events) == 0 {
+		return ""
+	}
+	if e.cfg.Batch.MaxRecords > 0 && len(e.events) >= e.cfg.Batch.MaxRecords {
+		return "max_records"
+	}
+	if e.cfg.Batch.MaxBytes > 0 && e.estimatedBytes >= e.cfg.Batch.MaxBytes {
+		return "max_bytes"
+	}
+	return ""
+}
+
+func (e *IPFIXEncoder) flushDataPackets(trigger string) ([][]byte, error) {
+	if len(e.events) == 0 {
+		return nil, nil
+	}
+
+	pending := e.events
+
+	var payloads [][]byte
+	for len(pending) > 0 {
+		packet, accepted, err := e.buildBatchedPacket(pending)
+		if err != nil {
+			e.events = pending
+			e.estimatedBytes = e.estimatedEventsRenderedSize(pending)
+			return payloads, err
+		}
+		data, err := netflow.EncodeMessage(packet)
+		if err != nil {
+			e.events = pending
+			e.estimatedBytes = e.estimatedEventsRenderedSize(pending)
+			return payloads, fmt.Errorf("encode ipfix packet: %w", err)
+		}
+		acceptedBytes := renderedFlowSetsDataSize(packet.FlowSets)
+		payloads = append(payloads, data)
+		pending = pending[accepted:]
+		e.events = pending
+		e.estimatedBytes -= acceptedBytes
+		if e.estimatedBytes < 0 {
+			e.estimatedBytes = e.estimatedEventsRenderedSize(pending)
+		}
+		if !e.shouldContinueDataFlush(trigger) {
+			return payloads, nil
+		}
+	}
+	e.events = nil
+	e.estimatedBytes = 0
+	return payloads, nil
+}
+
+func (e *IPFIXEncoder) shouldContinueDataFlush(trigger string) bool {
+	if len(e.events) == 0 {
+		return false
+	}
+	switch trigger {
+	case "max_records", "max_bytes":
+		return e.batchFlushTrigger() != ""
+	default:
+		return true
+	}
+}
+
+func (e *IPFIXEncoder) estimatedEventsRenderedSize(events []*event.Event) int {
+	var total int
+	for _, evt := range events {
+		total += e.estimatedEventRenderedSize(evt)
+	}
+	return total
+}
+
+func (e *IPFIXEncoder) estimatedEventRenderedSize(evt *event.Event) int {
+	record, err := e.ipfixBatchRecord(evt)
+	if err != nil {
+		return estimatedEventSize(evt)
+	}
+	if record.recordKind == tflowBatchOptions {
+		return renderedOptionsDataRecordsSize([]netflow.OptionsDataRecord{record.options})
+	}
+	return renderedDataRecordSize(record.data)
+}
+
+func (e *NFv9Encoder) estimatedEventsRenderedSize(events []*event.Event) int {
+	var total int
+	for _, evt := range events {
+		total += e.estimatedEventRenderedSize(evt)
+	}
+	return total
+}
+
+func (e *NFv9Encoder) estimatedEventRenderedSize(evt *event.Event) int {
+	timing := nfv9BatchTimingFor([]*event.Event{evt})
+	record, err := e.nfv9BatchRecord(evt, timing)
+	if err != nil {
+		return estimatedEventSize(evt)
+	}
+	if record.recordKind == tflowBatchOptions {
+		return renderedOptionsDataRecordsSize([]netflow.OptionsDataRecord{record.options})
+	}
+	return renderedDataRecordSize(record.data)
+}
+
+func renderedDataRecordSize(record netflow.DataRecord) int {
+	var total int
+	for _, field := range record.Values {
+		total += renderedDataFieldSize(field)
+	}
+	return total
+}
+
+func renderedDataFieldSize(field netflow.DataField) int {
+	value, ok := field.Value.([]byte)
+	if !ok {
+		return 0
+	}
+	if field.Length == 0xffff {
+		if len(value) < 255 {
+			return 1 + len(value)
+		}
+		return 3 + len(value)
+	}
+	return len(value)
+}
+
+func renderedFlowSetsDataSize(flowSets []interface{}) int {
+	var total int
+	for _, flowSet := range flowSets {
+		switch fs := flowSet.(type) {
+		case netflow.DataFlowSet:
+			total += renderedDataRecordsSize(fs.Records)
+		case *netflow.DataFlowSet:
+			if fs != nil {
+				total += renderedDataRecordsSize(fs.Records)
+			}
+		case netflow.OptionsDataFlowSet:
+			total += renderedOptionsDataRecordsSize(fs.Records)
+		case *netflow.OptionsDataFlowSet:
+			if fs != nil {
+				total += renderedOptionsDataRecordsSize(fs.Records)
+			}
+		}
+	}
+	return total
+}
+
+func renderedDataRecordsSize(records []netflow.DataRecord) int {
+	var total int
+	for _, record := range records {
+		total += renderedDataRecordSize(record)
+	}
+	return total
+}
+
+func renderedOptionsDataRecordsSize(records []netflow.OptionsDataRecord) int {
+	var total int
+	for _, record := range records {
+		for _, field := range record.ScopesValues {
+			total += renderedDataFieldSize(field)
+		}
+		for _, field := range record.OptionsValues {
+			total += renderedDataFieldSize(field)
+		}
+	}
+	return total
+}
+
+func (e *IPFIXEncoder) buildBatchedPacket(events []*event.Event) (*netflow.IPFIXPacket, int, error) {
+	if len(events) == 0 {
+		return nil, 0, fmt.Errorf("empty ipfix packet batch")
+	}
+	first, err := e.ipfixBatchRecord(events[0])
+	if err != nil {
+		return nil, 0, err
+	}
+	sets := []ipfixBatchSet{{
+		key:                  first.key,
+		recordKind:           first.recordKind,
+		templateID:           first.templateID,
+		template:             first.template,
+		ipfixOptionsTemplate: first.ipfixOptionsTemplate,
+		nfv9OptionsTemplate:  first.nfv9OptionsTemplate,
+		records:              dataRecordsForBatchRecord(first),
+		optionsRecords:       optionsRecordsForBatchRecord(first),
+	}}
+	packet := e.ipfixBatchPacket(first, sets)
+	accepted := 1
+
+	for _, evt := range events[1:] {
+		next, err := e.ipfixBatchRecord(evt)
+		if err != nil {
+			return nil, accepted, err
+		}
+		if next.observationDomainID != first.observationDomainID {
+			break
+		}
+		nextSets, ok := appendIPFIXBatchRecord(sets, next)
+		if !ok {
+			break
+		}
+		packet = e.ipfixBatchPacket(first, nextSets)
+		if e.cfg.MaxDatagramBytes > 0 {
+			data, err := netflow.EncodeMessage(packet)
+			if err != nil {
+				return nil, accepted, fmt.Errorf("encode ipfix packet: %w", err)
+			}
+			if len(data) > e.cfg.MaxDatagramBytes {
+				packet = e.ipfixBatchPacket(first, sets)
+				break
+			}
+		}
+		sets = nextSets
+		accepted++
+	}
+
+	e.advanceIPFIXSequence(packet)
+	return packet, accepted, nil
+}
+
+func appendIPFIXBatchRecord(sets []ipfixBatchSet, record ipfixBatchRecord) ([]ipfixBatchSet, bool) {
+	next := make([]ipfixBatchSet, len(sets))
+	copy(next, sets)
+	for i := range next {
+		if next[i].templateID != record.templateID || next[i].recordKind != record.recordKind {
+			continue
+		}
+		if next[i].key != record.key {
+			return nil, false
+		}
+		if record.recordKind == tflowBatchOptions {
+			next[i].optionsRecords = append(append([]netflow.OptionsDataRecord(nil), next[i].optionsRecords...), record.options)
+		} else {
+			next[i].records = append(append([]netflow.DataRecord(nil), next[i].records...), record.data)
+		}
+		return next, true
+	}
+	next = append(next, ipfixBatchSet{
+		key:                  record.key,
+		recordKind:           record.recordKind,
+		templateID:           record.templateID,
+		template:             record.template,
+		ipfixOptionsTemplate: record.ipfixOptionsTemplate,
+		nfv9OptionsTemplate:  record.nfv9OptionsTemplate,
+		records:              dataRecordsForBatchRecord(record),
+		optionsRecords:       optionsRecordsForBatchRecord(record),
+	})
+	return next, true
+}
+
+func dataRecordsForBatchRecord(record ipfixBatchRecord) []netflow.DataRecord {
+	if record.recordKind == tflowBatchOptions {
+		return nil
+	}
+	return []netflow.DataRecord{record.data}
+}
+
+func optionsRecordsForBatchRecord(record ipfixBatchRecord) []netflow.OptionsDataRecord {
+	if record.recordKind != tflowBatchOptions {
+		return nil
+	}
+	return []netflow.OptionsDataRecord{record.options}
+}
+
+func dataRecordsForNFv9BatchRecord(record nfv9BatchRecord) []netflow.DataRecord {
+	if record.recordKind == tflowBatchOptions {
+		return nil
+	}
+	return []netflow.DataRecord{record.data}
+}
+
+func optionsRecordsForNFv9BatchRecord(record nfv9BatchRecord) []netflow.OptionsDataRecord {
+	if record.recordKind != tflowBatchOptions {
+		return nil
+	}
+	return []netflow.OptionsDataRecord{record.options}
+}
+
+func (e *IPFIXEncoder) ipfixBatchPacket(first ipfixBatchRecord, sets []ipfixBatchSet) *netflow.IPFIXPacket {
+	flowSets := make([]interface{}, 0, len(sets)+2)
+	templates := make([]netflow.TemplateRecord, 0, len(sets))
+	optionsTemplates := make([]netflow.IPFIXOptionsTemplateRecord, 0, len(sets))
+	seenTemplates := make(map[uint16]struct{}, len(sets))
+	seenOptionsTemplates := make(map[uint16]struct{}, len(sets))
+	for _, set := range sets {
+		if set.recordKind == tflowBatchOptions {
+			if set.ipfixOptionsTemplate == nil {
+				continue
+			}
+			if _, ok := seenOptionsTemplates[set.templateID]; ok {
+				continue
+			}
+			seenOptionsTemplates[set.templateID] = struct{}{}
+			optionsTemplates = append(optionsTemplates, *set.ipfixOptionsTemplate)
+			continue
+		}
+		if set.template != nil {
+			if _, ok := seenTemplates[set.templateID]; ok {
+				continue
+			}
+			seenTemplates[set.templateID] = struct{}{}
+			templates = append(templates, *set.template)
+		}
+	}
+	if len(templates) > 0 {
+		flowSets = append(flowSets, netflow.TemplateFlowSet{
+			FlowSetHeader: netflow.FlowSetHeader{Id: 2},
+			Records:       templates,
+		})
+	}
+	if len(optionsTemplates) > 0 {
+		flowSets = append(flowSets, netflow.IPFIXOptionsTemplateFlowSet{
+			FlowSetHeader: netflow.FlowSetHeader{Id: 3},
+			Records:       optionsTemplates,
+		})
+	}
+	for _, set := range sets {
+		if set.recordKind == tflowBatchOptions {
+			flowSets = append(flowSets, netflow.OptionsDataFlowSet{
+				FlowSetHeader: netflow.FlowSetHeader{Id: set.templateID},
+				Records:       set.optionsRecords,
+			})
+		} else {
+			flowSets = append(flowSets, netflow.DataFlowSet{
+				FlowSetHeader: netflow.FlowSetHeader{Id: set.templateID},
+				Records:       set.records,
+			})
+		}
+	}
+	return &netflow.IPFIXPacket{
+		Version:             10,
+		ExportTime:          first.exportTime,
+		SequenceNumber:      e.seq.Load(),
+		ObservationDomainId: first.observationDomainID,
+		FlowSets:            flowSets,
+	}
+}
+
+func (e *IPFIXEncoder) advanceIPFIXSequence(packet *netflow.IPFIXPacket) {
+	if packet == nil {
+		return
+	}
+	e.seq.Add(ipfixSequenceIncrement(packet.FlowSets))
+}
+
+func ipfixSequenceIncrement(flowSets []interface{}) uint32 {
+	var count uint32
+	for _, flowSet := range flowSets {
+		switch fs := flowSet.(type) {
+		case netflow.DataFlowSet:
+			count += uint32(len(fs.Records))
+		case *netflow.DataFlowSet:
+			if fs != nil {
+				count += uint32(len(fs.Records))
+			}
+		case netflow.OptionsDataFlowSet:
+			count += uint32(len(fs.Records))
+		case *netflow.OptionsDataFlowSet:
+			if fs != nil {
+				count += uint32(len(fs.Records))
+			}
+		}
+	}
+	return count
+}
+
+func (e *IPFIXEncoder) ipfixBatchRecord(evt *event.Event) (ipfixBatchRecord, error) {
+	if evt == nil {
+		return ipfixBatchRecord{}, fmt.Errorf("nil event")
+	}
+	if evt.Fields == nil {
+		return ipfixBatchRecord{}, fmt.Errorf("event fields are empty")
+	}
+	fieldMap := eventFieldsWithMetadata(evt)
+	applyTemplatedFlowDataMatches(e.cfg.TemplatedFlow.Data, fieldMap)
+	templateID := uint16Field(fieldMap, "template_id")
+	if templateID == 0 {
+		templateID = 256
+	}
+	exportTime := uint32(evt.ReceivedAt.Unix())
+	if evt.ReceivedAt.IsZero() {
+		exportTime = uint32(time.Now().Unix())
+	}
+	obsDomainID := e.observationDomainID()
+
+	stream := eventStream(evt, "flow_data")
+	if schema, ok := e.optionsSchemas[stream]; ok {
+		fieldMap = eventFieldsWithMetadataForSchema(evt, optionsSchemaFields(schema))
+		applyTemplatedFlowDataMatches(e.cfg.TemplatedFlow.Data, fieldMap)
+		optionsRecord, err := buildOptionsDataRecordFromSchemaFields(e.cfg.TemplatedFlow.Data, fieldMap, schema.scopes, schema.options, templatedEncodingContext{})
+		if err != nil {
+			return ipfixBatchRecord{}, err
+		}
+		return ipfixBatchRecord{
+			key:                 fmt.Sprintf("options-schema:%s:%d", stream, schema.templateID),
+			recordKind:          tflowBatchOptions,
+			exportTime:          exportTime,
+			observationDomainID: obsDomainID,
+			templateID:          schema.templateID,
+			options:             optionsRecord,
+		}, nil
+	}
+	if schema, ok := e.dataSchemas[stream]; ok {
+		fieldMap = eventFieldsWithMetadataForSchema(evt, schema.fields)
+		applyTemplatedFlowDataMatches(e.cfg.TemplatedFlow.Data, fieldMap)
+		templateRecord := schema.template
+		dataRecord, err := buildTemplatedValuesFromSchemaFields(e.cfg.TemplatedFlow.Data, fieldMap, schema.fields, templatedEncodingContext{})
+		if err != nil {
+			return ipfixBatchRecord{}, err
+		}
+		return ipfixBatchRecord{
+			key:                 fmt.Sprintf("schema:%s:%d", stream, templateRecord.TemplateId),
+			exportTime:          exportTime,
+			observationDomainID: obsDomainID,
+			templateID:          templateRecord.TemplateId,
+			data:                dataRecord,
+		}, nil
+	}
+
+	plan, dataRecord, err := e.fallbackDataRecord(fieldMap, templateID)
+	if err != nil {
+		return ipfixBatchRecord{}, err
+	}
+	key, err := fallbackPlanKey(e.cfg.TemplatedFlow.Data, fieldMap, templateID, false)
+	if err != nil {
+		return ipfixBatchRecord{}, err
+	}
+	return ipfixBatchRecord{
+		key:                 key,
+		exportTime:          exportTime,
+		observationDomainID: obsDomainID,
+		templateID:          plan.template.TemplateId,
+		template:            &plan.template,
+		data:                dataRecord,
+	}, nil
+}
+
+func nfv9BatchTimingFor(events []*event.Event) nfv9BatchTiming {
+	exportMS := time.Now().UnixMilli()
+	if len(events) > 0 && events[0] != nil {
+		exportMS = exportUnixMilliseconds(events[0].ReceivedAt, events[0].Fields)
+	}
+	unixSeconds := uint32((exportMS + 999) / 1000)
+	packetExportMS := int64(unixSeconds) * 1000
+	baseMS := packetExportMS
+	for _, evt := range events {
+		if evt == nil {
+			continue
+		}
+		for _, key := range []string{"start_time_unix", "end_time_unix"} {
+			ms := int64Field(evt.Fields, key)
+			if ms > 0 && ms < baseMS {
+				baseMS = ms
+			}
+		}
+	}
+	return nfv9BatchTiming{
+		packetExportMS: packetExportMS,
+		baseMS:         baseMS,
+		unixSeconds:    unixSeconds,
+		systemUptime:   uint32(packetExportMS - baseMS),
+	}
+}
+
+func (e *NFv9Encoder) nfv9BatchRecord(evt *event.Event, timing nfv9BatchTiming) (nfv9BatchRecord, error) {
+	if evt == nil {
+		return nfv9BatchRecord{}, fmt.Errorf("nil event")
+	}
+	if evt.Fields == nil {
+		return nfv9BatchRecord{}, fmt.Errorf("event fields are empty")
+	}
+	fieldMap := eventFieldsWithMetadata(evt)
+	applyTemplatedFlowDataMatches(e.cfg.TemplatedFlow.Data, fieldMap)
+	templateID := uint16Field(fieldMap, "template_id")
+	if templateID == 0 {
+		templateID = 256
+	}
+	startMS := int64Field(evt.Fields, "start_time_unix")
+	if startMS <= 0 {
+		startMS = timing.packetExportMS
+	}
+	endMS := int64Field(evt.Fields, "end_time_unix")
+	if endMS <= 0 {
+		endMS = timing.packetExportMS
+	}
+	encodingCtx := templatedEncodingContext{
+		netflowV9:     true,
+		firstSwitched: uint32(startMS - timing.baseMS),
+		lastSwitched:  uint32(endMS - timing.baseMS),
+	}
+	sourceID := e.sourceID()
+
+	stream := eventStream(evt, "flow_data")
+	if schema, ok := e.optionsSchemas[stream]; ok {
+		fieldMap = eventFieldsWithMetadataForSchema(evt, optionsSchemaFields(schema))
+		applyTemplatedFlowDataMatches(e.cfg.TemplatedFlow.Data, fieldMap)
+		optionsRecord, err := buildOptionsDataRecordFromSchemaFields(e.cfg.TemplatedFlow.Data, fieldMap, schema.scopes, schema.options, encodingCtx)
+		if err != nil {
+			return nfv9BatchRecord{}, err
+		}
+		return nfv9BatchRecord{
+			key:          fmt.Sprintf("options-schema:%s:%d", stream, schema.templateID),
+			recordKind:   tflowBatchOptions,
+			unixSeconds:  timing.unixSeconds,
+			systemUptime: timing.systemUptime,
+			sourceID:     sourceID,
+			templateID:   schema.templateID,
+			options:      optionsRecord,
+		}, nil
+	}
+	if schema, ok := e.dataSchemas[stream]; ok {
+		fieldMap = eventFieldsWithMetadataForSchema(evt, schema.fields)
+		applyTemplatedFlowDataMatches(e.cfg.TemplatedFlow.Data, fieldMap)
+		templateRecord := schema.template
+		dataRecord, err := buildTemplatedValuesFromSchemaFields(e.cfg.TemplatedFlow.Data, fieldMap, schema.fields, encodingCtx)
+		if err != nil {
+			return nfv9BatchRecord{}, err
+		}
+		return nfv9BatchRecord{
+			key:          fmt.Sprintf("schema:%s:%d", stream, templateRecord.TemplateId),
+			unixSeconds:  timing.unixSeconds,
+			systemUptime: timing.systemUptime,
+			sourceID:     sourceID,
+			templateID:   templateRecord.TemplateId,
+			data:         dataRecord,
+		}, nil
+	}
+
+	plan, dataRecord, err := e.fallbackDataRecord(fieldMap, templateID, encodingCtx)
+	if err != nil {
+		return nfv9BatchRecord{}, err
+	}
+	key, err := fallbackPlanKey(e.cfg.TemplatedFlow.Data, fieldMap, templateID, true)
+	if err != nil {
+		return nfv9BatchRecord{}, err
+	}
+	return nfv9BatchRecord{
+		key:          key,
+		unixSeconds:  timing.unixSeconds,
+		systemUptime: timing.systemUptime,
+		sourceID:     sourceID,
+		templateID:   plan.template.TemplateId,
+		template:     &plan.template,
+		data:         dataRecord,
+	}, nil
+}
+
+func (e *NFv9Encoder) nfv9BatchPacket(first nfv9BatchRecord, sets []ipfixBatchSet) *netflow.NFv9Packet {
+	flowSets := make([]interface{}, 0, len(sets)+2)
+	templates := make([]netflow.TemplateRecord, 0, len(sets))
+	optionsTemplates := make([]netflow.NFv9OptionsTemplateRecord, 0, len(sets))
+	seenTemplates := make(map[uint16]struct{}, len(sets))
+	seenOptionsTemplates := make(map[uint16]struct{}, len(sets))
+	for _, set := range sets {
+		if set.recordKind == tflowBatchOptions {
+			if set.nfv9OptionsTemplate == nil {
+				continue
+			}
+			if _, ok := seenOptionsTemplates[set.templateID]; ok {
+				continue
+			}
+			seenOptionsTemplates[set.templateID] = struct{}{}
+			optionsTemplates = append(optionsTemplates, *set.nfv9OptionsTemplate)
+			continue
+		}
+		if set.template != nil {
+			if _, ok := seenTemplates[set.templateID]; ok {
+				continue
+			}
+			seenTemplates[set.templateID] = struct{}{}
+			templates = append(templates, *set.template)
+		}
+	}
+	if len(templates) > 0 {
+		flowSets = append(flowSets, netflow.TemplateFlowSet{
+			FlowSetHeader: netflow.FlowSetHeader{Id: 0},
+			Records:       templates,
+		})
+	}
+	if len(optionsTemplates) > 0 {
+		flowSets = append(flowSets, netflow.NFv9OptionsTemplateFlowSet{
+			FlowSetHeader: netflow.FlowSetHeader{Id: 1},
+			Records:       optionsTemplates,
+		})
+	}
+	for _, set := range sets {
+		if set.recordKind == tflowBatchOptions {
+			flowSets = append(flowSets, netflow.OptionsDataFlowSet{
+				FlowSetHeader: netflow.FlowSetHeader{Id: set.templateID},
+				Records:       set.optionsRecords,
+			})
+		} else {
+			flowSets = append(flowSets, netflow.DataFlowSet{
+				FlowSetHeader: netflow.FlowSetHeader{Id: set.templateID},
+				Records:       set.records,
+			})
+		}
+	}
+	return &netflow.NFv9Packet{
+		Version:        9,
+		Count:          uint16(len(flowSets)),
+		SystemUptime:   first.systemUptime,
+		UnixSeconds:    first.unixSeconds,
+		SequenceNumber: e.seq.Load(),
+		SourceId:       first.sourceID,
+		FlowSets:       flowSets,
+	}
+}
+
+func NewNFv9Encoder(cfg config.EncoderConfig) *NFv9Encoder {
+	return &NFv9Encoder{
+		cfg:            cfg,
+		dataSchemas:    make(map[string]templatedSchemaState),
+		optionsSchemas: make(map[string]optionsSchemaState),
+		fallbackPlans:  make(map[string]fallbackTemplatePlan),
+		sourceOptions:  make(map[string]sourceOptionsState),
+	}
+}
+
+func (e *NFv9Encoder) Encode(evt *event.Event) ([][]byte, error) {
+	if evt != nil && evt.Kind == "control" {
+		payloads, err := e.flushDataPackets("control")
+		if err != nil {
+			return nil, err
+		}
+		controlPayloads, err := e.handleControl(evt)
+		if err != nil {
+			return nil, err
+		}
+		return append(payloads, controlPayloads...), nil
+	}
+	if !e.cfg.Batch.IsEnabled() {
+		packet, err := e.buildPacket(evt)
+		if err != nil {
+			return nil, err
+		}
+		data, err := netflow.EncodeMessage(packet)
+		if err != nil {
+			return nil, fmt.Errorf("encode netflow v9 packet: %w", err)
+		}
+		e.advanceSequence(packet)
+		return [][]byte{data}, nil
+	}
+	e.appendEvent(evt)
+	if trigger := e.batchFlushTrigger(); trigger != "" {
+		return e.flushDataPackets(trigger)
+	}
+	return nil, nil
+}
+
+func (e *NFv9Encoder) Flush() ([][]byte, error) {
+	payloads, err := e.flushDataPackets("flush")
+	if err != nil {
+		return nil, err
+	}
+	controlPayloads, err := e.flushControlPackets(time.Now().UTC())
+	if err != nil {
+		return nil, err
+	}
+	return append(payloads, controlPayloads...), nil
+}
+
+func (e *NFv9Encoder) appendEvent(evt *event.Event) {
+	e.events = append(e.events, evt)
+	e.estimatedBytes += e.estimatedEventRenderedSize(evt)
+}
+
+func (e *NFv9Encoder) batchFlushTrigger() string {
+	if len(e.events) == 0 {
+		return ""
+	}
+	if e.cfg.Batch.MaxRecords > 0 && len(e.events) >= e.cfg.Batch.MaxRecords {
+		return "max_records"
+	}
+	if e.cfg.Batch.MaxBytes > 0 && e.estimatedBytes >= e.cfg.Batch.MaxBytes {
+		return "max_bytes"
+	}
+	return ""
+}
+
+func (e *NFv9Encoder) flushDataPackets(trigger string) ([][]byte, error) {
+	if len(e.events) == 0 {
+		return nil, nil
+	}
+
+	pending := e.events
+
+	var payloads [][]byte
+	for len(pending) > 0 {
+		packet, accepted, err := e.buildBatchedPacket(pending)
+		if err != nil {
+			e.events = pending
+			e.estimatedBytes = e.estimatedEventsRenderedSize(pending)
+			return payloads, err
+		}
+		data, err := netflow.EncodeMessage(packet)
+		if err != nil {
+			e.events = pending
+			e.estimatedBytes = e.estimatedEventsRenderedSize(pending)
+			return payloads, fmt.Errorf("encode netflow v9 packet: %w", err)
+		}
+		acceptedBytes := renderedFlowSetsDataSize(packet.FlowSets)
+		payloads = append(payloads, data)
+		pending = pending[accepted:]
+		e.events = pending
+		e.estimatedBytes -= acceptedBytes
+		if e.estimatedBytes < 0 {
+			e.estimatedBytes = e.estimatedEventsRenderedSize(pending)
+		}
+		if !e.shouldContinueDataFlush(trigger) {
+			return payloads, nil
+		}
+	}
+	e.events = nil
+	e.estimatedBytes = 0
+	return payloads, nil
+}
+
+func (e *NFv9Encoder) shouldContinueDataFlush(trigger string) bool {
+	if len(e.events) == 0 {
+		return false
+	}
+	switch trigger {
+	case "max_records", "max_bytes":
+		return e.batchFlushTrigger() != ""
+	default:
+		return true
+	}
+}
+
+func (e *NFv9Encoder) buildBatchedPacket(events []*event.Event) (*netflow.NFv9Packet, int, error) {
+	if len(events) == 0 {
+		return nil, 0, fmt.Errorf("empty netflow v9 packet batch")
+	}
+	candidate := []*event.Event{events[0]}
+	packet, ok, err := e.nfv9BatchPacketForEvents(candidate)
+	if err != nil {
+		return nil, 0, err
+	}
+	if !ok {
+		return nil, 0, fmt.Errorf("empty netflow v9 packet batch")
+	}
+	accepted := 1
+
+	for _, evt := range events[1:] {
+		nextCandidate := append(append([]*event.Event(nil), candidate...), evt)
+		nextPacket, ok, err := e.nfv9BatchPacketForEvents(nextCandidate)
+		if err != nil {
+			return nil, accepted, err
+		}
+		if !ok {
+			break
+		}
+		if e.cfg.MaxDatagramBytes > 0 {
+			data, err := netflow.EncodeMessage(nextPacket)
+			if err != nil {
+				return nil, accepted, fmt.Errorf("encode netflow v9 packet: %w", err)
+			}
+			if len(data) > e.cfg.MaxDatagramBytes {
+				break
+			}
+		}
+		candidate = nextCandidate
+		packet = nextPacket
+		accepted++
+	}
+
+	e.advanceSequence(packet)
+	return packet, accepted, nil
+}
+
+func (e *NFv9Encoder) nfv9BatchPacketForEvents(events []*event.Event) (*netflow.NFv9Packet, bool, error) {
+	if len(events) == 0 {
+		return nil, false, nil
+	}
+	timing := nfv9BatchTimingFor(events)
+	first, err := e.nfv9BatchRecord(events[0], timing)
+	if err != nil {
+		return nil, false, err
+	}
+	sets := []ipfixBatchSet{{
+		key:                 first.key,
+		recordKind:          first.recordKind,
+		templateID:          first.templateID,
+		template:            first.template,
+		nfv9OptionsTemplate: first.optionsTemplate,
+		records:             dataRecordsForNFv9BatchRecord(first),
+		optionsRecords:      optionsRecordsForNFv9BatchRecord(first),
+	}}
+	for _, evt := range events[1:] {
+		next, err := e.nfv9BatchRecord(evt, timing)
+		if err != nil {
+			return nil, false, err
+		}
+		if next.sourceID != first.sourceID {
+			return nil, false, nil
+		}
+		nextSets, ok := appendIPFIXBatchRecord(sets, ipfixBatchRecord{
+			key:                 next.key,
+			recordKind:          next.recordKind,
+			templateID:          next.templateID,
+			template:            next.template,
+			nfv9OptionsTemplate: next.optionsTemplate,
+			data:                next.data,
+			options:             next.options,
+		})
+		if !ok {
+			return nil, false, nil
+		}
+		sets = nextSets
+	}
+	return e.nfv9BatchPacket(first, sets), true, nil
+}
+
+// advanceSequence tracks NetFlow v9's export-packet sequence counter. IPFIX
+// uses a data-record counter instead.
+func (e *NFv9Encoder) advanceSequence(packet *netflow.NFv9Packet) {
+	if packet == nil {
+		return
+	}
+	e.seq.Add(1)
+}
+
+// buildPacket translates one runtime event into the appropriate IPFIX packet
+// flavor: control/template output or a normal data set.
+func (e *IPFIXEncoder) buildPacket(evt *event.Event) (*netflow.IPFIXPacket, error) {
+	if evt == nil {
+		return nil, fmt.Errorf("nil event")
+	}
+	if evt.Fields == nil {
+		return nil, fmt.Errorf("event fields are empty")
+	}
+
+	fieldMap := eventFieldsWithMetadata(evt)
+	applyTemplatedFlowDataMatches(e.cfg.TemplatedFlow.Data, fieldMap)
+	templateID := uint16Field(fieldMap, "template_id")
+	if templateID == 0 {
+		templateID = 256
+	}
+	obsDomainID := e.observationDomainID()
+	exportTime := uint32(evt.ReceivedAt.Unix())
+	if evt.ReceivedAt.IsZero() {
+		exportTime = uint32(time.Now().Unix())
+	}
+
+	switch evt.Payload.(type) {
+	case netflow.TemplateRecord:
+		record := evt.Payload.(netflow.TemplateRecord)
+		packet := &netflow.IPFIXPacket{
+			Version:             10,
+			ExportTime:          exportTime,
+			SequenceNumber:      e.seq.Load(),
+			ObservationDomainId: obsDomainID,
+			FlowSets: []interface{}{
+				netflow.TemplateFlowSet{
+					FlowSetHeader: netflow.FlowSetHeader{Id: 2},
+					Records:       []netflow.TemplateRecord{record},
+				},
+			},
+		}
+		e.advanceIPFIXSequence(packet)
+		return packet, nil
+	case *netflow.TemplateRecord:
+		record := *evt.Payload.(*netflow.TemplateRecord)
+		packet := &netflow.IPFIXPacket{
+			Version:             10,
+			ExportTime:          exportTime,
+			SequenceNumber:      e.seq.Load(),
+			ObservationDomainId: obsDomainID,
+			FlowSets: []interface{}{
+				netflow.TemplateFlowSet{
+					FlowSetHeader: netflow.FlowSetHeader{Id: 2},
+					Records:       []netflow.TemplateRecord{record},
+				},
+			},
+		}
+		e.advanceIPFIXSequence(packet)
+		return packet, nil
+	case netflow.IPFIXOptionsTemplateRecord:
+		record := evt.Payload.(netflow.IPFIXOptionsTemplateRecord)
+		packet := &netflow.IPFIXPacket{
+			Version:             10,
+			ExportTime:          exportTime,
+			SequenceNumber:      e.seq.Load(),
+			ObservationDomainId: obsDomainID,
+			FlowSets: []interface{}{
+				netflow.IPFIXOptionsTemplateFlowSet{
+					FlowSetHeader: netflow.FlowSetHeader{Id: 3},
+					Records:       []netflow.IPFIXOptionsTemplateRecord{record},
+				},
+			},
+		}
+		e.advanceIPFIXSequence(packet)
+		return packet, nil
+	case *netflow.IPFIXOptionsTemplateRecord:
+		record := *evt.Payload.(*netflow.IPFIXOptionsTemplateRecord)
+		packet := &netflow.IPFIXPacket{
+			Version:             10,
+			ExportTime:          exportTime,
+			SequenceNumber:      e.seq.Load(),
+			ObservationDomainId: obsDomainID,
+			FlowSets: []interface{}{
+				netflow.IPFIXOptionsTemplateFlowSet{
+					FlowSetHeader: netflow.FlowSetHeader{Id: 3},
+					Records:       []netflow.IPFIXOptionsTemplateRecord{record},
+				},
+			},
+		}
+		e.advanceIPFIXSequence(packet)
+		return packet, nil
+	}
+
+	stream := eventStream(evt, "flow_data")
+	if schema, ok := e.optionsSchemas[stream]; ok {
+		fieldMap = eventFieldsWithMetadataForSchema(evt, optionsSchemaFields(schema))
+		applyTemplatedFlowDataMatches(e.cfg.TemplatedFlow.Data, fieldMap)
+		optionsRecord, err := buildOptionsDataRecordFromSchemaFields(e.cfg.TemplatedFlow.Data, fieldMap, schema.scopes, schema.options, templatedEncodingContext{})
+		if err != nil {
+			return nil, err
+		}
+		packet := &netflow.IPFIXPacket{
+			Version:             10,
+			ExportTime:          exportTime,
+			SequenceNumber:      e.seq.Load(),
+			ObservationDomainId: obsDomainID,
+			FlowSets: []interface{}{
+				netflow.OptionsDataFlowSet{
+					FlowSetHeader: netflow.FlowSetHeader{Id: schema.templateID},
+					Records:       []netflow.OptionsDataRecord{optionsRecord},
+				},
+			},
+		}
+		e.advanceIPFIXSequence(packet)
+		return packet, nil
+	}
+	if schema, ok := e.dataSchemas[stream]; ok {
+		fieldMap = eventFieldsWithMetadataForSchema(evt, schema.fields)
+		applyTemplatedFlowDataMatches(e.cfg.TemplatedFlow.Data, fieldMap)
+		templateRecord := schema.template
+		dataRecord, err := buildTemplatedValuesFromSchemaFields(e.cfg.TemplatedFlow.Data, fieldMap, schema.fields, templatedEncodingContext{})
+		if err != nil {
+			return nil, err
+		}
+		packet := &netflow.IPFIXPacket{
+			Version:             10,
+			ExportTime:          exportTime,
+			SequenceNumber:      e.seq.Load(),
+			ObservationDomainId: obsDomainID,
+			FlowSets: []interface{}{
+				netflow.DataFlowSet{
+					FlowSetHeader: netflow.FlowSetHeader{Id: templateRecord.TemplateId},
+					Records:       []netflow.DataRecord{dataRecord},
+				},
+			},
+		}
+		e.advanceIPFIXSequence(packet)
+		return packet, nil
+	}
+
+	plan, dataRecord, err := e.fallbackDataRecord(fieldMap, templateID)
+	if err != nil {
+		return nil, err
+	}
+	packet := &netflow.IPFIXPacket{
+		Version:             10,
+		ExportTime:          exportTime,
+		SequenceNumber:      e.seq.Load(),
+		ObservationDomainId: obsDomainID,
+		FlowSets: []interface{}{
+			netflow.TemplateFlowSet{
+				FlowSetHeader: netflow.FlowSetHeader{Id: 2},
+				Records:       []netflow.TemplateRecord{plan.template},
+			},
+			netflow.DataFlowSet{
+				FlowSetHeader: netflow.FlowSetHeader{Id: plan.template.TemplateId},
+				Records:       []netflow.DataRecord{dataRecord},
+			},
+		},
+	}
+	e.advanceIPFIXSequence(packet)
+	return packet, nil
+}
+
+func (e *NFv9Encoder) buildPacket(evt *event.Event) (*netflow.NFv9Packet, error) {
+	if evt == nil {
+		return nil, fmt.Errorf("nil event")
+	}
+	if evt.Fields == nil {
+		return nil, fmt.Errorf("event fields are empty")
+	}
+
+	fieldMap := eventFieldsWithMetadata(evt)
+	applyTemplatedFlowDataMatches(e.cfg.TemplatedFlow.Data, fieldMap)
+	templateID := uint16Field(fieldMap, "template_id")
+	if templateID == 0 {
+		templateID = 256
+	}
+	sourceID := e.sourceID()
+	exportMS := exportUnixMilliseconds(evt.ReceivedAt, evt.Fields)
+	unixSeconds := uint32((exportMS + 999) / 1000)
+	packetExportMS := int64(unixSeconds) * 1000
+	sysUptime, firstSwitched, lastSwitched := uptimeWindow(packetExportMS, int64Field(evt.Fields, "start_time_unix"), int64Field(evt.Fields, "end_time_unix"))
+	encodingCtx := templatedEncodingContext{
+		netflowV9:     true,
+		firstSwitched: firstSwitched,
+		lastSwitched:  lastSwitched,
+	}
+
+	switch payload := evt.Payload.(type) {
+	case netflow.TemplateRecord:
+		return &netflow.NFv9Packet{
+			Version:        9,
+			Count:          1,
+			SystemUptime:   sysUptime,
+			UnixSeconds:    unixSeconds,
+			SequenceNumber: e.seq.Load(),
+			SourceId:       sourceID,
+			FlowSets: []interface{}{
+				netflow.TemplateFlowSet{
+					FlowSetHeader: netflow.FlowSetHeader{Id: 0},
+					Records:       []netflow.TemplateRecord{payload},
+				},
+			},
+		}, nil
+	case *netflow.TemplateRecord:
+		return &netflow.NFv9Packet{
+			Version:        9,
+			Count:          1,
+			SystemUptime:   sysUptime,
+			UnixSeconds:    unixSeconds,
+			SequenceNumber: e.seq.Load(),
+			SourceId:       sourceID,
+			FlowSets: []interface{}{
+				netflow.TemplateFlowSet{
+					FlowSetHeader: netflow.FlowSetHeader{Id: 0},
+					Records:       []netflow.TemplateRecord{*payload},
+				},
+			},
+		}, nil
+	case netflow.NFv9OptionsTemplateRecord:
+		return &netflow.NFv9Packet{
+			Version:        9,
+			Count:          1,
+			SystemUptime:   sysUptime,
+			UnixSeconds:    unixSeconds,
+			SequenceNumber: e.seq.Load(),
+			SourceId:       sourceID,
+			FlowSets: []interface{}{
+				netflow.NFv9OptionsTemplateFlowSet{
+					FlowSetHeader: netflow.FlowSetHeader{Id: 1},
+					Records:       []netflow.NFv9OptionsTemplateRecord{payload},
+				},
+			},
+		}, nil
+	case *netflow.NFv9OptionsTemplateRecord:
+		return &netflow.NFv9Packet{
+			Version:        9,
+			Count:          1,
+			SystemUptime:   sysUptime,
+			UnixSeconds:    unixSeconds,
+			SequenceNumber: e.seq.Load(),
+			SourceId:       sourceID,
+			FlowSets: []interface{}{
+				netflow.NFv9OptionsTemplateFlowSet{
+					FlowSetHeader: netflow.FlowSetHeader{Id: 1},
+					Records:       []netflow.NFv9OptionsTemplateRecord{*payload},
+				},
+			},
+		}, nil
+	}
+
+	stream := eventStream(evt, "flow_data")
+	if schema, ok := e.optionsSchemas[stream]; ok {
+		fieldMap = eventFieldsWithMetadataForSchema(evt, optionsSchemaFields(schema))
+		applyTemplatedFlowDataMatches(e.cfg.TemplatedFlow.Data, fieldMap)
+		optionsRecord, err := buildOptionsDataRecordFromSchemaFields(e.cfg.TemplatedFlow.Data, fieldMap, schema.scopes, schema.options, encodingCtx)
+		if err != nil {
+			return nil, err
+		}
+		packet := &netflow.NFv9Packet{
+			Version:        9,
+			Count:          1,
+			SystemUptime:   sysUptime,
+			UnixSeconds:    unixSeconds,
+			SequenceNumber: e.seq.Load(),
+			SourceId:       sourceID,
+			FlowSets: []interface{}{
+				netflow.OptionsDataFlowSet{
+					FlowSetHeader: netflow.FlowSetHeader{Id: schema.templateID},
+					Records:       []netflow.OptionsDataRecord{optionsRecord},
+				},
+			},
+		}
+		return packet, nil
+	}
+	if schema, ok := e.dataSchemas[stream]; ok {
+		fieldMap = eventFieldsWithMetadataForSchema(evt, schema.fields)
+		applyTemplatedFlowDataMatches(e.cfg.TemplatedFlow.Data, fieldMap)
+		templateRecord := schema.template
+		dataRecord, err := buildTemplatedValuesFromSchemaFields(e.cfg.TemplatedFlow.Data, fieldMap, schema.fields, encodingCtx)
+		if err != nil {
+			return nil, err
+		}
+		packet := &netflow.NFv9Packet{
+			Version:        9,
+			Count:          1,
+			SystemUptime:   sysUptime,
+			UnixSeconds:    unixSeconds,
+			SequenceNumber: e.seq.Load(),
+			SourceId:       sourceID,
+			FlowSets: []interface{}{
+				netflow.DataFlowSet{
+					FlowSetHeader: netflow.FlowSetHeader{Id: templateRecord.TemplateId},
+					Records:       []netflow.DataRecord{dataRecord},
+				},
+			},
+		}
+		return packet, nil
+	}
+
+	plan, dataRecord, err := e.fallbackDataRecord(fieldMap, templateID, encodingCtx)
+	if err != nil {
+		return nil, err
+	}
+	packet := &netflow.NFv9Packet{
+		Version:        9,
+		Count:          2,
+		SystemUptime:   sysUptime,
+		UnixSeconds:    unixSeconds,
+		SequenceNumber: e.seq.Load(),
+		SourceId:       sourceID,
+		FlowSets: []interface{}{
+			netflow.TemplateFlowSet{
+				FlowSetHeader: netflow.FlowSetHeader{Id: 0},
+				Records:       []netflow.TemplateRecord{plan.template},
+			},
+			netflow.DataFlowSet{
+				FlowSetHeader: netflow.FlowSetHeader{Id: plan.template.TemplateId},
+				Records:       []netflow.DataRecord{dataRecord},
+			},
+		},
+	}
+	return packet, nil
+}
+
+// observationDomainID is exporter-scoped. Per-interface IDs stay in data fields
+// such as source_id/observationPointId, not in the IPFIX packet header.
+func (e *IPFIXEncoder) observationDomainID() uint32 {
+	return e.cfg.TemplatedFlow.ObservationDomainID
+}
+
+// sourceID is the NetFlow v9 exporter source ID, equivalent to the configured
+// exporter observation domain.
+func (e *NFv9Encoder) sourceID() uint32 {
+	return e.cfg.TemplatedFlow.ObservationDomainID
+}
+
+// handleControl routes control events into encoder-specific schema/source registration.
+func (e *IPFIXEncoder) handleControl(evt *event.Event) ([][]byte, error) {
+	switch controlType(evt) {
+	case "schema":
+		return e.registerSchema(evt)
+	case "source_init":
+		return e.registerSourceInit(evt)
+	case "source_init_batch":
+		return e.registerSourceInitBatch(evt)
+	default:
+		return nil, nil
+	}
+}
+
+// handleControl routes control events into encoder-specific schema/source registration.
+func (e *NFv9Encoder) handleControl(evt *event.Event) ([][]byte, error) {
+	switch controlType(evt) {
+	case "schema":
+		return e.registerSchema(evt)
+	case "source_init":
+		return e.registerSourceInit(evt)
+	default:
+		return nil, nil
+	}
+}
+
+// registerSchema stores aggregation schema state and emits any required template packets.
+func (e *IPFIXEncoder) registerSchema(evt *event.Event) ([][]byte, error) {
+	schema, ok := evt.Payload.(event.AggregationSchema)
+	if !ok {
+		if ptr, ok := evt.Payload.(*event.AggregationSchema); ok && ptr != nil {
+			schema = *ptr
+		} else {
+			return nil, nil
+		}
+	}
+	if schemaIsOptions(schema) {
+		state, err := buildOptionsSchemaState(e.cfg.TemplatedFlow.Data, schema, false, e.cfg.TemplatedFlow.OptionsTemplateBaseID)
+		if err != nil {
+			return nil, err
+		}
+		e.optionsSchemas[eventStream(evt, schema.Stream)] = state
+		payloads, err := e.encodeOptionsSchemaTemplate(state)
+		if err != nil {
+			return nil, err
+		}
+		e.lastOptionsRun = time.Now().UTC()
+		return payloads, nil
+	}
+	state, err := buildSchemaState(e.cfg.TemplatedFlow.Data, schema, false)
+	if err != nil {
+		return nil, err
+	}
+	if state.baseTemplateID == 0 {
+		state.baseTemplateID = e.cfg.TemplatedFlow.TemplateBaseID
+	}
+	if state.template.TemplateId == 0 || state.baseTemplateID != state.template.TemplateId {
+		state, err = buildSchemaStateWithBase(e.cfg.TemplatedFlow.Data, schema, false, state.baseTemplateID)
+		if err != nil {
+			return nil, err
+		}
+	}
+	e.dataSchemas[eventStream(evt, schema.Stream)] = state
+	payloads, err := e.encodeSchemaTemplates(state)
+	if err != nil {
+		return nil, err
+	}
+	e.lastTemplateRun = time.Now().UTC()
+	return payloads, nil
+}
+
+// registerSchema stores aggregation schema state and emits any required template packets.
+func (e *NFv9Encoder) registerSchema(evt *event.Event) ([][]byte, error) {
+	schema, ok := evt.Payload.(event.AggregationSchema)
+	if !ok {
+		if ptr, ok := evt.Payload.(*event.AggregationSchema); ok && ptr != nil {
+			schema = *ptr
+		} else {
+			return nil, nil
+		}
+	}
+	if schemaIsOptions(schema) {
+		state, err := buildOptionsSchemaState(e.cfg.TemplatedFlow.Data, schema, true, e.cfg.TemplatedFlow.OptionsTemplateBaseID)
+		if err != nil {
+			return nil, err
+		}
+		e.optionsSchemas[eventStream(evt, schema.Stream)] = state
+		payloads, err := e.encodeOptionsSchemaTemplate(state)
+		if err != nil {
+			return nil, err
+		}
+		e.lastOptionsRun = time.Now().UTC()
+		return payloads, nil
+	}
+	state, err := buildSchemaState(e.cfg.TemplatedFlow.Data, schema, true)
+	if err != nil {
+		return nil, err
+	}
+	if state.baseTemplateID == 0 {
+		state.baseTemplateID = e.cfg.TemplatedFlow.TemplateBaseID
+	}
+	if state.template.TemplateId == 0 || state.baseTemplateID != state.template.TemplateId {
+		state, err = buildSchemaStateWithBase(e.cfg.TemplatedFlow.Data, schema, true, state.baseTemplateID)
+		if err != nil {
+			return nil, err
+		}
+	}
+	e.dataSchemas[eventStream(evt, schema.Stream)] = state
+	payloads, err := e.encodeSchemaTemplates(state)
+	if err != nil {
+		return nil, err
+	}
+	e.lastTemplateRun = time.Now().UTC()
+	return payloads, nil
+}
+
+// registerSourceInit stores source-scoped exporter metadata and may emit options templates/data.
+func (e *IPFIXEncoder) registerSourceInit(evt *event.Event) ([][]byte, error) {
+	state := sourceOptionsFromEvent(evt)
+	if state.stream == "" {
+		state.stream = eventStream(evt, "options_data")
+	}
+	if state.templateID == 0 {
+		state.templateID = e.cfg.TemplatedFlow.OptionsTemplateBaseID
+	}
+	state.observationDomainID = e.observationDomainID()
+	e.sourceOptions[sourceOptionsKey(state)] = state
+	payloads, err := e.encodeSourceOptions(state)
+	if err != nil {
+		return nil, err
+	}
+	e.lastOptionsRun = time.Now().UTC()
+	return payloads, nil
+}
+
+func (e *IPFIXEncoder) registerSourceInitBatch(evt *event.Event) ([][]byte, error) {
+	events, ok := evt.Payload.([]*event.Event)
+	if !ok {
+		return nil, nil
+	}
+	states := make([]sourceOptionsState, 0, len(events))
+	for _, sourceEvt := range events {
+		state := sourceOptionsFromEvent(sourceEvt)
+		if state.stream == "" {
+			state.stream = eventStream(sourceEvt, "options_data")
+		}
+		if state.templateID == 0 {
+			state.templateID = e.cfg.TemplatedFlow.OptionsTemplateBaseID
+		}
+		state.observationDomainID = e.observationDomainID()
+		e.sourceOptions[sourceOptionsKey(state)] = state
+		states = append(states, state)
+	}
+	payloads, err := e.encodeSourceOptionsBatch(states)
+	if err != nil {
+		return nil, err
+	}
+	e.lastOptionsRun = time.Now().UTC()
+	return payloads, nil
+}
+
+// registerSourceInit stores source-scoped exporter metadata and may emit options templates/data.
+func (e *NFv9Encoder) registerSourceInit(evt *event.Event) ([][]byte, error) {
+	state := sourceOptionsFromEvent(evt)
+	if state.stream == "" {
+		state.stream = eventStream(evt, "options_data")
+	}
+	if state.templateID == 0 {
+		state.templateID = e.cfg.TemplatedFlow.OptionsTemplateBaseID
+	}
+	state.observationDomainID = e.sourceID()
+	e.sourceOptions[sourceOptionsKey(state)] = state
+	payloads, err := e.encodeSourceOptions(state)
+	if err != nil {
+		return nil, err
+	}
+	e.lastOptionsRun = time.Now().UTC()
+	return payloads, nil
+}
+
+// flushControlPackets emits periodic template/options refresh packets when due.
+func (e *IPFIXEncoder) flushControlPackets(now time.Time) ([][]byte, error) {
+	var payloads [][]byte
+	if e.cfg.TemplatedFlow.TemplateRefresh > 0 && (e.lastTemplateRun.IsZero() || now.Sub(e.lastTemplateRun) >= time.Duration(e.cfg.TemplatedFlow.TemplateRefresh)*time.Millisecond) {
+		for _, schema := range e.dataSchemas {
+			encoded, err := e.encodeSchemaTemplates(schema)
+			if err != nil {
+				return nil, err
+			}
+			payloads = append(payloads, encoded...)
+		}
+		e.lastTemplateRun = now
+	}
+	if e.cfg.TemplatedFlow.OptionsRefresh > 0 && (e.lastOptionsRun.IsZero() || now.Sub(e.lastOptionsRun) >= time.Duration(e.cfg.TemplatedFlow.OptionsRefresh)*time.Millisecond) {
+		encoded, err := e.encodeSourceOptionsBatch(sortedSourceOptions(e.sourceOptions))
+		if err != nil {
+			return nil, err
+		}
+		payloads = append(payloads, encoded...)
+		for _, schema := range e.optionsSchemas {
+			encoded, err := e.encodeOptionsSchemaTemplate(schema)
+			if err != nil {
+				return nil, err
+			}
+			payloads = append(payloads, encoded...)
+		}
+		e.lastOptionsRun = now
+	}
+	return payloads, nil
+}
+
+// flushControlPackets emits periodic template/options refresh packets when due.
+func (e *NFv9Encoder) flushControlPackets(now time.Time) ([][]byte, error) {
+	var payloads [][]byte
+	if e.cfg.TemplatedFlow.TemplateRefresh > 0 && (e.lastTemplateRun.IsZero() || now.Sub(e.lastTemplateRun) >= time.Duration(e.cfg.TemplatedFlow.TemplateRefresh)*time.Millisecond) {
+		for _, schema := range e.dataSchemas {
+			encoded, err := e.encodeSchemaTemplates(schema)
+			if err != nil {
+				return nil, err
+			}
+			payloads = append(payloads, encoded...)
+		}
+		e.lastTemplateRun = now
+	}
+	if e.cfg.TemplatedFlow.OptionsRefresh > 0 && (e.lastOptionsRun.IsZero() || now.Sub(e.lastOptionsRun) >= time.Duration(e.cfg.TemplatedFlow.OptionsRefresh)*time.Millisecond) {
+		for _, state := range e.sourceOptions {
+			encoded, err := e.encodeSourceOptions(state)
+			if err != nil {
+				return nil, err
+			}
+			payloads = append(payloads, encoded...)
+		}
+		for _, schema := range e.optionsSchemas {
+			encoded, err := e.encodeOptionsSchemaTemplate(schema)
+			if err != nil {
+				return nil, err
+			}
+			payloads = append(payloads, encoded...)
+		}
+		e.lastOptionsRun = now
+	}
+	return payloads, nil
+}
+
+// encodeSchemaTemplates serializes the current stream schema into one or more IPFIX template sets.
+func (e *IPFIXEncoder) encodeSchemaTemplates(state templatedSchemaState) ([][]byte, error) {
+	now := uint32(time.Now().Unix())
+	var out [][]byte
+	for _, templateRecord := range state.templates() {
+		packet := &netflow.IPFIXPacket{
+			Version:             10,
+			ExportTime:          now,
+			SequenceNumber:      e.seq.Load(),
+			ObservationDomainId: e.cfg.TemplatedFlow.ObservationDomainID,
+			FlowSets: []interface{}{
+				netflow.TemplateFlowSet{
+					FlowSetHeader: netflow.FlowSetHeader{Id: 2},
+					Records:       []netflow.TemplateRecord{templateRecord},
+				},
+			},
+		}
+		data, err := netflow.EncodeMessage(packet)
+		if err != nil {
+			return nil, fmt.Errorf("encode ipfix schema template: %w", err)
+		}
+		out = append(out, data)
+		e.advanceIPFIXSequence(packet)
+	}
+	return out, nil
+}
+
+// encodeSchemaTemplates serializes the current stream schema into one or more NetFlow v9 template sets.
+func (e *NFv9Encoder) encodeSchemaTemplates(state templatedSchemaState) ([][]byte, error) {
+	nowMS := time.Now().UnixMilli()
+	nowSec := uint32((nowMS + 999) / 1000)
+	var out [][]byte
+	for _, templateRecord := range state.templates() {
+		packet := &netflow.NFv9Packet{
+			Version:        9,
+			Count:          1,
+			SystemUptime:   0,
+			UnixSeconds:    nowSec,
+			SequenceNumber: e.seq.Load(),
+			SourceId:       e.cfg.TemplatedFlow.ObservationDomainID,
+			FlowSets: []interface{}{
+				netflow.TemplateFlowSet{
+					FlowSetHeader: netflow.FlowSetHeader{Id: 0},
+					Records:       []netflow.TemplateRecord{templateRecord},
+				},
+			},
+		}
+		data, err := netflow.EncodeMessage(packet)
+		if err != nil {
+			return nil, fmt.Errorf("encode netflow v9 schema template: %w", err)
+		}
+		out = append(out, data)
+		e.advanceSequence(packet)
+	}
+	return out, nil
+}
+
+// encodeOptionsSchemaTemplate serializes a schema-derived IPFIX options template.
+func (e *IPFIXEncoder) encodeOptionsSchemaTemplate(state optionsSchemaState) ([][]byte, error) {
+	packet := &netflow.IPFIXPacket{
+		Version:             10,
+		ExportTime:          uint32(time.Now().Unix()),
+		SequenceNumber:      e.seq.Load(),
+		ObservationDomainId: e.cfg.TemplatedFlow.ObservationDomainID,
+		FlowSets: []interface{}{
+			netflow.IPFIXOptionsTemplateFlowSet{
+				FlowSetHeader: netflow.FlowSetHeader{Id: 3},
+				Records:       []netflow.IPFIXOptionsTemplateRecord{state.ipfixTemplate},
+			},
+		},
+	}
+	data, err := netflow.EncodeMessage(packet)
+	if err != nil {
+		return nil, fmt.Errorf("encode ipfix options schema template: %w", err)
+	}
+	e.advanceIPFIXSequence(packet)
+	return [][]byte{data}, nil
+}
+
+// encodeOptionsSchemaTemplate serializes a schema-derived NetFlow v9 options template.
+func (e *NFv9Encoder) encodeOptionsSchemaTemplate(state optionsSchemaState) ([][]byte, error) {
+	packet := &netflow.NFv9Packet{
+		Version:        9,
+		Count:          1,
+		SystemUptime:   0,
+		UnixSeconds:    uint32(time.Now().Unix()),
+		SequenceNumber: e.seq.Load(),
+		SourceId:       e.cfg.TemplatedFlow.ObservationDomainID,
+		FlowSets: []interface{}{
+			netflow.NFv9OptionsTemplateFlowSet{
+				FlowSetHeader: netflow.FlowSetHeader{Id: 1},
+				Records:       []netflow.NFv9OptionsTemplateRecord{state.nfv9Template},
+			},
+		},
+	}
+	data, err := netflow.EncodeMessage(packet)
+	if err != nil {
+		return nil, fmt.Errorf("encode netflow v9 options schema template: %w", err)
+	}
+	e.advanceSequence(packet)
+	return [][]byte{data}, nil
+}
+
+// encodeSourceOptions serializes source-level exporter metadata as IPFIX options records.
+func (e *IPFIXEncoder) encodeSourceOptions(state sourceOptionsState) ([][]byte, error) {
+	return e.encodeSourceOptionsBatch([]sourceOptionsState{state})
+}
+
+func (e *IPFIXEncoder) encodeSourceOptionsBatch(states []sourceOptionsState) ([][]byte, error) {
+	groups := groupedIPFIXSourceOptions(states)
+	out := make([][]byte, 0, len(groups))
+	for _, states := range groups {
+		data, err := e.encodeSourceOptionsGroup(states)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, data)
+	}
+	return out, nil
+}
+
+func (e *IPFIXEncoder) encodeSourceOptionsGroup(states []sourceOptionsState) ([]byte, error) {
+	if len(states) == 0 {
+		return nil, nil
+	}
+	first := states[0]
+	records := make([]netflow.OptionsDataRecord, 0, len(states))
+	for _, state := range states {
+		records = append(records, netflow.OptionsDataRecord{
+			ScopesValues: []netflow.DataField{
+				{Type: netflow.IPFIX_FIELD_observationPointId, Value: encodeU64(uint64(state.sourceID))},
+			},
+			OptionsValues: []netflow.DataField{
+				{Type: netflow.IPFIX_FIELD_samplingInterval, Value: encodeU32(state.samplingRate)},
+			},
+		})
+	}
+	packet := &netflow.IPFIXPacket{
+		Version:             10,
+		ExportTime:          uint32(time.Now().Unix()),
+		SequenceNumber:      e.seq.Load(),
+		ObservationDomainId: first.observationDomainID,
+		FlowSets: []interface{}{
+			netflow.IPFIXOptionsTemplateFlowSet{
+				FlowSetHeader: netflow.FlowSetHeader{Id: 3},
+				Records: []netflow.IPFIXOptionsTemplateRecord{
+					{
+						TemplateId:      first.templateID,
+						FieldCount:      2,
+						ScopeFieldCount: 1,
+						Scopes: []netflow.Field{
+							{Type: netflow.IPFIX_FIELD_observationPointId, Length: 8},
+						},
+						Options: []netflow.Field{
+							{Type: netflow.IPFIX_FIELD_samplingInterval, Length: 4},
+						},
+					},
+				},
+			},
+			netflow.OptionsDataFlowSet{
+				FlowSetHeader: netflow.FlowSetHeader{Id: first.templateID},
+				Records:       records,
+			},
+		},
+	}
+	data, err := netflow.EncodeMessage(packet)
+	if err != nil {
+		return nil, fmt.Errorf("encode ipfix source options: %w", err)
+	}
+	e.advanceIPFIXSequence(packet)
+	return data, nil
+}
+
+// encodeSourceOptions serializes source-level exporter metadata as NetFlow v9 options records.
+func (e *NFv9Encoder) encodeSourceOptions(state sourceOptionsState) ([][]byte, error) {
+	packet := &netflow.NFv9Packet{
+		Version:        9,
+		Count:          2,
+		SystemUptime:   0,
+		UnixSeconds:    uint32(time.Now().Unix()),
+		SequenceNumber: e.seq.Load(),
+		SourceId:       state.sourceID,
+		FlowSets: []interface{}{
+			netflow.NFv9OptionsTemplateFlowSet{
+				FlowSetHeader: netflow.FlowSetHeader{Id: 1},
+				Records: []netflow.NFv9OptionsTemplateRecord{
+					{
+						TemplateId:   state.templateID,
+						ScopeLength:  4,
+						OptionLength: 4,
+						Scopes: []netflow.Field{
+							{Type: 1, Length: 4},
+						},
+						Options: []netflow.Field{
+							{Type: netflow.NFV9_FIELD_SAMPLING_INTERVAL, Length: 4},
+						},
+					},
+				},
+			},
+			netflow.OptionsDataFlowSet{
+				FlowSetHeader: netflow.FlowSetHeader{Id: state.templateID},
+				Records: []netflow.OptionsDataRecord{
+					{
+						ScopesValues: []netflow.DataField{
+							{Type: 1, Value: encodeU32(state.sourceID)},
+						},
+						OptionsValues: []netflow.DataField{
+							{Type: netflow.NFV9_FIELD_SAMPLING_INTERVAL, Value: encodeU32(state.samplingRate)},
+						},
+					},
+				},
+			},
+		},
+	}
+	data, err := netflow.EncodeMessage(packet)
+	if err != nil {
+		return nil, fmt.Errorf("encode netflow v9 source options: %w", err)
+	}
+	e.advanceSequence(packet)
+	return [][]byte{data}, nil
+}
+
+// buildSchemaState prepares the template state for an aggregated stream, defaulting
+// the base template ID when the schema did not set one explicitly.
+func buildSchemaState(cfg config.TemplatedFlowDataConfig, schema event.AggregationSchema, netflowV9 bool) (templatedSchemaState, error) {
+	baseTemplateID := schema.BaseTemplateID
+	if baseTemplateID == 0 {
+		baseTemplateID = 256
+	}
+	return buildSchemaStateWithBase(cfg, schema, netflowV9, baseTemplateID)
+}
+
+func schemaIsOptions(schema event.AggregationSchema) bool {
+	for _, field := range schemaFieldsOrNames(schema) {
+		if field.Role == "static" && field.Name == tflowRecordTypeField && fmt.Sprint(field.Value) == "options" {
+			return true
+		}
+	}
+	if val, ok := schema.StaticFields[tflowRecordTypeField]; ok && fmt.Sprint(val) == "options" {
+		return true
+	}
+	return false
+}
+
+func buildOptionsSchemaState(cfg config.TemplatedFlowDataConfig, schema event.AggregationSchema, netflowV9 bool, defaultTemplateID uint16) (optionsSchemaState, error) {
+	templateID := schema.BaseTemplateID
+	if templateID == 0 {
+		templateID = defaultTemplateID
+	}
+	if templateID == 0 {
+		templateID = 1024
+	}
+
+	state := optionsSchemaState{
+		stream:     schema.Stream,
+		templateID: templateID,
+	}
+	if state.stream == "" {
+		state.stream = "options_data"
+	}
+	for _, field := range schemaFieldsOrNames(schema) {
+		if isTFlowRecordTypeMarker(field) {
+			continue
+		}
+		if _, ok := cfg.Catalog[field.Name]; !ok {
+			continue
+		}
+		if field.Role == "key" {
+			state.scopes = append(state.scopes, field)
+			continue
+		}
+		state.options = append(state.options, field)
+	}
+	if len(state.scopes) == 0 {
+		return optionsSchemaState{}, fmt.Errorf("options schema %q has no key scope fields", state.stream)
+	}
+	if len(state.options) == 0 {
+		return optionsSchemaState{}, fmt.Errorf("options schema %q has no option fields", state.stream)
+	}
+
+	if netflowV9 {
+		record, err := buildNFv9OptionsTemplateRecordFromSchemaFields(cfg, state.scopes, state.options, templateID)
+		if err != nil {
+			return optionsSchemaState{}, err
+		}
+		state.nfv9Template = record
+	} else {
+		record, err := buildIPFIXOptionsTemplateRecordFromSchemaFields(cfg, state.scopes, state.options, templateID)
+		if err != nil {
+			return optionsSchemaState{}, err
+		}
+		state.ipfixTemplate = record
+	}
+	return state, nil
+}
+
+func isTFlowRecordTypeMarker(field event.SchemaField) bool {
+	return field.Role == "static" && field.Name == tflowRecordTypeField
+}
+
+func optionsSchemaFields(schema optionsSchemaState) []event.SchemaField {
+	fields := make([]event.SchemaField, 0, len(schema.scopes)+len(schema.options))
+	fields = append(fields, schema.scopes...)
+	fields = append(fields, schema.options...)
+	return fields
+}
+
+// buildSchemaStateWithBase precomputes the single template for one aggregated
+// stream schema. Address-family choices are carried by SchemaField.Value; an
+// unmodified address field expands to both IPv4 and IPv6 wire fields.
+func buildSchemaStateWithBase(cfg config.TemplatedFlowDataConfig, schema event.AggregationSchema, netflowV9 bool, baseTemplateID uint16) (templatedSchemaState, error) {
+	stream := schema.Stream
+	if stream == "" {
+		stream = "flow_data"
+	}
+	if baseTemplateID == 0 {
+		baseTemplateID = 256
+	}
+	state := templatedSchemaState{
+		stream:         stream,
+		fieldNames:     append([]string(nil), schema.FieldNames...),
+		fields:         schemaFieldsOrNames(schema),
+		baseTemplateID: baseTemplateID,
+	}
+	template, err := buildTemplateRecordFromSchemaFields(cfg, state.fields, baseTemplateID, netflowV9)
+	if err != nil {
+		return templatedSchemaState{}, err
+	}
+	state.template = template
+	return state, nil
+}
+
+func schemaFieldsOrNames(schema event.AggregationSchema) []event.SchemaField {
+	if len(schema.Fields) > 0 {
+		return append([]event.SchemaField(nil), schema.Fields...)
+	}
+	fields := make([]event.SchemaField, 0, len(schema.FieldNames))
+	for _, name := range schema.FieldNames {
+		fields = append(fields, event.SchemaField{Name: name, Role: "current"})
+	}
+	return fields
+}
+
+// templateForFields returns the schema template for compatibility with tests and
+// older call sites that inspect schema state.
+func (s templatedSchemaState) templateForFields(fields map[string]any) netflow.TemplateRecord {
+	return s.template
+}
+
+// templates returns every template record that must be announced for this schema.
+func (s templatedSchemaState) templates() []netflow.TemplateRecord {
+	if s.template.FieldCount == 0 {
+		return nil
+	}
+	return []netflow.TemplateRecord{s.template}
+}
+
+func sourceOptionsKey(state sourceOptionsState) string {
+	return fmt.Sprintf("%s|%d|%d|%d", state.stream, state.observationDomainID, state.sourceID, state.templateID)
+}
+
+func sortedSourceOptions(options map[string]sourceOptionsState) []sourceOptionsState {
+	if len(options) == 0 {
+		return nil
+	}
+	keys := make([]string, 0, len(options))
+	for key := range options {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	states := make([]sourceOptionsState, 0, len(keys))
+	for _, key := range keys {
+		states = append(states, options[key])
+	}
+	return states
+}
+
+func groupedIPFIXSourceOptions(states []sourceOptionsState) [][]sourceOptionsState {
+	if len(states) == 0 {
+		return nil
+	}
+	groups := make([][]sourceOptionsState, 0, len(states))
+	groupIndexes := make(map[string]int, len(states))
+	for _, state := range states {
+		key := fmt.Sprintf("%d|%d", state.observationDomainID, state.templateID)
+		if index, ok := groupIndexes[key]; ok {
+			groups[index] = append(groups[index], state)
+			continue
+		}
+		groupIndexes[key] = len(groups)
+		groups = append(groups, []sourceOptionsState{state})
+	}
+	return groups
+}
+
+// sourceOptionsFromEvent extracts source-level exporter metadata from event
+// metadata, with payload/field values used only for exporter control knobs that
+// are not represented in SourceMetadata.
+func sourceOptionsFromEvent(evt *event.Event) sourceOptionsState {
+	state := sourceOptionsState{
+		stream:       eventStream(evt, "options_data"),
+		agentIP:      eventAgentIP(evt),
+		sourceID:     eventSourceID(evt),
+		samplingRate: eventSamplingRate(evt),
+		samplePool:   eventSamplePool(evt),
+		drops:        eventDrops(evt),
+		inputIf:      uint32Field(evt.Fields, "input_if"),
+		outputIf:     uint32Field(evt.Fields, "output_if"),
+	}
+	if payload, ok := evt.Payload.(event.SourceInit); ok {
+		if payload.Stream != "" {
+			state.stream = payload.Stream
+		}
+		if payload.InputIf != 0 {
+			state.inputIf = payload.InputIf
+		}
+		if payload.OutputIf != 0 {
+			state.outputIf = payload.OutputIf
+		}
+	}
+	return state
+}
+
+func (e *IPFIXEncoder) fallbackDataRecord(fieldMap map[string]any, templateID uint16) (fallbackTemplatePlan, netflow.DataRecord, error) {
+	key, err := fallbackPlanKey(e.cfg.TemplatedFlow.Data, fieldMap, templateID, false)
+	if err != nil {
+		return fallbackTemplatePlan{}, netflow.DataRecord{}, err
+	}
+	plan, ok := e.fallbackPlans[key]
+	if !ok {
+		plan, err = buildFallbackPlan(e.cfg.TemplatedFlow.Data, fieldMap, templateID, false)
+		if err != nil {
+			return fallbackTemplatePlan{}, netflow.DataRecord{}, err
+		}
+		e.fallbackPlans[key] = plan
+	}
+	record, err := buildFallbackValues(plan, fieldMap, templatedEncodingContext{})
+	if err != nil {
+		return fallbackTemplatePlan{}, netflow.DataRecord{}, err
+	}
+	return plan, record, nil
+}
+
+func (e *NFv9Encoder) fallbackDataRecord(fieldMap map[string]any, templateID uint16, encodingCtx templatedEncodingContext) (fallbackTemplatePlan, netflow.DataRecord, error) {
+	key, err := fallbackPlanKey(e.cfg.TemplatedFlow.Data, fieldMap, templateID, true)
+	if err != nil {
+		return fallbackTemplatePlan{}, netflow.DataRecord{}, err
+	}
+	plan, ok := e.fallbackPlans[key]
+	if !ok {
+		plan, err = buildFallbackPlan(e.cfg.TemplatedFlow.Data, fieldMap, templateID, true)
+		if err != nil {
+			return fallbackTemplatePlan{}, netflow.DataRecord{}, err
+		}
+		e.fallbackPlans[key] = plan
+	}
+	record, err := buildFallbackValues(plan, fieldMap, encodingCtx)
+	if err != nil {
+		return fallbackTemplatePlan{}, netflow.DataRecord{}, err
+	}
+	return plan, record, nil
+}
+
+func fallbackPlanKey(cfg config.TemplatedFlowDataConfig, fieldMap map[string]any, templateID uint16, netflowV9 bool) (string, error) {
+	names := selectPresentFlowFields(cfg, fieldMap)
+	var b strings.Builder
+	fmt.Fprintf(&b, "%t|%d", netflowV9, templateID)
+	for _, name := range names {
+		defs, err := fieldDefinitionsForFamily(name, cfg.Catalog[name], "")
+		if err != nil {
+			return "", err
+		}
+		for _, def := range defs {
+			def = wireFieldDefinition(name, def, netflowV9)
+			if !fieldAllowedForEncoding(def, netflowV9) {
+				continue
+			}
+			length := def.Length
+			if length == 0 || length == 0xffff {
+				encoded, err := encodeFallbackValue(name, def, fieldMap, templatedEncodingContext{netflowV9: netflowV9})
+				if err == nil {
+					length = ipfixFieldLength(def, encoded)
+				}
+			}
+			fmt.Fprintf(&b, "|%s:%d:%d:%d:%d:%t", name, def.ID, length, def.Length, def.PEN, def.EnterpriseScoped)
+		}
+	}
+	return b.String(), nil
+}
+
+func buildFallbackPlan(cfg config.TemplatedFlowDataConfig, fieldMap map[string]any, templateID uint16, netflowV9 bool) (fallbackTemplatePlan, error) {
+	names := selectPresentFlowFields(cfg, fieldMap)
+	fields := make([]netflow.Field, 0, len(names))
+	defs := make([]config.IPFIXFieldDefinition, 0, len(names))
+	keptNames := make([]string, 0, len(names))
+	families := make([]string, 0, len(names))
+	for _, name := range names {
+		fieldDefs, err := fieldDefinitionsForFamily(name, cfg.Catalog[name], "")
+		if err != nil {
+			return fallbackTemplatePlan{}, err
+		}
+		for _, def := range fieldDefs {
+			def = wireFieldDefinition(name, def, netflowV9)
+			if !fieldAllowedForEncoding(def, netflowV9) {
+				continue
+			}
+			encoded, err := encodeFallbackValue(name, def, fieldMap, templatedEncodingContext{netflowV9: netflowV9})
+			if err != nil {
+				return fallbackTemplatePlan{}, fmt.Errorf("encode field %q: %w", name, err)
+			}
+			fields = append(fields, netflow.Field{
+				PenProvided: def.EnterpriseScoped || def.PEN != 0,
+				Type:        def.ID,
+				Length:      ipfixFieldLength(def, encoded),
+				Pen:         def.PEN,
+			})
+			defs = append(defs, def)
+			keptNames = append(keptNames, name)
+			families = append(families, "")
+		}
+	}
+	if len(fields) == 0 {
+		return fallbackTemplatePlan{}, fmt.Errorf("no encodable fields found for ipfix packet")
+	}
+	return fallbackTemplatePlan{
+		template: netflow.TemplateRecord{
+			TemplateId: templateID,
+			FieldCount: uint16(len(fields)),
+			Fields:     fields,
+		},
+		names:    keptNames,
+		defs:     defs,
+		families: families,
+	}, nil
+}
+
+func buildFallbackValues(plan fallbackTemplatePlan, fieldMap map[string]any, encodingCtx templatedEncodingContext) (netflow.DataRecord, error) {
+	values := make([]netflow.DataField, 0, len(plan.names))
+	present := 0
+	for i, name := range plan.names {
+		def := plan.defs[i]
+		if _, ok := fieldMap[name]; ok {
+			present++
+		}
+		encoded, err := encodeFallbackValueWithFamily(name, def, fieldMap, plan.families[i], encodingCtx)
+		if err != nil {
+			return netflow.DataRecord{}, fmt.Errorf("encode field %q: %w", name, err)
+		}
+		values = append(values, netflow.DataField{
+			PenProvided: def.EnterpriseScoped || def.PEN != 0,
+			Type:        plan.template.Fields[i].Type,
+			Length:      plan.template.Fields[i].Length,
+			Pen:         def.PEN,
+			Value:       encoded,
+		})
+	}
+	if len(values) == 0 || present == 0 {
+		return netflow.DataRecord{}, fmt.Errorf("no encodable values found for templated packet")
+	}
+	return netflow.DataRecord{Values: values}, nil
+}
+
+func selectPresentFlowFields(cfg config.TemplatedFlowDataConfig, fieldMap map[string]any) []string {
+	if len(cfg.Select) > 0 {
+		names := make([]string, 0, len(cfg.Select))
+		for _, name := range cfg.Select {
+			if _, ok := cfg.Catalog[name]; !ok {
+				continue
+			}
+			names = append(names, name)
+		}
+		return names
+	}
+	names := make([]string, 0, len(fieldMap))
+	for name := range fieldMap {
+		if _, ok := cfg.Catalog[name]; ok {
+			names = append(names, name)
+		}
+	}
+	sort.Strings(names)
+	return names
+}
+
+func applyTemplatedFlowDataMatches(cfg config.TemplatedFlowDataConfig, fieldMap map[string]any) {
+	if len(cfg.Matches) == 0 || len(fieldMap) == 0 {
+		return
+	}
+	for _, match := range cfg.Matches {
+		if match.Field == "" || match.From == "" {
+			continue
+		}
+		if _, exists := fieldMap[match.Field]; exists {
+			continue
+		}
+		if val, ok := fieldMap[match.From]; ok {
+			fieldMap[match.Field] = val
+		}
+	}
+}
+
+func encodeFallbackValue(name string, def config.IPFIXFieldDefinition, fieldMap map[string]any, encodingCtx templatedEncodingContext) ([]byte, error) {
+	return encodeFallbackValueWithFamily(name, def, fieldMap, "", encodingCtx)
+}
+
+func encodeFallbackValueWithFamily(name string, def config.IPFIXFieldDefinition, fieldMap map[string]any, family string, encodingCtx templatedEncodingContext) ([]byte, error) {
+	if val, ok := fieldMap[name]; ok {
+		return encodeTemplatedValueForFamily(name, def, val, family, encodingCtx)
+	}
+	return defaultEncodedValue(def)
+}
+
+// buildTemplatedDataRecord picks fields from a runtime event and builds both the
+// template and one matching data record.
+func buildTemplatedDataRecord(cfg config.TemplatedFlowDataConfig, fieldMap map[string]any, templateID uint16, netflowV9 bool) (netflow.TemplateRecord, netflow.DataRecord, error) {
+	names := selectFlowFields(cfg, fieldMap)
+	return buildTemplatedDataRecordWithNames(cfg, fieldMap, names, templateID, templatedEncodingContext{netflowV9: netflowV9})
+}
+
+// buildTemplatedDataRecordWithNames uses an explicit field order, which matters
+// when schema events already fixed the record layout.
+func buildTemplatedDataRecordWithNames(cfg config.TemplatedFlowDataConfig, fieldMap map[string]any, names []string, templateID uint16, encodingCtx templatedEncodingContext) (netflow.TemplateRecord, netflow.DataRecord, error) {
+	templateFields := make([]netflow.Field, 0, len(names))
+	values := make([]netflow.DataField, 0, len(names))
+	for _, name := range names {
+		def, ok := cfg.Catalog[name]
+		if !ok {
+			continue
+		}
+		val, ok := fieldMap[name]
+		if !ok {
+			continue
+		}
+		def = resolvedFieldDefinition(name, def, val)
+		def = wireFieldDefinition(name, def, encodingCtx.netflowV9)
+		if !fieldAllowedForEncoding(def, encodingCtx.netflowV9) {
+			continue
+		}
+		encoded, err := encodeTemplatedValue(name, def, val, encodingCtx)
+		if err != nil {
+			return netflow.TemplateRecord{}, netflow.DataRecord{}, fmt.Errorf("encode field %q: %w", name, err)
+		}
+		templateFields = append(templateFields, netflow.Field{
+			PenProvided: def.EnterpriseScoped || def.PEN != 0,
+			Type:        def.ID,
+			Length:      ipfixFieldLength(def, encoded),
+			Pen:         def.PEN,
+		})
+		values = append(values, netflow.DataField{
+			PenProvided: def.EnterpriseScoped || def.PEN != 0,
+			Type:        def.ID,
+			Length:      ipfixFieldLength(def, encoded),
+			Pen:         def.PEN,
+			Value:       encoded,
+		})
+	}
+	if len(templateFields) == 0 {
+		return netflow.TemplateRecord{}, netflow.DataRecord{}, fmt.Errorf("no encodable fields found for ipfix packet")
+	}
+	return netflow.TemplateRecord{
+			TemplateId: templateID,
+			FieldCount: uint16(len(templateFields)),
+			Fields:     templateFields,
+		}, netflow.DataRecord{
+			Values: values,
+		}, nil
+}
+
+func schemaFieldDefinitions(cfg config.TemplatedFlowDataConfig, field event.SchemaField) ([]config.IPFIXFieldDefinition, bool, error) {
+	def, ok := cfg.Catalog[field.Name]
+	if !ok {
+		return nil, false, nil
+	}
+
+	if def.Name == "" {
+		def.Name = field.Name
+	}
+	defs, err := fieldDefinitionsForFamily(field.Name, def, schemaFieldFamily(field))
+	return defs, true, err
+}
+
+func buildTemplatedValuesFromSchemaFields(cfg config.TemplatedFlowDataConfig, fieldMap map[string]any, fields []event.SchemaField, encodingCtx templatedEncodingContext) (netflow.DataRecord, error) {
+	values := make([]netflow.DataField, 0, len(fields))
+	for _, field := range fields {
+		defs, ok, err := schemaFieldDefinitions(cfg, field)
+		if err != nil {
+			return netflow.DataRecord{}, err
+		}
+		if !ok {
+			continue
+		}
+		val, ok := fieldMap[field.Name]
+		if !ok && field.Role == "static" && field.Value != nil {
+			val = field.Value
+			ok = true
+		}
+		for _, def := range defs {
+			def = wireFieldDefinition(field.Name, def, encodingCtx.netflowV9)
+			if !fieldAllowedForEncoding(def, encodingCtx.netflowV9) {
+				continue
+			}
+			var encoded []byte
+			if ok {
+				encoded, err = encodeTemplatedValueForFamily(field.Name, def, val, schemaFieldFamily(field), encodingCtx)
+				if err != nil {
+					return netflow.DataRecord{}, fmt.Errorf("encode field %q: %w", field.Name, err)
+				}
+			} else {
+				encoded, err = defaultEncodedValue(def)
+				if err != nil {
+					return netflow.DataRecord{}, fmt.Errorf("default field %q: %w", field.Name, err)
+				}
+			}
+			values = append(values, netflow.DataField{
+				PenProvided: def.EnterpriseScoped || def.PEN != 0,
+				Type:        def.ID,
+				Length:      def.Length,
+				Pen:         def.PEN,
+				Value:       encoded,
+			})
+		}
+	}
+	if len(values) == 0 {
+		return netflow.DataRecord{}, fmt.Errorf("no encodable values found for templated packet")
+	}
+	return netflow.DataRecord{Values: values}, nil
+}
+
+func buildOptionsDataRecordFromSchemaFields(cfg config.TemplatedFlowDataConfig, fieldMap map[string]any, scopes, options []event.SchemaField, encodingCtx templatedEncodingContext) (netflow.OptionsDataRecord, error) {
+	scopeValues, err := buildOptionsDataFieldsFromSchemaFields(cfg, fieldMap, scopes, encodingCtx, true)
+	if err != nil {
+		return netflow.OptionsDataRecord{}, err
+	}
+	optionValues, err := buildOptionsDataFieldsFromSchemaFields(cfg, fieldMap, options, encodingCtx, false)
+	if err != nil {
+		return netflow.OptionsDataRecord{}, err
+	}
+	if len(scopeValues) == 0 {
+		return netflow.OptionsDataRecord{}, fmt.Errorf("no encodable scope values found for options packet")
+	}
+	if len(optionValues) == 0 {
+		return netflow.OptionsDataRecord{}, fmt.Errorf("no encodable option values found for options packet")
+	}
+	return netflow.OptionsDataRecord{
+		ScopesValues:  scopeValues,
+		OptionsValues: optionValues,
+	}, nil
+}
+
+func buildOptionsDataFieldsFromSchemaFields(cfg config.TemplatedFlowDataConfig, fieldMap map[string]any, fields []event.SchemaField, encodingCtx templatedEncodingContext, scope bool) ([]netflow.DataField, error) {
+	values := make([]netflow.DataField, 0, len(fields))
+	for _, field := range fields {
+		def, ok := cfg.Catalog[field.Name]
+		if !ok {
+			continue
+		}
+		def = optionWireFieldDefinition(field.Name, def, encodingCtx.netflowV9, scope)
+		if !fieldAllowedForEncoding(def, encodingCtx.netflowV9) {
+			continue
+		}
+		val, ok := fieldMap[field.Name]
+		if !ok && field.Role == "static" && field.Value != nil {
+			val = field.Value
+			ok = true
+		}
+		var encoded []byte
+		var err error
+		if ok {
+			encoded, err = encodeTemplatedValue(field.Name, def, val, encodingCtx)
+			if err != nil {
+				return nil, fmt.Errorf("encode field %q: %w", field.Name, err)
+			}
+		} else {
+			encoded, err = defaultEncodedValue(def)
+			if err != nil {
+				return nil, fmt.Errorf("default field %q: %w", field.Name, err)
+			}
+		}
+		values = append(values, netflow.DataField{
+			PenProvided: def.EnterpriseScoped || def.PEN != 0,
+			Type:        def.ID,
+			Length:      def.Length,
+			Pen:         def.PEN,
+			Value:       encoded,
+		})
+	}
+	return values, nil
+}
+
+func buildTemplateRecordFromSchemaFields(cfg config.TemplatedFlowDataConfig, schemaFields []event.SchemaField, templateID uint16, netflowV9 bool) (netflow.TemplateRecord, error) {
+	fields := make([]netflow.Field, 0, len(schemaFields))
+	for _, field := range schemaFields {
+		defs, ok, err := schemaFieldDefinitions(cfg, field)
+		if err != nil {
+			return netflow.TemplateRecord{}, err
+		}
+		if !ok {
+			continue
+		}
+		for _, def := range defs {
+			def = wireFieldDefinition(field.Name, def, netflowV9)
+			if !fieldAllowedForEncoding(def, netflowV9) {
+				continue
+			}
+			fields = append(fields, netflow.Field{
+				PenProvided: def.EnterpriseScoped || def.PEN != 0,
+				Type:        def.ID,
+				Length:      def.Length,
+				Pen:         def.PEN,
+			})
+		}
+	}
+	if len(fields) == 0 {
+		return netflow.TemplateRecord{}, fmt.Errorf("no encodable fields found for schema template")
+	}
+	return netflow.TemplateRecord{
+		TemplateId: templateID,
+		FieldCount: uint16(len(fields)),
+		Fields:     fields,
+	}, nil
+}
+
+func buildIPFIXOptionsTemplateRecordFromSchemaFields(cfg config.TemplatedFlowDataConfig, scopes, options []event.SchemaField, templateID uint16) (netflow.IPFIXOptionsTemplateRecord, error) {
+	scopeFields, err := buildOptionsTemplateFields(cfg, scopes, false, true)
+	if err != nil {
+		return netflow.IPFIXOptionsTemplateRecord{}, err
+	}
+	optionFields, err := buildOptionsTemplateFields(cfg, options, false, false)
+	if err != nil {
+		return netflow.IPFIXOptionsTemplateRecord{}, err
+	}
+	if len(scopeFields) == 0 || len(optionFields) == 0 {
+		return netflow.IPFIXOptionsTemplateRecord{}, fmt.Errorf("options template %d requires at least one scope and option field", templateID)
+	}
+	return netflow.IPFIXOptionsTemplateRecord{
+		TemplateId:      templateID,
+		FieldCount:      uint16(len(scopeFields) + len(optionFields)),
+		ScopeFieldCount: uint16(len(scopeFields)),
+		Scopes:          scopeFields,
+		Options:         optionFields,
+	}, nil
+}
+
+func buildNFv9OptionsTemplateRecordFromSchemaFields(cfg config.TemplatedFlowDataConfig, scopes, options []event.SchemaField, templateID uint16) (netflow.NFv9OptionsTemplateRecord, error) {
+	scopeFields, err := buildOptionsTemplateFields(cfg, scopes, true, true)
+	if err != nil {
+		return netflow.NFv9OptionsTemplateRecord{}, err
+	}
+	optionFields, err := buildOptionsTemplateFields(cfg, options, true, false)
+	if err != nil {
+		return netflow.NFv9OptionsTemplateRecord{}, err
+	}
+	if len(scopeFields) == 0 || len(optionFields) == 0 {
+		return netflow.NFv9OptionsTemplateRecord{}, fmt.Errorf("options template %d requires at least one scope and option field", templateID)
+	}
+	return netflow.NFv9OptionsTemplateRecord{
+		TemplateId:   templateID,
+		ScopeLength:  uint16(len(scopeFields) * 4),
+		OptionLength: uint16(len(optionFields) * 4),
+		Scopes:       scopeFields,
+		Options:      optionFields,
+	}, nil
+}
+
+func buildOptionsTemplateFields(cfg config.TemplatedFlowDataConfig, schemaFields []event.SchemaField, netflowV9 bool, scope bool) ([]netflow.Field, error) {
+	fields := make([]netflow.Field, 0, len(schemaFields))
+	for _, field := range schemaFields {
+		def, ok := cfg.Catalog[field.Name]
+		if !ok {
+			continue
+		}
+		def = optionWireFieldDefinition(field.Name, def, netflowV9, scope)
+		if !fieldAllowedForEncoding(def, netflowV9) {
+			continue
+		}
+		fields = append(fields, netflow.Field{
+			PenProvided: def.EnterpriseScoped || def.PEN != 0,
+			Type:        def.ID,
+			Length:      def.Length,
+			Pen:         def.PEN,
+		})
+	}
+	return fields, nil
+}
+
+// selectFlowFields uses the configured field whitelist when present, otherwise it
+// exports all available fields in sorted order for determinism.
+func selectFlowFields(cfg config.TemplatedFlowDataConfig, fieldMap map[string]any) []string {
+	if len(cfg.Select) > 0 {
+		return append([]string(nil), cfg.Select...)
+	}
+	names := make([]string, 0, len(fieldMap))
+	for name := range fieldMap {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
+}
+
+// encodeIPFIXValue encodes one canonical field into the wire representation
+// expected by IPFIX or NetFlow v9.
+func encodeIPFIXValue(def config.IPFIXFieldDefinition, val any) ([]byte, error) {
+	switch def.Type {
+	case "ipv4Address", "ipv6Address":
+		s, ok := val.(string)
+		if !ok {
+			return nil, fmt.Errorf("expected string IP, got %T", val)
+		}
+		addr, err := netip.ParseAddr(s)
+		if err != nil {
+			return nil, err
+		}
+		if def.Type == "ipv4Address" {
+			if !addr.Is4() {
+				return nil, fmt.Errorf("expected IPv4 address, got %s", s)
+			}
+			return append([]byte(nil), addr.AsSlice()...), nil
+		}
+		if !addr.Is6() {
+			return nil, fmt.Errorf("expected IPv6 address, got %s", s)
+		}
+		return append([]byte(nil), addr.AsSlice()...), nil
+	case "macAddress":
+		switch v := val.(type) {
+		case net.HardwareAddr:
+			if len(v) != 6 {
+				return nil, fmt.Errorf("expected 6-byte MAC address, got %d bytes", len(v))
+			}
+			return append([]byte(nil), v...), nil
+		case []byte:
+			if len(v) != 6 {
+				return nil, fmt.Errorf("expected 6-byte MAC address, got %d bytes", len(v))
+			}
+			return append([]byte(nil), v...), nil
+		case string:
+			hw, err := net.ParseMAC(v)
+			if err != nil {
+				return nil, err
+			}
+			if len(hw) != 6 {
+				return nil, fmt.Errorf("expected 6-byte MAC address, got %d bytes", len(hw))
+			}
+			return append([]byte(nil), hw...), nil
+		default:
+			return nil, fmt.Errorf("expected MAC string/[]byte, got %T", val)
+		}
+	case "unsigned8", "unsigned16", "unsigned32", "unsigned64":
+		return encodeUnsigned(def.Type, val)
+	case "signed8", "signed16", "signed32", "signed64":
+		return encodeSigned(def.Type, val)
+	case "boolean":
+		if boolField(val) {
+			return []byte{1}, nil
+		}
+		return []byte{0}, nil
+	case "string":
+		switch v := val.(type) {
+		case string:
+			return []byte(v), nil
+		case []byte:
+			return append([]byte(nil), v...), nil
+		default:
+			return nil, fmt.Errorf("expected string/[]byte, got %T", val)
+		}
+	default:
+		switch v := val.(type) {
+		case []byte:
+			return append([]byte(nil), v...), nil
+		case string:
+			return []byte(v), nil
+		default:
+			return encodeUnsigned("unsigned64", val)
+		}
+	}
+}
+
+func wireFieldDefinition(name string, def config.IPFIXFieldDefinition, netflowV9 bool) config.IPFIXFieldDefinition {
+	if !netflowV9 {
+		return def
+	}
+	switch name {
+	case "start_time_unix":
+		def.Name = "FIRST_SWITCHED"
+		def.ID = netflow.NFV9_FIELD_FIRST_SWITCHED
+		def.Length = 4
+		def.Type = "unsigned32"
+		def.Format = ""
+	case "end_time_unix":
+		def.Name = "LAST_SWITCHED"
+		def.ID = netflow.NFV9_FIELD_LAST_SWITCHED
+		def.Length = 4
+		def.Type = "unsigned32"
+		def.Format = ""
+	}
+	return def
+}
+
+func optionWireFieldDefinition(name string, def config.IPFIXFieldDefinition, netflowV9 bool, scope bool) config.IPFIXFieldDefinition {
+	if !netflowV9 {
+		return def
+	}
+	if scope {
+		if id := defaultNetFlowV9ScopeID(name); id != 0 {
+			def.ID = id
+			def.Length = 4
+			def.Type = "unsigned32"
+			def.PEN = 0
+			def.EnterpriseScoped = false
+			return def
+		}
+	}
+	return wireFieldDefinition(name, def, netflowV9)
+}
+
+func defaultNetFlowV9ScopeID(name string) uint16 {
+	switch name {
+	case "observation_domain_id", "source_id":
+		return 1
+	case "if_index", "input_if":
+		return 2
+	default:
+		return 0
+	}
+}
+
+func fieldAllowedForEncoding(def config.IPFIXFieldDefinition, netflowV9 bool) bool {
+	if !netflowV9 {
+		return true
+	}
+	return isNetFlowV9FieldID(def.ID)
+}
+
+func isNetFlowV9FieldID(id uint16) bool {
+	name := netflow.NFv9TypeToString(id)
+	return name != "" && name != "Unassigned"
+}
+
+func encodeTemplatedValue(name string, def config.IPFIXFieldDefinition, val any, encodingCtx templatedEncodingContext) ([]byte, error) {
+	if encodingCtx.netflowV9 {
+		switch name {
+		case "start_time_unix":
+			return encodeU32(encodingCtx.firstSwitched), nil
+		case "end_time_unix":
+			return encodeU32(encodingCtx.lastSwitched), nil
+		}
+	}
+	return encodeIPFIXValue(def, val)
+}
+
+func encodeTemplatedValueForFamily(name string, def config.IPFIXFieldDefinition, val any, family string, encodingCtx templatedEncodingContext) ([]byte, error) {
+	if def.Type != "ipv4Address" && def.Type != "ipv6Address" {
+		if family != "" {
+			return nil, fmt.Errorf("family modifier %q requires IP address field", family)
+		}
+		return encodeTemplatedValue(name, def, val, encodingCtx)
+	}
+	ip, ok := val.(string)
+	if !ok {
+		return nil, fmt.Errorf("expected string IP, got %T", val)
+	}
+	addr, err := netip.ParseAddr(ip)
+	if err != nil {
+		return nil, err
+	}
+	if family == "ip4in6" && addr.Is4() {
+		ip = mappedIPv4String(addr)
+		addr, _ = netip.ParseAddr(ip)
+	}
+	switch def.Type {
+	case "ipv4Address":
+		if !addr.Is4() {
+			return defaultEncodedValue(def)
+		}
+	case "ipv6Address":
+		if !addr.Is6() {
+			return defaultEncodedValue(def)
+		}
+	}
+	return encodeTemplatedValue(name, def, ip, encodingCtx)
+}
+
+// defaultEncodedValue provides a zero representation for fields omitted from a
+// templated event but still required by the selected template.
+func defaultEncodedValue(def config.IPFIXFieldDefinition) ([]byte, error) {
+	switch def.Type {
+	case "ipv4Address":
+		return make([]byte, 4), nil
+	case "ipv6Address":
+		return make([]byte, 16), nil
+	case "macAddress":
+		return make([]byte, 6), nil
+	case "unsigned8", "signed8", "boolean":
+		return make([]byte, 1), nil
+	case "unsigned16", "signed16":
+		return make([]byte, 2), nil
+	case "unsigned32", "signed32":
+		return make([]byte, 4), nil
+	case "unsigned64", "signed64":
+		return make([]byte, 8), nil
+	case "string":
+		if def.Length == 0xffff || def.Length == 0 {
+			return []byte{}, nil
+		}
+		return make([]byte, def.Length), nil
+	default:
+		if def.Length == 0xffff || def.Length == 0 {
+			return []byte{}, nil
+		}
+		return make([]byte, def.Length), nil
+	}
+}
+
+// resolvedFieldDefinition upgrades address fields to their IPv6 definitions
+// when the concrete runtime value contains an IPv6 address.
+func resolvedFieldDefinition(name string, def config.IPFIXFieldDefinition, val any) config.IPFIXFieldDefinition {
+	ipStr, ok := val.(string)
+	if !ok {
+		return def
+	}
+	addr, err := netip.ParseAddr(ipStr)
+	if err != nil {
+		return def
+	}
+	switch {
+	case name == "agent_ip" && addr.Is6():
+		def.Name = "exporterIPv6Address"
+		def.ID = netflow.IPFIX_FIELD_exporterIPv6Address
+		def.Length = 16
+		def.Type = "ipv6Address"
+	case name == "nat_src_addr" && isPostNATSourceIPv4Definition(def):
+		if addr.Is6() {
+			def.Name = "postNATSourceIPv6Address"
+			def.ID = netflow.IPFIX_FIELD_postNATSourceIPv6Address
+			def.Length = 16
+			def.Type = "ipv6Address"
+		}
+	case name == "nat_dst_addr" && isPostNATDestinationIPv4Definition(def):
+		if addr.Is6() {
+			def.Name = "postNATDestinationIPv6Address"
+			def.ID = netflow.IPFIX_FIELD_postNATDestinationIPv6Address
+			def.Length = 16
+			def.Type = "ipv6Address"
+		}
+	case isSourceAddressField(name) && isStandardSourceIPv4Definition(def):
+		if addr.Is6() {
+			def.Name = "sourceIPv6Address"
+			def.ID = netflow.IPFIX_FIELD_sourceIPv6Address
+			def.Length = 16
+			def.Type = "ipv6Address"
+		}
+	case isDestinationAddressField(name) && isStandardDestinationIPv4Definition(def):
+		if addr.Is6() {
+			def.Name = "destinationIPv6Address"
+			def.ID = netflow.IPFIX_FIELD_destinationIPv6Address
+			def.Length = 16
+			def.Type = "ipv6Address"
+		}
+	}
+	return def
+}
+
+func fieldDefinitionsForFamily(name string, def config.IPFIXFieldDefinition, family string) ([]config.IPFIXFieldDefinition, error) {
+	if def.Name == "" {
+		def.Name = name
+	}
+	switch family {
+	case "":
+		if isDualStackAddressDefinition(name, def) {
+			return []config.IPFIXFieldDefinition{
+				def,
+				resolvedFieldDefinitionForFamily(name, def, true),
+			}, nil
+		}
+		return []config.IPFIXFieldDefinition{def}, nil
+	case "ip4":
+		if !isIPAddressDefinition(def) {
+			return nil, fmt.Errorf("field %q family %q requires IP address field", name, family)
+		}
+		if def.Type != "ipv4Address" {
+			return nil, fmt.Errorf("field %q cannot be exported as IPv4", name)
+		}
+		return []config.IPFIXFieldDefinition{def}, nil
+	case "ip6", "ip4in6":
+		if !isIPAddressDefinition(def) {
+			return nil, fmt.Errorf("field %q family %q requires IP address field", name, family)
+		}
+		if def.Type == "ipv6Address" {
+			return []config.IPFIXFieldDefinition{def}, nil
+		}
+		promoted := resolvedFieldDefinitionForFamily(name, def, true)
+		if promoted.Type != "ipv6Address" || promoted.ID == def.ID {
+			return nil, fmt.Errorf("field %q cannot be exported as IPv6", name)
+		}
+		return []config.IPFIXFieldDefinition{promoted}, nil
+	default:
+		return nil, fmt.Errorf("unsupported field family %q", family)
+	}
+}
+
+func schemaFieldFamily(field event.SchemaField) string {
+	if field.Role == "static" {
+		return ""
+	}
+	family, _ := ipFamilyModifier(field.Value)
+	return family
+}
+
+func ipFamilyModifier(value any) (string, bool) {
+	family, ok := value.(string)
+	if !ok {
+		return "", false
+	}
+	switch family {
+	case "ip4", "ip6", "ip4in6":
+		return family, true
+	default:
+		return "", false
+	}
+}
+
+func isIPAddressDefinition(def config.IPFIXFieldDefinition) bool {
+	return def.Type == "ipv4Address" || def.Type == "ipv6Address"
+}
+
+func isDualStackAddressDefinition(name string, def config.IPFIXFieldDefinition) bool {
+	return isStandardSourceIPv4Definition(def) && isSourceAddressField(name) ||
+		isStandardDestinationIPv4Definition(def) && isDestinationAddressField(name) ||
+		isPostNATSourceIPv4Definition(def) && name == "nat_src_addr" ||
+		isPostNATDestinationIPv4Definition(def) && name == "nat_dst_addr"
+}
+
+func mappedIPv4String(addr netip.Addr) string {
+	raw := addr.As4()
+	mapped := netip.AddrFrom16([16]byte{10: 0xff, 11: 0xff, 12: raw[0], 13: raw[1], 14: raw[2], 15: raw[3]})
+	return mapped.String()
+}
+
+// resolvedFieldDefinitionForFamily performs the same promotion as
+// resolvedFieldDefinition, but from a preselected IP family.
+func resolvedFieldDefinitionForFamily(name string, def config.IPFIXFieldDefinition, ipv6 bool) config.IPFIXFieldDefinition {
+	if !ipv6 {
+		return def
+	}
+	switch {
+	case name == "agent_ip":
+		def.Name = "exporterIPv6Address"
+		def.ID = netflow.IPFIX_FIELD_exporterIPv6Address
+		def.Length = 16
+		def.Type = "ipv6Address"
+	case name == "nat_src_addr" && isPostNATSourceIPv4Definition(def):
+		def.Name = "postNATSourceIPv6Address"
+		def.ID = netflow.IPFIX_FIELD_postNATSourceIPv6Address
+		def.Length = 16
+		def.Type = "ipv6Address"
+	case name == "nat_dst_addr" && isPostNATDestinationIPv4Definition(def):
+		def.Name = "postNATDestinationIPv6Address"
+		def.ID = netflow.IPFIX_FIELD_postNATDestinationIPv6Address
+		def.Length = 16
+		def.Type = "ipv6Address"
+	case isSourceAddressField(name) && isStandardSourceIPv4Definition(def):
+		def.Name = "sourceIPv6Address"
+		def.ID = netflow.IPFIX_FIELD_sourceIPv6Address
+		def.Length = 16
+		def.Type = "ipv6Address"
+	case isDestinationAddressField(name) && isStandardDestinationIPv4Definition(def):
+		def.Name = "destinationIPv6Address"
+		def.ID = netflow.IPFIX_FIELD_destinationIPv6Address
+		def.Length = 16
+		def.Type = "ipv6Address"
+	}
+	return def
+}
+
+func isSourceAddressField(name string) bool {
+	return name == "src_addr" || strings.HasSuffix(name, "_src_addr")
+}
+
+func isDestinationAddressField(name string) bool {
+	return name == "dst_addr" || strings.HasSuffix(name, "_dst_addr")
+}
+
+func isStandardSourceIPv4Definition(def config.IPFIXFieldDefinition) bool {
+	return def.Type == "ipv4Address" && (def.ID == netflow.IPFIX_FIELD_sourceIPv4Address || def.Name == "sourceIPv4Address")
+}
+
+func isStandardDestinationIPv4Definition(def config.IPFIXFieldDefinition) bool {
+	return def.Type == "ipv4Address" && (def.ID == netflow.IPFIX_FIELD_destinationIPv4Address || def.Name == "destinationIPv4Address")
+}
+
+func isPostNATSourceIPv4Definition(def config.IPFIXFieldDefinition) bool {
+	return def.Type == "ipv4Address" && (def.ID == netflow.IPFIX_FIELD_postNATSourceIPv4Address || def.Name == "postNATSourceIPv4Address")
+}
+
+func isPostNATDestinationIPv4Definition(def config.IPFIXFieldDefinition) bool {
+	return def.Type == "ipv4Address" && (def.ID == netflow.IPFIX_FIELD_postNATDestinationIPv4Address || def.Name == "postNATDestinationIPv4Address")
+}
+
+func boolField(val any) bool {
+	switch v := val.(type) {
+	case bool:
+		return v
+	case uint64:
+		return v != 0
+	case uint32:
+		return v != 0
+	case uint16:
+		return v != 0
+	case uint8:
+		return v != 0
+	case int64:
+		return v != 0
+	case int:
+		return v != 0
+	case float64:
+		return v != 0
+	case json.Number:
+		n, _ := v.Int64()
+		return n != 0
+	case string:
+		return v == "true" || v == "1"
+	default:
+		return false
+	}
+}
+
+// eventStream prefers the explicit event stream, then control stream, then a caller fallback.
+func eventStream(evt *event.Event, fallback string) string {
+	if evt != nil && evt.Stream != "" {
+		return evt.Stream
+	}
+	if evt != nil && evt.Control != nil && evt.Control.Stream != "" {
+		return evt.Control.Stream
+	}
+	return fallback
+}
+
+// controlType safely returns the event control type when present.
+func controlType(evt *event.Event) string {
+	if evt == nil || evt.Control == nil {
+		return ""
+	}
+	return evt.Control.Type
+}
+
+// encodeU32 writes one uint32 in big-endian order.
+func encodeU32(v uint32) []byte {
+	return []byte{byte(v >> 24), byte(v >> 16), byte(v >> 8), byte(v)}
+}
+
+// encodeU64 writes one uint64 in big-endian order.
+func encodeU64(v uint64) []byte {
+	return []byte{
+		byte(v >> 56), byte(v >> 48), byte(v >> 40), byte(v >> 32),
+		byte(v >> 24), byte(v >> 16), byte(v >> 8), byte(v),
+	}
+}
+
+// ipfixFieldLength honors explicit field lengths and falls back to encoded size
+// for variable-length definitions.
+func ipfixFieldLength(def config.IPFIXFieldDefinition, encoded []byte) uint16 {
+	if def.Length != 0 {
+		return def.Length
+	}
+	if len(encoded) > 65535 {
+		return 0xffff
+	}
+	return uint16(len(encoded))
+}
+
+// encodeUnsigned serializes unsigned integer field kinds in big-endian order.
+func encodeUnsigned(kind string, val any) ([]byte, error) {
+	v := uint64FromAny(val)
+	switch kind {
+	case "unsigned8":
+		return []byte{byte(v)}, nil
+	case "unsigned16":
+		return []byte{byte(v >> 8), byte(v)}, nil
+	case "unsigned32":
+		return []byte{byte(v >> 24), byte(v >> 16), byte(v >> 8), byte(v)}, nil
+	default:
+		return []byte{
+			byte(v >> 56), byte(v >> 48), byte(v >> 40), byte(v >> 32),
+			byte(v >> 24), byte(v >> 16), byte(v >> 8), byte(v),
+		}, nil
+	}
+}
+
+// encodeSigned serializes signed integer field kinds in big-endian order.
+func encodeSigned(kind string, val any) ([]byte, error) {
+	v := int64Field(map[string]any{"v": val}, "v")
+	switch kind {
+	case "signed8":
+		return []byte{byte(v)}, nil
+	case "signed16":
+		return []byte{byte(v >> 8), byte(v)}, nil
+	case "signed32":
+		return []byte{byte(v >> 24), byte(v >> 16), byte(v >> 8), byte(v)}, nil
+	default:
+		return []byte{
+			byte(v >> 56), byte(v >> 48), byte(v >> 40), byte(v >> 32),
+			byte(v >> 24), byte(v >> 16), byte(v >> 8), byte(v),
+		}, nil
+	}
+}
