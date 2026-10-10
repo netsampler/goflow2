@@ -1,5 +1,5 @@
 ARG BIN_SOURCE="builder"
-FROM golang:alpine AS builder
+FROM golang:1.26.9-alpine AS builder
 ARG LDFLAGS=""
 
 RUN apk --update --no-cache add git build-base gcc
