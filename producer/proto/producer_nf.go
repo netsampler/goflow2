@@ -16,7 +16,8 @@ import (
 // NetFlowLookFor searches for a field by type in a data field slice.
 func NetFlowLookFor(dataFields []netflow.DataField, typeId uint16) (bool, interface{}) {
 	for _, dataField := range dataFields {
-		if dataField.Type == typeId {
+		// Standard lookups must exclude enterprise elements, including explicit PEN zero.
+		if !dataField.PenProvided && dataField.Type == typeId {
 			return true, dataField.Value
 		}
 	}
