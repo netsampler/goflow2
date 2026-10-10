@@ -170,6 +170,71 @@ func TestEncodeDecodeSFlowExpandedFlowSample(t *testing.T) {
 	assert.Equal(t, []uint32{100, 200}, gw.Communities)
 }
 
+func TestEncodeDecodeSFlowExtendedGatewayMultiSegment(t *testing.T) {
+	packet := Packet{
+		Version:        5,
+		IPVersion:      1,
+		AgentIP:        utils.IPAddress{198, 51, 100, 1},
+		SubAgentId:     1,
+		SequenceNumber: 2,
+		Uptime:         3,
+		SamplesCount:   1,
+		Samples: []interface{}{
+			FlowSample{
+				Header: SampleHeader{
+					Format:               1,
+					SampleSequenceNumber: 7,
+					SourceIdType:         0,
+					SourceIdValue:        1,
+				},
+				SamplingRate:     1000,
+				SamplePool:       7000,
+				Input:            1,
+				Output:           2,
+				FlowRecordsCount: 1,
+				Records: []FlowRecord{
+					{
+						Data: ExtendedGateway{
+							NextHop:   utils.IPAddress{203, 0, 113, 1},
+							AS:        64512,
+							SrcAS:     64513,
+							SrcPeerAS: 64514,
+							DstASPath: []ASPathSegment{
+								{Type: 2, Path: []uint32{64515, 64516}}, // AS_SEQUENCE
+								{Type: 1, Path: []uint32{64517}},        // AS_SET
+							},
+							Communities: []uint32{100},
+							LocalPref:   300,
+						},
+					},
+				},
+			},
+		},
+	}
+
+	encoded, err := EncodeMessage(&packet)
+	assert.NoError(t, err)
+
+	var decoded Packet
+	assert.NoError(t, DecodeMessageVersion(bytes.NewBuffer(encoded), &decoded))
+	assert.Len(t, decoded.Samples, 1)
+
+	sample, ok := decoded.Samples[0].(FlowSample)
+	assert.True(t, ok)
+	assert.Len(t, sample.Records, 1)
+
+	gw, ok := sample.Records[0].Data.(ExtendedGateway)
+	assert.True(t, ok)
+	assert.Equal(t, uint32(2), gw.ASDestinations)
+	assert.Equal(t, []ASPathSegment{
+		{Type: 2, Path: []uint32{64515, 64516}},
+		{Type: 1, Path: []uint32{64517}},
+	}, gw.DstASPath)
+	assert.Empty(t, gw.ASPath, "legacy ASPath is only set for single-segment paths")
+	assert.Equal(t, []uint32{100}, gw.Communities)
+	assert.Equal(t, uint32(300), gw.LocalPref)
+}
+
 func TestEncodeDecodeSFlowCounterSample(t *testing.T) {
 	packet := Packet{
 		Version:        5,
