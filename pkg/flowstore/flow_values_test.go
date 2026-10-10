@@ -87,7 +87,6 @@ func TestFlowCountersWithASHook(t *testing.T) {
 	if _, err := store.Set(key, initial); err != nil {
 		t.Fatalf("set initial: %v", err)
 	}
-	t.Logf("after Set: bytes=%d packets=%d srcAS=%d dstAS=%d", deref64(initial.Bytes), deref64(initial.Packets), initial.SrcAS, initial.DstAS)
 
 	var got testCounters
 	if ok := store.Get(key, &got); !ok {
@@ -102,7 +101,6 @@ func TestFlowCountersWithASHook(t *testing.T) {
 	if !got.Start.Equal(initial.Start) || !got.End.Equal(initial.End) {
 		t.Fatalf("unexpected time window after set: start %v end %v", got.Start, got.End)
 	}
-	t.Logf("after Get initial: bytes=%d packets=%d srcAS=%d dstAS=%d", deref64(got.Bytes), deref64(got.Packets), got.SrcAS, got.DstAS)
 
 	// Apply a delta via Add; ASNs must remain unchanged, end timestamp must advance.
 	delta := testCounters{
@@ -122,7 +120,6 @@ func TestFlowCountersWithASHook(t *testing.T) {
 	if ok := store.Get(key, &got); !ok {
 		t.Fatalf("expected value after add")
 	}
-	t.Logf("after Add: bytes=%d packets=%d srcAS=%d dstAS=%d", deref64(got.Bytes), deref64(got.Packets), got.SrcAS, got.DstAS)
 	if got.SrcAS != ipToASN[key.Src] || got.DstAS != ipToASN[key.Dst] {
 		t.Fatalf("expected AS to be preserved after add, got src %d dst %d", got.SrcAS, got.DstAS)
 	}
@@ -132,11 +129,4 @@ func TestFlowCountersWithASHook(t *testing.T) {
 	if !got.Start.Equal(initial.Start) || !got.End.Equal(delta.End) {
 		t.Fatalf("unexpected time window after add: start %v end %v", got.Start, got.End)
 	}
-}
-
-func deref64(p *int64) int64 {
-	if p == nil {
-		return 0
-	}
-	return *p
 }

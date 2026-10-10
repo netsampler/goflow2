@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/netsampler/goflow2/v3/decoders/netflow"
+	"github.com/netsampler/goflow2/v3/internal/flowkey"
 )
 
 func TestTemplateFlowStoreAddGetRemove(t *testing.T) {
@@ -87,8 +88,8 @@ func TestPreloadJSONTemplates(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "templates.json")
 
-	keyString := formatTemplateKey(9, 1, 256)
-	keyUint := buildTemplateKeyUint(9, 1, 256)
+	keyString := flowkey.FormatTemplate(flowkey.Template(9, 1, 256))
+	keyUint := flowkey.Template(9, 1, 256)
 	payload := map[string]map[string]netflow.TemplateRecord{
 		"router1": {
 			keyString: {TemplateId: 256},
@@ -123,8 +124,4 @@ func TestPreloadJSONTemplates(t *testing.T) {
 	if record.TemplateId != 256 {
 		t.Fatalf("expected template id 256, got %d", record.TemplateId)
 	}
-}
-
-func buildTemplateKeyUint(version uint16, obsDomainId uint32, templateId uint16) uint64 {
-	return (uint64(version) << 48) | (uint64(obsDomainId) << 16) | uint64(templateId)
 }

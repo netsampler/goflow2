@@ -495,9 +495,6 @@ func DecodeMessageNetFlow(payload *bytes.Buffer, store TemplateStore, ctx FlowCo
 	); err != nil {
 		return &DecoderError{"NetFlowV9 header", err}
 	}
-	/*size = packetNFv9.Count
-	packetNFv9.Version = version
-	obsDomainId = packetNFv9.SourceId*/
 	flowSets, err := DecodeMessageCommon(payload, store, ctx, packetNFv9.SourceId, packetNFv9.Count, 9)
 	packetNFv9.FlowSets = flowSets
 	if err != nil {
@@ -516,9 +513,6 @@ func DecodeMessageIPFIX(payload *bytes.Buffer, store TemplateStore, ctx FlowCont
 	); err != nil {
 		return &DecoderError{"IPFIX header", err}
 	}
-	/*size = packetIPFIX.Length
-	packetIPFIX.Version = version
-	obsDomainId = packetIPFIX.ObservationDomainId*/
 	flowSets, err := DecodeMessageCommon(payload, store, ctx, packetIPFIX.ObservationDomainId, packetIPFIX.Length-16, 10)
 	packetIPFIX.FlowSets = flowSets
 	if err != nil {
