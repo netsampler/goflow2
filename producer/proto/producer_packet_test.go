@@ -242,6 +242,134 @@ func (m *testProtoProducerMessage) MapCustom(key string, v []byte, cfg MappableF
 	return m.ProtoProducerMessage.MapCustom(key, v, &mc)
 }
 
+func TestParserEnvironmentConfigKeys(t *testing.T) {
+	pe := NewBaseParserEnvironment()
+
+	// EtherType keys: static parser keys followed by decimal and hex forms.
+	info, err := pe.NextParserEtype([]byte{0x08, 0x00})
+	require.NoError(t, err)
+	assert.Equal(t, "ipv4", info.Name)
+	assert.Equal(t, []string{"ipv4", "ip", "3", "etype2048", "etype0x0800"}, info.ConfigKeyList)
+
+	// Second lookup is served from the cache and must be identical.
+	again, err := pe.NextParserEtype([]byte{0x08, 0x00})
+	require.NoError(t, err)
+	assert.Equal(t, info.ConfigKeyList, again.ConfigKeyList)
+
+	// Unknown EtherType still gets its keys, on top of parserNone.
+	info, err = pe.NextParserEtype([]byte{0x88, 0xcc})
+	require.NoError(t, err)
+	assert.Equal(t, "none", info.Name)
+	assert.Equal(t, []string{"etype35020", "etype0x88cc"}, info.ConfigKeyList)
+
+	// Protocol keys.
+	info, err = pe.NextParserProto(17)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"udp", "4", "proto17"}, info.ConfigKeyList)
+
+	// Port keys are only added when a custom parser matches.
+	info, err = pe.NextParserPort("udp", 1234, 53)
+	require.NoError(t, err)
+	assert.Equal(t, "none", info.Name)
+	assert.Empty(t, info.ConfigKeyList)
+
+	custom := ParserInfo{
+		Parser:        func(*ProtoProducerMessage, []byte, ParseConfig) (ParseResult, error) { return ParseResult{}, nil },
+		Name:          "dns",
+		ConfigKeyList: []string{"dns"},
+	}
+	require.NoError(t, pe.RegisterPort("udp", PortDirDst, 53, custom))
+
+	info, err = pe.NextParserPort("udp", 1234, 53)
+	require.NoError(t, err)
+	assert.Equal(t, "dns", info.Name)
+	assert.Equal(t, []string{"dns", "udp53"}, info.ConfigKeyList)
+
+	// Registered for dst only: a source port match must not trigger it.
+	info, err = pe.NextParserPort("udp", 53, 1234)
+	require.NoError(t, err)
+	assert.Equal(t, "none", info.Name)
+
+	require.NoError(t, pe.RegisterPort("tcp", PortDirBoth, 179, custom))
+	info, err = pe.NextParserPort("tcp", 179, 40000)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"dns", "tcp179"}, info.ConfigKeyList)
+	info, err = pe.NextParserPort("tcp", 40000, 179)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"dns", "tcp179"}, info.ConfigKeyList)
+
+	// The user's ConfigKeyList backing array must not be modified.
+	assert.Equal(t, []string{"dns"}, custom.ConfigKeyList)
+}
+
+func TestParserEnvironmentRegisterResetsKeyCache(t *testing.T) {
+	pe := NewBaseParserEnvironment()
+
+	info, err := pe.NextParserEtype([]byte{0x08, 0x00})
+	require.NoError(t, err)
+	assert.Equal(t, "ipv4", info.Name)
+
+	custom := ParserInfo{
+		Parser:        func(*ProtoProducerMessage, []byte, ParseConfig) (ParseResult, error) { return ParseResult{}, nil },
+		Name:          "custom-ipv4",
+		ConfigKeyList: []string{"custom"},
+	}
+	require.NoError(t, pe.RegisterEtype(0x0800, custom))
+
+	info, err = pe.NextParserEtype([]byte{0x08, 0x00})
+	require.NoError(t, err)
+	assert.Equal(t, "custom-ipv4", info.Name)
+	assert.Equal(t, []string{"custom", "etype2048", "etype0x0800"}, info.ConfigKeyList)
+
+	info, err = pe.NextParserProto(6)
+	require.NoError(t, err)
+	assert.Equal(t, "tcp", info.Name)
+
+	require.NoError(t, pe.RegisterProto(6, custom))
+	info, err = pe.NextParserProto(6)
+	require.NoError(t, err)
+	assert.Equal(t, "custom-ipv4", info.Name)
+	assert.Equal(t, []string{"custom", "proto6"}, info.ConfigKeyList)
+}
+
+func TestCallCounter(t *testing.T) {
+	var c callCounter
+
+	assert.Equal(t, 0, c.get(5))
+	c.inc(5)
+	c.inc(5)
+	c.inc(7)
+	assert.Equal(t, 2, c.get(5))
+	assert.Equal(t, 1, c.get(7))
+	assert.Equal(t, 0, c.get(9))
+
+	// More distinct indexes than the inline array holds spill into the map.
+	for i := 100; i < 100+callCounterSize+3; i++ {
+		c.inc(i)
+		c.inc(i)
+	}
+	for i := 100; i < 100+callCounterSize+3; i++ {
+		assert.Equal(t, 2, c.get(i), "index %d", i)
+	}
+	assert.Equal(t, 2, c.get(5))
+	assert.Equal(t, 0, c.get(9999))
+}
+
+func TestSFlowMapperMapEmptyLayer(t *testing.T) {
+	mapper := mapFieldsSFlow([]SFlowMapField{{Layer: "udp", Offset: 48, Length: 16, Destination: "csum"}})
+
+	assert.Nil(t, mapper.Map("ipv4"), "layers without mappings must not allocate an iterator")
+	assert.Nil(t, mapper.Map("etype0x0800"))
+
+	it := mapper.Map("UDP")
+	require.NotNil(t, it)
+	assert.NotNil(t, it.Next())
+	assert.Nil(t, it.Next())
+
+	var nilMapper *SFlowMapper
+	assert.Nil(t, nilMapper.Map("udp"))
+}
+
 func TestProcessPacketMapping(t *testing.T) {
 	dataStr := "005300000001" + // src mac
 		"005300000002" + // dst mac
