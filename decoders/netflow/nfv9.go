@@ -245,6 +245,7 @@ func NFv9TypeToString(typeId uint16) string {
 	}
 }
 
+// NFv9ScopeToString returns the name of a NetFlow v9 options scope.
 func NFv9ScopeToString(scopeId uint16) string {
 	nameList := map[uint16]string{
 		1: "System",
@@ -261,6 +262,7 @@ func NFv9ScopeToString(scopeId uint16) string {
 	}
 }
 
+// String renders a human-readable representation of options template flow sets.
 func (flowSet NFv9OptionsTemplateFlowSet) String(TypeToString func(uint16) string) string {
 	str := fmt.Sprintf("       Id %v\n", flowSet.Id)
 	str += fmt.Sprintf("       Length: %v\n", flowSet.Length)
@@ -271,22 +273,14 @@ func (flowSet NFv9OptionsTemplateFlowSet) String(TypeToString func(uint16) strin
 		str += fmt.Sprintf("            TemplateId: %v\n", record.TemplateId)
 		str += fmt.Sprintf("            ScopeLength: %v\n", record.ScopeLength)
 		str += fmt.Sprintf("            OptionLength: %v\n", record.OptionLength)
-		str += fmt.Sprintf("            Scopes (%v):\n", len(record.Scopes))
-
-		for k, field := range record.Scopes {
-			str += fmt.Sprintf("            - %v. %v (%v): %v\n", k, NFv9ScopeToString(field.Type), field.Type, field.Length)
-		}
-
-		str += fmt.Sprintf("            Options (%v):\n", len(record.Options))
-
-		for k, field := range record.Options {
-			str += fmt.Sprintf("            - %v. %v (%v): %v\n", k, TypeToString(field.Type), field.Type, field.Length)
-		}
+		str += formatTemplateFields("Scopes", record.Scopes, NFv9ScopeToString)
+		str += formatTemplateFields("Options", record.Options, TypeToString)
 	}
 
 	return str
 }
 
+// String renders a human-readable representation of a NetFlow v9 packet.
 func (p NFv9Packet) String() string {
 	str := "Flow Packet\n"
 	str += "------------\n"
@@ -298,28 +292,7 @@ func (p NFv9Packet) String() string {
 	str += fmt.Sprintf("  UnixSeconds: %v\n", unixSeconds.UTC().String())
 	str += fmt.Sprintf("  SequenceNumber: %v\n", p.SequenceNumber)
 	str += fmt.Sprintf("  SourceId: %v\n", p.SourceId)
-	str += fmt.Sprintf("  FlowSets (%v):\n", len(p.FlowSets))
+	str += formatFlowSets(p.FlowSets, 9)
 
-	for i, flowSet := range p.FlowSets {
-		switch flowSet := flowSet.(type) {
-		case TemplateFlowSet:
-			str += fmt.Sprintf("    - TemplateFlowSet %v:\n", i)
-			str += flowSet.String(NFv9TypeToString)
-		case NFv9OptionsTemplateFlowSet:
-			str += fmt.Sprintf("    - OptionsTemplateFlowSet %v:\n", i)
-			str += flowSet.String(NFv9TypeToString)
-		case DataFlowSet:
-			str += fmt.Sprintf("    - DataFlowSet %v:\n", i)
-			str += flowSet.String(NFv9TypeToString)
-		case RawFlowSet:
-			str += fmt.Sprintf("    - RawFlowSet %v:\n", i)
-			str += flowSet.String()
-		case OptionsDataFlowSet:
-			str += fmt.Sprintf("    - OptionsDataFlowSet %v:\n", i)
-			str += flowSet.String(NFv9TypeToString, NFv9ScopeToString)
-		default:
-			str += fmt.Sprintf("    - (unknown type) %v: %v\n", i, flowSet)
-		}
-	}
 	return str
 }

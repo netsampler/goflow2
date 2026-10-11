@@ -1,4 +1,3 @@
-// Package templates provides NetFlow/IPFIX template system helpers.
 package templates
 
 import (
@@ -9,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/netsampler/goflow2/v3/decoders/netflow"
+	"github.com/netsampler/goflow2/v3/internal/flowkey"
 )
 
 // PersistenceHooks returns template hooks that only notify persistence on changes.
@@ -40,8 +40,7 @@ func MarshalJSONSnapshot(store netflow.ManagedTemplateStore) ([]byte, error) {
 		}
 		encoded := make(map[string]interface{}, len(templatesByKey))
 		for templateKey, template := range templatesByKey {
-			version, obsDomainId, templateId := decodeTemplateKey(templateKey)
-			encoded[formatTemplateKey(version, obsDomainId, templateId)] = template
+			encoded[flowkey.FormatTemplate(templateKey)] = template
 		}
 		filtered[router] = encoded
 	}
@@ -112,17 +111,6 @@ func PreloadJSONTemplates(path string, store netflow.TemplateStore) error {
 		return fmt.Errorf("preload templates %s: %w", path, err)
 	}
 	return nil
-}
-
-func decodeTemplateKey(key uint64) (uint16, uint32, uint16) {
-	version := uint16(key >> 48)
-	obsDomainId := uint32((key >> 16) & 0xFFFFFFFF)
-	templateId := uint16(key & 0xFFFF)
-	return version, obsDomainId, templateId
-}
-
-func formatTemplateKey(version uint16, obsDomainId uint32, templateId uint16) string {
-	return fmt.Sprintf("%d/%d/%d", version, obsDomainId, templateId)
 }
 
 func parseTemplateKey(key string) (uint16, uint32, uint16, error) {

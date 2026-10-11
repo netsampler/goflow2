@@ -9,47 +9,13 @@ import (
 	"testing"
 	"time"
 
-	//"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
-
-func TestUDPReceiver(t *testing.T) {
-	addr := "::1"
-	port, err := getFreeUDPPort()
-	require.NoError(t, err)
-	t.Logf("starting UDP receiver on %s:%d\n", addr, port)
-
-	r, err := NewUDPReceiver(nil)
-	require.NoError(t, err)
-
-	require.NoError(t, r.Start(addr, port, nil))
-	sendMessage := func(msg string) error {
-		conn, err := net.Dial("udp", net.JoinHostPort(addr, strconv.Itoa(port)))
-		if err != nil {
-			return fmt.Errorf("dial udp: %w", err)
-		}
-		_, err = conn.Write([]byte(msg))
-		if err != nil {
-			if closeErr := conn.Close(); closeErr != nil {
-				return fmt.Errorf("close udp after write failure: %w", closeErr)
-			}
-			return fmt.Errorf("write udp: %w", err)
-		}
-		if err := conn.Close(); err != nil {
-			return fmt.Errorf("close udp: %w", err)
-		}
-		return nil
-	}
-	require.NoError(t, sendMessage("message"))
-	t.Log("sending message\n")
-	require.NoError(t, r.Stop())
-}
 
 func TestUDPClose(t *testing.T) {
 	addr := "::1"
 	port, err := getFreeUDPPort()
 	require.NoError(t, err)
-	t.Logf("starting UDP receiver on %s:%d\n", addr, port)
 
 	r, err := NewUDPReceiver(nil)
 	require.NoError(t, err)

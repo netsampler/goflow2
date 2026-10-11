@@ -10,6 +10,7 @@ import (
 	"github.com/netsampler/goflow2/v3/decoders/sflow"
 	"github.com/netsampler/goflow2/v3/decoders/utils"
 	"github.com/netsampler/goflow2/v3/format"
+	"github.com/netsampler/goflow2/v3/internal/flowkey"
 	"github.com/netsampler/goflow2/v3/producer"
 	"github.com/netsampler/goflow2/v3/transport"
 	"github.com/netsampler/goflow2/v3/utils/store/templates"
@@ -238,18 +239,11 @@ func (p *NetFlowPipe) GetTemplatesForAllSources() map[string]map[string]interfac
 	for key, systemTemplates := range templatesAll {
 		formatted := make(map[string]interface{}, len(systemTemplates))
 		for templateKey, template := range systemTemplates {
-			formatted[formatTemplateKey(templateKey)] = template
+			formatted[flowkey.FormatTemplate(templateKey)] = template
 		}
 		ret[key] = formatted
 	}
 	return ret
-}
-
-func formatTemplateKey(key uint64) string {
-	version := uint16(key >> 48)
-	obsDomainId := uint32((key >> 16) & 0xFFFFFFFF)
-	templateId := uint16(key & 0xFFFF)
-	return fmt.Sprintf("%d/%d/%d", version, obsDomainId, templateId)
 }
 
 // AutoFlowPipe dispatches to sFlow or NetFlow pipes based on payload.

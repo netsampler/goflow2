@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/netsampler/goflow2/v3/decoders/netflow"
+	"github.com/netsampler/goflow2/v3/internal/flowkey"
 )
 
 func newTemplateFlowStore(b *testing.B) *TemplateFlowStore {
@@ -99,7 +100,7 @@ func BenchmarkTemplateFlowStorePreloadJSON(b *testing.B) {
 		"router1": {},
 	}
 	for n := 0; n < templates; n++ {
-		key := formatTemplateKey(9, 1, uint16(n))
+		key := flowkey.FormatTemplate(flowkey.Template(9, 1, uint16(n)))
 		payload["router1"][key] = netflow.TemplateRecord{TemplateId: uint16(n)}
 	}
 	data, err := json.Marshal(payload)

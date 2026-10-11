@@ -931,6 +931,7 @@ func IPFIXTypeToString(typeId uint16) string {
 	}
 }
 
+// String renders a human-readable representation of options template flow sets.
 func (flowSet IPFIXOptionsTemplateFlowSet) String(TypeToString func(uint16) string) string {
 	str := fmt.Sprintf("       Id %v\n", flowSet.Id)
 	str += fmt.Sprintf("       Length: %v\n", flowSet.Length)
@@ -942,23 +943,14 @@ func (flowSet IPFIXOptionsTemplateFlowSet) String(TypeToString func(uint16) stri
 		str += fmt.Sprintf("            FieldCount: %v\n", record.FieldCount)
 		str += fmt.Sprintf("            ScopeFieldCount: %v\n", record.ScopeFieldCount)
 
-		str += fmt.Sprintf("            Scopes (%v):\n", len(record.Scopes))
-
-		for k, field := range record.Scopes {
-			str += fmt.Sprintf("            - %v. %v (%v): %v\n", k, TypeToString(field.Type), field.Type, field.Length)
-		}
-
-		str += fmt.Sprintf("            Options (%v):\n", len(record.Options))
-
-		for k, field := range record.Options {
-			str += fmt.Sprintf("            - %v. %v (%v): %v\n", k, TypeToString(field.Type), field.Type, field.Length)
-		}
-
+		str += formatTemplateFields("Scopes", record.Scopes, TypeToString)
+		str += formatTemplateFields("Options", record.Options, TypeToString)
 	}
 
 	return str
 }
 
+// String renders a human-readable representation of an IPFIX packet.
 func (p IPFIXPacket) String() string {
 	str := "Flow Packet\n"
 	str += "------------\n"
@@ -969,29 +961,7 @@ func (p IPFIXPacket) String() string {
 	str += fmt.Sprintf("  ExportTime: %v\n", exportTime.String())
 	str += fmt.Sprintf("  SequenceNumber: %v\n", p.SequenceNumber)
 	str += fmt.Sprintf("  ObservationDomainId: %v\n", p.ObservationDomainId)
-	str += fmt.Sprintf("  FlowSets (%v):\n", len(p.FlowSets))
-
-	for i, flowSet := range p.FlowSets {
-		switch flowSet := flowSet.(type) {
-		case TemplateFlowSet:
-			str += fmt.Sprintf("    - TemplateFlowSet %v:\n", i)
-			str += flowSet.String(IPFIXTypeToString)
-		case IPFIXOptionsTemplateFlowSet:
-			str += fmt.Sprintf("    - OptionsTemplateFlowSet %v:\n", i)
-			str += flowSet.String(IPFIXTypeToString)
-		case DataFlowSet:
-			str += fmt.Sprintf("    - DataFlowSet %v:\n", i)
-			str += flowSet.String(IPFIXTypeToString)
-		case RawFlowSet:
-			str += fmt.Sprintf("    - RawFlowSet %v:\n", i)
-			str += flowSet.String()
-		case OptionsDataFlowSet:
-			str += fmt.Sprintf("    - OptionsDataFlowSet %v:\n", i)
-			str += flowSet.String(IPFIXTypeToString, IPFIXTypeToString)
-		default:
-			str += fmt.Sprintf("    - (unknown type) %v: %v\n", i, flowSet)
-		}
-	}
+	str += formatFlowSets(p.FlowSets, 10)
 
 	return str
 }

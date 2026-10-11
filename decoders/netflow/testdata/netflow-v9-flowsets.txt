@@ -1,0 +1,45 @@
+  FlowSets (8):
+    - TemplateFlowSet 0:
+       Id 256
+       Length: 12
+       Records (1 records):
+       - 0. Record:
+            TemplateId: 256
+            FieldCount: 1
+            Fields (1):
+            - 0. IN_BYTES (1/false): 4
+    - OptionsTemplateFlowSet 1:
+       Id 1
+       Length: 18
+       Records (1 records):
+       - Record 0:
+            TemplateId: 257
+            ScopeLength: 4
+            OptionLength: 4
+            Scopes (1):
+            - 0. System (1): 4
+            Options (1):
+            - 0. IN_PKTS (2): 4
+    - (unknown type) 2: {{3 18} [{258 2 1 [{false 2 4 0}] [{false 1 4 0}]}]}
+    - DataFlowSet 3:
+       Id 256
+       Length: 8
+       Records (1 records):
+       - Record 0:
+            Values (1):
+            - 0. IN_BYTES (1): [0 0 0 10]
+    - RawFlowSet 4:
+       Id 300
+       Length: 2
+       Records: [1 2]
+    - OptionsDataFlowSet 5:
+       Id 257
+       Length: 12
+       Records (1 records):
+       - Record 0:
+            Scopes (1):
+            - 0. System (1): [0 0 0 1]
+            Options (1):
+            - 0. IN_PKTS (2): [0 0 0 2]
+    - (unknown type) 6: unsupported
+    - (unknown type) 7: <nil>

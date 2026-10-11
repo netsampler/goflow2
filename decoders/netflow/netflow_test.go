@@ -5,6 +5,8 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/netsampler/goflow2/v3/internal/flowkey"
+
 	"github.com/stretchr/testify/assert"
 )
 
@@ -22,7 +24,7 @@ func newTestTemplateStore() *testTemplateStore {
 func (s *testTemplateStore) AddTemplate(ctx FlowContext, version uint16, obsDomainId uint32, templateId uint16, template interface{}) (TemplateStatus, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	key := templateKey(version, obsDomainId, templateId)
+	key := flowkey.Template(version, obsDomainId, templateId)
 	bucket := s.templates[ctx.RouterKey]
 	if bucket == nil {
 		bucket = make(FlowBaseTemplateSet)
@@ -39,7 +41,7 @@ func (s *testTemplateStore) AddTemplate(ctx FlowContext, version uint16, obsDoma
 func (s *testTemplateStore) GetTemplate(ctx FlowContext, version uint16, obsDomainId uint32, templateId uint16) (interface{}, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	key := templateKey(version, obsDomainId, templateId)
+	key := flowkey.Template(version, obsDomainId, templateId)
 	if bucket, ok := s.templates[ctx.RouterKey]; ok {
 		if tpl, ok := bucket[key]; ok {
 			return tpl, nil
@@ -51,7 +53,7 @@ func (s *testTemplateStore) GetTemplate(ctx FlowContext, version uint16, obsDoma
 func (s *testTemplateStore) RemoveTemplate(ctx FlowContext, version uint16, obsDomainId uint32, templateId uint16) (interface{}, bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	key := templateKey(version, obsDomainId, templateId)
+	key := flowkey.Template(version, obsDomainId, templateId)
 	bucket, ok := s.templates[ctx.RouterKey]
 	if !ok {
 		return nil, false, ErrorTemplateNotFound
