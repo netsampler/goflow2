@@ -745,9 +745,7 @@ func ParseTCP(flowMessage *ProtoProducerMessage, data []byte, pc ParseConfig) (r
 		return res, nil
 	}
 
-	length := int(data[13]>>4) * 4
-
-	res.Size = 20 + length
+	res.Size = int(data[12]>>4) * 4
 
 	flowMessage.AddLayer("TCP")
 

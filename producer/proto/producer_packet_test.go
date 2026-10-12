@@ -123,6 +123,49 @@ func TestProcessIPv6HeaderRouting(t *testing.T) {
 	t.Log(string(b))
 }
 
+func TestProcessPacketTCPLayerSize(t *testing.T) {
+	dataStr := "005300000001" + // src mac
+		"005300000002" + // dst mac
+		"0800" + // etype
+
+		"45000064" + // ipv4
+		"abab" + // id
+		"0000ff06" + // flag, ttl, proto
+		"aaaa" + // csum
+		"0a000001" + // src
+		"0a000002" + // dst
+
+		// tcp
+		"c350" + "01bb" + // ports
+		"00000001" + "00000002" + // seq, ack
+		"8018" + // data offset 8, flags PSH|ACK
+		"ffff" + "0000" + "0000" + // window, csum, urgent
+		"0101080a" + "00000001" + "00000002" + // NOP NOP timestamps
+
+		"deadbeef" // payload
+
+	data, err := hex.DecodeString(dataStr)
+	require.NoError(t, err)
+
+	var payload []byte
+	pe := NewBaseParserEnvironment()
+	require.NoError(t, pe.RegisterPort("tcp", PortDirDst, 443, ParserInfo{
+		Parser: func(flowMessage *ProtoProducerMessage, data []byte, pc ParseConfig) (res ParseResult, err error) {
+			payload = data
+			flowMessage.AddLayer("Custom")
+			res.Size = len(data)
+			return res, err
+		},
+	}))
+
+	var flowMessage ProtoProducerMessage
+	require.NoError(t, ParsePacket(&flowMessage, data, nil, pe))
+
+	assert.Equal(t, []uint32{14, 20, 32, 4}, flowMessage.LayerSize)
+	assert.Equal(t, []byte{0xde, 0xad, 0xbe, 0xef}, payload)
+	assert.Equal(t, uint32(0x18), flowMessage.TcpFlags)
+}
+
 func TestProcessICMP(t *testing.T) {
 	dataStr := "01018cf7000627c4"
 
