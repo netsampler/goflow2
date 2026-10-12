@@ -1,0 +1,23 @@
+FROM scratch
+ARG PREBUILT_BINARY="reflow"
+ARG VERSION=""
+ARG CREATED=""
+ARG DESCRIPTION=""
+ARG NAME=""
+ARG MAINTAINER=""
+ARG URL=""
+ARG LICENSE=""
+ARG REV=""
+
+LABEL org.opencontainers.image.created="${CREATED}"
+LABEL org.opencontainers.image.authors="${MAINTAINER}"
+LABEL org.opencontainers.image.url="${URL}"
+LABEL org.opencontainers.image.title="${NAME}"
+LABEL org.opencontainers.image.version="${VERSION}"
+LABEL org.opencontainers.image.description="${DESCRIPTION}"
+LABEL org.opencontainers.image.licenses="${LICENSE}"
+LABEL org.opencontainers.image.revision="${REV}"
+
+COPY ${PREBUILT_BINARY} /reflow
+
+ENTRYPOINT ["/reflow"]

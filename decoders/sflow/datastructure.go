@@ -81,6 +81,47 @@ type ExtendedGateway struct {
 	LocalPref         uint32          `json:"local-pref"`
 }
 
+// ExtendedMPLS carries MPLS next-hop and label stack metadata.
+type ExtendedMPLS struct {
+	NextHopIPVersion uint32          `json:"next-hop-ip-version"`
+	NextHop          utils.IPAddress `json:"next-hop"`
+	InLabelStack     []uint32        `json:"in-label-stack"`
+	OutLabelStack    []uint32        `json:"out-label-stack"`
+}
+
+// ExtendedNAT carries translated source and destination addresses.
+type ExtendedNAT struct {
+	SrcAddressIPVersion uint32          `json:"src-address-ip-version"`
+	SrcAddress          utils.IPAddress `json:"src-address"`
+	DstAddressIPVersion uint32          `json:"dst-address-ip-version"`
+	DstAddress          utils.IPAddress `json:"dst-address"`
+}
+
+// ExtendedMPLSTunnel carries MPLS tunnel metadata.
+type ExtendedMPLSTunnel struct {
+	TunnelLSPName string `json:"tunnel-lsp-name"`
+	TunnelID      uint32 `json:"tunnel-id"`
+	TunnelCOS     uint32 `json:"tunnel-cos"`
+}
+
+// ExtendedMPLSVC carries MPLS virtual circuit metadata.
+type ExtendedMPLSVC struct {
+	VCInstanceName string `json:"vc-instance-name"`
+	VLLVCID        uint32 `json:"vll-vc-id"`
+	VCLabelCOS     uint32 `json:"vc-label-cos"`
+}
+
+// ExtendedMPLSFTN carries MPLS FTN metadata.
+type ExtendedMPLSFTN struct {
+	MPLSFTNDescr string `json:"mpls-ftn-descr"`
+	MPLSFTNMask  uint32 `json:"mpls-ftn-mask"`
+}
+
+// ExtendedMPLSLDPFEC carries MPLS LDP FEC metadata.
+type ExtendedMPLSLDPFEC struct {
+	MPLSFecAddrPrefixLength uint32 `json:"mpls-fec-addr-prefix-length"`
+}
+
 // EgressQueue reports a queue identifier for drop records.
 type EgressQueue struct {
 	Queue uint32 `json:"queue"`
@@ -141,4 +182,10 @@ type EthernetCounters struct {
 // RawRecord stores unparsed record bytes.
 type RawRecord struct {
 	Data []byte `json:"data"`
+}
+
+// RawSample stores unparsed sample bytes for unknown standard or enterprise samples.
+type RawSample struct {
+	Header SampleHeader `json:"header"`
+	Data   []byte       `json:"data"`
 }
