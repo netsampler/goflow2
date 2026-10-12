@@ -1,0 +1,414 @@
+name: ReFlow
+
+on:
+  push:
+    branches: [ main ]
+    tags:
+      - 'v*'
+  pull_request:
+    branches: [ main ]
+
+env:
+  GHCR_REFLOW_IMAGE: ghcr.io/${{ github.repository_owner }}/reflow
+  DOCKERHUB_REFLOW_IMAGE: docker.io/${{ github.repository_owner }}/reflow
+
+jobs:
+  build:
+    name: Build ReFlow (${{ matrix.label }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: linux-amd64
+            runner: ubuntu-latest
+            goos: linux
+            goarch: amd64
+            cgo: "1"
+            libc: glibc
+            static: "0"
+            apt_packages: libpcap-dev
+            docker_package: "1"
+            docker_platform: linux/amd64
+            package: tar
+          - label: linux-arm64
+            runner: ubuntu-24.04-arm
+            goos: linux
+            goarch: arm64
+            cgo: "1"
+            libc: glibc
+            static: "0"
+            apt_packages: libpcap-dev
+            docker_package: "1"
+            docker_platform: linux/arm64/v8
+            package: tar
+          - label: linux-armv7
+            runner: ubuntu-24.04-arm
+            goos: linux
+            goarch: arm
+            goarm: "7"
+            cgo: "1"
+            libc: musl
+            static: "1"
+            zig: "1"
+            zig_version: 0.15.2
+            zig_archive_target: aarch64-linux
+            cc: zig cc -target arm-linux-musleabihf
+            host: arm-linux-musleabihf
+            apt_packages: make flex bison
+            libpcap_source: "1"
+            libpcap_version: 1.10.5
+            cgo_cflags: -I/tmp/reflow-libpcap-armv7/include
+            cgo_ldflags: -static -L/tmp/reflow-libpcap-armv7/lib
+            package: tar
+          - label: darwin-amd64
+            runner: macos-15-intel
+            goos: darwin
+            goarch: amd64
+            cgo: "1"
+            package: tar
+          - label: darwin-arm64
+            runner: macos-15
+            goos: darwin
+            goarch: arm64
+            cgo: "1"
+            package: tar
+          - label: windows-amd64
+            runner: ubuntu-latest
+            goos: windows
+            goarch: amd64
+            cgo: "1"
+            extension: .exe
+            package: zip
+          - label: windows-arm64
+            runner: ubuntu-latest
+            goos: windows
+            goarch: arm64
+            cgo: "1"
+            # gopacket/pcap v1.1.19 has generated Windows pcap definitions
+            # for 386/amd64 only, so keep this artifact buildable until the
+            # dependency supports windows/arm64 pcap.
+            build_tags: reflow_nopcap
+            extension: .exe
+            package: zip
+          # Future OpenWrt package architectures, intentionally inactive:
+          # x86_64, aarch64_generic, aarch64_cortex-a53, aarch64_cortex-a72,
+          # arm_cortex-a7_neon-vfpv4, arm_cortex-a9, arm_cortex-a15_neon-vfpv4,
+          # mips_24kc, mipsel_24kc, mipsel_74kc, mipsel_mips32,
+          # mips64_octeonplus, riscv64_riscv64.
+          # Future EdgeOS/UBNT candidates, intentionally inactive:
+          # mips64, mips64le, arm64.
+    steps:
+    - name: Check out code
+      uses: actions/checkout@v6
+      with:
+        fetch-depth: 0
+
+    - name: Set up Go
+      uses: actions/setup-go@v6
+      with:
+        go-version: ^1.24
+        cache: true
+        cache-dependency-path: |
+          go.sum
+          go.mod
+
+    - name: Set VERSION for tag builds
+      if: startsWith(github.ref, 'refs/tags/')
+      run: echo "VERSION=$(git describe --tags --abbrev=0 HEAD)" >> "$GITHUB_ENV"
+
+    - name: Install Zig
+      if: matrix.zig == '1'
+      env:
+        ZIG_ARCHIVE_TARGET: ${{ matrix.zig_archive_target }}
+        ZIG_VERSION: ${{ matrix.zig_version }}
+      run: |
+        archive="zig-${ZIG_ARCHIVE_TARGET}-${ZIG_VERSION}"
+        curl -fsSL "https://ziglang.org/download/${ZIG_VERSION}/${archive}.tar.xz" -o /tmp/zig.tar.xz
+        tar -C /tmp -xf /tmp/zig.tar.xz
+        echo "/tmp/${archive}" >> "$GITHUB_PATH"
+        "/tmp/${archive}/zig" version
+
+    - name: Install Linux build dependencies
+      if: matrix.goos == 'linux'
+      env:
+        APT_PACKAGES: ${{ matrix.apt_packages }}
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y $APT_PACKAGES
+
+    - name: Build libpcap for ARMv7
+      if: matrix.libpcap_source == '1'
+      env:
+        CC: ${{ matrix.cc }}
+        HOST: ${{ matrix.host }}
+        LIBPCAP_VERSION: ${{ matrix.libpcap_version }}
+      run: |
+        prefix=/tmp/reflow-libpcap-armv7
+        curl -fsSL "https://www.tcpdump.org/release/libpcap-${LIBPCAP_VERSION}.tar.gz" -o /tmp/libpcap.tar.gz
+        tar -C /tmp -xzf /tmp/libpcap.tar.gz
+        cd "/tmp/libpcap-${LIBPCAP_VERSION}"
+        ./configure \
+          --host="$HOST" \
+          --prefix="$prefix" \
+          --with-pcap=linux \
+          --disable-shared \
+          --enable-static
+        make -j"$(nproc)"
+        make install
+
+    - name: Patch gopacket pcap timestamp types for ARMv7
+      if: matrix.libpcap_source == '1'
+      run: |
+        go mod download github.com/google/gopacket
+        module_dir="$(go env GOPATH)/pkg/mod/github.com/google/gopacket@v1.1.19"
+        chmod u+w "$module_dir" "$module_dir/pcap" "$module_dir/pcap/pcap_unix.go"
+        perl -0pi -e 's{// Windows, Macs, and Linux all use different time types\.  Joy\.\n#ifdef __APPLE__\n#define gopacket_time_secs_t __darwin_time_t\n#define gopacket_time_usecs_t __darwin_suseconds_t\n#elif __ANDROID__\n#define gopacket_time_secs_t __kernel_time_t\n#define gopacket_time_usecs_t __kernel_suseconds_t\n#elif __GLIBC__\n#define gopacket_time_secs_t __time_t\n#define gopacket_time_usecs_t __suseconds_t\n#else  // Some form of linux/bsd/etc\.\.\.\n#include <sys/param.h>\n#ifdef __OpenBSD__\n#define gopacket_time_secs_t u_int32_t\n#define gopacket_time_usecs_t u_int32_t\n#else\n#define gopacket_time_secs_t time_t\n#define gopacket_time_usecs_t suseconds_t\n#endif\n#endif}{// Match libpcap pcap_pkthdr timestamp fields across cross-libc builds.\n#define gopacket_time_secs_t __typeof__(((struct pcap_pkthdr *)0)->ts.tv_sec)\n#define gopacket_time_usecs_t __typeof__(((struct pcap_pkthdr *)0)->ts.tv_usec)}' "$module_dir/pcap/pcap_unix.go"
+        if grep -q 'gopacket_time_usecs_t __suseconds_t' "$module_dir/pcap/pcap_unix.go"; then
+          echo "failed to patch gopacket pcap time types" >&2
+          exit 1
+        fi
+
+    - name: Compile pcap source
+      if: matrix.cgo == '1'
+      env:
+        GOOS: ${{ matrix.goos }}
+        GOARCH: ${{ matrix.goarch }}
+        GOARM: ${{ matrix.goarm }}
+        CGO_ENABLED: ${{ matrix.cgo }}
+        CC: ${{ matrix.cc }}
+        CGO_CFLAGS: ${{ matrix.cgo_cflags }}
+        CGO_LDFLAGS: ${{ matrix.cgo_ldflags }}
+        REFLOW_BUILD_TAGS: ${{ matrix.build_tags }}
+      run: |
+        output="/tmp/reflow-pcap-${{ matrix.label }}.test"
+        if [[ -n "$REFLOW_BUILD_TAGS" ]]; then
+          go test -c -tags "$REFLOW_BUILD_TAGS" -o "$output" ./pkg/reflow/source/pcap
+        else
+          go test -c -o "$output" ./pkg/reflow/source/pcap
+        fi
+
+    - name: Package ReFlow
+      env:
+        GOOS: ${{ matrix.goos }}
+        GOARCH: ${{ matrix.goarch }}
+        GOARM: ${{ matrix.goarm }}
+        CGO_ENABLED: ${{ matrix.cgo }}
+        CC: ${{ matrix.cc }}
+        CGO_CFLAGS: ${{ matrix.cgo_cflags }}
+        CGO_LDFLAGS: ${{ matrix.cgo_ldflags }}
+        EXTENSION: ${{ matrix.extension }}
+        REFLOW_BUILD_TAGS: ${{ matrix.build_tags }}
+      run: |
+        if [[ "${{ matrix.package }}" == "zip" ]]; then
+          make package-reflow-zip
+        else
+          make package-reflow-tar
+        fi
+
+    - name: Verify Linux ReFlow binary
+      if: matrix.goos == 'linux'
+      env:
+        GOOS: ${{ matrix.goos }}
+        GOARCH: ${{ matrix.goarch }}
+        GOARM: ${{ matrix.goarm }}
+        EXTENSION: ${{ matrix.extension }}
+        STATIC: ${{ matrix.static }}
+      run: |
+        output="$(make print-reflow-output)"
+        file "$output"
+        if [[ "$STATIC" == "1" ]] && file "$output" | grep -q 'dynamically linked'; then
+          echo "$output should be statically linked" >&2
+          exit 1
+        fi
+
+    - name: Set ReFlow Docker packaging vars
+      if: matrix.docker_package == '1'
+      env:
+        GOOS: ${{ matrix.goos }}
+        GOARCH: ${{ matrix.goarch }}
+        GOARM: ${{ matrix.goarm }}
+        EXTENSION: ${{ matrix.extension }}
+      run: |
+        CGO_ENABLED=0 REFLOW_BUILD_TAGS=reflow_nopcap DIST_DIR=dist/docker/ make build-reflow
+        echo "REFLOW_BINARY_PATH=$(DIST_DIR=dist/docker/ make print-reflow-output)" >> "$GITHUB_ENV"
+
+    - name: Set up QEMU
+      if: matrix.docker_package == '1'
+      uses: docker/setup-qemu-action@v4
+
+    - name: Set up Docker Buildx
+      if: matrix.docker_package == '1'
+      uses: docker/setup-buildx-action@v4
+
+    - name: Login to DockerHub
+      if: matrix.docker_package == '1' && github.event_name != 'pull_request'
+      uses: docker/login-action@v4
+      with:
+        username: ${{ secrets.DOCKERHUB_USERNAME }}
+        password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+    - name: Log in to GHCR
+      if: matrix.docker_package == '1' && github.event_name != 'pull_request'
+      run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u $ --password-stdin
+
+    - name: Docker package ReFlow
+      if: matrix.docker_package == '1'
+      run: |
+        if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+          DOCKER_PUSH_FLAG="--load"
+        else
+          DOCKER_PUSH_FLAG="--push"
+        fi
+        DOCKER_SUFFIX=-${{ matrix.goarch }} \
+        DOCKER_IMAGE_PREFIXES="${{ env.DOCKERHUB_REFLOW_IMAGE }} ${{ env.GHCR_REFLOW_IMAGE }}" \
+        DOCKER_CMD="buildx build $DOCKER_PUSH_FLAG --platform ${{ matrix.docker_platform }} -f Dockerfile.reflow --build-arg BIN_SOURCE=prebuilt --build-arg PREBUILT_BINARY=$REFLOW_BINARY_PATH" \
+        NAME=reflow \
+        DESCRIPTION="ReFlow: encode and decode flow and packet streams" \
+        make docker
+
+    - name: Upload ReFlow artifact
+      uses: actions/upload-artifact@v6
+      with:
+        name: reflow-${{ matrix.label }}
+        path: |
+          dist/reflow-*.tar.gz
+          dist/reflow-*.tar.gz.sha256
+          dist/reflow-*.zip
+          dist/reflow-*.zip.sha256
+        if-no-files-found: error
+        retention-days: 14
+
+  manifest:
+    name: Publish ReFlow Docker Manifests
+    needs: build
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+    - name: Check out code
+      uses: actions/checkout@v6
+      with:
+        fetch-depth: 0
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v4
+
+    - name: Login to DockerHub
+      uses: docker/login-action@v4
+      with:
+        username: ${{ secrets.DOCKERHUB_USERNAME }}
+        password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+    - name: Log in to GHCR
+      run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u $ --password-stdin
+
+    - name: Set VERSION for tag builds
+      if: startsWith(github.ref, 'refs/tags/')
+      run: echo "VERSION=$(git describe --tags --abbrev=0 HEAD)" >> "$GITHUB_ENV"
+
+    - name: Publish manifests (branch)
+      if: "!startsWith(github.ref, 'refs/tags/')"
+      run: |
+        images=("${{ env.DOCKERHUB_REFLOW_IMAGE }}" "${{ env.GHCR_REFLOW_IMAGE }}")
+        for image in "${images[@]}"; do
+          DOCKER_IMAGE="$image" make docker-manifest
+          DOCKER_IMAGE="$image" DOCKER_MANIFEST_TAG=latest make docker-manifest
+        done
+
+    - name: Publish manifests (tag)
+      if: startsWith(github.ref, 'refs/tags/')
+      run: |
+        images=("${{ env.DOCKERHUB_REFLOW_IMAGE }}" "${{ env.GHCR_REFLOW_IMAGE }}")
+        for image in "${images[@]}"; do
+          DOCKER_IMAGE="$image" DOCKER_MANIFEST_TAG="${VERSION}" make docker-manifest
+          DOCKER_IMAGE="$image" DOCKER_MANIFEST_TAG=latest make docker-manifest
+        done
+
+  release:
+    name: Publish ReFlow Release Assets
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+    - name: Download ReFlow artifacts
+      uses: actions/download-artifact@v8
+      with:
+        path: dist
+        pattern: reflow-*
+        merge-multiple: true
+
+    - name: Create or find release
+      id: release
+      uses: actions/github-script@v7
+      with:
+        github-token: ${{ secrets.GITHUB_TOKEN }}
+        script: |
+          const tag = process.env.GITHUB_REF_NAME;
+          async function getRelease() {
+            const { data } = await github.rest.repos.getReleaseByTag({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              tag,
+            });
+            return data;
+          }
+          try {
+            const release = await getRelease();
+            core.setOutput('upload_url', release.upload_url);
+            core.setOutput('release_id', release.id);
+          } catch (error) {
+            if (error.status !== 404) throw error;
+            try {
+              const { data } = await github.rest.repos.createRelease({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                tag_name: tag,
+                name: `Release ${tag}`,
+                draft: false,
+                prerelease: false,
+              });
+              core.setOutput('upload_url', data.upload_url);
+              core.setOutput('release_id', data.id);
+            } catch (createError) {
+              if (createError.status !== 422) throw createError;
+              const release = await getRelease();
+              core.setOutput('upload_url', release.upload_url);
+              core.setOutput('release_id', release.id);
+            }
+          }
+
+    - name: Upload release assets
+      uses: actions/github-script@v7
+      with:
+        github-token: ${{ secrets.GITHUB_TOKEN }}
+        script: |
+          const fs = require('fs').promises;
+          const path = require('path');
+          const uploadUrl = '${{ steps.release.outputs.upload_url }}';
+          const releaseId = Number('${{ steps.release.outputs.release_id }}');
+          const { data: assets } = await github.rest.repos.listReleaseAssets({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            release_id: releaseId,
+            per_page: 100,
+          });
+          const existing = new Map(assets.map((asset) => [asset.name, asset.id]));
+          for (const file of await fs.readdir('./dist')) {
+            const fullPath = path.join('./dist', file);
+            if (!(await fs.stat(fullPath)).isFile()) continue;
+            if (existing.has(file)) {
+              await github.rest.repos.deleteReleaseAsset({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                asset_id: existing.get(file),
+              });
+            }
+            console.log('uploading', file);
+            await github.rest.repos.uploadReleaseAsset({
+              url: uploadUrl,
+              name: file,
+              data: await fs.readFile(fullPath),
+            });
+          }

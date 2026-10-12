@@ -3,9 +3,12 @@ EXTENSION     ?=
 DIST_DIR      ?= dist/
 GOOS          ?= linux
 GOARCH        ?= $(shell go env GOARCH)
+GOARM         ?=
+CGO_ENABLED   ?= 0
 BUILDINFOSDET ?= 
+REFLOW_BUILD_TAGS ?=
 
-NAME          := goflow2
+NAME          ?= goflow2
 DOCKER_IMAGE  ?= netsampler/$(NAME)
 VERSION       ?= $(shell git describe --abbrev --long HEAD)
 ABBREV        ?= $(shell git rev-parse --short HEAD)
@@ -14,7 +17,7 @@ TAG           ?= $(shell git describe --tags --abbrev=0 HEAD)
 VERSION_PKG   ?= $(shell echo $(VERSION) | sed 's/^v//g')
 LICENSE       := BSD-3-Clause
 URL           := https://github.com/netsampler/goflow2
-DESCRIPTION   := GoFlow2: Open-Source and Scalable Network Sample Collector
+DESCRIPTION   ?= GoFlow2: Open-Source and Scalable Network Sample Collector
 DATE          :=  $(shell date +%FT%T%z)
 BUILDINFOS    ?=  ($(DATE)$(BUILDINFOSDET))
 LDFLAGS       ?= '-X main.version=$(VERSION) -X main.buildinfos=$(BUILDINFOS)'
@@ -28,6 +31,10 @@ DOCKER_TAG_ARGS := $(foreach tag,$(DOCKER_TAGS),-t $(tag))
 DOCKER_MANIFEST_TAG ?= $(ABBREV)
 
 OUTPUT := $(DIST_DIR)goflow2-$(VERSION_PKG)-$(GOOS)-$(GOARCH)$(EXTENSION)
+REFLOW_TARGET := $(GOOS)-$(GOARCH)$(if $(filter arm,$(GOARCH)),$(if $(GOARM),v$(GOARM),))
+REFLOW_OUTPUT := $(DIST_DIR)reflow-$(VERSION_PKG)-$(REFLOW_TARGET)$(EXTENSION)
+REFLOW_PACKAGE := $(DIST_DIR)reflow-$(VERSION_PKG)-$(REFLOW_TARGET)
+REFLOW_PACKAGE_DIR := $(DIST_DIR)reflow-package-$(REFLOW_TARGET)
 
 # fpm expects x86_64 for amd64, but use GOARCH otherwise.
 FPM_ARCH ?= $(GOARCH)
@@ -85,9 +92,36 @@ clean:
 build: prepare
 	CGO_ENABLED=0 go build -ldflags $(LDFLAGS) -o $(OUTPUT) cmd/goflow2/main.go
 
+.PHONY: build-reflow
+# Build the reflow binary.
+build-reflow: prepare
+	CGO_ENABLED=$(CGO_ENABLED) go build $(if $(REFLOW_BUILD_TAGS),-tags '$(REFLOW_BUILD_TAGS)',) -ldflags $(LDFLAGS) -o $(REFLOW_OUTPUT) cmd/reflow/main.go
+
 .PHONY: print-output
 print-output:
 	@echo $(OUTPUT)
+
+.PHONY: print-reflow-output
+print-reflow-output:
+	@echo $(REFLOW_OUTPUT)
+
+.PHONY: package-reflow-tar
+package-reflow-tar: build-reflow
+	rm -rf $(REFLOW_PACKAGE_DIR)
+	mkdir -p $(REFLOW_PACKAGE_DIR)
+	cp $(REFLOW_OUTPUT) $(REFLOW_PACKAGE_DIR)/reflow
+	cp README.md LICENSE $(REFLOW_PACKAGE_DIR)/
+	tar -C $(DIST_DIR) -czf $(REFLOW_PACKAGE).tar.gz $(notdir $(REFLOW_PACKAGE_DIR))
+	cd $(DIST_DIR) && shasum -a 256 $(notdir $(REFLOW_PACKAGE)).tar.gz > $(notdir $(REFLOW_PACKAGE)).tar.gz.sha256
+
+.PHONY: package-reflow-zip
+package-reflow-zip: build-reflow
+	rm -rf $(REFLOW_PACKAGE_DIR)
+	mkdir -p $(REFLOW_PACKAGE_DIR)
+	cp $(REFLOW_OUTPUT) $(REFLOW_PACKAGE_DIR)/reflow$(EXTENSION)
+	cp README.md LICENSE $(REFLOW_PACKAGE_DIR)/
+	cd $(DIST_DIR) && zip -qr $(notdir $(REFLOW_PACKAGE)).zip $(notdir $(REFLOW_PACKAGE_DIR))
+	cd $(DIST_DIR) && shasum -a 256 $(notdir $(REFLOW_PACKAGE)).zip > $(notdir $(REFLOW_PACKAGE)).zip.sha256
 
 .PHONY: docker
 # Build docker image for the current version.

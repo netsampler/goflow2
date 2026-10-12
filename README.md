@@ -18,6 +18,50 @@ not provided.
 
 ![GoFlow2 System diagram](/graphics/diagram.png)
 
+## ReFlow
+
+ReFlow is an experimental binary for collecting, converting, and aggregating network
+traffic. Build a portable binary and collect IPFIX as JSON:
+
+```bash
+CGO_ENABLED=0 go build -o reflow ./cmd/reflow
+./reflow -input udp::4739:flow -output json:stdout
+```
+
+The `flow` input detects IPFIX, NetFlow v5/v9, and sFlow v5. Repeat `-input` to
+listen on several sockets. With no flags, ReFlow listens on UDP ports 2055 and 6343
+and writes JSON to stdout.
+
+In another terminal, send an example flow to the collector above:
+
+```bash
+printf '%s\n' '{"src_addr":"192.0.2.1","dst_addr":"198.51.100.2","proto":17,"src_port":12345,"dst_port":53,"bytes":128,"packets":1}' |
+  ./reflow -input stream:-:json -output ipfix:udp:127.0.0.1:4739
+```
+
+JSON streams contain one object per line; `-` reads stdin. JSON input accepts both
+ReFlow JSON output and plain field objects. Use `-output json:stdout` to
+inspect events or `-output protobuf:file:flows.pb` to save protobuf.
+
+Aggregate packets from a capture into IPFIX flows, grouped by addresses, ports,
+protocol, and source ID:
+
+```bash
+./reflow -input stream:traffic.pcap:pcap -agg \
+  -output ipfix:udp:127.0.0.1:4739
+```
+
+`-agg` sums packet and byte counts, flushes idle flows after 10 seconds, and emits
+snapshots every 60 seconds. EOF or Ctrl-C flushes remaining flows. PCAPNG input is
+also supported. Live capture uses `pcap_live:<interface>:bytes` with a libpcap/cgo
+build, or `ebpf:<interface>:bytes` on Linux.
+
+Use `-list-options` for supported inputs, outputs, and aggregation settings. To
+customize a pipeline, add `-genconf > reflow.yaml` to a command, edit the generated
+YAML, then run `./reflow -config reflow.yaml`. An
+[interface options example](cmd/reflow/reflow-json-interface-options-to-ipfix.yaml)
+shows custom aggregation fields and IPFIX options export.
+
 ## Origins
 
 This work is a fork of a previous [open-source GoFlow code](https://github.com/cloudflare/goflow) built and used at Cloudflare.

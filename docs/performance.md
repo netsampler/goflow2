@@ -77,3 +77,18 @@ This is not recommended with NetFlow/IPFIX without having a shared template syst
 
 Another item to take into account, make sure the MTU of the machines where the collector are hosted match
 the MTU of the sampling routers. This can cause some issues when tunnelling or on certain cloud providers. 
+
+## ReFlow benchmarks
+
+Run the decoder, encoder, aggregation, and in-memory pipeline benchmarks with
+allocation counts:
+
+```bash
+CGO_ENABLED=0 go test ./pkg/reflow/decode ./pkg/reflow/encode ./pkg/reflow/aggregate ./pkg/reflow/app \
+  -run '^$' -bench . -benchmem
+```
+
+To inspect CPU and memory profiles, run
+`CGO_ENABLED=0 scripts/reflow-profile.sh pipeline /tmp/reflow-profiles 5s`.
+These benchmarks measure processing cost; measure UDP throughput separately with
+your own exporter traffic and sink.
