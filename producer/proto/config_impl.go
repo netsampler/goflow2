@@ -208,14 +208,24 @@ func (m *SFlowMapper) Map(layer string) MapLayerIterator {
 	if m == nil {
 		return nil
 	}
-	return &sflowMapperIterator{data: m.data[strings.ToLower(layer)], n: 0}
+	data := m.data[strings.ToLower(layer)]
+	if len(data) == 0 {
+		return nil // avoid allocating an iterator for layers without mappings
+	}
+	return &sflowMapperIterator{data: data, n: 0}
 }
 
 func (m *SFlowMapper) ParsePacket(flowMessage ProtoProducerMessageIf, data []byte) (err error) {
 	if m == nil {
-		return ParsePacket(flowMessage, data, m, DefaultEnvironment)
+		return ParsePacket(flowMessage, data, nil, DefaultEnvironment)
 	}
-	return ParsePacket(flowMessage, data, m, m.parserEnvironment)
+	// A mapper without any field mapping behaves like no mapper, which lets
+	// ParsePacket skip the per-layer ConfigKeyList work.
+	var config PacketLayerMapper
+	if len(m.data) > 0 {
+		config = m
+	}
+	return ParsePacket(flowMessage, data, config, m.parserEnvironment)
 }
 
 // Structure to help the MapCustom functions

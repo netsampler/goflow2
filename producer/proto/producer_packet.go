@@ -3,7 +3,9 @@ package protoproducer
 import (
 	"encoding/binary"
 	"fmt"
+	"strconv"
 	"sync"
+	"sync/atomic"
 )
 
 // ParserEnvironment provides parser lookup helpers for packet decoding.
@@ -177,21 +179,81 @@ func init() {
 	DefaultEnvironment = NewBaseParserEnvironment()
 }
 
+// cowMap is a copy-on-write map: lookups are lock-free and allocation-free,
+// writes copy the map. Registrations happen at setup time while lookups run
+// on every layer of every packet, so this trade-off favours the reader.
+type cowMap[K comparable, V any] struct {
+	mu sync.Mutex
+	m  atomic.Pointer[map[K]V]
+}
+
+func (c *cowMap[K, V]) Load(key K) (value V, ok bool) {
+	m := c.m.Load()
+	if m == nil {
+		return value, false
+	}
+	value, ok = (*m)[key]
+	return value, ok
+}
+
+func (c *cowMap[K, V]) Store(key K, value V) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	old := c.m.Load()
+	size := 1
+	if old != nil {
+		size = len(*old) + 1
+	}
+	next := make(map[K]V, size)
+	if old != nil {
+		for k, v := range *old {
+			next[k] = v
+		}
+	}
+	next[key] = value
+	c.m.Store(&next)
+}
+
+func (c *cowMap[K, V]) Len() int {
+	m := c.m.Load()
+	if m == nil {
+		return 0
+	}
+	return len(*m)
+}
+
+func (c *cowMap[K, V]) Reset() {
+	c.m.Store(nil)
+}
+
+// portKey identifies a custom port parser registration.
+type portKey struct {
+	proto string
+	dir   RegPortDir
+	port  uint16
+}
+
+// maxConfigKeyCache bounds the per-EtherType key cache, since EtherTypes come
+// from the wire.
+const maxConfigKeyCache = 1024
+
 // BaseParserEnvironment holds parser registrations and lookups.
 type BaseParserEnvironment struct {
 	nameToParser *sync.Map
-	customEtype  *sync.Map
-	customProto  *sync.Map
-	customPort   *sync.Map
+	customEtype  cowMap[uint16, ParserInfo]
+	customProto  cowMap[byte, ParserInfo]
+	customPort   cowMap[portKey, ParserInfo]
+
+	// Complete ConfigKeyList per EtherType and per protocol, built on first
+	// use and dropped when a custom parser is registered.
+	etypeKeys cowMap[uint16, []string]
+	protoKeys cowMap[byte, []string]
 }
 
 // NewBaseParserEnvironment creates a parser environment with defaults.
 func NewBaseParserEnvironment() *BaseParserEnvironment {
 	e := &BaseParserEnvironment{}
 	e.nameToParser = &sync.Map{}
-	e.customEtype = &sync.Map{}
-	e.customProto = &sync.Map{}
-	e.customPort = &sync.Map{}
 
 	// Load initial parsers by name
 	for _, p := range []ParserInfo{
@@ -231,6 +293,7 @@ func (e *BaseParserEnvironment) RegisterEtype(eType uint16, parser ParserInfo) e
 		return errParserEmpty
 	}
 	e.customEtype.Store(eType, parser) // parser can be invoked to decode certain etypes
+	e.etypeKeys.Reset()
 	return nil
 }
 
@@ -240,6 +303,7 @@ func (e *BaseParserEnvironment) RegisterProto(proto byte, parser ParserInfo) err
 		return errParserEmpty
 	}
 	e.customProto.Store(proto, parser) // parser can be invoked to decode certain protocols
+	e.protoKeys.Reset()
 	return nil
 }
 
@@ -250,12 +314,12 @@ func (e *BaseParserEnvironment) RegisterPort(proto string, dir RegPortDir, port 
 	}
 	switch dir {
 	case PortDirBoth:
-		e.customPort.Store(fmt.Sprintf("%s-src-%d", proto, port), parser)
-		e.customPort.Store(fmt.Sprintf("%s-dst-%d", proto, port), parser)
+		e.customPort.Store(portKey{proto, PortDirSrc, port}, parser)
+		e.customPort.Store(portKey{proto, PortDirDst, port}, parser)
 	case PortDirSrc:
-		e.customPort.Store(fmt.Sprintf("%s-src-%d", proto, port), parser)
+		e.customPort.Store(portKey{proto, PortDirSrc, port}, parser)
 	case PortDirDst:
-		e.customPort.Store(fmt.Sprintf("%s-dst-%d", proto, port), parser)
+		e.customPort.Store(portKey{proto, PortDirDst, port}, parser)
 	default:
 		return fmt.Errorf("unknown direction %s", dir)
 	}
@@ -266,9 +330,42 @@ func (e *BaseParserEnvironment) RegisterPort(proto string, dir RegPortDir, port 
 // NextParserEtype looks up the next parser by EtherType.
 func (e *BaseParserEnvironment) NextParserEtype(etherType []byte) (ParserInfo, error) {
 	info, err := e.innerNextParserEtype(etherType)
-	etypeNum := uint16(etherType[0])<<8 | uint16(etherType[1])
-	info.ConfigKeyList = append(info.ConfigKeyList, fmt.Sprintf("etype%d", etypeNum), fmt.Sprintf("etype0x%.4x", etypeNum))
+	if len(etherType) == 2 {
+		eType := uint16(etherType[0])<<8 | uint16(etherType[1])
+		info.ConfigKeyList = e.etypeConfigKeys(eType, info.ConfigKeyList)
+	}
 	return info, wrapParseErr("NextParserEtype", err)
+}
+
+// etypeConfigKeys returns the parser's keys plus "etype<dec>" and
+// "etype0x<hex>", cached per EtherType.
+func (e *BaseParserEnvironment) etypeConfigKeys(eType uint16, static []string) []string {
+	if keys, ok := e.etypeKeys.Load(eType); ok {
+		return keys
+	}
+	keys := appendConfigKeys(static, "etype"+strconv.Itoa(int(eType)), fmt.Sprintf("etype0x%.4x", eType))
+	if e.etypeKeys.Len() < maxConfigKeyCache {
+		e.etypeKeys.Store(eType, keys)
+	}
+	return keys
+}
+
+// protoConfigKeys returns the parser's keys plus "proto<dec>", cached per protocol.
+func (e *BaseParserEnvironment) protoConfigKeys(proto byte, static []string) []string {
+	if keys, ok := e.protoKeys.Load(proto); ok {
+		return keys
+	}
+	keys := appendConfigKeys(static, "proto"+strconv.Itoa(int(proto)))
+	e.protoKeys.Store(proto, keys)
+	return keys
+}
+
+// appendConfigKeys returns a new slice with exact capacity, so cached lists
+// and user-supplied ParserInfo.ConfigKeyList backing arrays are never written to.
+func appendConfigKeys(static []string, extra ...string) []string {
+	keys := make([]string, 0, len(static)+len(extra))
+	keys = append(keys, static...)
+	return append(keys, extra...)
 }
 
 func (e *BaseParserEnvironment) innerNextParserEtype(etherType []byte) (ParserInfo, error) {
@@ -278,7 +375,7 @@ func (e *BaseParserEnvironment) innerNextParserEtype(etherType []byte) (ParserIn
 
 	eType := uint16(etherType[0])<<8 | uint16(etherType[1])
 	if cParser, ok := e.customEtype.Load(eType); ok {
-		return cParser.(ParserInfo), nil
+		return cParser, nil
 	}
 
 	switch eType {
@@ -303,13 +400,13 @@ func (e *BaseParserEnvironment) innerNextParserEtype(etherType []byte) (ParserIn
 // NextParserProto looks up the next parser by protocol number.
 func (e *BaseParserEnvironment) NextParserProto(proto byte) (ParserInfo, error) {
 	info, err := e.innerNextParserProto(proto)
-	info.ConfigKeyList = append(info.ConfigKeyList, fmt.Sprintf("proto%d", proto))
+	info.ConfigKeyList = e.protoConfigKeys(proto, info.ConfigKeyList)
 	return info, wrapParseErr("NextParserProto", err)
 }
 
 func (e *BaseParserEnvironment) innerNextParserProto(proto byte) (ParserInfo, error) {
 	if cParser, ok := e.customProto.Load(proto); ok {
-		return cParser.(ParserInfo), nil
+		return cParser, nil
 	}
 
 	switch proto {
@@ -345,22 +442,44 @@ func (e *BaseParserEnvironment) NextParserPort(proto string, srcPort, dstPort ui
 	// a custom parser must be present in order to expand the keys array
 	switch dir {
 	case 1:
-		info.ConfigKeyList = append(info.ConfigKeyList, fmt.Sprintf("%s%d", proto, dstPort))
+		info.ConfigKeyList = appendConfigKeys(info.ConfigKeyList, proto+strconv.Itoa(int(dstPort)))
 	case 2:
-		info.ConfigKeyList = append(info.ConfigKeyList, fmt.Sprintf("%s%d", proto, srcPort))
+		info.ConfigKeyList = appendConfigKeys(info.ConfigKeyList, proto+strconv.Itoa(int(srcPort)))
 	}
 	return info, wrapParseErr("NextParserPort", err)
 }
 
 func (e *BaseParserEnvironment) innerNextParserPort(proto string, srcPort, dstPort uint16) (byte, ParserInfo, error) {
-	if cParser, ok := e.customPort.Load(fmt.Sprintf("%s-dst-%d", proto, dstPort)); ok {
-		return 1, cParser.(ParserInfo), nil
+	if cParser, ok := e.customPort.Load(portKey{proto, PortDirDst, dstPort}); ok {
+		return 1, cParser, nil
 	}
-	if cParser, ok := e.customPort.Load(fmt.Sprintf("%s-src-%d", proto, srcPort)); ok {
-		return 2, cParser.(ParserInfo), nil
+	if cParser, ok := e.customPort.Load(portKey{proto, PortDirSrc, srcPort}); ok {
+		return 2, cParser, nil
 	}
 
 	return 0, parserNone, nil
+}
+
+// noConfigKeysEnv is a view of a BaseParserEnvironment that skips building
+// ConfigKeyList. ParsePacket uses it when there is no PacketLayerMapper, since
+// the keys are only ever consumed by the mapper.
+type noConfigKeysEnv struct {
+	e *BaseParserEnvironment
+}
+
+func (n noConfigKeysEnv) NextParserEtype(etherType []byte) (ParserInfo, error) {
+	info, err := n.e.innerNextParserEtype(etherType)
+	return info, wrapParseErr("NextParserEtype", err)
+}
+
+func (n noConfigKeysEnv) NextParserProto(proto byte) (ParserInfo, error) {
+	info, err := n.e.innerNextParserProto(proto)
+	return info, wrapParseErr("NextParserProto", err)
+}
+
+func (n noConfigKeysEnv) NextParserPort(proto string, srcPort, dstPort uint16) (ParserInfo, error) {
+	_, info, err := n.e.innerNextParserPort(proto, srcPort, dstPort)
+	return info, wrapParseErr("NextParserPort", err)
 }
 
 // ParsePacket parses a packet using the environment's parser chain.
@@ -401,6 +520,51 @@ type ParserInfo struct {
 // Parser maps items of a layer into a flow message.
 type Parser func(flowMessage *ProtoProducerMessage, data []byte, pc ParseConfig) (res ParseResult, err error)
 
+// callCounterSize is the number of distinct indexes a callCounter tracks
+// before falling back to a map. Packets rarely have more than a few layers.
+const callCounterSize = 8
+
+// callCounter counts calls per parser or layer index without allocating for
+// typical packets: a small array with a linear scan lives on the stack, and a
+// map is only created when more distinct indexes are seen than fit.
+type callCounter struct {
+	n        int
+	index    [callCounterSize]int
+	count    [callCounterSize]int
+	overflow map[int]int
+}
+
+func (c *callCounter) get(index int) int {
+	for i := 0; i < c.n; i++ {
+		if c.index[i] == index {
+			return c.count[i]
+		}
+	}
+	if c.overflow != nil {
+		return c.overflow[index]
+	}
+	return 0
+}
+
+func (c *callCounter) inc(index int) {
+	for i := 0; i < c.n; i++ {
+		if c.index[i] == index {
+			c.count[i]++
+			return
+		}
+	}
+	if c.n < callCounterSize {
+		c.index[c.n] = index
+		c.count[c.n] = 1
+		c.n++
+		return
+	}
+	if c.overflow == nil {
+		c.overflow = make(map[int]int)
+	}
+	c.overflow[index]++
+}
+
 // ParsePacket parses a packet using optional configuration and environment.
 func ParsePacket(flowMessage ProtoProducerMessageIf, data []byte, config PacketLayerMapper, pe ParserEnvironment) (err error) {
 	var offset int
@@ -413,14 +577,19 @@ func ParsePacket(flowMessage ProtoProducerMessageIf, data []byte, config PacketL
 	} else {
 		parseConfig.Environment = DefaultEnvironment
 	}
+	if config == nil {
+		// Nothing consumes ConfigKeyList without a mapper: skip building it.
+		if base, ok := parseConfig.Environment.(*BaseParserEnvironment); ok {
+			parseConfig.Environment = noConfigKeysEnv{base}
+		}
+	}
 
 	nextParser = parserEthernet // initial parser
-	callsLayer := make(map[int]int)
-	calls := make(map[int]int)
+	var callsLayer, calls callCounter
 
 	for nextParser.Parser != nil && len(data) >= offset { // check that a next parser exists and there is enough data to read
-		parseConfig.Calls = calls[nextParser.ParserIndex]
-		parseConfig.LayerCall = callsLayer[nextParser.LayerIndex]
+		parseConfig.Calls = calls.get(nextParser.ParserIndex)
+		parseConfig.LayerCall = callsLayer.get(nextParser.LayerIndex)
 		res, err := nextParser.Parser(flowMessage.GetFlowMessage(), data[offset:], parseConfig)
 		parseConfig.Layer += 1
 		if err != nil {
@@ -458,8 +627,8 @@ func ParsePacket(flowMessage ProtoProducerMessageIf, data []byte, config PacketL
 			parseConfig.Encapsulated = true
 		}
 
-		calls[nextParser.ParserIndex] += 1
-		callsLayer[nextParser.LayerIndex] += 1
+		calls.inc(nextParser.ParserIndex)
+		callsLayer.inc(nextParser.LayerIndex)
 
 		nextParser = res.NextParser
 
