@@ -187,8 +187,7 @@ func (s *TemplateFlowStore) GetTemplate(ctx netflow.FlowContext, version uint16,
 		ObsDomainID: obsDomainId,
 		TemplateID:  templateId,
 	}
-	var template interface{}
-	if s.store.Get(key, &template) {
+	if template, ok := s.store.GetValue(key); ok {
 		return template, nil
 	}
 	return nil, netflow.ErrorTemplateNotFound
