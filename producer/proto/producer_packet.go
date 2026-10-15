@@ -288,8 +288,8 @@ func (e *BaseParserEnvironment) innerNextParserEtype(etherType []byte) (ParserIn
 		return parserEthernet, nil // Transparent Ether Bridging (Geneve)
 	case 0x8847:
 		return parserMPLS, nil // MPLS
-	case 0x8100:
-		return parser8021Q, nil // 802.1q
+	case 0x8100, 0x88a8, 0x9100:
+		return parser8021Q, nil // 802.1q, 802.1ad (QinQ S-tag), legacy QinQ
 	case 0x0800:
 		return parserIPv4, nil // IPv4
 	case 0x86dd:
