@@ -229,17 +229,15 @@ func TestProcessPacketBase(t *testing.T) {
 }
 
 func TestProcessPacketGRE(t *testing.T) {
-	dataStr := "005300000001" + // src mac
+	outer := "005300000001" + // src mac
 		"005300000002" + // dst mac
 		"86dd" + // etype
 
 		"6000000004d82f40" + // ipv6
 		"fd010000000000000000000000000001" + // src
-		"fd010000000000000000000000000002" + // dst
+		"fd010000000000000000000000000002" // dst
 
-		"00000800" + // gre
-
-		"45000064" + // ipv4
+	inner := "45000064" + // ipv4
 		"abab" + // id
 		"0000ff01" + // flag, ttl, proto
 		"aaaa" + // csum
@@ -248,25 +246,37 @@ func TestProcessPacketGRE(t *testing.T) {
 
 		"01018cf7000627c4" // icmp
 
-	data, _ := hex.DecodeString(dataStr)
-	var flowMessage ProtoProducerMessage
-	err := ParsePacket(&flowMessage, data, nil, nil)
-	assert.NoError(t, err)
+	for _, tc := range []struct {
+		name string
+		gre  string
+		size uint32
+	}{
+		{"no flags", "00000800", 4},
+		{"key", "20000800" + "00007ecd", 8},
+		{"checksum, key, sequence", "b0000800" + "c3fe0000" + "00007ecd" + "00000001", 16},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			data, _ := hex.DecodeString(outer + tc.gre + inner)
+			var flowMessage ProtoProducerMessage
+			err := ParsePacket(&flowMessage, data, nil, nil)
+			assert.NoError(t, err)
 
-	b, _ := json.Marshal(&flowMessage.FlowMessage)
-	t.Log(string(b))
+			b, _ := json.Marshal(&flowMessage.FlowMessage)
+			t.Log(string(b))
 
-	layers := []uint32{0, 2, 9, 1, 7}
-	assert.Equal(t, len(layers), len(flowMessage.LayerStack))
+			layers := make([]uint32, len(flowMessage.LayerStack))
+			for i, layer := range flowMessage.LayerStack {
+				layers[i] = uint32(layer)
+			}
+			assert.Equal(t, []uint32{0, 2, 9, 1, 7}, layers) // Ethernet, IPv6, GRE, IPv4, ICMP
+			assert.Equal(t, []uint32{14, 40, tc.size, 20, 8}, flowMessage.LayerSize)
 
-	for i, layer := range layers {
-		assert.Equal(t, layer, uint32(flowMessage.LayerStack[i]))
+			assert.Equal(t, uint32(0x86dd), flowMessage.Etype)
+			assert.Equal(t, uint32(47), flowMessage.Proto)
+			assert.Equal(t, uint32(1), flowMessage.IcmpType)
+			// todo: check addresses
+		})
 	}
-
-	assert.Equal(t, uint32(0x86dd), flowMessage.Etype)
-	assert.Equal(t, uint32(47), flowMessage.Proto)
-	// todo: check addresses
-
 }
 
 type testProtoProducerMessage struct {

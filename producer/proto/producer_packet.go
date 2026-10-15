@@ -282,10 +282,8 @@ func (e *BaseParserEnvironment) innerNextParserEtype(etherType []byte) (ParserIn
 	}
 
 	switch eType {
-	case 0x199e:
-		return parserEthernet, nil // Transparent Ether Bridging (GRE)
 	case 0x6558:
-		return parserEthernet, nil // Transparent Ether Bridging (Geneve)
+		return parserEthernet, nil // Transparent Ether Bridging (NVGRE, Geneve)
 	case 0x8847:
 		return parserMPLS, nil // MPLS
 	case 0x8100:
@@ -800,14 +798,40 @@ func ParseUDP(flowMessage *ProtoProducerMessage, data []byte, pc ParseConfig) (r
 }
 
 // ParseGRE parses a GRE header.
+//
+// The header is 4 bytes (flags and protocol type) plus the optional fields
+// announced by the flag bits: checksum and offset (C or R, RFC 2784 and
+// RFC 1701), key (K, RFC 2890), sequence number (S, RFC 2890) and, for
+// version 1 (PPTP, RFC 2637), the acknowledgment number (A).
 func ParseGRE(flowMessage *ProtoProducerMessage, data []byte, pc ParseConfig) (res ParseResult, err error) {
 	if len(data) < 4 {
 		return res, nil
 	}
 
+	flags := data[0]
+	version := data[1] & 0x07
+
 	res.Size = 4
+	if flags&0xc0 != 0 { // checksum present (C) or routing present (R): checksum and offset
+		res.Size += 4
+	}
+	if flags&0x20 != 0 { // key present (K)
+		res.Size += 4
+	}
+	if flags&0x10 != 0 { // sequence number present (S)
+		res.Size += 4
+	}
+	if version == 1 && data[1]&0x80 != 0 { // acknowledgment number present (A)
+		res.Size += 4
+	}
 
 	flowMessage.AddLayer("GRE")
+
+	if flags&0x40 != 0 {
+		// routing present (R): the header is followed by a variable-length
+		// list of source route entries (RFC 1701), deprecated by RFC 2784
+		return res, nil
+	}
 
 	eType := data[2:4]
 	if pc.Environment == nil {
