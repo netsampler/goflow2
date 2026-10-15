@@ -596,7 +596,7 @@ func ParseIPv4(flowMessage *ProtoProducerMessage, data []byte, pc ParseConfig) (
 		return res, nil
 	}
 
-	res.Size = 20
+	res.Size = max(int(data[0]&0x0f)*4, 20)
 
 	flowMessage.AddLayer("IPv4")
 
