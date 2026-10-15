@@ -26,17 +26,28 @@ func TestProcessEthernet(t *testing.T) {
 }
 
 func TestProcessDot1Q(t *testing.T) {
-	dataStr := "00140800"
-	data, _ := hex.DecodeString(dataStr)
-	var flowMessage ProtoProducerMessage
-	_, err := Parse8021Q(&flowMessage, data, ParseConfig{})
-	assert.NoError(t, err)
+	testCases := []struct {
+		name   string
+		data   string
+		vlanId uint32
+	}{
+		{"vid", "00140800", 20},
+		{"pcp-dei-vid", "ac660800", 3174}, // PCP 5, DEI 0, VID 0x666
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			data, _ := hex.DecodeString(tc.data)
+			var flowMessage ProtoProducerMessage
+			_, err := Parse8021Q(&flowMessage, data, ParseConfig{})
+			assert.NoError(t, err)
 
-	b, _ := json.Marshal(&flowMessage.FlowMessage)
-	t.Log(string(b))
+			b, _ := json.Marshal(&flowMessage.FlowMessage)
+			t.Log(string(b))
 
-	assert.Equal(t, uint32(20), flowMessage.VlanId)
-	assert.Equal(t, uint32(0x0800), flowMessage.Etype)
+			assert.Equal(t, tc.vlanId, flowMessage.VlanId)
+			assert.Equal(t, uint32(0x0800), flowMessage.Etype)
+		})
+	}
 }
 
 func TestProcessMPLS(t *testing.T) {
