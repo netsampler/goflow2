@@ -1,0 +1,131 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "goflow2.fullname" . }}-kafka
+  labels:
+    {{- include "goflow2.labels" . | nindent 4 }}
+    app.kubernetes.io/component: kafka
+spec:
+  serviceName: {{ include "goflow2.fullname" . }}-kafka-headless
+  replicas: {{ .Values.kafka.replicaCount }}
+  podManagementPolicy: Parallel
+  selector:
+    matchLabels:
+      {{- include "goflow2.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: kafka
+  template:
+    metadata:
+      labels:
+        {{- include "goflow2.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: kafka
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 120
+      securityContext:
+        fsGroup: 1000
+      {{- include "goflow2.scheduling" (dict "root" . "component" "kafka") | nindent 6 }}
+      containers:
+        - name: kafka
+          image: "{{ .Values.kafka.image.repository }}:{{ .Values.kafka.image.tag }}"
+          imagePullPolicy: {{ .Values.kafka.image.pullPolicy }}
+          securityContext:
+            runAsUser: 1000
+            runAsGroup: 1000
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+          command: ["/bin/bash", "-ec"]
+          args:
+            - |
+              ordinal="${POD_NAME##*-}"
+              export KAFKA_NODE_ID="$((ordinal + 1))"
+              export KAFKA_ADVERTISED_LISTENERS="PLAINTEXT://${POD_NAME}.${KAFKA_HEADLESS_SERVICE}:9092"
+              exec /etc/kafka/docker/run
+          env:
+            - name: CLUSTER_ID
+              value: {{ .Values.kafka.clusterId | quote }}
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: KAFKA_HEADLESS_SERVICE
+              value: {{ include "goflow2.fullname" . }}-kafka-headless
+            - name: KAFKA_PROCESS_ROLES
+              value: broker,controller
+            - name: KAFKA_CONTROLLER_QUORUM_VOTERS
+              value: {{ include "goflow2.kafkaVoters" . | quote }}
+            - name: KAFKA_CONTROLLER_LISTENER_NAMES
+              value: CONTROLLER
+            - name: KAFKA_INTER_BROKER_LISTENER_NAME
+              value: PLAINTEXT
+            - name: KAFKA_LISTENER_SECURITY_PROTOCOL_MAP
+              value: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+            - name: KAFKA_LISTENERS
+              value: PLAINTEXT://:9092,CONTROLLER://:9093
+            - name: KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR
+              value: {{ .Values.kafka.replicationFactor | quote }}
+            - name: KAFKA_DEFAULT_REPLICATION_FACTOR
+              value: {{ .Values.kafka.replicationFactor | quote }}
+            - name: KAFKA_MIN_INSYNC_REPLICAS
+              value: {{ .Values.kafka.minInSyncReplicas | quote }}
+            - name: KAFKA_UNCLEAN_LEADER_ELECTION_ENABLE
+              value: "false"
+            - name: KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR
+              value: {{ .Values.kafka.replicationFactor | quote }}
+            - name: KAFKA_TRANSACTION_STATE_LOG_MIN_ISR
+              value: {{ .Values.kafka.minInSyncReplicas | quote }}
+            - name: KAFKA_NUM_PARTITIONS
+              value: {{ .Values.kafka.partitions | quote }}
+            - name: KAFKA_LOG_RETENTION_HOURS
+              value: {{ .Values.kafka.retentionHours | quote }}
+            - name: KAFKA_LOG_RETENTION_BYTES
+              value: {{ .Values.kafka.retentionBytes | int64 | quote }}
+            - name: KAFKA_LOG_SEGMENT_BYTES
+              value: {{ .Values.kafka.segmentBytes | int64 | quote }}
+            - name: KAFKA_LOG_ROLL_MS
+              value: {{ .Values.kafka.segmentMs | int64 | quote }}
+            - name: KAFKA_LOG_RETENTION_CHECK_INTERVAL_MS
+              value: {{ .Values.kafka.retentionCheckIntervalMs | int64 | quote }}
+            - name: KAFKA_LOG_DIRS
+              value: /var/lib/kafka/data/logs
+            - name: KAFKA_HEAP_OPTS
+              value: {{ .Values.kafka.heapOpts | quote }}
+          ports:
+            - name: broker
+              containerPort: 9092
+            - name: controller
+              containerPort: 9093
+          startupProbe:
+            tcpSocket:
+              port: broker
+            periodSeconds: 10
+            failureThreshold: 60
+          readinessProbe:
+            tcpSocket:
+              port: broker
+          livenessProbe:
+            tcpSocket:
+              port: broker
+          resources:
+            {{- toYaml .Values.kafka.resources | nindent 12 }}
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/kafka/data
+      {{- if or (not .Values.kafka.persistence.enabled) .Values.kafka.persistence.existingClaim }}
+      volumes:
+        - name: data
+          {{- if .Values.kafka.persistence.existingClaim }}
+          persistentVolumeClaim:
+            claimName: {{ .Values.kafka.persistence.existingClaim }}
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
+      {{- end }}
+  {{- if and .Values.kafka.persistence.enabled (not .Values.kafka.persistence.existingClaim) }}
+  {{- include "goflow2.volumeClaimTemplate" (dict "persistence" .Values.kafka.persistence) | nindent 2 }}
+  {{- end }}

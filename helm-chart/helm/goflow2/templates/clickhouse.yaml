@@ -1,0 +1,145 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "goflow2.fullname" . }}-clickhouse
+  labels:
+    {{- include "goflow2.labels" . | nindent 4 }}
+    app.kubernetes.io/component: clickhouse
+spec:
+  serviceName: {{ include "goflow2.fullname" . }}-clickhouse-headless
+  replicas: {{ .Values.clickhouse.replicaCount }}
+  podManagementPolicy: Parallel
+  selector:
+    matchLabels:
+      {{- include "goflow2.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: clickhouse
+  template:
+    metadata:
+      labels:
+        {{- include "goflow2.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: clickhouse
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/clickhouse-configmap.yaml") . | sha256sum }}
+        checksum/auth: {{ include (print $.Template.BasePath "/clickhouse-secret.yaml") . | sha256sum }}
+        {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 120
+      securityContext:
+        fsGroup: 101
+      {{- include "goflow2.scheduling" (dict "root" . "component" "clickhouse") | nindent 6 }}
+      containers:
+        - name: clickhouse
+          image: "{{ .Values.clickhouse.image.repository }}:{{ .Values.clickhouse.image.tag }}"
+          imagePullPolicy: {{ .Values.clickhouse.image.pullPolicy }}
+          securityContext:
+            runAsUser: 101
+            runAsGroup: 101
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+          env:
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: POD_FQDN
+              value: "$(POD_NAME).{{ include "goflow2.fullname" . }}-clickhouse-headless"
+            - name: CLICKHOUSE_DO_NOT_CHOWN
+              value: "1"
+            - name: CLICKHOUSE_ALWAYS_RUN_INITDB_SCRIPTS
+              value: "1"
+            - name: CLICKHOUSE_USER
+              value: {{ .Values.clickhouse.auth.username | quote }}
+            - name: CLICKHOUSE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ default (printf "%s-clickhouse" (include "goflow2.fullname" .)) .Values.clickhouse.auth.existingSecret }}
+                  key: {{ .Values.clickhouse.auth.passwordKey }}
+          ports:
+            - name: http
+              containerPort: 8123
+            - name: native
+              containerPort: 9000
+            - name: metrics
+              containerPort: 9363
+            - name: interserver
+              containerPort: 9009
+          startupProbe:
+            httpGet:
+              path: /ping
+              port: http
+            periodSeconds: 10
+            failureThreshold: 60
+          readinessProbe:
+            httpGet:
+              path: /ping
+              port: http
+          livenessProbe:
+            tcpSocket:
+              port: http
+          resources:
+            {{- toYaml .Values.clickhouse.resources | nindent 12 }}
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/clickhouse
+            - name: users
+              mountPath: /etc/clickhouse-server/users.d
+            - name: profiles
+              mountPath: /etc/clickhouse-server/users.d/goflow2-profiles.xml
+              subPath: profiles.xml
+              readOnly: true
+            - name: config
+              mountPath: /etc/clickhouse-server/config.d/goflow2.xml
+              subPath: server.xml
+              readOnly: true
+            - name: init
+              mountPath: /docker-entrypoint-initdb.d
+              readOnly: true
+            - name: schemas
+              mountPath: /opt/goflow2
+              readOnly: true
+      volumes:
+        {{- if or (not .Values.clickhouse.persistence.enabled) .Values.clickhouse.persistence.existingClaim }}
+        - name: data
+          {{- if .Values.clickhouse.persistence.existingClaim }}
+          persistentVolumeClaim:
+            claimName: {{ .Values.clickhouse.persistence.existingClaim }}
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
+        {{- end }}
+        - name: users
+          emptyDir: {}
+        - name: config
+          configMap:
+            name: {{ include "goflow2.fullname" . }}-clickhouse
+            items:
+              - key: server.xml
+                path: server.xml
+        - name: profiles
+          configMap:
+            name: {{ include "goflow2.fullname" . }}-clickhouse
+            items:
+              - key: profiles.xml
+                path: profiles.xml
+        - name: init
+          configMap:
+            name: {{ include "goflow2.fullname" . }}-clickhouse
+            items:
+              - key: init.sql
+                path: init.sql
+        - name: schemas
+          configMap:
+            name: {{ include "goflow2.fullname" . }}-clickhouse
+            items:
+              - key: flow.proto
+                path: flow.proto
+              - key: protocols.csv
+                path: protocols.csv
+  {{- if and .Values.clickhouse.persistence.enabled (not .Values.clickhouse.persistence.existingClaim) }}
+  {{- include "goflow2.volumeClaimTemplate" (dict "persistence" .Values.clickhouse.persistence) | nindent 2 }}
+  {{- end }}

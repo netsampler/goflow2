@@ -1,0 +1,186 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "properties": {
+    "kafka": {
+      "type": "object",
+      "properties": {
+        "topic": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 249,
+          "pattern": "^[a-zA-Z0-9_-][a-zA-Z0-9._-]*$",
+          "not": {
+            "enum": [
+              ".",
+              ".."
+            ]
+          }
+        },
+        "clusterId": {
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9_-]{22}$"
+        },
+        "partitions": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "retentionHours": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "retentionBytes": {
+          "type": "integer",
+          "anyOf": [{ "const": -1 }, { "minimum": 1 }]
+        },
+        "segmentBytes": {
+          "type": "integer",
+          "minimum": 14,
+          "maximum": 2147483647
+        },
+        "segmentMs": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "retentionCheckIntervalMs": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "replicaCount": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "antiAffinity": {
+          "enum": [
+            "soft",
+            "hard",
+            "none"
+          ]
+        },
+        "replicationFactor": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "minInSyncReplicas": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "clickhouse": {
+      "type": "object",
+      "properties": {
+        "dashboardAggregates": {
+          "type": "object",
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "retentionDays": { "type": "integer", "minimum": 1, "maximum": 3650 }
+          }
+        },
+        "serverSettings": {
+          "type": "object",
+          "propertyNames": { "pattern": "^[a-z][a-z0-9_]*$" },
+          "additionalProperties": { "type": "number", "minimum": 0 },
+          "properties": {
+            "max_server_memory_usage_to_ram_ratio": {
+              "type": "number", "exclusiveMinimum": 0, "maximum": 1
+            }
+          }
+        },
+        "querySettings": {
+          "type": "object",
+          "propertyNames": { "pattern": "^[a-z][a-z0-9_]*$" },
+          "additionalProperties": { "type": "number", "minimum": 0 }
+        },
+        "auth": {
+          "type": "object",
+          "properties": {
+            "username": {
+              "type": "string",
+              "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$"
+            },
+            "password": {
+              "type": "string"
+            },
+            "passwordKey": {
+              "type": "string",
+              "pattern": "^[a-zA-Z0-9._-]+$"
+            }
+          }
+        },
+        "replicaCount": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "antiAffinity": {
+          "enum": [
+            "soft",
+            "hard",
+            "none"
+          ]
+        }
+      }
+    },
+    "goflow2": {
+      "type": "object",
+      "properties": {
+        "flowService": {
+          "type": "object",
+          "properties": {
+            "type": {
+              "enum": [
+                "ClusterIP",
+                "NodePort",
+                "LoadBalancer"
+              ]
+            },
+            "externalTrafficPolicy": {
+              "enum": [
+                "Cluster",
+                "Local"
+              ]
+            },
+            "sessionAffinity": {
+              "enum": [
+                "None",
+                "ClientIP"
+              ]
+            },
+            "sessionAffinityTimeoutSeconds": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 86400
+            }
+          }
+        },
+        "replicaCount": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "antiAffinity": {
+          "enum": [
+            "soft",
+            "hard",
+            "none"
+          ]
+        }
+      }
+    },
+    "keeper": {
+      "type": "object",
+      "properties": {
+        "replicaCount": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "antiAffinity": {
+          "enum": [
+            "soft",
+            "hard",
+            "none"
+          ]
+        }
+      }
+    }
+  }
+}

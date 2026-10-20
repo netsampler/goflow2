@@ -1,0 +1,21 @@
+{{- if .Values.podDisruptionBudget.enabled }}
+{{- $root := . }}
+{{- range $name := list "goflow2" "kafka" "clickhouse" "keeper" }}
+{{- $settings := index $root.Values $name }}
+{{- if and (gt (int $settings.replicaCount) 1) (or (ne $name "keeper") $root.Values.keeper.enabled) }}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "goflow2.fullname" $root }}-{{ $name }}
+  labels:
+    {{- include "goflow2.labels" $root | nindent 4 }}
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      {{- include "goflow2.selectorLabels" $root | nindent 6 }}
+      app.kubernetes.io/component: {{ ternary "collector" $name (eq $name "goflow2") }}
+{{- end }}
+{{- end }}
+{{- end }}
