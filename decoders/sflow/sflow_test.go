@@ -2,6 +2,7 @@ package sflow
 
 import (
 	"bytes"
+	"encoding/binary"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -208,4 +209,37 @@ func TestSFlowDecodeDropExtendedFunction(t *testing.T) {
 	assert.True(t, ok)
 	assert.Len(t, sample.Records, 1)
 	assert.Equal(t, ExtendedFunction{Symbol: "foobar"}, sample.Records[0].Data)
+}
+
+func TestExpandedSFlowDecodeTooManyRecords(t *testing.T) {
+	// One expanded flow sample announcing more records than the bound
+	var data bytes.Buffer
+	for _, v := range []uint32{
+		5,          // version
+		1,          // agent address type (IPv4)
+		0x0a000001, // agent address
+		0,          // sub agent id
+		1,          // sequence number
+		0,          // uptime
+		1,          // samples count
+		3,          // sample format (expanded flow)
+		44,         // sample length
+		1,          // sample sequence number
+		0,          // source id type
+		1,          // source id value
+		1,          // sampling rate
+		1,          // sample pool
+		0,          // drops
+		0,          // input interface format
+		1,          // input interface value
+		0,          // output interface format
+		1,          // output interface value
+		1001,       // flow records count, one over the bound
+	} {
+		assert.NoError(t, binary.Write(&data, binary.BigEndian, v))
+	}
+
+	var packet Packet
+	err := DecodeMessageVersion(&data, &packet)
+	assert.ErrorContains(t, err, "too many flow records: 1001")
 }

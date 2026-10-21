@@ -445,7 +445,10 @@ func DecodeSample(header *SampleHeader, payload *bytes.Buffer) (interface{}, err
 			return sample, &FlowError{format, seq, fmt.Errorf("IPv4 [%w]", err)}
 		}
 		recordsCount = expandedFlowSample.FlowRecordsCount
-		expandedFlowSample.Records = make([]FlowRecord, recordsCount)
+		if recordsCount > 1000 { // protection against ddos
+			return sample, &FlowError{format, seq, fmt.Errorf("too many flow records: %d", recordsCount)}
+		}
+		expandedFlowSample.Records = make([]FlowRecord, recordsCount) // max size of 1000 for protection
 		sample = expandedFlowSample
 	case SAMPLE_FORMAT_DROP:
 		dropSample.Header = *header
