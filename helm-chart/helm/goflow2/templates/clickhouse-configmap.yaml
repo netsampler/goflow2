@@ -1,0 +1,80 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "goflow2.fullname" . }}-clickhouse
+  labels:
+    {{- include "goflow2.labels" . | nindent 4 }}
+    app.kubernetes.io/component: clickhouse
+data:
+  init.sql: |
+    {{- tpl (.Files.Get "files/clickhouse/init.sql") . | nindent 4 }}
+  preflight.sql: |
+    {{- tpl (.Files.Get "files/clickhouse/init.sql") (merge (dict "sqlOperation" "preflight") .) | nindent 4 }}
+  {{- if .Values.clickhouse.dashboardAggregates.enabled }}
+  {{- range $operation := list "dashboard-aggregates" "dashboard-backfill" "dashboard-publish" }}
+  {{ $operation }}.sql: |
+    {{- tpl ($.Files.Get "files/clickhouse/init.sql") (merge (dict "sqlOperation" $operation) $) | nindent 4 }}
+  {{- end }}
+  dashboard-retention-days: {{ .Values.clickhouse.dashboardAggregates.retentionDays | quote }}
+  {{- end }}
+  flow.proto: |
+    {{- .Files.Get "files/clickhouse/flow.proto" | nindent 4 }}
+  protocols.csv: |
+    {{- .Files.Get "files/clickhouse/protocols.csv" | nindent 4 }}
+  profiles.xml: |
+    <clickhouse>
+      <profiles>
+        <default>
+          {{- include "goflow2.numericSettings" .Values.clickhouse.querySettings | nindent 10 }}
+        </default>
+      </profiles>
+    </clickhouse>
+  server.xml: |
+    <clickhouse>
+      <listen_host replace="replace">0.0.0.0</listen_host>
+      <format_schema_path>/opt/goflow2/</format_schema_path>
+      <user_files_path>/opt/goflow2/</user_files_path>
+      {{- include "goflow2.numericSettings" .Values.clickhouse.serverSettings | nindent 6 }}
+      {{- if gt (int .Values.clickhouse.replicaCount) 1 }}
+      <interserver_http_host from_env="POD_FQDN"/>
+      <interserver_http_port>9009</interserver_http_port>
+      <macros>
+        <shard>01</shard>
+        <replica from_env="POD_NAME"/>
+      </macros>
+      <zookeeper>
+        {{- range $i := until (int .Values.keeper.replicaCount) }}
+        <node>
+          <host>{{ include "goflow2.fullname" $ }}-keeper-{{ $i }}.{{ include "goflow2.fullname" $ }}-keeper-headless</host>
+          <port>9181</port>
+        </node>
+        {{- end }}
+      </zookeeper>
+      <remote_servers>
+        <goflow2>
+          <shard>
+            <internal_replication>true</internal_replication>
+            {{- range $i := until (int .Values.clickhouse.replicaCount) }}
+            <replica>
+              <host>{{ include "goflow2.fullname" $ }}-clickhouse-{{ $i }}.{{ include "goflow2.fullname" $ }}-clickhouse-headless</host>
+              <port>9000</port>
+            </replica>
+            {{- end }}
+          </shard>
+        </goflow2>
+      </remote_servers>
+      {{- end }}
+      <logger>
+        <level>information</level>
+        <console>true</console>
+        <log remove="remove"/>
+        <errorlog remove="remove"/>
+      </logger>
+      <prometheus>
+        <endpoint>/metrics</endpoint>
+        <port>9363</port>
+        <metrics>true</metrics>
+        <events>true</events>
+        <asynchronous_metrics>true</asynchronous_metrics>
+      </prometheus>
+    </clickhouse>

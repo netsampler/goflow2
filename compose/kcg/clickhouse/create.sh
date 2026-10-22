@@ -47,101 +47,97 @@ clickhouse client -n <<-EOSQL
         kafka_format = 'Protobuf',
         kafka_schema = 'flow.proto:FlowMessage';
 
-    CREATE TABLE IF NOT EXISTS flows_raw
+    CREATE TABLE IF NOT EXISTS default.flows_raw
     (
-        date Date,
-        time_inserted_ns DateTime64(9),
-        time_received_ns DateTime64(9),
-        time_flow_start_ns DateTime64(9),
+        date Date CODEC(ZSTD(1)),
+        time_inserted_ns DateTime64(9, 'UTC') CODEC(Delta(8), ZSTD(1)),
+        time_received_ns DateTime64(9, 'UTC') CODEC(Delta(8), ZSTD(1)),
+        time_flow_start_ns DateTime64(9, 'UTC') CODEC(Delta(8), ZSTD(1)),
 
-        sequence_num UInt32,
-        sampling_rate UInt64,
-        sampler_address FixedString(16),
+        sequence_num UInt32 CODEC(ZSTD(1)),
+        sampling_rate UInt64 CODEC(ZSTD(1)),
+        sampler_address IPv4 CODEC(ZSTD(1)),
 
-        src_addr FixedString(16),
-        dst_addr FixedString(16),
+        src_addr IPv4 CODEC(ZSTD(1)),
+        dst_addr IPv4 CODEC(ZSTD(1)),
 
-        src_as UInt32,
-        dst_as UInt32,
+        src_as UInt32 CODEC(ZSTD(1)),
+        dst_as UInt32 CODEC(ZSTD(1)),
 
-        etype UInt32,
-        proto UInt32,
+        etype UInt16 CODEC(ZSTD(1)),
+        proto UInt8 CODEC(ZSTD(1)),
 
-        src_port UInt32,
-        dst_port UInt32,
+        src_port UInt16 CODEC(ZSTD(1)),
+        dst_port UInt16 CODEC(ZSTD(1)),
 
-        bytes UInt64,
-        packets UInt64
+        in_if UInt32 CODEC(ZSTD(1)),
+        out_if UInt32 CODEC(ZSTD(1)),
+
+        bytes UInt64 CODEC(ZSTD(1)),
+        packets UInt64 CODEC(ZSTD(1))
     ) ENGINE = MergeTree()
     PARTITION BY date
-    ORDER BY time_received_ns;
+    ORDER BY (time_received_ns, sampler_address);
+    TTL date + INTERVAL 30 DAY DELETE
+    SETTINGS index_granularity = 8192, ttl_only_drop_parts = 1;
 
-    CREATE MATERIALIZED VIEW IF NOT EXISTS flows_raw_view TO flows_raw
+    CREATE MATERIALIZED VIEW IF NOT EXISTS default.flows_raw_view
+    TO default.flows_raw
     AS SELECT
-        toDate(time_received_ns) AS date,
-        now() AS time_inserted_ns,
-        toDateTime64(time_received_ns/1000000000, 9) AS time_received_ns,
-        toDateTime64(time_flow_start_ns/1000000000, 9) AS time_flow_start_ns,
-        sequence_num,
-        sampling_rate,
-        sampler_address,
+        toDate(fromUnixTimestamp64Nano(toInt64(flows.time_received_ns), 'UTC')) AS date,
+        now64(9, 'UTC') AS time_inserted_ns,
+        fromUnixTimestamp64Nano(toInt64(flows.time_received_ns), 'UTC') AS time_received_ns,
+        fromUnixTimestamp64Nano(toInt64(flows.time_flow_start_ns), 'UTC') AS time_flow_start_ns,
 
-        src_addr,
-        dst_addr,
+        flows.sequence_num AS sequence_num,
+        flows.sampling_rate AS sampling_rate,
+        toIPv4(IPv4NumToString(reinterpretAsUInt32(reverse(substring(flows.sampler_address, 1, 4))))) AS sampler_address,
+        toIPv4(IPv4NumToString(reinterpretAsUInt32(reverse(substring(flows.src_addr, 1, 4))))) AS src_addr,
+        toIPv4(IPv4NumToString(reinterpretAsUInt32(reverse(substring(flows.dst_addr, 1, 4))))) AS dst_addr,
+        flows.src_as AS src_as,
+        flows.dst_as AS dst_as,
+        toUInt16(flows.etype) AS etype,
+        toUInt8(flows.proto) AS proto,
+        toUInt16(flows.src_port) AS src_port,
+        toUInt16(flows.dst_port) AS dst_port,
+        flows.in_if AS in_if,
+        flows.out_if AS out_if,
+        flows.bytes AS bytes,
+        flows.packets AS packets
+    FROM default.flows AS flows
+    WHERE flows.etype = 2048
+    AND substring(flows.sampler_address, 5, 12) = unhex('000000000000000000000000');
 
-        src_as,
-        dst_as,
-
-        etype,
-        proto,
-
-        src_port,
-        dst_port,
-
-        bytes,
-        packets
-       FROM flows;
-
-    CREATE TABLE IF NOT EXISTS flows_5m
+    CREATE TABLE IF NOT EXISTS default.flows_1m
     (
-        date Date,
-        timeslot DateTime,
-
-        src_as UInt32,
-        dst_as UInt32,
-
-        etypeMap Nested (
-            etype UInt32,
-            bytes UInt64,
-            packets UInt64,
-            count UInt64
-        ),
-
-        bytes UInt64,
-        packets UInt64,
-        count UInt64
-    ) ENGINE = SummingMergeTree()
+        date Date CODEC(ZSTD(1)),
+        minute DateTime('UTC') CODEC(Delta(4), ZSTD(1)),
+        sampler_address IPv4 CODEC(ZSTD(1)),
+        proto UInt8 CODEC(ZSTD(1)),
+        dst_port UInt16 CODEC(ZSTD(1)),
+        bytes UInt64 CODEC(ZSTD(1)),
+        packets UInt64 CODEC(ZSTD(1)),
+        flow_records UInt64 CODEC(ZSTD(1))
+    )
+    ENGINE = SummingMergeTree()
     PARTITION BY date
-    ORDER BY (date, timeslot, src_as, dst_as, \`etypeMap.etype\`);
+    ORDER BY (sampler_address, date, minute, proto, dst_port)
+    TTL date + INTERVAL 30 DAY DELETE
+    SETTINGS index_granularity = 8192, ttl_only_drop_parts = 1;
 
-    CREATE MATERIALIZED VIEW IF NOT EXISTS flows_5m_view TO flows_5m
-    AS
-        SELECT
-            date,
-            toStartOfFiveMinute(time_received_ns) AS timeslot,
-            src_as,
-            dst_as,
+    CREATE MATERIALIZED VIEW IF NOT EXISTS default.flows_1m_view
+    TO default.flows_1m
+    AS SELECT
+        date,
+        toStartOfMinute(time_received_ns) AS minute,
+        sampler_address,
+        proto,
+        dst_port,
+        sum(bytes) AS bytes,
+        sum(packets) AS packets,
+        count() AS flow_records
+    FROM default.flows_raw
+    GROUP BY date, minute, sampler_address, proto, dst_port;
 
-            [etype] AS \`etypeMap.etype\`,
-            [bytes] AS \`etypeMap.bytes\`,
-            [packets] AS \`etypeMap.packets\`,
-            [count] AS \`etypeMap.count\`,
-
-            sum(bytes) AS bytes,
-            sum(packets) AS packets,
-            count() AS count
-
-        FROM flows_raw
-        GROUP BY date, timeslot, src_as, dst_as, \`etypeMap.etype\`;
 
 EOSQL

@@ -1,0 +1,21 @@
+{{- if gt (int .Values.kafka.replicationFactor) (int .Values.kafka.replicaCount) }}
+{{- fail "kafka.replicationFactor cannot exceed kafka.replicaCount" }}
+{{- end }}
+{{- if gt (int .Values.kafka.minInSyncReplicas) (int .Values.kafka.replicationFactor) }}
+{{- fail "kafka.minInSyncReplicas cannot exceed kafka.replicationFactor" }}
+{{- end }}
+{{- if and (gt (int .Values.kafka.replicaCount) 1) (or (lt (int .Values.kafka.replicaCount) 3) (eq (mod (int .Values.kafka.replicaCount) 2) 0)) }}
+{{- fail "Combined KRaft broker/controller replicaCount must be 1 or an odd number >= 3" }}
+{{- end }}
+{{- if and (gt (int .Values.clickhouse.replicaCount) 1) (not .Values.keeper.enabled) }}
+{{- fail "Replicated ClickHouse requires keeper.enabled=true" }}
+{{- end }}
+{{- if and .Values.keeper.enabled (or (lt (int .Values.keeper.replicaCount) 3) (eq (mod (int .Values.keeper.replicaCount) 2) 0)) }}
+{{- fail "Keeper quorum requires an odd replicaCount >= 3" }}
+{{- end }}
+{{- range $name := list "kafka" "clickhouse" "keeper" }}
+{{- $component := index $.Values $name }}
+{{- if and (or (ne $name "keeper") $.Values.keeper.enabled) (gt (int $component.replicaCount) 1) $component.persistence.existingClaim }}
+{{- fail (printf "%s: a shared existingClaim is only supported for replicaCount=1; use per-Pod claim templates for replicas" $name) }}
+{{- end }}
+{{- end }}
