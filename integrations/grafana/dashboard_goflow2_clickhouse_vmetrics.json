@@ -2518,7 +2518,7 @@
       "hideTimepicker": false,
       "fiscalYearStartMonth": 0
     },
-    "title": "NetFlow / ClickHouse / VictoriaMetrics · native SQL",
+    "title": "NetFlow / ClickHouse / VictoriaMetrics",
     "variables": [
       {
         "kind": "DatasourceVariable",
@@ -2610,12 +2610,12 @@
             },
             "spec": {
               "queryType": "sql",
-              "rawSql": "SELECT DISTINCT sampler_address\nFROM default.flows_raw\nWHERE $__dateFilter(date) AND $__timeFilter(time_received_ns)\nORDER BY sampler_address\nLIMIT 500",
+              "rawSql": "select distinct sampler_address from default.flows_1m_view",
               "refId": "var"
             },
             "labels": {
-              "grafana.app/export-label": "grafana-clickhouse-datasource-1",
-              "grafana.app/export-datasource-name": "netflow-clickhouse"
+              "grafana.app/export-label": "grafana-clickhouse-datasource",
+              "grafana.app/export-datasource-name": "${DS_CLICKHOUSE}"
             }
           },
           "regex": "",
@@ -2667,8 +2667,8 @@
               "__legacyStringValue": "query_result(ifIndex{instance=\"${exporter}\",ifName!=\"\"})"
             },
             "labels": {
-              "grafana.app/export-label": "prometheus-1",
-              "grafana.app/export-datasource-name": "vmetrics-drsu-prod-prom"
+              "grafana.app/export-label": "prometheus",
+              "grafana.app/export-datasource-name": "${DS_VICTORIAMETRICS}"
             }
           },
           "regex": "/ifName=\"(?<text>[^\\\"]+)\"[^}]*}\\s+(?<value>\\d+(?:\\.\\d+)?(?:[eE][+-]?\\d+)?)/",
