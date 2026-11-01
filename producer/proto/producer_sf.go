@@ -43,6 +43,15 @@ func ParseSampledHeaderConfig(flowMessage *ProtoProducerMessage, sampledHeader *
 	return nil
 }
 
+// setSFlowSampleProvenance copies the flow sample's header fields that identify where and how it
+// was sampled: its data source (as the observation point), sequence number, sample pool and drops.
+func setSFlowSampleProvenance(flowMessage *ProtoProducerMessage, header sflow.SampleHeader, samplePool, drops uint32) {
+	flowMessage.ObservationPointId = header.SourceIdType<<24 | header.SourceIdValue&0x00ffffff
+	flowMessage.SampleSequenceNum = header.SampleSequenceNumber
+	flowMessage.SamplePool = samplePool
+	flowMessage.SampleDrops = drops
+}
+
 // SearchSFlowSampleConfig maps an sFlow sample into a flow message.
 func SearchSFlowSampleConfig(flowMessage *ProtoProducerMessage, flowSample interface{}, config PacketMapper) error {
 	var records []sflow.FlowRecord
@@ -54,11 +63,13 @@ func SearchSFlowSampleConfig(flowMessage *ProtoProducerMessage, flowSample inter
 		flowMessage.SamplingRate = uint64(flowSample.SamplingRate)
 		flowMessage.InIf = flowSample.Input
 		flowMessage.OutIf = flowSample.Output
+		setSFlowSampleProvenance(flowMessage, flowSample.Header, flowSample.SamplePool, flowSample.Drops)
 	case sflow.ExpandedFlowSample:
 		records = flowSample.Records
 		flowMessage.SamplingRate = uint64(flowSample.SamplingRate)
 		flowMessage.InIf = flowSample.InputIfValue
 		flowMessage.OutIf = flowSample.OutputIfValue
+		setSFlowSampleProvenance(flowMessage, flowSample.Header, flowSample.SamplePool, flowSample.Drops)
 	}
 
 	var ipNh, ipSrc, ipDst []byte
@@ -150,13 +161,17 @@ func ProcessMessageSFlowConfig(packet *sflow.Packet, config ProtoProducerConfig)
 	if err != nil {
 		return flowMessageSet, fmt.Errorf("sflow flow samples: %w", err)
 	}
-	for _, msg := range flowMessageSet {
+	for i, msg := range flowMessageSet {
 		fmsg, ok := msg.(*ProtoProducerMessage)
 		if !ok {
 			continue
 		}
 		fmsg.SamplerAddress = agent
 		fmsg.SequenceNum = seqnum
+		fmsg.ObservationDomainId = packet.SubAgentId
+		fmsg.SamplerUptime = packet.Uptime
+		fmsg.SampleIndex = uint32(i)
+		fmsg.FlowSamplesCount = uint32(len(flowMessageSet))
 	}
 
 	return flowMessageSet, nil
