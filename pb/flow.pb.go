@@ -241,7 +241,11 @@ type FlowMessage struct {
 	// Position of this flow sample among the datagram's flow samples, from 0.
 	SampleIndex uint32 `protobuf:"varint,117,opt,name=sample_index,json=sampleIndex,proto3" json:"sample_index,omitempty"`
 	// Number of flow samples in the datagram (counter samples excluded).
-	FlowSamplesCount           uint32                   `protobuf:"varint,118,opt,name=flow_samples_count,json=flowSamplesCount,proto3" json:"flow_samples_count,omitempty"`
+	FlowSamplesCount uint32 `protobuf:"varint,118,opt,name=flow_samples_count,json=flowSamplesCount,proto3" json:"flow_samples_count,omitempty"`
+	// Size of the datagram in bytes.
+	DatagramLength uint32 `protobuf:"varint,119,opt,name=datagram_length,json=datagramLength,proto3" json:"datagram_length,omitempty"`
+	// Encoded length of the flow sample in bytes, from its header (format and length words excluded).
+	SampleLength               uint32                   `protobuf:"varint,120,opt,name=sample_length,json=sampleLength,proto3" json:"sample_length,omitempty"`
 	LayerStack                 []FlowMessage_LayerStack `protobuf:"varint,103,rep,packed,name=layer_stack,json=layerStack,proto3,enum=flowpb.FlowMessage_LayerStack" json:"layer_stack,omitempty"`
 	LayerSize                  []uint32                 `protobuf:"varint,104,rep,packed,name=layer_size,json=layerSize,proto3" json:"layer_size,omitempty"`
 	Ipv6RoutingHeaderAddresses [][]byte                 `protobuf:"bytes,105,rep,name=ipv6_routing_header_addresses,json=ipv6RoutingHeaderAddresses,proto3" json:"ipv6_routing_header_addresses,omitempty"` // SRv6
@@ -644,6 +648,20 @@ func (x *FlowMessage) GetFlowSamplesCount() uint32 {
 	return 0
 }
 
+func (x *FlowMessage) GetDatagramLength() uint32 {
+	if x != nil {
+		return x.DatagramLength
+	}
+	return 0
+}
+
+func (x *FlowMessage) GetSampleLength() uint32 {
+	if x != nil {
+		return x.SampleLength
+	}
+	return 0
+}
+
 func (x *FlowMessage) GetLayerStack() []FlowMessage_LayerStack {
 	if x != nil {
 		return x.LayerStack
@@ -676,7 +694,7 @@ var File_pb_flow_proto protoreflect.FileDescriptor
 
 const file_pb_flow_proto_rawDesc = "" +
 	"\n" +
-	"\rpb/flow.proto\x12\x06flowpb\"\x8a\x11\n" +
+	"\rpb/flow.proto\x12\x06flowpb\"\xd8\x11\n" +
 	"\vFlowMessage\x120\n" +
 	"\x04type\x18\x01 \x01(\x0e2\x1c.flowpb.FlowMessage.FlowTypeR\x04type\x12(\n" +
 	"\x10time_received_ns\x18n \x01(\x04R\x0etimeReceivedNs\x12!\n" +
@@ -734,7 +752,9 @@ const file_pb_flow_proto_rawDesc = "" +
 	"samplePool\x12!\n" +
 	"\fsample_drops\x18t \x01(\rR\vsampleDrops\x12!\n" +
 	"\fsample_index\x18u \x01(\rR\vsampleIndex\x12,\n" +
-	"\x12flow_samples_count\x18v \x01(\rR\x10flowSamplesCount\x12?\n" +
+	"\x12flow_samples_count\x18v \x01(\rR\x10flowSamplesCount\x12'\n" +
+	"\x0fdatagram_length\x18w \x01(\rR\x0edatagramLength\x12#\n" +
+	"\rsample_length\x18x \x01(\rR\fsampleLength\x12?\n" +
 	"\vlayer_stack\x18g \x03(\x0e2\x1e.flowpb.FlowMessage.LayerStackR\n" +
 	"layerStack\x12\x1d\n" +
 	"\n" +

@@ -654,6 +654,7 @@ func DecodeSample(header *SampleHeader, payload *bytes.Buffer) (interface{}, err
 }
 
 func DecodeMessageVersion(payload *bytes.Buffer, packetV5 *Packet) error {
+	packetV5.Length = uint32(payload.Len())
 	var version uint32
 	if err := utils.BinaryDecoder(payload, &version); err != nil {
 		return &DecoderError{fmt.Errorf("version [%w]", err)}

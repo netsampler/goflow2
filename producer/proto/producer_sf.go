@@ -44,9 +44,11 @@ func ParseSampledHeaderConfig(flowMessage *ProtoProducerMessage, sampledHeader *
 }
 
 // setSFlowSampleProvenance copies the flow sample's header fields that identify where and how it
-// was sampled: its data source (as the observation point), sequence number, sample pool and drops.
+// was sampled: its data source (as the observation point), encoded length, sequence number, sample
+// pool and drops.
 func setSFlowSampleProvenance(flowMessage *ProtoProducerMessage, header sflow.SampleHeader, samplePool, drops uint32) {
 	flowMessage.ObservationPointId = header.SourceIdType<<24 | header.SourceIdValue&0x00ffffff
+	flowMessage.SampleLength = header.Length
 	flowMessage.SampleSequenceNum = header.SampleSequenceNumber
 	flowMessage.SamplePool = samplePool
 	flowMessage.SampleDrops = drops
@@ -172,6 +174,7 @@ func ProcessMessageSFlowConfig(packet *sflow.Packet, config ProtoProducerConfig)
 		fmsg.SamplerUptime = packet.Uptime
 		fmsg.SampleIndex = uint32(i)
 		fmsg.FlowSamplesCount = uint32(len(flowMessageSet))
+		fmsg.DatagramLength = packet.Length
 	}
 
 	return flowMessageSet, nil

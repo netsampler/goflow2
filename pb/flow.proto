@@ -110,6 +110,10 @@ message FlowMessage {
   uint32 sample_index = 117;
   // Number of flow samples in the datagram (counter samples excluded).
   uint32 flow_samples_count = 118;
+  // Size of the datagram in bytes.
+  uint32 datagram_length = 119;
+  // Encoded length of the flow sample in bytes, from its header (format and length words excluded).
+  uint32 sample_length = 120;
 
   // Encapsulation
   enum LayerStack {

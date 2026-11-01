@@ -23,6 +23,8 @@ The mapping to the protobuf format is listed in the table below.
 |sample_drops|Packets selected for sampling but dropped|Not included|Drops|Not included|Not included|
 |sample_index|Position of the flow sample in the packet|Not included|Included|Not included|Not included|
 |flow_samples_count|Number of flow samples in the packet|Not included|Included|Not included|Not included|
+|datagram_length|Size of the packet in bytes|Not included|Included|Not included|Not included|
+|sample_length|Encoded length of the flow sample in bytes|Not included|Sample length|Not included|Not included|
 |time_flow_start_ns|Time the flow started in nanoseconds|System uptime and first|=TimeReceived|System uptime and FIRST_SWITCHED (22)|flowStartXXX (150, 152, 154, 156)|
 |time_flow_end_ns|Time the flow ended in nanoseconds|System uptime and last|=TimeReceived|System uptime and LAST_SWITCHED (23)|flowEndXXX (151, 153, 155, 157)|
 |bytes|Number of bytes in flow|dOctets|Length of sample|IN_BYTES (1) OUT_BYTES (23)|octetDeltaCount (1) postOctetDeltaCount (23)|

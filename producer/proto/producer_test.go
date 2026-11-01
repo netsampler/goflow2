@@ -129,9 +129,11 @@ func TestSFlowSampleProvenance(t *testing.T) {
 		SubAgentId:     7,
 		SequenceNumber: 42,
 		Uptime:         123456,
+		Length:         1396,
 		Samples: []interface{}{
 			sflow.FlowSample{
 				Header: sflow.SampleHeader{
+					Length:               116,
 					SampleSequenceNumber: 10,
 					SourceIdType:         0,
 					SourceIdValue:        5,
@@ -144,6 +146,7 @@ func TestSFlowSampleProvenance(t *testing.T) {
 			sflow.CounterSample{},
 			sflow.ExpandedFlowSample{
 				Header: sflow.SampleHeader{
+					Length:               200,
 					SampleSequenceNumber: 11,
 					SourceIdType:         2,
 					SourceIdValue:        9,
@@ -158,10 +161,10 @@ func TestSFlowSampleProvenance(t *testing.T) {
 		return
 	}
 	want := []struct {
-		point, seq, pool, drops, index uint32
+		point, length, seq, pool, drops, index uint32
 	}{
-		{point: 5, seq: 10, pool: 1000, drops: 3, index: 0},
-		{point: 2<<24 | 9, seq: 11, pool: 2000, drops: 0, index: 1},
+		{point: 5, length: 116, seq: 10, pool: 1000, drops: 3, index: 0},
+		{point: 2<<24 | 9, length: 200, seq: 11, pool: 2000, drops: 0, index: 1},
 	}
 	for i, producerMsg := range msgs {
 		msg, ok := producerMsg.(*ProtoProducerMessage)
@@ -172,6 +175,8 @@ func TestSFlowSampleProvenance(t *testing.T) {
 		assert.Equal(t, uint32(7), msg.ObservationDomainId)
 		assert.Equal(t, uint32(123456), msg.SamplerUptime)
 		assert.Equal(t, uint32(2), msg.FlowSamplesCount)
+		assert.Equal(t, uint32(1396), msg.DatagramLength)
+		assert.Equal(t, want[i].length, msg.SampleLength)
 		assert.Equal(t, want[i].point, msg.ObservationPointId)
 		assert.Equal(t, want[i].seq, msg.SampleSequenceNum)
 		assert.Equal(t, want[i].pool, msg.SamplePool)
