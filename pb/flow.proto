@@ -92,8 +92,28 @@ message FlowMessage {
   repeated uint32 mpls_label = 81;
   repeated bytes mpls_ip = 82;
 
+  // NetFlow v9/IPFIX: observation domain and observation point.
+  // sFlow: the datagram's sub-agent id and the flow sample's source_id (type << 24 | index).
   uint32 observation_domain_id = 70;
   uint32 observation_point_id = 71;
+
+  // sFlow provenance of the flow sample (zero for other protocols).
+  // Agent uptime in milliseconds when the datagram was sent.
+  uint32 sampler_uptime = 113;
+  // Flow sample sequence number (per sFlow instance of the data source).
+  uint32 sample_sequence_num = 114;
+  // Packets that could have been sampled (skipped + sampled) since the data source started.
+  uint32 sample_pool = 115;
+  // Packets selected for sampling but dropped for lack of resources (zero if not detected).
+  uint32 sample_drops = 116;
+  // Position of this flow sample among the datagram's flow samples, from 0.
+  uint32 sample_index = 117;
+  // Number of flow samples in the datagram (counter samples excluded).
+  uint32 flow_samples_count = 118;
+  // Size of the datagram in bytes.
+  uint32 datagram_length = 119;
+  // Encoded length of the flow sample in bytes, from its header (format and length words excluded).
+  uint32 sample_length = 120;
 
   // Encapsulation
   enum LayerStack {
