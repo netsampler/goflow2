@@ -1,0 +1,11 @@
+[Unit]
+Description=ReFlow
+After=network.target
+
+[Service]
+Type=simple
+EnvironmentFile=/etc/default/reflow
+ExecStart=/usr/bin/reflow $REFLOW_ARGS
+
+[Install]
+WantedBy=multi-user.target

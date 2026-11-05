@@ -7,6 +7,12 @@ on:
       - 'v*'
   pull_request:
     branches: [ main ]
+  workflow_dispatch:
+    inputs:
+      source_ref:
+        description: 'Native ARMv7 only: optional full commit SHA already merged into main'
+        required: false
+        type: string
 
 env:
   GHCR_REFLOW_IMAGE: ghcr.io/${{ github.repository_owner }}/reflow
@@ -15,6 +21,7 @@ env:
 jobs:
   build:
     name: Build ReFlow (${{ matrix.label }})
+    if: github.event_name != 'workflow_dispatch'
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
@@ -25,9 +32,18 @@ jobs:
             goos: linux
             goarch: amd64
             cgo: "1"
-            libc: glibc
-            static: "0"
-            apt_packages: libpcap-dev
+            libc: musl
+            static: "1"
+            zig: "1"
+            zig_version: 0.15.2
+            zig_archive_target: x86_64-linux
+            cc: zig cc -target x86_64-linux-musl
+            host: x86_64-linux-musl
+            apt_packages: make flex bison
+            libpcap_source: "1"
+            libpcap_version: 1.10.5
+            cgo_cflags: -I/tmp/reflow-libpcap/include
+            cgo_ldflags: -static -L/tmp/reflow-libpcap/lib
             docker_package: "1"
             docker_platform: linux/amd64
             package: tar
@@ -36,13 +52,24 @@ jobs:
             goos: linux
             goarch: arm64
             cgo: "1"
-            libc: glibc
-            static: "0"
-            apt_packages: libpcap-dev
+            libc: musl
+            static: "1"
+            zig: "1"
+            zig_version: 0.15.2
+            zig_archive_target: aarch64-linux
+            cc: zig cc -target aarch64-linux-musl
+            host: aarch64-linux-musl
+            apt_packages: make flex bison
+            libpcap_source: "1"
+            libpcap_version: 1.10.5
+            cgo_cflags: -I/tmp/reflow-libpcap/include
+            cgo_ldflags: -static -L/tmp/reflow-libpcap/lib
             docker_package: "1"
             docker_platform: linux/arm64/v8
             package: tar
-          - label: linux-armv7
+          - &linux-armv7
+            label: linux-armv7
+            build_tags: ""
             runner: ubuntu-24.04-arm
             goos: linux
             goarch: arm
@@ -58,20 +85,22 @@ jobs:
             apt_packages: make flex bison
             libpcap_source: "1"
             libpcap_version: 1.10.5
-            cgo_cflags: -I/tmp/reflow-libpcap-armv7/include
-            cgo_ldflags: -static -L/tmp/reflow-libpcap-armv7/lib
+            cgo_cflags: -I/tmp/reflow-libpcap/include
+            cgo_ldflags: -static -L/tmp/reflow-libpcap/lib
             package: tar
           - label: darwin-amd64
             runner: macos-15-intel
             goos: darwin
             goarch: amd64
             cgo: "1"
+            build_tags: reflow_noebpf
             package: tar
           - label: darwin-arm64
             runner: macos-15
             goos: darwin
             goarch: arm64
             cgo: "1"
+            build_tags: reflow_noebpf
             package: tar
           - label: windows-amd64
             runner: ubuntu-latest
@@ -107,7 +136,7 @@ jobs:
     - name: Set up Go
       uses: actions/setup-go@v6
       with:
-        go-version: ^1.24
+        go-version-file: go.mod
         cache: true
         cache-dependency-path: |
           go.sum
@@ -117,7 +146,8 @@ jobs:
       if: startsWith(github.ref, 'refs/tags/')
       run: echo "VERSION=$(git describe --tags --abbrev=0 HEAD)" >> "$GITHUB_ENV"
 
-    - name: Install Zig
+    - &install-zig
+      name: Install Zig
       if: matrix.zig == '1'
       env:
         ZIG_ARCHIVE_TARGET: ${{ matrix.zig_archive_target }}
@@ -135,16 +165,19 @@ jobs:
         APT_PACKAGES: ${{ matrix.apt_packages }}
       run: |
         sudo apt-get update
-        sudo apt-get install -y $APT_PACKAGES
+        sudo apt-get install -y $APT_PACKAGES rpm cpio ruby ruby-dev
+        gem install --user-install fpm
+        echo "$(ruby -e 'print Gem.user_dir')/bin" >> "$GITHUB_PATH"
 
-    - name: Build libpcap for ARMv7
+    - &build-libpcap
+      name: Build static libpcap
       if: matrix.libpcap_source == '1'
       env:
         CC: ${{ matrix.cc }}
         HOST: ${{ matrix.host }}
         LIBPCAP_VERSION: ${{ matrix.libpcap_version }}
       run: |
-        prefix=/tmp/reflow-libpcap-armv7
+        prefix=/tmp/reflow-libpcap
         curl -fsSL "https://www.tcpdump.org/release/libpcap-${LIBPCAP_VERSION}.tar.gz" -o /tmp/libpcap.tar.gz
         tar -C /tmp -xzf /tmp/libpcap.tar.gz
         cd "/tmp/libpcap-${LIBPCAP_VERSION}"
@@ -153,11 +186,16 @@ jobs:
           --prefix="$prefix" \
           --with-pcap=linux \
           --disable-shared \
-          --enable-static
+          --disable-dbus \
+          --disable-usb \
+          --disable-rdma \
+          --without-libnl \
+          --without-dpdk
         make -j"$(nproc)"
         make install
 
-    - name: Patch gopacket pcap timestamp types for ARMv7
+    - &patch-pcap
+      name: Match gopacket pcap timestamp types to libpcap
       if: matrix.libpcap_source == '1'
       run: |
         go mod download github.com/google/gopacket
@@ -169,7 +207,8 @@ jobs:
           exit 1
         fi
 
-    - name: Compile pcap source
+    - &compile-pcap
+      name: Compile pcap source
       if: matrix.cgo == '1'
       env:
         GOOS: ${{ matrix.goos }}
@@ -202,6 +241,12 @@ jobs:
       run: |
         if [[ "${{ matrix.package }}" == "zip" ]]; then
           make package-reflow-zip
+        elif [[ "$GOOS" == "linux" ]]; then
+          make package-reflow-tar package-reflow
+          dpkg-deb --info dist/reflow_*.deb
+          dpkg-deb --contents dist/reflow_*.deb
+          rpm --query --info --package dist/reflow-*.rpm
+          rpm --query --list --package dist/reflow-*.rpm
         else
           make package-reflow-tar
         fi
@@ -217,10 +262,37 @@ jobs:
       run: |
         output="$(make print-reflow-output)"
         file "$output"
-        if [[ "$STATIC" == "1" ]] && file "$output" | grep -q 'dynamically linked'; then
-          echo "$output should be statically linked" >&2
-          exit 1
+        if [[ "$STATIC" == "1" ]]; then
+          file "$output" | grep -F 'statically linked'
+          readelf -l "$output" > /tmp/reflow-program-headers.txt
+          if grep -q INTERP /tmp/reflow-program-headers.txt; then
+            echo "$output must not require a dynamic linker" >&2
+            exit 1
+          fi
         fi
+        archive_dir="$(mktemp -d)"
+        deb_dir="$(mktemp -d)"
+        rpm_dir="$(mktemp -d)"
+        tar -xzf "${output}.tar.gz" -C "$archive_dir"
+        dpkg-deb --extract dist/reflow_*.deb "$deb_dir"
+        rpm2cpio dist/reflow-*.rpm | (cd "$rpm_dir" && cpio -idm --quiet)
+        cmp "$output" "$archive_dir/reflow-package-${{ matrix.label }}/reflow"
+        cmp "$output" "$deb_dir/usr/bin/reflow"
+        cmp "$output" "$rpm_dir/usr/bin/reflow"
+
+    - name: Verify macOS ReFlow binary
+      if: matrix.goos == 'darwin'
+      env:
+        GOOS: ${{ matrix.goos }}
+        GOARCH: ${{ matrix.goarch }}
+      run: |
+        output="$(make print-reflow-output)"
+        otool -L "$output" > /tmp/reflow-linked-libraries.txt
+        cat /tmp/reflow-linked-libraries.txt
+        grep -F libpcap /tmp/reflow-linked-libraries.txt
+        go version -m "$output" | grep -F reflow_noebpf
+        "$output" -v
+        /tmp/reflow-pcap-${{ matrix.label }}.test
 
     - name: Set ReFlow Docker packaging vars
       if: matrix.docker_package == '1'
@@ -230,8 +302,7 @@ jobs:
         GOARM: ${{ matrix.goarm }}
         EXTENSION: ${{ matrix.extension }}
       run: |
-        CGO_ENABLED=0 REFLOW_BUILD_TAGS=reflow_nopcap DIST_DIR=dist/docker/ make build-reflow
-        echo "REFLOW_BINARY_PATH=$(DIST_DIR=dist/docker/ make print-reflow-output)" >> "$GITHUB_ENV"
+        echo "REFLOW_BINARY_PATH=$(make print-reflow-output)" >> "$GITHUB_ENV"
 
     - name: Set up QEMU
       if: matrix.docker_package == '1'
@@ -276,13 +347,127 @@ jobs:
           dist/reflow-*.tar.gz.sha256
           dist/reflow-*.zip
           dist/reflow-*.zip.sha256
+          dist/reflow_*.deb
+          dist/reflow-*.rpm
         if-no-files-found: error
         retention-days: 14
+
+  native-build:
+    name: Build ReFlow native snapshot (${{ matrix.label }})
+    if: "!startsWith(github.ref, 'refs/tags/')"
+    permissions:
+      contents: read
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      matrix:
+        include:
+          - *linux-armv7
+    outputs:
+      revision: ${{ steps.source.outputs.revision }}
+    steps:
+    - uses: actions/checkout@v6
+      with:
+        fetch-depth: 0
+
+    - name: Select the source revision
+      id: source
+      env:
+        SOURCE_REF: ${{ inputs.source_ref }}
+      run: |
+        if [ -n "$SOURCE_REF" ]; then
+          [[ "$SOURCE_REF" =~ ^[0-9a-f]{40}$ ]]
+          git merge-base --is-ancestor "$SOURCE_REF" origin/main
+          git checkout --detach "$SOURCE_REF"
+        fi
+        echo "revision=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+    - uses: actions/setup-go@v6
+      with:
+        go-version-file: go.mod
+
+    - *install-zig
+
+    - name: Install native build and test dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y make flex bison qemu-user
+
+    - *build-libpcap
+    - *patch-pcap
+    - *compile-pcap
+
+    - name: Build the static ARMv7 package
+      env:
+        CGO_ENABLED: ${{ matrix.cgo }}
+        GOOS: ${{ matrix.goos }}
+        GOARCH: ${{ matrix.goarch }}
+        GOARM: ${{ matrix.goarm }}
+        CC: ${{ matrix.cc }}
+        CGO_CFLAGS: ${{ matrix.cgo_cflags }}
+        CGO_LDFLAGS: ${{ matrix.cgo_ldflags }}
+        VERSION: v${{ steps.source.outputs.revision }}
+      run: make package-reflow-tar
+
+    - name: Verify architecture, static linking and ARM execution
+      env:
+        REVISION: ${{ steps.source.outputs.revision }}
+      run: |
+        binary="dist/reflow-${REVISION}-linux-armv7"
+        file "$binary" | grep -E 'ELF 32-bit LSB.*ARM.*statically linked'
+        if readelf -l "$binary" | grep -q INTERP; then
+          echo 'The router binary must not require a dynamic linker' >&2
+          exit 1
+        fi
+        qemu-arm -cpu cortex-a9 "$binary" -list-options > /tmp/reflow-options.txt
+        grep -q 'ebpf:' /tmp/reflow-options.txt
+        qemu-arm -cpu cortex-a9 /tmp/reflow-pcap-linux-armv7.test
+        cd dist
+        sha256sum -c "reflow-${REVISION}-linux-armv7.tar.gz.sha256"
+
+    - uses: actions/upload-artifact@v6
+      with:
+        name: reflow-native-armv7-${{ steps.source.outputs.revision }}
+        path: |
+          dist/reflow-*-linux-armv7.tar.gz
+          dist/reflow-*-linux-armv7.tar.gz.sha256
+        if-no-files-found: error
+
+  native-publish:
+    name: Publish ReFlow native ARMv7 snapshots
+    needs: native-build
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    concurrency:
+      group: reflow-native-${{ needs.native-build.outputs.revision }}
+      cancel-in-progress: false
+    steps:
+    - uses: actions/download-artifact@v8
+      with:
+        name: reflow-native-armv7-${{ needs.native-build.outputs.revision }}
+        path: dist
+
+    - name: Publish a durable per-revision native release
+      env:
+        GH_TOKEN: ${{ github.token }}
+        GH_REPO: ${{ github.repository }}
+        REVISION: ${{ needs.native-build.outputs.revision }}
+      run: |
+        tag="reflow-${REVISION}"
+        if gh release view "$tag" >/dev/null 2>&1; then
+          gh release upload "$tag" dist/* --clobber
+        else
+          gh release create "$tag" dist/* --target "$REVISION" \
+            --title "ReFlow ARMv7 ${REVISION:0:12}" \
+            --notes "Static Linux ARMv7 / EABI5 ReFlow from ${REVISION}. Includes eBPF and live libpcap capture. Verify the archive against its SHA-256 sidecar before installation." \
+            --prerelease --latest=false
+        fi
 
   manifest:
     name: Publish ReFlow Docker Manifests
     needs: build
-    if: github.event_name != 'pull_request'
+    if: github.event_name != 'pull_request' && github.event_name != 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
     - name: Check out code
