@@ -164,7 +164,25 @@ package-rpm: build
 .PHONY: package
 package: package-deb package-rpm
 
-FPM_COMMON_FLAGS := -s dir -n $(NAME) -v $(VERSION_PKG) \
+.PHONY: package-reflow-deb package-reflow-rpm package-reflow
+package-reflow-deb package-reflow-rpm: NAME = reflow
+package-reflow-deb package-reflow-rpm: DESCRIPTION = ReFlow: encode and decode flow and packet streams
+package-reflow-deb package-reflow-rpm: FPM_INPUTS = \
+	$(REFLOW_OUTPUT)=/usr/bin/reflow \
+	package/reflow.service=/lib/systemd/system/reflow.service \
+	package/reflow.env=/etc/default/reflow
+package-reflow-deb: FPM_ARCH = $(if $(filter arm,$(GOARCH)),armhf,$(GOARCH))
+package-reflow-rpm: FPM_ARCH = $(if $(filter arm,$(GOARCH)),armv7hl,$(GOARCH))
+
+package-reflow-deb: build-reflow
+	$(call run_fpm,deb,--config-files /etc/default/reflow)
+
+package-reflow-rpm: build-reflow
+	$(call run_fpm,rpm,--config-files /etc/default/reflow)
+
+package-reflow: package-reflow-deb package-reflow-rpm
+
+FPM_COMMON_FLAGS = -s dir -n $(NAME) -v $(VERSION_PKG) \
 	--maintainer "$(MAINTAINER)" \
 	--description "$(DESCRIPTION)" \
 	--url "$(URL)" \
@@ -177,5 +195,5 @@ FPM_INPUTS := \
 	package/goflow2.env=/etc/default/goflow2
 
 define run_fpm
-	fpm -t $(1) $(FPM_COMMON_FLAGS) $(FPM_INPUTS)
+	fpm -t $(1) $(FPM_COMMON_FLAGS) $(2) $(FPM_INPUTS)
 endef

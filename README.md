@@ -62,6 +62,58 @@ YAML, then run `./reflow -config reflow.yaml`. An
 [interface options example](cmd/reflow/reflow-json-interface-options-to-ipfix.yaml)
 shows custom aggregation fields and IPFIX options export.
 
+### Linux packages
+
+The `ReFlow` workflow builds `.deb` and `.rpm` packages for amd64, arm64, and
+ARMv7 alongside the archives, and attaches them to tagged releases. Packages
+install `/usr/bin/reflow`, a `reflow.service` systemd unit, and
+`/etc/default/reflow`. Linux archives, packages, and Docker images use the
+same static musl binary with eBPF and live libpcap capture enabled.
+
+Set `REFLOW_ARGS` in `/etc/default/reflow` to configure the service, then run
+`systemctl daemon-reload` and `systemctl enable --now reflow`. With no arguments,
+ReFlow listens on UDP ports 2055 and 6343 and writes JSON to the journal.
+
+To build both package formats locally on Linux, install FPM, RPM build tools,
+and libpcap development files, then run `CGO_ENABLED=1 make package-reflow`.
+Individual targets are `package-reflow-deb` and `package-reflow-rpm`.
+Cross-compilation also needs a C compiler and libpcap built for the target.
+The portable release builds use a static musl/libpcap toolchain; see
+`.github/workflows/reflow.yml` for the compiler and linker settings. The options
+file is preserved during upgrades.
+
+### macOS archives
+
+The `ReFlow` workflow builds archives for Intel (`darwin-amd64`) and Apple
+Silicon (`darwin-arm64`). Both enable live capture through the system libpcap
+and explicitly disable Linux-only eBPF support with `reflow_noebpf`.
+
+To build an archive locally on macOS, run
+`CGO_ENABLED=1 GOOS=darwin REFLOW_BUILD_TAGS=reflow_noebpf make package-reflow-tar`.
+
+### Native ARMv7 router binary
+
+The `ReFlow` workflow also builds a static Linux ARMv7 / EABI5 router binary
+with eBPF and live libpcap capture enabled. It uses the same musl/libpcap
+build as the Linux release matrix, checks the executable and pcap source tests
+under Cortex-A9 QEMU, and publishes the archive and SHA-256 sidecar
+as a durable prerelease for each commit pushed to `main`. These snapshots do
+not replace the latest stable GoFlow2 release.
+
+To install the binary matching a ReFlow container, read its
+`org.opencontainers.image.revision` label and download these assets from
+`https://github.com/netsampler/goflow2/releases/tag/reflow-<revision>`:
+
+* `reflow-<revision>-linux-armv7.tar.gz`
+* `reflow-<revision>-linux-armv7.tar.gz.sha256`
+
+Verify the checksum before extracting `reflow` from the archive. The workflow
+can also be dispatched to build only this native snapshot, with `source_ref`
+set to a full commit SHA already merged into `main`, for example to publish
+the native binary for an older container revision. Live capture needs packet
+socket support and appropriate privileges. eBPF capture also needs kernel eBPF
+and perf event support. The static binary has no libc runtime dependency.
+
 ## Origins
 
 This work is a fork of a previous [open-source GoFlow code](https://github.com/cloudflare/goflow) built and used at Cloudflare.
