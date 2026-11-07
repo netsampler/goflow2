@@ -131,7 +131,7 @@ package-reflow-tar: build-reflow
 	mkdir -p $(REFLOW_PACKAGE_DIR)
 	cp $(REFLOW_OUTPUT) $(REFLOW_PACKAGE_DIR)/reflow
 	cp README.md LICENSE $(REFLOW_PACKAGE_DIR)/
-	cp docs/reflow-*.md docs/reflow-adaptive-sampling.svg $(REFLOW_PACKAGE_DIR)/
+	cp docs/reflow-*.md docs/reflow-*.svg $(REFLOW_PACKAGE_DIR)/
 	tar -C $(DIST_DIR) -czf $(REFLOW_PACKAGE).tar.gz $(notdir $(REFLOW_PACKAGE_DIR))
 	cd $(DIST_DIR) && $(SHA256_CMD) $(notdir $(REFLOW_PACKAGE)).tar.gz > $(notdir $(REFLOW_PACKAGE)).tar.gz.sha256
 
@@ -141,7 +141,7 @@ package-reflow-zip: build-reflow
 	mkdir -p $(REFLOW_PACKAGE_DIR)
 	cp $(REFLOW_OUTPUT) $(REFLOW_PACKAGE_DIR)/reflow$(EXTENSION)
 	cp README.md LICENSE $(REFLOW_PACKAGE_DIR)/
-	cp docs/reflow-*.md docs/reflow-adaptive-sampling.svg $(REFLOW_PACKAGE_DIR)/
+	cp docs/reflow-*.md docs/reflow-*.svg $(REFLOW_PACKAGE_DIR)/
 	cd $(DIST_DIR) && zip -qr $(notdir $(REFLOW_PACKAGE)).zip $(notdir $(REFLOW_PACKAGE_DIR))
 	cd $(DIST_DIR) && $(SHA256_CMD) $(notdir $(REFLOW_PACKAGE)).zip > $(notdir $(REFLOW_PACKAGE)).zip.sha256
 

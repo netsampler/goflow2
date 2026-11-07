@@ -45,6 +45,15 @@ counting lost copies. After `recovery_after_ms` of active intervals at or below
 `drop_threshold`, the controller divides the divisor by `decrease_factor`,
 bounded by `min_every`. An idle interval within the threshold resets recovery.
 
+In this example, 256,000 packets per second arrive and the capture path can
+deliver 750 copies per second. Both runs start at `every: 64` and quadruple the
+divisor after any delivery drop. The bars show expected counts over three
+one-second intervals. At `max_every: 256`, 250 selected copies per second still
+drop. A cap of 1,024 lets the divisor rise again, bringing the expected load
+within capacity in the third interval.
+
+![Stacked bars comparing delivered and dropped copies for sampling caps of 256 and 1,024. At the third interval, the 256 cap still loses 250 copies while the 1,024 cap delivers all 250 selected copies.](reflow-adaptive-sampling-cap.svg)
+
 Power-of-two divisors, bounds, and adjustment factors give exactly representable
 selection probabilities with the 32-bit random filter. Other divisors approximate
 1/N; very large non-power-of-two divisors can have material rounding error. The
