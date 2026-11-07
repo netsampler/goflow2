@@ -79,6 +79,13 @@ compatible vendor ZC SDK and build with `PF_RING_ZC=1` to enable that capability
 on ARM64. ARMv7 provides standard PF_RING capture. `-version` reports the actual
 compiled inputs, and builds requesting ZC fail if the SDK is absent.
 
+Linux ARM64 CI builds and Docker packaging use native ARM64 runners. ARMv7
+builds use QEMU. Installed DPDK and PF_RING SDKs are cached by target architecture,
+profile, build-image identity, and hashes of the SDK build script and workflow.
+Cache hits reuse the SDK while still running the Reflow tests, vet, packaging,
+and dependency checks.
+SDK versions or build-option changes invalidate the cache through the script hash.
+
 ## Configuration and migration
 
 Common live capture settings belong in `capture`. Source identity and control

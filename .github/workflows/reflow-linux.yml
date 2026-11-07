@@ -6,31 +6,62 @@ on:
 jobs:
   linux:
     name: Linux ${{ matrix.arch }} / ${{ matrix.profile }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.runner }}
+    env:
+      REFLOW_GO_IMAGE: golang:1.26.9-bookworm
     strategy:
       fail-fast: false
       matrix:
         arch: [amd64, arm64, armv7]
         profile: [platform, pcap, dpdk, pfring]
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+            platform: linux/amd64
+            goarch: amd64
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+            platform: linux/arm64
+            goarch: arm64
+          - arch: armv7
+            runner: ubuntu-24.04
+            platform: linux/arm/v7
+            goarch: arm
+            goarm: '7'
     steps:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
       - uses: docker/setup-qemu-action@v4
+        if: matrix.arch == 'armv7'
+        with:
+          platforms: arm
+      - name: Pull target build image
+        id: image
+        run: |
+          docker pull --platform '${{ matrix.platform }}' "$REFLOW_GO_IMAGE"
+          image_id=$(docker image inspect --format '{{.Id}}' "$REFLOW_GO_IMAGE")
+          echo "id=${image_id#sha256:}" >> "$GITHUB_OUTPUT"
+      - name: Cache capture SDK
+        id: sdk-cache
+        if: matrix.profile == 'dpdk' || matrix.profile == 'pfring'
+        uses: actions/cache@v5
+        with:
+          path: ${{ runner.temp }}/reflow-sdk
+          key: reflow-sdk-v1-${{ matrix.arch }}-${{ matrix.profile }}-${{ steps.image.outputs.id }}-${{ hashFiles('scripts/reflow-build-linux.sh', '.github/workflows/reflow-linux.yml') }}
       - name: Build and test target profile
         env:
-          ARCH: ${{ matrix.arch }}
           REFLOW_PROFILE: ${{ matrix.profile }}
+          REFLOW_SDK_CACHE_HIT: ${{ steps.sdk-cache.outputs.cache-hit }}
         run: |
-          case "$ARCH" in
-            armv7) platform=linux/arm/v7; goarch=arm; goarm=7 ;;
-            *) platform="linux/$ARCH"; goarch="$ARCH"; goarm= ;;
-          esac
-          docker run --rm --platform "$platform" \
+          mkdir -p "$RUNNER_TEMP/reflow-sdk"
+          docker run --rm --platform '${{ matrix.platform }}' \
             -v "$PWD:/src" -w /src \
-            -e GOARCH="$goarch" -e GOARM="$goarm" \
+            -v "$RUNNER_TEMP/reflow-sdk:/opt/reflow-sdk" \
+            -e GOARCH='${{ matrix.goarch }}' -e GOARM='${{ matrix.goarm }}' \
             -e REFLOW_PROFILE="$REFLOW_PROFILE" \
-            golang:1.26.9-bookworm bash scripts/reflow-build-linux.sh
+            -e REFLOW_SDK_CACHE_HIT="$REFLOW_SDK_CACHE_HIT" \
+            "$REFLOW_GO_IMAGE" bash scripts/reflow-build-linux.sh
       - name: Privileged platform integration with race detection
         if: matrix.arch == 'amd64' && matrix.profile == 'platform'
         run: |
@@ -42,7 +73,7 @@ jobs:
             -e REFLOW_EBPF_INTEGRATION=1 \
             -e REFLOW_NFLOG_INTEGRATION=1 \
             -e REFLOW_PSAMPLE_INTEGRATION=1 \
-            golang:1.26.9-bookworm bash -euc '
+            "$REFLOW_GO_IMAGE" bash -euc '
               apt-get update -qq
               apt-get install -y --no-install-recommends nftables iproute2
               nft add table inet reflow_test
