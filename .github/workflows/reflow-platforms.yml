@@ -194,7 +194,8 @@ jobs:
           mem: 4096
           cpu: 2
           envs: REFLOW_GOOS REFLOW_GOARCH REFLOW_PROFILE REFLOW_VERSION
-          prepare: pkg install -y curl gmake
+          # Go's FreeBSD ARM64 external linker requires GNU ld.bfd for cgo.
+          prepare: pkg install -y curl gmake binutils
           run: sh scripts/reflow-bsd-build.sh
       - name: Build inside OpenBSD
         if: matrix.os == 'openbsd'
