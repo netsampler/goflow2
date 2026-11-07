@@ -338,8 +338,10 @@ func TestRunRefreshesSourceInitEventsAfterEmptyInitialSet(t *testing.T) {
 	if got := src.initCount.Load(); got < 2 {
 		t.Fatalf("expected source InitEvents to be retried, got %d calls", got)
 	}
-	if got := out.sendCount.Load(); got != 1 {
-		t.Fatalf("expected one encoded refreshed source init event, got %d", got)
+	// More refreshes may already be queued when the first send cancels the
+	// source. Run drains those events before returning.
+	if got := out.sendCount.Load(); got < 1 {
+		t.Fatalf("expected an encoded refreshed source init event, got %d", got)
 	}
 }
 

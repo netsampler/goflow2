@@ -171,7 +171,7 @@ func TestDynamicSourceInitEventMarksFirstSeenInterface(t *testing.T) {
 	if evt.Fields["input_if"] != uint32(77) || evt.Fields["output_if"] != uint32(77) {
 		t.Fatalf("unexpected source fields: %#v", evt.Fields)
 	}
-	if evt.Source.Sampling.Drops != 3 {
+	if evt.Source.Sampling.CaptureDropsTotal != 3 || evt.Source.Sampling.Drops != 0 {
 		t.Fatalf("lost capture drop count: %#v", evt.Source.Sampling)
 	}
 }

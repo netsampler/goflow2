@@ -216,7 +216,7 @@ jobs:
           mem: 4096
           cpu: 2
           envs: REFLOW_GOOS REFLOW_GOARCH REFLOW_PROFILE REFLOW_VERSION
-          prepare: pkgin -y install curl gmake
+          prepare: /usr/sbin/pkg_add -u curl gmake
           run: sh scripts/reflow-bsd-build.sh
       - uses: actions/upload-artifact@v6
         with:

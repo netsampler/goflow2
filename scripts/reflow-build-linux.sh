@@ -32,6 +32,11 @@ case "$profile" in
     mkdir -p "$sdk_work/dpdk"
     curl --fail --location --retry 3 "https://fast.dpdk.org/rel/dpdk-${version}.tar.xz" -o "$sdk_work/dpdk.tar.xz"
     tar -C "$sdk_work/dpdk" --strip-components=1 -xf "$sdk_work/dpdk.tar.xz"
+    if [[ "$arch" == arm ]]; then
+      # Meson probes -march=armv7-a before DPDK adds its NEON flags. Debian's
+      # hard-float compiler needs the FPU selected during that probe too.
+      export CC="${CC:-cc} -mfpu=neon"
+    fi
     meson setup "$sdk_work/dpdk/build" "$sdk_work/dpdk" \
       --prefix="$sdk_prefix" --libdir=lib -Dplatform=generic \
       -Ddefault_library=shared -Dtests=false -Dexamples= -Ddisable_drivers=net/pcap
@@ -39,8 +44,8 @@ case "$profile" in
     ninja -C "$sdk_work/dpdk/build" install
     export CGO_ENABLED=1
     export PKG_CONFIG_PATH="$sdk_prefix/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
-    # DPDK's arm64 pkg-config flags include this valid GCC option.
-    export CGO_CFLAGS_ALLOW='-moutline-atomics'
+    # DPDK exposes these architecture-specific GCC options through pkg-config.
+    export CGO_CFLAGS_ALLOW='-m(rtm|outline-atomics)'
     export REFLOW_TEST_DPDK=1
     ;;
   pfring)

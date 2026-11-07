@@ -54,15 +54,19 @@ func TestAdaptiveCaptureEpochIntegration(t *testing.T) {
 	defer func() { _ = writer.Close() }()
 	marker := []byte("reflow-adaptive-epoch-fixture")
 	replacementMarker := []byte("reflow-replacement-live-during-drain")
+	stalled := make(chan struct{}, 1)
+	releaseInitial := make(chan struct{})
 	draining := make(chan struct{}, 1)
 	releaseDrain := make(chan struct{})
 	var drainReleased time.Time
 	drainBlocked := false
 	done := make(chan error, 1)
+	runDone := make(chan struct{})
 	oldFrames, newFrames := 0, 0
 	var finalDrops uint64
 	var pause uint64
 	go func() {
+		defer close(runDone)
 		done <- d.Run(ctx, func(f capture.Frame) error {
 			if !bytes.Contains(f.Data, marker) && !bytes.Contains(f.Data, replacementMarker) {
 				return nil
@@ -89,7 +93,12 @@ func TestAdaptiveCaptureEpochIntegration(t *testing.T) {
 					}
 				}
 				if oldFrames == 1 {
-					time.Sleep(150 * time.Millisecond)
+					stalled <- struct{}{}
+					select {
+					case <-releaseInitial:
+					case <-ctx.Done():
+						return ctx.Err()
+					}
 				}
 			} else {
 				newFrames++
@@ -113,6 +122,10 @@ func TestAdaptiveCaptureEpochIntegration(t *testing.T) {
 			return nil
 		})
 	}()
+	defer func() {
+		cancel()
+		<-runDone
+	}()
 	ticker := time.NewTicker(5 * time.Millisecond)
 	defer ticker.Stop()
 	for {
@@ -126,6 +139,19 @@ func TestAdaptiveCaptureEpochIntegration(t *testing.T) {
 			}
 			t.Logf("old epoch records=%d new epoch records=%d drops=%d capture pause=%s", oldFrames, newFrames, finalDrops, time.Duration(pause))
 			return
+		case <-stalled:
+			// Fill the old ring while its consumer blocks, then stop the load
+			// before allowing rotation. Otherwise ordinary load can fill the new
+			// ring before the replacement-marker traffic starts, dropping every
+			// marker and timing out despite a successful sampling transition.
+			ticker.Stop()
+			until := time.Now().Add(150 * time.Millisecond)
+			for time.Now().Before(until) {
+				if _, err := writer.Write(marker); err != nil {
+					t.Fatal(err)
+				}
+			}
+			close(releaseInitial)
 		case <-draining:
 			// This traffic stops before the old consumer is released. Receiving
 			// it later with the new divisor proves the replacement was already
@@ -139,7 +165,8 @@ func TestAdaptiveCaptureEpochIntegration(t *testing.T) {
 			ticker.Stop()
 			close(releaseDrain)
 		case <-ctx.Done():
-			t.Fatal("adaptive capture did not transition")
+			<-runDone
+			t.Fatalf("adaptive capture did not finish: old=%d new=%d drain_blocked=%t", oldFrames, newFrames, drainBlocked)
 		case <-ticker.C:
 			for range 300 {
 				if _, err := writer.Write(marker); err != nil {
