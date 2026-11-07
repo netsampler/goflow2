@@ -28,18 +28,23 @@ sources:
           drop_threshold: 0
 ```
 
+![Adaptive sampling flow showing the response to drops above the threshold, idle intervals, and active intervals within the threshold.](reflow-adaptive-sampling.svg)
+
 The statistics monitor runs independently of packet processing. For AF_PACKET it
 reads the socket's resetting `PACKET_STATISTICS` counter once per interval;
-XDP/eBPF use cumulative per-CPU counters of selected copies and failed
-perf-output calls, independent of the blocked packet reader. A delivery drop
-count greater than `drop_threshold` multiplies the divisor by `increase_factor`,
-capped at `max_every`. Continuous traffic without delivery loss for
-`recovery_after_ms` divides it by `decrease_factor`, bounded by `min_every`.
-An interval without selected packet activity resets the recovery timer. Each
-source has its own controller; an eBPF `any` source shares one divisor across
-its interfaces.
-Intentional rejection by the sampling filter does not count as capture loss.
-There is no CPU-load or NIC-error heuristic in this controller.
+XDP and eBPF use per-CPU counters for selected copies and delivery failures.
+When the current interval's drop count exceeds `drop_threshold`, the controller
+multiplies the divisor by `increase_factor`, up to `max_every`. Each source has
+its own controller, and an eBPF `any` source shares one divisor across its
+interfaces. The feedback counts failed capture deliveries separately from
+intentional sampling exclusions.
+
+A divisor of 256 selects about one packet in 256. If drops continue after the
+divisor reaches `max_every`, Reflow holds the divisor there and continues
+counting lost copies. After `recovery_after_ms` of active intervals at or below
+`drop_threshold`, the controller divides the divisor by `decrease_factor`,
+bounded by `min_every`. An idle interval within the threshold resets recovery.
+
 Power-of-two divisors, bounds, and adjustment factors give exactly representable
 selection probabilities with the 32-bit random filter. Other divisors approximate
 1/N; very large non-power-of-two divisors can have material rounding error. The
