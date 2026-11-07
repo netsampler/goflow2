@@ -40,7 +40,7 @@ jobs:
         id: image
         run: |
           docker pull --platform '${{ matrix.platform }}' "$REFLOW_GO_IMAGE"
-          image_id=$(docker image inspect --format '{{.Id}}' "$REFLOW_GO_IMAGE")
+          image_id=$(docker image inspect --platform '${{ matrix.platform }}' --format '{{.Id}}' "$REFLOW_GO_IMAGE")
           echo "id=${image_id#sha256:}" >> "$GITHUB_OUTPUT"
       - name: Cache capture SDK
         id: sdk-cache
