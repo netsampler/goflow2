@@ -102,7 +102,12 @@ func New(cfg *config.Config) (*App, error) {
 }
 
 // Run owns the source, processor, aggregation, encoding, and sink goroutines.
-func (a *App) Run(ctx context.Context) error {
+func (a *App) Run(ctx context.Context) (runErr error) {
+	defer func() {
+		if err := source.Cleanup(); err != nil && runErr == nil {
+			runErr = fmt.Errorf("cleanup sources: %w", err)
+		}
+	}()
 	a.logger.Info("starting ReFlow")
 	defer func() {
 		if err := a.sink.Close(); err != nil {
@@ -141,9 +146,12 @@ func (a *App) Run(ctx context.Context) error {
 		encoders = append(encoders, enc)
 	}
 
-	decodeJobs := make(chan *event.Event, a.processorWorkers*2)
-	processJobs := make(chan *event.Event, a.processorWorkers*2)
-	encodeJobs := make(chan *event.Event, a.encoderWorkers*2)
+	// Small fixed batches reduce scheduler handoffs on low-core capture hosts.
+	// Capacity stays bounded independently of the amount of captured traffic.
+	processQueueSize := max(a.processorWorkers*2, 64)
+	decodeJobs := make(chan *event.Event, processQueueSize)
+	processJobs := make(chan *event.Event, processQueueSize)
+	encodeJobs := make(chan *event.Event, max(a.encoderWorkers*2, 64))
 
 	var decodeWG sync.WaitGroup
 	decodeWG.Add(1)
@@ -173,7 +181,7 @@ func (a *App) Run(ctx context.Context) error {
 		worker := aggregateWorker{
 			cfg:  aggCfg,
 			agg:  agg,
-			jobs: make(chan *event.Event, a.processorWorkers*2),
+			jobs: make(chan *event.Event, processQueueSize),
 		}
 		aggregateWorkers = append(aggregateWorkers, worker)
 		aggregateWG.Add(1)
@@ -232,7 +240,7 @@ func (a *App) Run(ctx context.Context) error {
 	routeSourceInitControls := aggregateWorkersRouteSourceInit(aggregateWorkers)
 	var aggregateRouteJobs chan *event.Event
 	if hasAggregators {
-		aggregateRouteJobs = make(chan *event.Event, a.processorWorkers*2)
+		aggregateRouteJobs = make(chan *event.Event, processQueueSize)
 	}
 
 	var processWG sync.WaitGroup
@@ -262,6 +270,7 @@ func (a *App) Run(ctx context.Context) error {
 		aggregateRouteWG.Add(1)
 		go func() {
 			defer aggregateRouteWG.Done()
+			matchedWorkers := make([]aggregateWorker, 0, len(aggregateWorkers))
 			for evt := range aggregateRouteJobs {
 				if evt == nil {
 					continue
@@ -270,7 +279,8 @@ func (a *App) Run(ctx context.Context) error {
 					encodeJobs <- evt
 					continue
 				}
-				matchedWorkers, missingKeyStream, missingKey := matchingAggregateWorkers(aggregateWorkers, evt)
+				var missingKeyStream, missingKey string
+				matchedWorkers, missingKeyStream, missingKey = matchingAggregateWorkersInto(matchedWorkers[:0], aggregateWorkers, evt)
 				for _, worker := range matchedWorkers {
 					// One event may intentionally feed multiple aggregators.
 					worker.jobs <- evt
@@ -448,7 +458,6 @@ func (a *App) Run(ctx context.Context) error {
 		}(i, src)
 	}
 
-	var runErr error
 waitSources:
 	for remaining := len(a.sources); remaining > 0; remaining-- {
 		select {
@@ -519,7 +528,10 @@ func aggregateWorkersRouteSourceInit(workers []aggregateWorker) bool {
 }
 
 func matchingAggregateWorkers(workers []aggregateWorker, evt *event.Event) ([]aggregateWorker, string, string) {
-	matched := make([]aggregateWorker, 0, len(workers))
+	return matchingAggregateWorkersInto(make([]aggregateWorker, 0, len(workers)), workers, evt)
+}
+
+func matchingAggregateWorkersInto(matched []aggregateWorker, workers []aggregateWorker, evt *event.Event) ([]aggregateWorker, string, string) {
 	missingKey := ""
 	missingKeyStream := ""
 	for _, worker := range workers {

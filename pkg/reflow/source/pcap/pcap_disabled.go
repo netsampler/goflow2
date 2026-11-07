@@ -1,4 +1,4 @@
-//go:build reflow_nopcap || !cgo
+//go:build !reflow_pcap || !cgo || reflow_dpdk || reflow_pfring
 
 package pcap
 
@@ -17,7 +17,7 @@ func New(cfg config.SourceConfig) (*Source, error) {
 	if cfg.Network != "pcap_live" {
 		return nil, fmt.Errorf("unsupported source.network %q", cfg.Network)
 	}
-	return nil, fmt.Errorf("source.network=pcap_live is disabled in this build; rebuild with CGO_ENABLED=1 and libpcap installed on %s", runtime.GOOS)
+	return nil, fmt.Errorf("source.network=pcap_live is disabled in this build; rebuild with REFLOW_PROFILE=pcap and libpcap installed on %s", runtime.GOOS)
 }
 
 func (s *Source) InitEvents() ([]*event.Event, error) { return nil, nil }
@@ -27,3 +27,5 @@ func (s *Source) Start(context.Context, func(*event.Event) error) error {
 }
 
 func (s *Source) Close() error { return nil }
+
+func SDKVersion() string { return "unavailable" }

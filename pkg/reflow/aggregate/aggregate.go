@@ -118,6 +118,8 @@ func (r *aggregateRecord) Add(delta aggregateRecord, existed bool) error {
 type Stateful struct {
 	cfg            config.AggregatorConfig
 	recordCapacity int
+	keyFields      []config.AggregatorField
+	deltaFields    map[string]any
 
 	mu              sync.Mutex
 	state           map[string]aggregateRecord
@@ -130,6 +132,8 @@ func NewStateful(cfg config.AggregatorConfig) *Stateful {
 	return &Stateful{
 		cfg:            cfg,
 		recordCapacity: aggregateRecordCapacity(cfg),
+		keyFields:      aggregatorFieldsByRole(cfg.Fields, "key"),
+		deltaFields:    make(map[string]any, aggregateRecordCapacity(cfg)),
 		state:          make(map[string]aggregateRecord),
 		startedAt:      time.Now(),
 	}
@@ -194,12 +198,25 @@ func (a *Stateful) Process(evt *event.Event) ([]*event.Event, error) {
 	if evt != nil && evt.Kind == "control" {
 		return []*event.Event{evt}, nil
 	}
-	key, record, err := aggregateFromEvent(a.cfg, a.recordCapacity, evt)
+	if evt.Fields == nil {
+		return nil, fmt.Errorf("event fields are empty")
+	}
+	key, err := buildKey(evt, a.keyFields, a.cfg.AggregateMissing)
 	if err != nil {
 		return nil, err
 	}
+	now := time.Now()
 	a.mu.Lock()
 	current, exists := a.state[key]
+	fields := a.deltaFields
+	if exists {
+		// Existing buckets merge this temporary delta under the same lock.
+		clear(fields)
+	} else {
+		// New buckets own their fields; never store the reusable delta map.
+		fields = make(map[string]any, a.recordCapacity)
+	}
+	record := aggregateFromEvent(&a.cfg, evt, fields, now)
 	if err := current.Add(record, exists); err != nil {
 		a.mu.Unlock()
 		return nil, err
@@ -470,16 +487,8 @@ func (a *Stateful) periodicDue(now time.Time) bool {
 
 // aggregateFromEvent converts one processed event into the stored aggregation
 // representation used inside a bucket.
-func aggregateFromEvent(cfg config.AggregatorConfig, recordCapacity int, evt *event.Event) (string, aggregateRecord, error) {
+func aggregateFromEvent(cfg *config.AggregatorConfig, evt *event.Event, recordFields map[string]any, now time.Time) aggregateRecord {
 	fields := evt.Fields
-	if fields == nil {
-		return "", aggregateRecord{}, fmt.Errorf("event fields are empty")
-	}
-
-	key, err := buildKey(evt, cfg.Fields, cfg.AggregateMissing)
-	if err != nil {
-		return "", aggregateRecord{}, err
-	}
 
 	// Aggregation window timers are runtime policy, not event timestamps.
 	//
@@ -487,9 +496,6 @@ func aggregateFromEvent(cfg config.AggregatorConfig, recordCapacity int, evt *ev
 	// events look instantly ancient, which would trigger max/idle flushes
 	// incorrectly. The actual flow timestamps remain in start_time_unix and
 	// end_time_unix; the bucket lifecycle timers should follow wall-clock time.
-	now := time.Now()
-
-	recordFields := make(map[string]any, recordCapacity)
 	for key, val := range cfg.StaticFields {
 		recordFields[key] = val
 	}
@@ -525,11 +531,11 @@ func aggregateFromEvent(cfg config.AggregatorConfig, recordCapacity int, evt *ev
 	}
 	seedTimestamps(recordFields, fields, now)
 
-	return key, aggregateRecord{
+	return aggregateRecord{
 		Fields:    recordFields,
 		FirstSeen: now,
 		LastSeen:  now,
-	}, nil
+	}
 }
 
 func aggregateRecordCapacity(cfg config.AggregatorConfig) int {
@@ -548,8 +554,7 @@ func seedTimestamps(dst, src map[string]any, now time.Time) {
 // buildKey joins the configured key fields into one stable bucket identifier.
 // String and structured values carry their type and length so delimiters and
 // missing markers in input values cannot collapse distinct tuples.
-func buildKey(evt *event.Event, fields []config.AggregatorField, aggregateMissing bool) (string, error) {
-	keyFields := aggregatorFieldsByRole(fields, "key")
+func buildKey(evt *event.Event, keyFields []config.AggregatorField, aggregateMissing bool) (string, error) {
 	if len(keyFields) == 0 {
 		return "__global__", nil
 	}

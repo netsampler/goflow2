@@ -1,4 +1,4 @@
-//go:build linux && !reflow_noebpf
+//go:build linux && !reflow_pcap && !reflow_dpdk && !reflow_pfring
 
 package ebpf
 
@@ -77,6 +77,7 @@ const (
 	defaultPollInterval  = 500 * time.Millisecond
 	defaultPerfDataPages = 8
 
+	perfRecordLost   = 2
 	perfRecordSample = 9
 
 	skbLenOffset            = 0
@@ -181,7 +182,7 @@ type bpfProgLoadAttr struct {
 
 // New validates an eBPF live-capture source and precomputes interface metadata
 // used in emitted events and source_init control records.
-func New(cfg config.SourceConfig) (*Source, error) {
+func newSource(cfg config.SourceConfig) (*Source, error) {
 	if cfg.Network != "ebpf" {
 		return nil, fmt.Errorf("unsupported source.network %q", cfg.Network)
 	}
@@ -255,7 +256,7 @@ func New(cfg config.SourceConfig) (*Source, error) {
 // socket filter attached. The filter emits one perf-buffer record containing
 // both SKB metadata and packet bytes, so user space never has to pair a packet
 // read with a separate metadata map lookup.
-func (s *Source) Start(ctx context.Context, emit func(*event.Event) error) error {
+func (s *Source) run(ctx context.Context, emit func(*event.Event) error) error {
 	fd, err := unix.Socket(unix.AF_PACKET, unix.SOCK_RAW|unix.SOCK_CLOEXEC, int(htons(ethPAll)))
 	if err != nil {
 		return fmt.Errorf("open ebpf packet socket on %s: %w", s.cfg.Interface, err)
@@ -263,7 +264,7 @@ func (s *Source) Start(ctx context.Context, emit func(*event.Event) error) error
 	s.mu.Lock()
 	s.fd = fd
 	s.mu.Unlock()
-	defer func() { _ = s.Close() }()
+	defer func() { _ = s.closeBackend() }()
 
 	if err := unix.Bind(fd, &unix.SockaddrLinklayer{
 		Protocol: htons(ethPAll),
@@ -295,11 +296,6 @@ func (s *Source) Start(ctx context.Context, emit func(*event.Event) error) error
 		s.mu.Unlock()
 	}
 
-	go func() {
-		<-ctx.Done()
-		_ = s.Close()
-	}()
-
 	return s.pollPerfEvents(ctx, perfEvents, emit)
 }
 
@@ -308,7 +304,7 @@ func (s *Source) packetEvent(data []byte, meta packetMetadata) *event.Event {
 	samplePool := uint32(s.seenCount)
 	payload := append([]byte(nil), data...)
 	wireLength := len(payload)
-	if meta.hasSKBMetadata && meta.skb.Len > uint32(wireLength) {
+	if meta.skb.Len > uint32(wireLength) {
 		wireLength = int(meta.skb.Len)
 	}
 	evt := &event.Event{
@@ -327,7 +323,7 @@ func (s *Source) packetEvent(data []byte, meta packetMetadata) *event.Event {
 			Sampling: &event.SamplingMetadata{
 				Rate:       uint32(s.cfg.SampleEvery),
 				SamplePool: samplePool,
-				Drops:      0,
+				Drops:      uint32(s.captureDropCount()),
 			},
 			JSON: event.JSONMetadata{
 				Flavor: s.cfg.JSON.Flavor,
@@ -555,6 +551,9 @@ func (s *Source) packetMetadataFromSKB(skb skbMetadata) packetMetadata {
 	meta := packetMetadata{
 		packetType: packetTypeName(packetType),
 		direction:  "unknown",
+		// Packet length is capture framing, independent of whether optional
+		// SKB fields are exposed in the emitted event.
+		skb: skb,
 	}
 	switch packetType {
 	case packetOutgoing:
@@ -764,7 +763,7 @@ func applyPacketMetadataFields(fields map[string]any, meta packetMetadata) {
 	}
 }
 
-func (s *Source) Close() error {
+func (s *Source) closeBackend() error {
 	var firstErr error
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -1021,10 +1020,22 @@ func updatePerfEventArrayMap(mapFD int, cpu int, perfFD int) error {
 }
 
 type perfEventReader struct {
-	cpu      int
-	fd       int
-	pageSize int
-	data     []byte
+	cpu         int
+	fd          int
+	pageSize    int
+	data        []byte
+	lostSamples atomic.Uint64
+}
+
+// captureDropCount counts perf delivery loss, not firewall or ASIC drops.
+func (s *Source) captureDropCount() uint64 {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var lost uint64
+	for _, reader := range s.perfEvents {
+		lost += reader.lostSamples.Load()
+	}
+	return lost
 }
 
 func createPerfEventOutput(dataPages int) (int, []*perfEventReader, error) {
@@ -1143,6 +1154,13 @@ func (r *perfEventReader) readSamples(emit func([]byte) error) error {
 			return fmt.Errorf("read ebpf perf record cpu %d: %w", r.cpu, err)
 		}
 		tail += uint64(size)
+		if len(record) >= 8 && binary.LittleEndian.Uint32(record[0:4]) == perfRecordLost {
+			if len(record) < 24 {
+				return fmt.Errorf("short ebpf perf lost record on cpu %d", r.cpu)
+			}
+			r.lostSamples.Add(binary.LittleEndian.Uint64(record[16:24]))
+			continue
+		}
 		if len(record) < 12 || binary.LittleEndian.Uint32(record[0:4]) != perfRecordSample {
 			continue
 		}

@@ -69,18 +69,19 @@ func (c TFlowConfig) IsZero() bool {
 }
 
 type SourceConfig struct {
-	Network             string     `yaml:"network"`
-	Address             string     `yaml:"address"`
-	Interface           string     `yaml:"interface"`
-	SnapLen             int        `yaml:"snaplen"`
-	SampleEvery         int        `yaml:"sample_every"`
-	SampleOffset        int        `yaml:"sample_offset"`
-	InterfaceFilter     string     `yaml:"interface_filter,omitempty"`
-	SourceInitRefreshMS *int       `yaml:"source_init_refresh_ms,omitempty"`
-	SourceID            *uint32    `yaml:"source_id,omitempty"`
-	Type                string     `yaml:"type"`
-	JSON                JSONConfig `yaml:"json"`
-	EBPF                EBPFConfig `yaml:"ebpf,omitempty"`
+	Capture             CaptureConfig `yaml:"capture,omitempty"`
+	Network             string        `yaml:"network"`
+	Address             string        `yaml:"address"`
+	Interface           string        `yaml:"interface,omitempty"`
+	SnapLen             int           `yaml:"snaplen,omitempty"`
+	SampleEvery         int           `yaml:"sample_every,omitempty"`
+	SampleOffset        int           `yaml:"sample_offset,omitempty"`
+	InterfaceFilter     string        `yaml:"interface_filter,omitempty"`
+	SourceInitRefreshMS *int          `yaml:"source_init_refresh_ms,omitempty"`
+	SourceID            *uint32       `yaml:"source_id,omitempty"`
+	Type                string        `yaml:"type"`
+	JSON                JSONConfig    `yaml:"json"`
+	EBPF                EBPFConfig    `yaml:"ebpf,omitempty"`
 }
 
 type EBPFConfig struct {
@@ -661,6 +662,7 @@ type SinkConfig struct {
 func BindFlags(fs *flag.FlagSet) (*FlagConfig, *bool) {
 	cfg := &FlagConfig{}
 	version := fs.Bool("v", false, "Print version")
+	fs.BoolVar(version, "version", false, "Print version and capture build profile")
 	fs.StringVar(&cfg.ConfigPath, "config", "", "Path to ReFlow YAML config")
 	fs.StringVar(&cfg.LogLevel, "loglevel", "info", "Log level")
 	fs.StringVar(&cfg.LogFormat, "logfmt", "text", "Log format (text or json)")
@@ -943,6 +945,9 @@ func assignDefaultSourceIDs(sources []SourceConfig) {
 }
 
 func sourceUsesConfiguredObservationPoint(src SourceConfig) bool {
+	if IsCaptureNetwork(src.Network) {
+		return true
+	}
 	switch src.Network {
 	case "pcap_live", "ebpf":
 		return true
@@ -980,6 +985,11 @@ func validateUDPPorts(name string, ports []uint32) error {
 
 // applySourceDefaults normalizes per-source defaults that depend on source.network.
 func applySourceDefaults(src *SourceConfig) error {
+	if IsCaptureNetwork(src.Network) {
+		if err := NormalizeCapture(src); err != nil {
+			return err
+		}
+	}
 	if src.SourceInitRefreshMS == nil {
 		v := 30000
 		src.SourceInitRefreshMS = &v
@@ -1003,7 +1013,7 @@ func applySourceDefaults(src *SourceConfig) error {
 		}
 		return nil
 	}
-	if src.Network != "pcap_live" && src.Network != "ebpf" && src.Address == "" {
+	if !IsCaptureNetwork(src.Network) && src.Address == "" {
 		src.Address = ":18080"
 	}
 	if src.Network == "pcap_live" || src.Network == "ebpf" {

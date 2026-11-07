@@ -6,6 +6,8 @@ GOARCH        ?= $(shell go env GOARCH)
 GOARM         ?=
 CGO_ENABLED   ?= 0
 BUILDINFOSDET ?= 
+SHA256_CMD ?= shasum -a 256
+REFLOW_PROFILE ?= platform
 REFLOW_BUILD_TAGS ?=
 
 NAME          ?= goflow2
@@ -32,9 +34,26 @@ DOCKER_MANIFEST_TAG ?= $(ABBREV)
 
 OUTPUT := $(DIST_DIR)goflow2-$(VERSION_PKG)-$(GOOS)-$(GOARCH)$(EXTENSION)
 REFLOW_TARGET := $(GOOS)-$(GOARCH)$(if $(filter arm,$(GOARCH)),$(if $(GOARM),v$(GOARM),))
-REFLOW_OUTPUT := $(DIST_DIR)reflow-$(VERSION_PKG)-$(REFLOW_TARGET)$(EXTENSION)
-REFLOW_PACKAGE := $(DIST_DIR)reflow-$(VERSION_PKG)-$(REFLOW_TARGET)
-REFLOW_PACKAGE_DIR := $(DIST_DIR)reflow-package-$(REFLOW_TARGET)
+REFLOW_OUTPUT := $(DIST_DIR)reflow-$(VERSION_PKG)-$(REFLOW_TARGET)-$(REFLOW_PROFILE)$(EXTENSION)
+REFLOW_PACKAGE := $(DIST_DIR)reflow-$(VERSION_PKG)-$(REFLOW_TARGET)-$(REFLOW_PROFILE)
+REFLOW_PACKAGE_DIR := $(DIST_DIR)reflow-package-$(REFLOW_TARGET)-$(REFLOW_PROFILE)
+
+ifeq ($(REFLOW_PROFILE),platform)
+REFLOW_CGO := 0
+REFLOW_PROFILE_TAG :=
+else ifneq ($(filter $(REFLOW_PROFILE),pcap dpdk pfring),)
+REFLOW_CGO := 1
+REFLOW_PROFILE_TAG := reflow_$(REFLOW_PROFILE)
+else
+$(error Unknown REFLOW_PROFILE $(REFLOW_PROFILE))
+endif
+PF_RING_ZC ?= $(if $(filter amd64,$(GOARCH)),1,0)
+ifeq ($(REFLOW_PROFILE),pfring)
+ifeq ($(PF_RING_ZC),1)
+REFLOW_PROFILE_TAG += reflow_pfring_zc
+endif
+endif
+REFLOW_TAGS := $(strip $(REFLOW_PROFILE_TAG) $(REFLOW_BUILD_TAGS))
 
 # fpm expects x86_64 for amd64, but use GOARCH otherwise.
 FPM_ARCH ?= $(GOARCH)
@@ -53,6 +72,7 @@ proto:
 # Run Go static analysis on the main package.
 vet:
 	go vet cmd/goflow2/main.go
+	go vet ./cmd/reflow/... ./pkg/reflow/...
 
 .PHONY: test
 # Run Go test suite.
@@ -95,7 +115,7 @@ build: prepare
 .PHONY: build-reflow
 # Build the reflow binary.
 build-reflow: prepare
-	CGO_ENABLED=$(CGO_ENABLED) go build $(if $(REFLOW_BUILD_TAGS),-tags '$(REFLOW_BUILD_TAGS)',) -ldflags $(LDFLAGS) -o $(REFLOW_OUTPUT) cmd/reflow/main.go
+	GOOS=$(GOOS) GOARCH=$(GOARCH) GOARM=$(GOARM) CGO_ENABLED=$(REFLOW_CGO) go build $(if $(REFLOW_TAGS),-tags '$(REFLOW_TAGS)',) -ldflags $(LDFLAGS) -o $(REFLOW_OUTPUT) cmd/reflow/main.go
 
 .PHONY: print-output
 print-output:
@@ -111,8 +131,9 @@ package-reflow-tar: build-reflow
 	mkdir -p $(REFLOW_PACKAGE_DIR)
 	cp $(REFLOW_OUTPUT) $(REFLOW_PACKAGE_DIR)/reflow
 	cp README.md LICENSE $(REFLOW_PACKAGE_DIR)/
+	cp docs/reflow-capture.md $(REFLOW_PACKAGE_DIR)/
 	tar -C $(DIST_DIR) -czf $(REFLOW_PACKAGE).tar.gz $(notdir $(REFLOW_PACKAGE_DIR))
-	cd $(DIST_DIR) && shasum -a 256 $(notdir $(REFLOW_PACKAGE)).tar.gz > $(notdir $(REFLOW_PACKAGE)).tar.gz.sha256
+	cd $(DIST_DIR) && $(SHA256_CMD) $(notdir $(REFLOW_PACKAGE)).tar.gz > $(notdir $(REFLOW_PACKAGE)).tar.gz.sha256
 
 .PHONY: package-reflow-zip
 package-reflow-zip: build-reflow
@@ -120,8 +141,9 @@ package-reflow-zip: build-reflow
 	mkdir -p $(REFLOW_PACKAGE_DIR)
 	cp $(REFLOW_OUTPUT) $(REFLOW_PACKAGE_DIR)/reflow$(EXTENSION)
 	cp README.md LICENSE $(REFLOW_PACKAGE_DIR)/
+	cp docs/reflow-capture.md $(REFLOW_PACKAGE_DIR)/
 	cd $(DIST_DIR) && zip -qr $(notdir $(REFLOW_PACKAGE)).zip $(notdir $(REFLOW_PACKAGE_DIR))
-	cd $(DIST_DIR) && shasum -a 256 $(notdir $(REFLOW_PACKAGE)).zip > $(notdir $(REFLOW_PACKAGE)).zip.sha256
+	cd $(DIST_DIR) && $(SHA256_CMD) $(notdir $(REFLOW_PACKAGE)).zip > $(notdir $(REFLOW_PACKAGE)).zip.sha256
 
 .PHONY: docker
 # Build docker image for the current version.

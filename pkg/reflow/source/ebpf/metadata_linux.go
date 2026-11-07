@@ -1,4 +1,4 @@
-//go:build linux && !reflow_noebpf
+//go:build linux && !reflow_pcap && !reflow_dpdk && !reflow_pfring
 
 package ebpf
 
@@ -9,9 +9,11 @@ import (
 	"sync"
 
 	"github.com/netsampler/goflow2/v3/pkg/reflow/config"
+	"github.com/netsampler/goflow2/v3/pkg/reflow/source/capture"
 )
 
 type Source struct {
+	shared                *capture.Source
 	cfg                   config.SourceConfig
 	agentIP               string
 	captureInterfaceIndex int

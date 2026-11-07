@@ -1,0 +1,62 @@
+name: Reflow Linux profiles
+
+on:
+  workflow_call:
+
+jobs:
+  linux:
+    name: Linux ${{ matrix.arch }} / ${{ matrix.profile }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [amd64, arm64, armv7]
+        profile: [platform, pcap, dpdk, pfring]
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: docker/setup-qemu-action@v4
+      - name: Build and test target profile
+        env:
+          ARCH: ${{ matrix.arch }}
+          REFLOW_PROFILE: ${{ matrix.profile }}
+        run: |
+          case "$ARCH" in
+            armv7) platform=linux/arm/v7; goarch=arm; goarm=7 ;;
+            *) platform="linux/$ARCH"; goarch="$ARCH"; goarm= ;;
+          esac
+          docker run --rm --platform "$platform" \
+            -v "$PWD:/src" -w /src \
+            -e GOARCH="$goarch" -e GOARM="$goarm" \
+            -e REFLOW_PROFILE="$REFLOW_PROFILE" \
+            golang:1.26.9-bookworm bash scripts/reflow-build-linux.sh
+      - name: Privileged platform integration with race detection
+        if: matrix.arch == 'amd64' && matrix.profile == 'platform'
+        run: |
+          docker run --rm --cap-add NET_RAW --cap-add NET_ADMIN \
+            --cap-add BPF --cap-add PERFMON --security-opt seccomp=unconfined \
+            -v "$PWD:/src:ro" -w /src \
+            -e GOTOOLCHAIN=local -e CGO_ENABLED=1 \
+            -e REFLOW_CAPTURE_INTEGRATION=1 -e REFLOW_XDP_INTEGRATION=1 \
+            -e REFLOW_NFLOG_INTEGRATION=1 \
+            -e REFLOW_PSAMPLE_INTEGRATION=1 \
+            golang:1.26.9-bookworm bash -euc '
+              apt-get update -qq
+              apt-get install -y --no-install-recommends nftables iproute2
+              nft add table inet reflow_test
+              nft add chain inet reflow_test output "{ type filter hook output priority 0; policy accept; }"
+              nft add rule inet reflow_test output log group 42 snaplen 65535
+              tc qdisc add dev lo clsact
+              tc filter add dev lo egress matchall action sample rate 1 group 7 trunc 128
+              go test -race -v ./pkg/reflow/source/afpacket ./pkg/reflow/source/xdp ./pkg/reflow/source/nflog ./pkg/reflow/source/psample
+            '
+      - uses: actions/upload-artifact@v6
+        with:
+          name: reflow-linux-${{ matrix.arch }}-${{ matrix.profile }}
+          path: |
+            dist/*.tar.gz
+            dist/*.tar.gz.sha256
+            dist/*.dependencies.txt
+          if-no-files-found: error
+          retention-days: 14
