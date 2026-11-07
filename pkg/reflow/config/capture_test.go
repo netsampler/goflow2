@@ -88,7 +88,7 @@ capture:
 }
 
 func TestEBPFTransportRoundTrip(t *testing.T) {
-	for _, transport := range []string{"perf", "ringbuf", "auto"} {
+	for _, transport := range []string{"perf", "ringbuf"} {
 		t.Run(transport, func(t *testing.T) {
 			s, err := parseInputSpec("ebpf:eth0:bytes?transport=" + transport + "&ring_size=65536")
 			if err != nil {

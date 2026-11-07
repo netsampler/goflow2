@@ -25,7 +25,7 @@ var (
 		"stream:<path-or-stdin>:pcap",
 		"stream:<path-or-stdin>:pcapng",
 		"stream:<path-or-stdin>:json",
-		"ebpf:<interface|any>:bytes[?snaplen=<bytes>&sample_every=<n>&sample_offset=<n>&source_init_refresh_ms=<ms>&interface_filter=<regex>&direction=ingress|egress|both&skb_metadata=<bool>&conntrack=<bool>&transport=perf|ringbuf|auto&ring_size=<bytes>]",
+		"ebpf:<interface|any>:bytes[?snaplen=<bytes>&sample_every=<n>&sample_offset=<n>&source_init_refresh_ms=<ms>&interface_filter=<regex>&direction=ingress|egress|both&skb_metadata=<bool>&conntrack=<bool>&transport=perf|ringbuf&ring_size=<bytes>]",
 		"pcap_live:<interface|any>:bytes[?snaplen=<bytes>&sample_every=<n>&sample_offset=<n>&source_init_refresh_ms=<ms>&interface_filter=<regex>]",
 	}
 	outputEncoderOptions = []string{

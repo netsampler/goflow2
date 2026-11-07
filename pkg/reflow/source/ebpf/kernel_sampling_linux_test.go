@@ -53,9 +53,6 @@ func TestRingKernelSamplingLoopbackIntegration(t *testing.T) {
 func TestRingAdaptiveKernelSamplingLoopbackIntegration(t *testing.T) {
 	testKernelSamplingLoopback(t, true, "ringbuf", "kernel")
 }
-func TestAutoKernelSamplingLoopbackIntegration(t *testing.T) {
-	testKernelSamplingLoopback(t, false, "auto", "kernel")
-}
 
 func TestRingUserspaceSamplingLoopbackIntegration(t *testing.T) {
 	testKernelSamplingLoopback(t, false, "ringbuf", "userspace")

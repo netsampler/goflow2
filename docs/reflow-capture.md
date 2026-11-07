@@ -7,8 +7,11 @@ profile. ARMv7 is a supported architecture, alongside amd64 and arm64 on Linux.
 
 ## What should I use?
 
-- Start with **`pcap_live` in the `pcap` profile** for a first live capture.
-  It uses libpcap on Linux, macOS, and BSD, and [Npcap](https://npcap.com/) on Windows.
+- For a first live capture, use **`pcap_live` with a binary from the `-pcap`
+  release archive**. Reflow builds these binaries with libpcap on Linux, macOS,
+  and BSD. On Windows, the `pcap` build uses [Npcap](https://npcap.com/).
+- To send captured traffic to a flow collector, use
+  [IPFIX over UDP with packet aggregation](#export-live-traffic-as-ipfix).
 - To read a capture file, use `stream:traffic.pcap:pcap` or
   `stream:traffic.pcapng:pcapng` with the `platform` build.
 - To collect flows from a router, use `udp::4739:flow` with the `platform` build.
@@ -36,6 +39,18 @@ On Windows with Npcap installed, use the [Npcap loopback device](https://npcap.c
 In a second terminal, run `ping 127.0.0.1`. You should see packet events as JSON
 in the first terminal. Press Ctrl+C to stop. To capture regular network
 traffic, replace the loopback device with your network adapter.
+
+### Export live traffic as IPFIX
+
+Use `-agg` to combine captured packets into flows and send the resulting IPFIX
+records to your collector over UDP.
+
+```sh
+./reflow -input pcap_live:eth0:bytes -agg -output ipfix:udp:192.0.2.10:4739
+```
+
+Replace `eth0` with your capture interface and `192.0.2.10:4739` with your
+collector's IPFIX listener address and port.
 
 ## Release profiles and filenames
 
@@ -175,6 +190,14 @@ Reflow's receive order, not ordering across independent NIC queues.
 
 ## Linux platform engines
 
+For general-purpose Linux packet capture, prefer `ebpf` when your deployment
+allows it. It offers the most capture features in the `platform` build,
+including capture across interfaces with `interface: any`, SKB metadata, and
+adaptive sampling without a socket handoff. It requires BPF program and map
+permissions in addition to packet-socket access. The `perf` transport can
+require further permissions. Use `af_packet` if eBPF loading is restricted or
+you need promiscuous capture. See [eBPF transport requirements](#ebpf-packet-delivery-transport).
+
 `af_packet` uses TPACKET_V3 mmap rings and reports capture timestamps, direction,
 VLAN information, and available socket-drop counts. It requires packet-socket
 privileges.
@@ -205,10 +228,9 @@ executable, for example
 `go run cmd/pprof -top ./reflow /tmp/reflow-cpu.pprof`.
 Profiling is disabled unless a file is specified; it opens no network listener.
 
-`ebpf` uses an AF_PACKET socket with an eBPF socket filter and a configurable
-perf or BPF ring-buffer transport. Its
-SKB and conntrack features remain in `capture.ebpf`; loading BPF additionally
-requires the applicable kernel privileges. It is distinct from XDP capture.
+`ebpf` attaches a socket filter to an AF_PACKET socket and delivers packet records
+through a perf buffer or a BPF ring buffer. Configure SKB metadata and the built-in
+conntrack lookup under `capture.ebpf`.
 
 `xdp` attaches a passive ingress observer, copies packets to a perf buffer, and
 always returns XDP_PASS, including when capture delivery fails. It never replaces
@@ -305,6 +327,14 @@ agree on arguments; a port's configuration is owned by one source. Reflow copies
 multisegment mbufs before recycling them and releases EAL after all sources stop.
 Configure the driver binding, hugepages, and CPU allocation before startup.
 
+On a Linux host with both DPDK ports and regular kernel-managed interfaces,
+run two Reflow processes. Use the `dpdk` build for the DPDK ports and the
+`platform` build with `ebpf` or `af_packet` for the kernel-managed interfaces.
+For IPFIX export, assign a different `encoder.templated_flow.observation_domain_id`
+to each process, for example 100 for DPDK and 200 for platform capture. This lets
+a shared collector distinguish the two streams even when they use the same source
+IP address.
+
 PF_RING standard settings are under `capture.pfring`, including optional
 `cluster_id`/`cluster_type`. For `pfring_zc`, an interface target opens a ZC device;
 `ipc:<cluster>:<queue>` attaches an existing producer's queue. Set `zc_pool_id`
@@ -317,9 +347,11 @@ shared asynchronous pipeline owns a copy of each selected packet.
 
 ### eBPF packet-delivery transport
 
-`capture.ebpf.transport` selects `perf` (the compatibility default), `ringbuf`,
-or `auto`. `auto` first prepares ring-buffer capture and falls back to perf if
-ring-buffer initialization is unavailable; runtime capture errors are returned.
+`capture.ebpf.transport` selects `perf` (the default) or `ringbuf`. `perf` uses
+per-CPU delivery buffers, and `ringbuf` uses a shared BPF ring. Reflow returns
+setup errors for the selected transport. A full ring counts as capture delivery
+loss.
+
 The same options are available as `transport` and `ring_size` input URL parameters.
 
 ```yaml
@@ -335,11 +367,20 @@ capture:
     conntrack: false
 ```
 
-The ring buffer works without the kernel's `CONFIG_BPF_EVENTS` perf-output
-implementation. It requires BPF ring-buffer map/helpers and a supported socket
-filter JIT. ARM32 uses compatible sampling arithmetic/counters and the upstream
-32-bit ring-reader fix from cilium/ebpf v0.20.0. Full SKB metadata is attempted
-first, with compatibility metadata when optional context fields are unavailable.
+Both eBPF transports require permission to open the packet socket, load the BPF
+program, and create BPF maps. With `perf`, Reflow also opens a CPU-wide software
+event on each online CPU using `perf_event_open()` to deliver packet records.
+When `kernel.perf_event_paranoid` is 1 or higher, this system-wide access requires
+`CAP_PERFMON` or `CAP_SYS_ADMIN`. A container's seccomp profile must also allow
+`perf_event_open()`. See the [Linux perf security guide](https://docs.kernel.org/admin-guide/perf-security.html#unprivileged-users)
+and [Docker seccomp documentation](https://docs.docker.com/engine/security/seccomp/).
+
+The ring-buffer transport requires BPF ring-buffer maps and helpers and a
+supported socket filter JIT. It bypasses `perf_event_open()` and works without
+`CONFIG_BPF_EVENTS`. ARM32 uses compatible sampling arithmetic and counters and
+the upstream 32-bit ring-reader fix from cilium/ebpf v0.20.0. Reflow attempts full
+SKB metadata first and uses compatibility metadata when optional context fields
+are unavailable.
 
 `ring_size` is the shared ring capacity in bytes (default 4 MiB), a power of two
 at least as large as the kernel page size. Ring capture limits the packet prefix

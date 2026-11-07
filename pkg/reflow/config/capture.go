@@ -136,9 +136,9 @@ func NormalizeCapture(s *SourceConfig) error {
 			c.EBPF.Transport = "perf"
 		}
 		switch c.EBPF.Transport {
-		case "perf", "ringbuf", "auto":
+		case "perf", "ringbuf":
 		default:
-			return fmt.Errorf("source.capture.ebpf.transport must be perf, ringbuf, or auto")
+			return fmt.Errorf("source.capture.ebpf.transport must be perf or ringbuf")
 		}
 		if c.EBPF.RingSize == 0 {
 			c.EBPF.RingSize = 4 * 1024 * 1024
