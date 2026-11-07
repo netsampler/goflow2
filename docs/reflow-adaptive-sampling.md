@@ -28,26 +28,7 @@ sources:
           drop_threshold: 0
 ```
 
-```mermaid
-flowchart TD
-    accTitle: Adaptive capture sampling decisions
-    poll["Every interval, read delivery drops<br/>and selected packet activity"]
-    drops{"Drops above<br/>drop_threshold?"}
-    active{"Selected packet<br/>activity?"}
-    recovery{"Recovery window<br/>elapsed?"}
-    increase["Multiply divisor by increase_factor<br/>Clamp to max_every and restart recovery"]
-    idle["Hold divisor and clear recovery timer"]
-    hold["Hold divisor while recovery timer runs"]
-    decrease["Divide divisor by decrease_factor<br/>Clamp to min_every and restart recovery"]
-
-    poll --> drops
-    drops -->|Yes| increase
-    drops -->|No| active
-    active -->|No| idle
-    active -->|Yes| recovery
-    recovery -->|No| hold
-    recovery -->|Yes| decrease
-```
+![Adaptive sampling flow showing the response to drops above the threshold, idle intervals, and active intervals within the threshold.](reflow-adaptive-sampling.svg)
 
 The statistics monitor runs independently of packet processing. For AF_PACKET it
 reads the socket's resetting `PACKET_STATISTICS` counter once per interval;
