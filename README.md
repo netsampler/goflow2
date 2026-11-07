@@ -21,7 +21,9 @@ not provided.
 ## ReFlow
 
 ReFlow is an experimental binary for collecting, converting, and aggregating network
-traffic. Build a portable binary and collect IPFIX as JSON:
+traffic. For a first live packet capture, start with the
+[libpcap quick start](docs/reflow-capture.md#what-should-i-use). To collect IPFIX
+as JSON, build a portable binary:
 
 ```bash
 CGO_ENABLED=0 go build -o reflow ./cmd/reflow

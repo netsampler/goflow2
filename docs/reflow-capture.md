@@ -5,6 +5,38 @@ an input explicitly; the binary never silently falls back to another capture
 engine. Socket inputs, streams, and offline pcap/pcapng processing work in every
 profile. ARMv7 is a supported architecture, alongside amd64 and arm64 on Linux.
 
+## What should I use?
+
+- Start with **`pcap_live` in the `pcap` profile** for a first live capture.
+  It uses libpcap on Linux, macOS, and BSD, and [Npcap](https://npcap.com/) on Windows.
+- To read a capture file, use `stream:traffic.pcap:pcap` or
+  `stream:traffic.pcapng:pcapng` with the `platform` build.
+- To collect flows from a router, use `udp::4739:flow` with the `platform` build.
+  Replace `4739` with the exporter's destination port.
+
+### Try live capture on loopback
+
+Extract the `-pcap` archive for your OS and architecture. From the extracted
+directory, run `./reflow -version` (or `.\reflow.exe -version` on Windows) and
+look for `profile=pcap` and `capture=[pcap_live]`. If needed, add `sudo` on Unix
+or open an administrator PowerShell on Windows to get capture permissions.
+
+On Linux, use `lo`. On macOS and BSD, replace it with `lo0`.
+
+```sh
+./reflow -input pcap_live:lo:bytes -output json:stdout
+```
+
+On Windows with Npcap installed, use the [Npcap loopback device](https://npcap.com/guide/npcap-devguide.html#for-software-that-uses-npcap-loopback-feature).
+
+```powershell
+.\reflow.exe -input 'pcap_live:\Device\NPF_Loopback:bytes' -output json:stdout
+```
+
+In a second terminal, run `ping 127.0.0.1`. You should see packet events as JSON
+in the first terminal. Press Ctrl+C to stop. To capture regular network
+traffic, replace the loopback device with your network adapter.
+
 ## Release profiles and filenames
 
 Choose a release by OS, architecture, and capture profile. Every profile includes
