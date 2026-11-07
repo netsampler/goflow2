@@ -117,3 +117,33 @@ func TestNormalizeCookedAndLoopbackFrames(t *testing.T) {
 		t.Fatalf("loopback: %#v", f)
 	}
 }
+
+func TestCaptureKernelSamplesAreNotSampledTwice(t *testing.T) {
+	driver := &fixtureDriver{run: func(emit func(Frame) error) error {
+		for range 3 {
+			if err := emit(Frame{Data: []byte{0x45, 0, 0, 20}, LinkType: 101,
+				Sampling: &event.SamplingMetadata{Rate: 16}}); err != nil {
+				return err
+			}
+		}
+		return nil
+	}}
+	src, err := New(config.SourceConfig{Network: "af_packet", Capture: config.CaptureConfig{
+		Interface: "fixture", Sampling: config.SamplingConfig{Location: "kernel", Every: 16}}}, driver)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var count int
+	if err := src.Start(context.Background(), func(evt *event.Event) error {
+		count++
+		if evt.Source.Sampling.Rate != 16 || evt.Source.Sampling.SamplePool != 0 || evt.Fields["effective_sampling_rate"] != uint64(16) {
+			t.Fatalf("kernel sampler metadata: %+v, %+v", evt.Source.Sampling, evt.Fields)
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if count != 3 {
+		t.Fatalf("backend selected 3 samples; adapter emitted %d", count)
+	}
+}

@@ -14,6 +14,7 @@ type CaptureConfig struct {
 	SnapLen         int            `yaml:"snaplen,omitempty"`
 	SampleEvery     int            `yaml:"sample_every,omitempty"`
 	SampleOffset    int            `yaml:"sample_offset,omitempty"`
+	Sampling        SamplingConfig `yaml:"sampling,omitempty"`
 	InterfaceFilter string         `yaml:"interface_filter,omitempty"`
 	Direction       string         `yaml:"direction,omitempty"`
 	Promiscuous     *bool          `yaml:"promiscuous,omitempty"`
@@ -26,6 +27,14 @@ type CaptureConfig struct {
 	Pktmon          PktmonConfig   `yaml:"pktmon,omitempty"`
 	DPDK            DPDKConfig     `yaml:"dpdk,omitempty"`
 	PFRing          PFRingConfig   `yaml:"pfring,omitempty"`
+}
+
+// SamplingConfig chooses where packet selection occurs. Legacy sample_every and
+// sample_offset retain their userspace systematic behavior when this is omitted.
+type SamplingConfig struct {
+	Location  string `yaml:"location,omitempty"`
+	Algorithm string `yaml:"algorithm,omitempty"`
+	Every     int    `yaml:"every,omitempty"`
 }
 
 type AFPacketConfig struct {
@@ -126,6 +135,12 @@ func NormalizeCapture(s *SourceConfig) error {
 	if s.Network == "pktmon" && c.SnapLen > 9000 {
 		return fmt.Errorf("source.capture.snaplen exceeds pktmon maximum 9000")
 	}
+	if c.Sampling.Every < 0 {
+		return fmt.Errorf("source.capture.sampling.every must be positive when set")
+	}
+	if c.Sampling.Every != 0 {
+		c.SampleEvery = c.Sampling.Every
+	}
 	if c.SampleEvery <= 0 {
 		c.SampleEvery = 1
 	}
@@ -134,6 +149,35 @@ func NormalizeCapture(s *SourceConfig) error {
 	}
 	if c.SampleOffset < 0 || c.SampleOffset >= c.SampleEvery {
 		return fmt.Errorf("source.sample_offset must be >= 0 and < source.sample_every")
+	}
+	if c.Sampling.Location == "" {
+		c.Sampling.Location = "userspace"
+	}
+	if c.Sampling.Algorithm == "" {
+		c.Sampling.Algorithm = "systematic"
+		if c.Sampling.Location == "kernel" {
+			c.Sampling.Algorithm = "random"
+		}
+	}
+	switch c.Sampling.Location {
+	case "userspace":
+		if c.Sampling.Algorithm != "systematic" {
+			return fmt.Errorf("source.capture.sampling.algorithm must be systematic for userspace sampling")
+		}
+	case "kernel":
+		if s.Network != "af_packet" {
+			return fmt.Errorf("source.capture.sampling.location=kernel requires an af_packet input")
+		}
+		if c.Sampling.Algorithm != "random" || c.SampleOffset != 0 {
+			return fmt.Errorf("AF_PACKET kernel sampling requires algorithm=random and sample_offset=0")
+		}
+	default:
+		return fmt.Errorf("source.capture.sampling.location must be kernel or userspace")
+	}
+	// Keep the nested rate in sync only when explicitly configured. This allows
+	// existing Go callers to update SampleEvery after a normalization pass.
+	if c.Sampling.Every != 0 {
+		c.Sampling.Every = c.SampleEvery
 	}
 	if c.InterfaceFilter != "" {
 		if _, err := regexp.Compile(c.InterfaceFilter); err != nil {

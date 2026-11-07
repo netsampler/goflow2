@@ -53,3 +53,36 @@ func TestCaptureSamplingOffsetSurvivesLegacyDefaults(t *testing.T) {
 		t.Fatalf("capture sampling offset was overwritten: %#v", s.Capture)
 	}
 }
+
+func TestCaptureKernelSamplingRoundTrip(t *testing.T) {
+	var s SourceConfig
+	if err := yaml.Unmarshal([]byte(`network: af_packet
+capture:
+  interface: eth0
+  sampling:
+    location: kernel
+    every: 16
+`), &s); err != nil {
+		t.Fatal(err)
+	}
+	if err := NormalizeCapture(&s); err != nil {
+		t.Fatal(err)
+	}
+	if s.Capture.SampleEvery != 16 || s.Capture.Sampling.Algorithm != "random" {
+		t.Fatalf("sampling config: %+v", s.Capture)
+	}
+	raw, err := yaml.Marshal(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var again SourceConfig
+	if err := yaml.Unmarshal(raw, &again); err != nil {
+		t.Fatal(err)
+	}
+	if err := NormalizeCapture(&again); err != nil {
+		t.Fatal(err)
+	}
+	if again.Capture.Sampling != s.Capture.Sampling || again.Capture.SampleEvery != 16 {
+		t.Fatalf("sampling changed after round trip: %+v", again.Capture)
+	}
+}

@@ -121,11 +121,19 @@ func (s *Source) metadata(f Frame) event.SourceMetadata {
 	}
 	rate := uint32(s.cfg.Capture.SampleEvery)
 	sampling := &event.SamplingMetadata{Rate: rate, SamplePool: uint32(s.seen), Drops: uint32(f.Drops)}
+	if s.cfg.Capture.Sampling.Location == "kernel" {
+		// The backend only delivers selected packets; the eligible packet pool is
+		// unknown rather than the number of samples received.
+		sampling.SamplePool = 0
+	}
 	if f.Sampling != nil {
 		// Preserve exporter counters rather than synthesizing a sample pool from
 		// received samples; combine known sampling divisors for downstream exporters.
 		copySampling := *f.Sampling
 		sampling = &copySampling
+		if s.cfg.Capture.Sampling.Location == "kernel" {
+			rate = 1 // The backend already applied this local divisor.
+		}
 		effective := uint64(copySampling.Rate) * uint64(rate)
 		if effective <= uint64(^uint32(0)) {
 			sampling.Rate = uint32(effective)
@@ -258,7 +266,7 @@ func (s *Source) Start(ctx context.Context, emit func(*event.Event) error) error
 				return err
 			}
 		}
-		if (s.seen-1)%uint64(s.cfg.Capture.SampleEvery) != uint64(s.cfg.Capture.SampleOffset) {
+		if s.cfg.Capture.Sampling.Location != "kernel" && (s.seen-1)%uint64(s.cfg.Capture.SampleEvery) != uint64(s.cfg.Capture.SampleOffset) {
 			return nil
 		}
 		if f.CaptureLength == 0 {
@@ -274,8 +282,12 @@ func (s *Source) Start(ctx context.Context, emit func(*event.Event) error) error
 		}
 		if f.Sampling != nil {
 			fields["upstream_sampling_rate"] = f.Sampling.Rate
-			fields["effective_sampling_rate"] = uint64(f.Sampling.Rate) * uint64(s.cfg.Capture.SampleEvery)
-			fields["local_sample_every"] = s.cfg.Capture.SampleEvery
+			localRate := s.cfg.Capture.SampleEvery
+			if s.cfg.Capture.Sampling.Location == "kernel" {
+				localRate = 1
+			}
+			fields["effective_sampling_rate"] = uint64(f.Sampling.Rate) * uint64(localRate)
+			fields["local_sample_every"] = localRate
 		}
 		timestamp := f.Timestamp.UTC()
 		if timestamp.IsZero() {

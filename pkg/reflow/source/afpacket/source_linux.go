@@ -13,6 +13,7 @@ import (
 	"unsafe"
 
 	"github.com/netsampler/goflow2/v3/pkg/reflow/config"
+	"github.com/netsampler/goflow2/v3/pkg/reflow/event"
 	"github.com/netsampler/goflow2/v3/pkg/reflow/source/capture"
 	"golang.org/x/sys/unix"
 )
@@ -38,14 +39,11 @@ func (d *driver) Run(ctx context.Context, emit func(capture.Frame) error) error 
 	if ctx.Err() != nil || d.closed.Load() {
 		return nil
 	}
-	fd, err := unix.Socket(unix.AF_PACKET, unix.SOCK_RAW|unix.SOCK_NONBLOCK|unix.SOCK_CLOEXEC, int(hostToNetwork(3)))
+	fd, err := unix.Socket(unix.AF_PACKET, unix.SOCK_RAW|unix.SOCK_NONBLOCK|unix.SOCK_CLOEXEC, 0)
 	if err != nil {
 		return fmt.Errorf("open AF_PACKET: %w", err)
 	}
 	defer func() { _ = unix.Close(fd) }()
-	if err = unix.Bind(fd, &unix.SockaddrLinklayer{Protocol: hostToNetwork(3), Ifindex: d.index}); err != nil {
-		return fmt.Errorf("bind AF_PACKET: %w", err)
-	}
 	if err = unix.SetsockoptInt(fd, unix.SOL_PACKET, unix.PACKET_VERSION, unix.TPACKET_V3); err != nil {
 		return fmt.Errorf("select TPACKET_V3: %w", err)
 	}
@@ -54,9 +52,9 @@ func (d *driver) Run(ctx context.Context, emit func(capture.Frame) error) error 
 			return fmt.Errorf("enable AF_PACKET promiscuous membership: %w", err)
 		}
 	}
-	filter := []unix.SockFilter{{Code: unix.BPF_RET | unix.BPF_K, K: uint32(d.cfg.Capture.SnapLen)}}
-	if err = unix.SetsockoptSockFprog(fd, unix.SOL_SOCKET, unix.SO_ATTACH_FILTER, &unix.SockFprog{Len: 1, Filter: &filter[0]}); err != nil {
-		return fmt.Errorf("set AF_PACKET snaplen: %w", err)
+	filter := socketFilter(d.cfg.Capture)
+	if err = unix.SetsockoptSockFprog(fd, unix.SOL_SOCKET, unix.SO_ATTACH_FILTER, &unix.SockFprog{Len: uint16(len(filter)), Filter: &filter[0]}); err != nil {
+		return fmt.Errorf("set AF_PACKET capture filter: %w", err)
 	}
 	blockSize, count, timeout := d.cfg.Capture.AFPacket.BlockSize, d.cfg.Capture.AFPacket.NumBlocks, d.cfg.Capture.AFPacket.BlockTimeoutMS
 	if blockSize == 0 {
@@ -80,6 +78,11 @@ func (d *driver) Run(ctx context.Context, emit func(capture.Frame) error) error 
 		return fmt.Errorf("map AF_PACKET ring: %w", err)
 	}
 	defer func() { _ = unix.Munmap(ring) }()
+	// Start capture only after the filter and ring are ready, avoiding an
+	// initial queue of packets admitted without the configured sampler.
+	if err = unix.Bind(fd, &unix.SockaddrLinklayer{Protocol: hostToNetwork(3), Ifindex: d.index}); err != nil {
+		return fmt.Errorf("bind AF_PACKET: %w", err)
+	}
 	var drops uint64
 	for blockIndex := 0; ctx.Err() == nil && !d.closed.Load(); {
 		block := ring[blockIndex*blockSize : (blockIndex+1)*blockSize]
@@ -155,6 +158,9 @@ func (d *driver) readBlock(block []byte, drops uint64, emit func(capture.Frame) 
 				}
 			}
 			frame := capture.Frame{Data: data, Timestamp: time.Unix(int64(binary.NativeEndian.Uint32(h[4:])), int64(binary.NativeEndian.Uint32(h[8:]))).UTC(), LinkType: 1, Interface: d.cfg.Capture.Interface, InterfaceIndex: int(int32(binary.NativeEndian.Uint32(h[52:]))), Direction: direction, PacketType: packetTypeName(packetType), CaptureLength: caplen, WireLength: wire, Fields: fields, Drops: drops}
+			if d.cfg.Capture.Sampling.Location == "kernel" {
+				frame.Sampling = &event.SamplingMetadata{Rate: uint32(d.cfg.Capture.SampleEvery), Drops: uint32(drops)}
+			}
 			if err := emit(frame); err != nil {
 				return err
 			}
@@ -195,3 +201,23 @@ func hostToNetwork(v uint16) uint16 {
 // Run owns the mmap and descriptor. A bounded poll lets Close interrupt it
 // without unmapping memory while another goroutine is reading a record.
 func (d *driver) Close() error { d.closed.Store(true); return nil }
+
+// socketFilter samples before packets consume ring capacity. SKF_AD_RANDOM is
+// Linux's per-packet random ancillary load, so every packet can be selected
+// independently of its flow. Rejected packets are only rejected by this socket.
+func socketFilter(cfg config.CaptureConfig) []unix.SockFilter {
+	accept := unix.SockFilter{Code: unix.BPF_RET | unix.BPF_K, K: uint32(cfg.SnapLen)}
+	if cfg.Sampling.Location != "kernel" || cfg.SampleEvery <= 1 {
+		return []unix.SockFilter{accept}
+	}
+	// linux/filter.h: SKF_AD_OFF=-0x1000, SKF_AD_RANDOM=56. The random
+	// threshold avoids the larger modulo bias for non-power-of-two divisors.
+	const randomOffset = uint32(0xfffff000 + 56)
+	threshold := uint32((uint64(1) << 32) / uint64(cfg.SampleEvery))
+	return []unix.SockFilter{
+		{Code: unix.BPF_LD | unix.BPF_W | unix.BPF_ABS, K: randomOffset},
+		{Code: unix.BPF_JMP | unix.BPF_JGE | unix.BPF_K, K: threshold, Jt: 1},
+		accept,
+		{Code: unix.BPF_RET | unix.BPF_K},
+	}
+}
