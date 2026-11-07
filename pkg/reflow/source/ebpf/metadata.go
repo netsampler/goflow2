@@ -13,7 +13,12 @@ import (
 // learn source-scoped metadata before the first captured packet arrives.
 func (s *Source) InitEvents() ([]*event.Event, error) {
 	if s.shared != nil {
-		return s.shared.InitEvents()
+		events, err := s.shared.InitEvents()
+		if err != nil {
+			return nil, err
+		}
+		s.refreshSampling(events)
+		return events, nil
 	}
 	if !s.captureAny {
 		iface := net.Interface{

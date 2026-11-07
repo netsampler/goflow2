@@ -6,7 +6,7 @@ toolchain go1.26.9
 
 require (
 	github.com/IBM/sarama v1.61.1
-	github.com/cilium/ebpf v0.16.0
+	github.com/cilium/ebpf v0.20.0
 	github.com/google/gopacket v1.1.19
 	github.com/libp2p/go-reuseport v0.4.0
 	github.com/oschwald/geoip2-golang v1.13.0
@@ -41,7 +41,6 @@ require (
 	github.com/xdg-go/stringprep v1.0.4 // indirect
 	go.yaml.in/yaml/v3 v3.0.5 // indirect
 	golang.org/x/crypto v0.57.0 // indirect
-	golang.org/x/exp v0.0.0-20230224173230-c95f2b4c22f2 // indirect
 	golang.org/x/net v0.59.0 // indirect
 	golang.org/x/text v0.42.0 // indirect
 )

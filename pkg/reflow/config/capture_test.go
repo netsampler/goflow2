@@ -86,3 +86,31 @@ capture:
 		t.Fatalf("sampling changed after round trip: %+v", again.Capture)
 	}
 }
+
+func TestEBPFTransportRoundTrip(t *testing.T) {
+	for _, transport := range []string{"perf", "ringbuf", "auto"} {
+		t.Run(transport, func(t *testing.T) {
+			s, err := parseInputSpec("ebpf:eth0:bytes?transport=" + transport + "&ring_size=65536")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := NormalizeCapture(&s); err != nil {
+				t.Fatal(err)
+			}
+			raw, err := yaml.Marshal(s)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var again SourceConfig
+			if err := yaml.Unmarshal(raw, &again); err != nil {
+				t.Fatal(err)
+			}
+			if err := NormalizeCapture(&again); err != nil {
+				t.Fatal(err)
+			}
+			if again.Capture.EBPF.Transport != transport || again.Capture.EBPF.RingSize != 65536 {
+				t.Fatalf("transport config changed: %+v", again.Capture.EBPF)
+			}
+		})
+	}
+}

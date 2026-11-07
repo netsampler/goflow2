@@ -86,6 +86,8 @@ type SourceConfig struct {
 }
 
 type EBPFConfig struct {
+	Transport     string `yaml:"transport,omitempty"`
+	RingSize      int    `yaml:"ring_size,omitempty"`
 	SKBMetadata   *bool  `yaml:"skb_metadata,omitempty"`
 	Conntrack     *bool  `yaml:"conntrack,omitempty"`
 	ConntrackPath string `yaml:"conntrack_path,omitempty"`
@@ -93,7 +95,7 @@ type EBPFConfig struct {
 }
 
 func (c EBPFConfig) IsZero() bool {
-	return c.SKBMetadata == nil && c.Conntrack == nil && c.ConntrackPath == "" && c.Direction == ""
+	return c.Transport == "" && c.RingSize == 0 && c.SKBMetadata == nil && c.Conntrack == nil && c.ConntrackPath == "" && c.Direction == ""
 }
 
 func (c EBPFConfig) SKBMetadataEnabled() bool {

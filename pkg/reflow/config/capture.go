@@ -132,6 +132,20 @@ func NormalizeCapture(s *SourceConfig) error {
 	}
 	if s.Network == "ebpf" {
 		c.EBPF.Direction = c.Direction
+		if c.EBPF.Transport == "" {
+			c.EBPF.Transport = "perf"
+		}
+		switch c.EBPF.Transport {
+		case "perf", "ringbuf", "auto":
+		default:
+			return fmt.Errorf("source.capture.ebpf.transport must be perf, ringbuf, or auto")
+		}
+		if c.EBPF.RingSize == 0 {
+			c.EBPF.RingSize = 4 * 1024 * 1024
+		}
+		if c.EBPF.RingSize < 4096 || uint64(c.EBPF.RingSize) > uint64(^uint32(0)) || c.EBPF.RingSize&(c.EBPF.RingSize-1) != 0 {
+			return fmt.Errorf("source.capture.ebpf.ring_size must be a power of two, at least 4096 bytes, and fit uint32")
+		}
 	}
 	if c.SnapLen <= 0 {
 		c.SnapLen = 65535

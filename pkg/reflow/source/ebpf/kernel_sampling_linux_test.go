@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/binary"
 	"fmt"
+	cilium "github.com/cilium/ebpf"
 	"io"
 	"net"
 	"os"
@@ -39,26 +40,40 @@ func TestKernelSampleRetainsQueuedDivisorAndSKB(t *testing.T) {
 }
 
 func TestKernelSamplingLoopbackIntegration(t *testing.T) {
-	testKernelSamplingLoopback(t, false)
+	testKernelSamplingLoopback(t, false, "perf", "kernel")
 }
 
 func TestAdaptiveKernelSamplingLoopbackIntegration(t *testing.T) {
-	testKernelSamplingLoopback(t, true)
+	testKernelSamplingLoopback(t, true, "perf", "kernel")
 }
 
-func testKernelSamplingLoopback(t *testing.T, adaptive bool) {
+func TestRingKernelSamplingLoopbackIntegration(t *testing.T) {
+	testKernelSamplingLoopback(t, false, "ringbuf", "kernel")
+}
+func TestRingAdaptiveKernelSamplingLoopbackIntegration(t *testing.T) {
+	testKernelSamplingLoopback(t, true, "ringbuf", "kernel")
+}
+func TestAutoKernelSamplingLoopbackIntegration(t *testing.T) {
+	testKernelSamplingLoopback(t, false, "auto", "kernel")
+}
+
+func TestRingUserspaceSamplingLoopbackIntegration(t *testing.T) {
+	testKernelSamplingLoopback(t, false, "ringbuf", "userspace")
+}
+
+func testKernelSamplingLoopback(t *testing.T, adaptive bool, transport, location string) {
 	t.Helper()
 	if os.Getenv("REFLOW_EBPF_INTEGRATION") != "1" {
 		t.Skip("set REFLOW_EBPF_INTEGRATION=1 with BPF and perf capabilities")
 	}
 	no := false
-	sampling := config.SamplingConfig{Location: "kernel", Every: 8}
+	sampling := config.SamplingConfig{Location: location, Every: 8}
 	if adaptive {
 		sampling.Every = 1
 		sampling.Adaptive = config.AdaptiveSamplingConfig{Enabled: true, MaxEvery: 8, IntervalMS: 10}
 	}
 	src, err := New(config.SourceConfig{Network: "ebpf", Capture: config.CaptureConfig{Interface: "lo", SnapLen: 256,
-		Sampling: sampling, EBPF: config.EBPFConfig{Conntrack: &no}}})
+		Sampling: sampling, EBPF: config.EBPFConfig{Conntrack: &no, Transport: transport, RingSize: 4096}}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -84,7 +99,7 @@ func testKernelSamplingLoopback(t *testing.T, adaptive bool) {
 			if !ok || !bytes.Contains(packet, marker) {
 				return nil
 			}
-			if evt.Source.Sampling == nil || evt.Source.Sampling.SamplePool != 0 {
+			if evt.Source.Sampling == nil || (location == "kernel" && evt.Source.Sampling.SamplePool != 0) || (location == "userspace" && evt.Source.Sampling.SamplePool == 0) {
 				return fmt.Errorf("missing kernel sample metadata: %+v", evt.Source.Sampling)
 			}
 			if evt.Fields["capture_length"] != len(marker)+42 || evt.Fields["wire_length"] != len(marker)+42 {
@@ -141,5 +156,92 @@ func testKernelSamplingLoopback(t *testing.T, adaptive bool) {
 				}
 			}
 		}
+	}
+}
+
+// Source options must report current loss and divisor even if a congested
+// output has not delivered a frame to the shared adapter yet.
+func TestRingHealthRefreshWithoutDeliveredFramesIntegration(t *testing.T) {
+	if os.Getenv("REFLOW_EBPF_INTEGRATION") != "1" {
+		t.Skip("set REFLOW_EBPF_INTEGRATION=1 with BPF access")
+	}
+	no := false
+	src, err := New(config.SourceConfig{Network: "ebpf", Capture: config.CaptureConfig{Interface: "lo", SnapLen: 128, Sampling: config.SamplingConfig{Location: "kernel", Every: 1}, EBPF: config.EBPFConfig{Transport: "ringbuf", RingSize: 4096, Conntrack: &no}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = src.Close() }()
+	backend, err := src.prepareRingCapture()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer backend.Close()
+	// Do not consume the ring: enough helper calls must fill it and fail.
+	if _, err := backend.program.Run(&cilium.RunOptions{Data: make([]byte, 64), Repeat: 512}); err != nil {
+		t.Fatal(err)
+	}
+	stats, err := backend.sampler.ReadStats()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stats.Failed == 0 {
+		t.Fatal("fixture did not congest the ring")
+	}
+	if err := backend.sampler.SetRate(64); err != nil {
+		t.Fatal(err)
+	}
+	src.kernelSampler = backend.sampler
+	controls, err := src.InitEvents()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(controls) != 1 {
+		t.Fatalf("controls=%d", len(controls))
+	}
+	control := controls[0]
+	payload := control.Payload.(event.SourceInit)
+	if control.Source.Sampling.Rate != 64 || control.Source.Sampling.CaptureDropsTotal != stats.Failed || payload.SamplingRate != 64 || payload.CaptureDropsTotal != stats.Failed {
+		t.Fatalf("stale health: source=%+v payload=%+v", control.Source.Sampling, payload)
+	}
+}
+
+func TestRingSnapshotPreservesWireLengthIntegration(t *testing.T) {
+	if os.Getenv("REFLOW_EBPF_INTEGRATION") != "1" {
+		t.Skip("set REFLOW_EBPF_INTEGRATION=1 with BPF access")
+	}
+	no := false
+	src, err := New(config.SourceConfig{Network: "ebpf", Capture: config.CaptureConfig{Interface: "lo", SnapLen: 256, Sampling: config.SamplingConfig{Location: "kernel", Every: 1}, EBPF: config.EBPFConfig{Transport: "ringbuf", Conntrack: &no}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = src.Close() }()
+	backend, err := src.prepareRingCapture()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer backend.Close()
+	src.backendSnaplen = backend.snaplen
+	packet := make([]byte, 1500)
+	for i := range packet {
+		packet[i] = byte(i % 251)
+	}
+	if _, _, err := backend.program.Test(packet); err != nil {
+		t.Fatal(err)
+	}
+	backend.reader.SetDeadline(time.Now().Add(time.Second))
+	record, err := backend.reader.Read()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := src.emitRingSample(record.RawSample, func(evt *event.Event) error {
+		got := evt.Payload.([]byte)
+		// BPF_PROG_TEST_RUN removes the synthetic Ethernet header before
+		// invoking a socket filter, unlike the attached AF_PACKET hook.
+		if len(got) != 256 || !bytes.Equal(got, packet[14:14+256]) || evt.Fields["wire_length"] != len(packet)-14 || evt.Fields["capture_backend_snaplen"] != 256 || evt.Source.Sampling.Rate != 1 {
+			t.Fatalf("snapshot changed wire length or framing: len=%d fields=%+v sampling=%+v", len(got), evt.Fields, evt.Source.Sampling)
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
 	}
 }

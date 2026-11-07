@@ -7,6 +7,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net"
 	"os"
 	"regexp"
@@ -278,6 +279,18 @@ func (s *Source) run(ctx context.Context, emit func(*event.Event) error) error {
 		return fmt.Errorf("set ebpf packet socket timeout: %w", err)
 	}
 
+	if s.cfg.EBPF.Transport != "perf" {
+		ring, ringErr := s.prepareRingCapture()
+		if ringErr == nil {
+			return s.runRingCapture(ctx, fd, ring, emit)
+		}
+		if s.cfg.EBPF.Transport == "ringbuf" {
+			return ringErr
+		}
+		slog.Warn("eBPF ring-buffer transport unavailable; using perf", "interface", s.cfg.Interface, "error", ringErr)
+	}
+	// Retain the original perf transport for existing configurations.
+	s.backendSnaplen = min(s.cfg.SnapLen, 65464)
 	eventMapFD, perfEvents, err := createPerfEventOutput(defaultPerfDataPages)
 	if err != nil {
 		return fmt.Errorf("create ebpf perf output: %w", err)
@@ -345,6 +358,9 @@ func (s *Source) packetEvent(data []byte, meta packetMetadata) *event.Event {
 		evt.Source.Sampling.SamplePool = 0
 		evt.Source.Sampling.Drops = 0
 		evt.Fields["capture_backend_snaplen"] = min(s.cfg.SnapLen, 65464)
+	}
+	if s.backendSnaplen > 0 {
+		evt.Fields["capture_backend_snaplen"] = s.backendSnaplen
 	}
 	if meta.hasConntrack {
 		evt.Internal = make(map[string]any, 4)

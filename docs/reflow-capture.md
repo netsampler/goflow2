@@ -166,7 +166,8 @@ executable, for example
 `go run cmd/pprof -top ./reflow /tmp/reflow-cpu.pprof`.
 Profiling is disabled unless a file is specified; it opens no network listener.
 
-`ebpf` uses an AF_PACKET socket with an eBPF socket filter and perf buffers. Its
+`ebpf` uses an AF_PACKET socket with an eBPF socket filter and a configurable
+perf or BPF ring-buffer transport. Its
 SKB and conntrack features remain in `capture.ebpf`; loading BPF additionally
 requires the applicable kernel privileges. It is distinct from XDP capture.
 
@@ -274,3 +275,42 @@ PF_RING module, drivers, libraries, and runtime prerequisites first.
 
 Hardware zero-copy capture does not imply end-to-end zero-copy processing: the
 shared asynchronous pipeline owns a copy of each selected packet.
+
+### eBPF packet-delivery transport
+
+`capture.ebpf.transport` selects `perf` (the compatibility default), `ringbuf`,
+or `auto`. `auto` first prepares ring-buffer capture and falls back to perf if
+ring-buffer initialization is unavailable; runtime capture errors are returned.
+The same options are available as `transport` and `ring_size` input URL parameters.
+
+```yaml
+capture:
+  interface: eth2
+  snaplen: 256
+  sampling:
+    location: kernel
+    every: 64
+  ebpf:
+    transport: ringbuf
+    ring_size: 4194304
+    conntrack: false
+```
+
+The ring buffer works without the kernel's `CONFIG_BPF_EVENTS` perf-output
+implementation. It requires BPF ring-buffer map/helpers and a supported socket
+filter JIT. ARM32 uses compatible sampling arithmetic/counters and the upstream
+32-bit ring-reader fix from cilium/ebpf v0.20.0. Full SKB metadata is attempted
+first, with compatibility metadata when optional context fields are unavailable.
+
+`ring_size` is the shared ring capacity in bytes (default 4 MiB), a power of two
+at least as large as the kernel page size. Ring capture limits the packet prefix
+to 32712 bytes so its per-CPU scratch value fits older kernel allocation limits;
+the original SKB wire length is retained for byte accounting. The actual limit is
+reported as `capture_backend_snaplen`. Only the captured prefix is delivered.
+
+Kernel sampling, including adaptive rate changes, happens before the packet copy.
+Each record retains its selected divisor. Copy and ring-output failures feed the
+same cumulative capture-loss accounting and adaptive controller as perf capture.
+With userspace sampling, ring capture delivers every packet to the shared adapter
+and the configured systematic divisor is applied there exactly once. Shared
+conntrack enrichment continues to use the independent named conntrack input.

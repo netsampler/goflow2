@@ -8,6 +8,7 @@ import (
 	"sync"
 
 	"github.com/netsampler/goflow2/v3/pkg/reflow/config"
+	"github.com/netsampler/goflow2/v3/pkg/reflow/event"
 	"github.com/netsampler/goflow2/v3/pkg/reflow/source/capture"
 )
 
@@ -26,3 +27,5 @@ type Source struct {
 func firstInterfaceIP(*net.Interface) string {
 	return "127.0.0.1"
 }
+
+func (*Source) refreshSampling([]*event.Event) {}

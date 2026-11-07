@@ -25,7 +25,7 @@ var (
 		"stream:<path-or-stdin>:pcap",
 		"stream:<path-or-stdin>:pcapng",
 		"stream:<path-or-stdin>:json",
-		"ebpf:<interface|any>:bytes[?snaplen=<bytes>&sample_every=<n>&sample_offset=<n>&source_init_refresh_ms=<ms>&interface_filter=<regex>&direction=ingress|egress|both&skb_metadata=<bool>&conntrack=<bool>]",
+		"ebpf:<interface|any>:bytes[?snaplen=<bytes>&sample_every=<n>&sample_offset=<n>&source_init_refresh_ms=<ms>&interface_filter=<regex>&direction=ingress|egress|both&skb_metadata=<bool>&conntrack=<bool>&transport=perf|ringbuf|auto&ring_size=<bytes>]",
 		"pcap_live:<interface|any>:bytes[?snaplen=<bytes>&sample_every=<n>&sample_offset=<n>&source_init_refresh_ms=<ms>&interface_filter=<regex>]",
 	}
 	outputEncoderOptions = []string{
@@ -563,6 +563,19 @@ func applyInputParams(source *SourceConfig, rawParams string) error {
 				return fmt.Errorf("source parameter %q cannot be empty", key)
 			}
 			source.InterfaceFilter = value
+		case "transport", "ring_size":
+			if source.Network != "ebpf" {
+				return fmt.Errorf("source parameter %q is only supported for ebpf inputs", key)
+			}
+			if key == "transport" {
+				source.EBPF.Transport = value
+			} else {
+				parsed, err := parseNonNegativeInputParam(key, value)
+				if err != nil {
+					return err
+				}
+				source.EBPF.RingSize = parsed
+			}
 		case "skb_metadata":
 			if source.Network != "ebpf" {
 				return fmt.Errorf("source parameter %q is only supported for ebpf inputs", key)
