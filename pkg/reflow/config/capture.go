@@ -32,9 +32,16 @@ type CaptureConfig struct {
 // SamplingConfig chooses where packet selection occurs. Legacy sample_every and
 // sample_offset retain their userspace systematic behavior when this is omitted.
 type SamplingConfig struct {
-	Location  string `yaml:"location,omitempty"`
-	Algorithm string `yaml:"algorithm,omitempty"`
-	Every     int    `yaml:"every,omitempty"`
+	Location  string                 `yaml:"location,omitempty"`
+	Algorithm string                 `yaml:"algorithm,omitempty"`
+	Every     int                    `yaml:"every,omitempty"`
+	Adaptive  AdaptiveSamplingConfig `yaml:"adaptive,omitempty"`
+}
+
+// SelectsInDriver reports whether a backend stamps already-selected frames with
+// their divisor. The shared adapter must not sample these frames a second time.
+func (c SamplingConfig) SelectsInDriver() bool {
+	return c.Location == "kernel" || c.Location == "callback"
 }
 
 type AFPacketConfig struct {
@@ -155,7 +162,7 @@ func NormalizeCapture(s *SourceConfig) error {
 	}
 	if c.Sampling.Algorithm == "" {
 		c.Sampling.Algorithm = "systematic"
-		if c.Sampling.Location == "kernel" {
+		if c.Sampling.SelectsInDriver() {
 			c.Sampling.Algorithm = "random"
 		}
 	}
@@ -165,14 +172,24 @@ func NormalizeCapture(s *SourceConfig) error {
 			return fmt.Errorf("source.capture.sampling.algorithm must be systematic for userspace sampling")
 		}
 	case "kernel":
-		if s.Network != "af_packet" {
-			return fmt.Errorf("source.capture.sampling.location=kernel requires an af_packet input")
+		if s.Network != "af_packet" && s.Network != "xdp" && s.Network != "ebpf" {
+			return fmt.Errorf("source.capture.sampling.location=kernel requires an af_packet, xdp, or ebpf input")
 		}
 		if c.Sampling.Algorithm != "random" || c.SampleOffset != 0 {
-			return fmt.Errorf("AF_PACKET kernel sampling requires algorithm=random and sample_offset=0")
+			return fmt.Errorf("kernel sampling requires algorithm=random and sample_offset=0")
+		}
+	case "callback":
+		if s.Network != "pktmon" {
+			return fmt.Errorf("source.capture.sampling.location=callback requires a pktmon input")
+		}
+		if c.Sampling.Algorithm != "random" || c.SampleOffset != 0 {
+			return fmt.Errorf("callback sampling requires algorithm=random and sample_offset=0")
 		}
 	default:
-		return fmt.Errorf("source.capture.sampling.location must be kernel or userspace")
+		return fmt.Errorf("source.capture.sampling.location must be kernel, callback, or userspace")
+	}
+	if err := normalizeAdaptiveSampling(&c.Sampling.Adaptive, c.Sampling.Location, c.SampleEvery); err != nil {
+		return fmt.Errorf("source.capture.sampling.adaptive: %w", err)
 	}
 	// Keep the nested rate in sync only when explicitly configured. This allows
 	// existing Go callers to update SampleEvery after a normalization pass.

@@ -120,9 +120,9 @@ func TestNormalizeCookedAndLoopbackFrames(t *testing.T) {
 
 func TestCaptureKernelSamplesAreNotSampledTwice(t *testing.T) {
 	driver := &fixtureDriver{run: func(emit func(Frame) error) error {
-		for range 3 {
+		for _, rate := range []uint32{16, 64, 32} {
 			if err := emit(Frame{Data: []byte{0x45, 0, 0, 20}, LinkType: 101,
-				Sampling: &event.SamplingMetadata{Rate: 16}}); err != nil {
+				Sampling: &event.SamplingMetadata{Rate: rate}}); err != nil {
 				return err
 			}
 		}
@@ -135,13 +135,21 @@ func TestCaptureKernelSamplesAreNotSampledTwice(t *testing.T) {
 	}
 	var count int
 	if err := src.Start(context.Background(), func(evt *event.Event) error {
+		want := []uint32{16, 64, 32}[count]
 		count++
-		if evt.Source.Sampling.Rate != 16 || evt.Source.Sampling.SamplePool != 0 || evt.Fields["effective_sampling_rate"] != uint64(16) {
+		if evt.Source.Sampling.Rate != want || evt.Source.Sampling.SamplePool != 0 || evt.Fields["effective_sampling_rate"] != uint64(want) {
 			t.Fatalf("kernel sampler metadata: %+v, %+v", evt.Source.Sampling, evt.Fields)
 		}
 		return nil
 	}); err != nil {
 		t.Fatal(err)
+	}
+	refresh, err := src.InitEvents()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(refresh) != 1 || refresh[0].Source.Sampling.Rate != 32 || refresh[0].Payload.(event.SourceInit).SamplingRate != 32 {
+		t.Fatalf("refresh did not preserve latest kernel divisor: %+v", refresh)
 	}
 	if count != 3 {
 		t.Fatalf("backend selected 3 samples; adapter emitted %d", count)

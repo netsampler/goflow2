@@ -140,6 +140,11 @@ Reflow's receive order, not ordering across independent NIC queues.
 VLAN information, and available socket-drop counts. It requires packet-socket
 privileges.
 
+Linux `af_packet`, `ebpf`, and `xdp` support explicit kernel packet selection
+and optional adaptive divisors. See [kernel sampling](reflow-kernel-sampling.md)
+and [adaptive sampling](reflow-adaptive-sampling.md) for configuration and the
+per-record sampling rate required by aggregation and export.
+
 `sample_every: 1` requests every packet; it does not guarantee lossless capture.
 When downstream processing cannot keep up, the capture ring can overflow even
 while the interface's RX/TX drop counters stay at zero. Periodic source options
@@ -242,6 +247,11 @@ correlates component IDs with network adapters, and copies callback data through
 a bounded queue. Queue and stream losses are reported. A Windows build exposing
 the modern Packet Monitor streaming API and administrator rights is required;
 API presence is detected at startup. No Npcap dependency is needed in this profile.
+
+Pktmon can optionally apply [fixed or adaptive callback sampling](reflow-pktmon-sampling.md)
+before Reflow copies and queues observations. This uses `sampling.location: callback`;
+it preserves the divisor per packet and does not reduce the native stream's
+upstream observation rate.
 
 The pcap profile uses libpcap on Unix and Npcap on Windows. It supports Windows
 ARM64 using a portable C ABI wrapper. On macOS it links the system libpcap.

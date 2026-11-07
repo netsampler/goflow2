@@ -71,7 +71,7 @@ func (s *Source) InitEvents() ([]*event.Event, error) {
 	if s.drops > s.reportedDrops {
 		slog.Warn("capture packets dropped", "network", s.cfg.Network,
 			"interface", s.cfg.Capture.Interface, "dropped", s.drops-s.reportedDrops,
-			"total_dropped", s.drops, "sample_every", s.cfg.Capture.SampleEvery)
+			"total_dropped", s.drops)
 		s.reportedDrops = s.drops
 	}
 	name := s.cfg.Capture.Interface
@@ -122,7 +122,7 @@ func (s *Source) metadata(f Frame) event.SourceMetadata {
 	}
 	rate := uint32(s.cfg.Capture.SampleEvery)
 	sampling := &event.SamplingMetadata{Rate: rate, SamplePool: uint32(s.seen), CaptureDropsTotal: f.Drops}
-	if s.cfg.Capture.Sampling.Location == "kernel" {
+	if s.cfg.Capture.Sampling.SelectsInDriver() {
 		// The backend only delivers selected packets; the eligible packet pool is
 		// unknown rather than the number of samples received.
 		sampling.SamplePool = 0
@@ -133,7 +133,7 @@ func (s *Source) metadata(f Frame) event.SourceMetadata {
 		copySampling := *f.Sampling
 		sampling = &copySampling
 		sampling.CaptureDropsTotal = f.Drops
-		if s.cfg.Capture.Sampling.Location == "kernel" {
+		if s.cfg.Capture.Sampling.SelectsInDriver() {
 			rate = 1           // The backend already applied this local divisor.
 			sampling.Drops = 0 // Capture loss has its own 64-bit total counter.
 		}
@@ -189,7 +189,7 @@ func (s *Source) Start(ctx context.Context, emit func(*event.Event) error) error
 	return s.driver.Run(ctx, func(f Frame) error {
 		s.mu.Lock()
 		defer s.mu.Unlock()
-		if s.cfg.Capture.Sampling.Location == "kernel" && f.Sampling != nil {
+		if s.cfg.Capture.Sampling.SelectsInDriver() && f.Sampling != nil {
 			copySampling := *f.Sampling
 			s.lastSampling = &copySampling
 		}
@@ -274,7 +274,7 @@ func (s *Source) Start(ctx context.Context, emit func(*event.Event) error) error
 				return err
 			}
 		}
-		if s.cfg.Capture.Sampling.Location != "kernel" && (s.seen-1)%uint64(s.cfg.Capture.SampleEvery) != uint64(s.cfg.Capture.SampleOffset) {
+		if !s.cfg.Capture.Sampling.SelectsInDriver() && (s.seen-1)%uint64(s.cfg.Capture.SampleEvery) != uint64(s.cfg.Capture.SampleOffset) {
 			return nil
 		}
 		if f.CaptureLength == 0 {
@@ -289,9 +289,14 @@ func (s *Source) Start(ctx context.Context, emit func(*event.Event) error) error
 			fields["capture_drops"] = f.Drops
 		}
 		if f.Sampling != nil {
-			fields["upstream_sampling_rate"] = f.Sampling.Rate
+			if s.cfg.Capture.Sampling.Location == "callback" {
+				fields["sampling_location"] = "callback"
+				fields["callback_sample_every"] = f.Sampling.Rate
+			} else {
+				fields["upstream_sampling_rate"] = f.Sampling.Rate
+			}
 			localRate := s.cfg.Capture.SampleEvery
-			if s.cfg.Capture.Sampling.Location == "kernel" {
+			if s.cfg.Capture.Sampling.SelectsInDriver() {
 				localRate = 1
 			}
 			fields["effective_sampling_rate"] = uint64(f.Sampling.Rate) * uint64(localRate)

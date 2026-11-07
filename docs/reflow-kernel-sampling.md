@@ -1,6 +1,7 @@
-# AF_PACKET kernel sampling
+# Linux kernel packet sampling
 
-Packet selection can run before AF_PACKET packets enter the capture ring:
+Packet selection can run before AF_PACKET packets enter the capture ring or
+before the XDP and eBPF socket backends copy packets to perf buffers:
 
 ```yaml
 sources:
@@ -27,10 +28,18 @@ Omitting `sampling` preserves the previous userspace `sample_every` and
 `sample_offset` behavior: systematic selection in the eligible receive order.
 The explicit equivalent is `location: userspace, algorithm: systematic`.
 `sampling.every` takes precedence over legacy `sample_every`. Kernel sampling is
-currently supported only for `af_packet`, with `algorithm: random` and
+supported for `af_packet`, `xdp`, and `ebpf`, with `algorithm: random` and
 `sample_offset: 0`; unsupported requests fail instead of silently falling back.
 
-Kernel sampling intentionally does not advertise a sample pool: the AF_PACKET
-backend sees selected packets rather than the total number of eligible packets.
-AF_PACKET socket drops describe admitted samples lost to capture pressure, not
-packets intentionally excluded by the filter.
+For XDP, change `network` to `xdp` and use `capture.direction: ingress`. For
+socket eBPF capture use `network: ebpf`; its existing SKB and conntrack options
+remain available. These backends require their existing kernel privileges.
+The XDP program returns `XDP_PASS` for every packet, selected or not.
+
+Kernel sampling intentionally does not advertise a sample pool: these backends
+deliver selected packets rather than the total number of eligible packets.
+AF_PACKET socket drops describe admitted samples lost to capture pressure.
+XDP/eBPF kernel sampling counts failed perf-output calls in per-CPU maps. The
+overlapping perf lost-record count is not added again. Intentional exclusions
+are absent from all delivery-loss counters. Fixed and adaptive divisors use the
+same in-record sampling metadata; see [adaptive sampling](reflow-adaptive-sampling.md).

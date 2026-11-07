@@ -28,6 +28,7 @@ type Source struct {
 	eventMapFD            int
 	perfEvents            []*perfEventReader
 	conntrack             *conntrackTracker
+	kernelSampler         *capture.PerfSampler
 }
 
 func (s *Source) shouldEmitCurrentPacket() bool {

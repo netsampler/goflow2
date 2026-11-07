@@ -911,7 +911,7 @@ func (c *Config) setDefaults(configPath string) error {
 			return fmt.Errorf("sink.resolve_interval_ms is only supported when sink.type=udp")
 		}
 	}
-	return nil
+	return c.ValidateAdaptivePipeline()
 }
 
 func (c *Config) applyCacheDefaults(configPath string) error {

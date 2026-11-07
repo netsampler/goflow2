@@ -19,6 +19,7 @@ import (
 	"github.com/cilium/ebpf/link"
 	"github.com/cilium/ebpf/perf"
 	"github.com/netsampler/goflow2/v3/pkg/reflow/config"
+	"github.com/netsampler/goflow2/v3/pkg/reflow/event"
 	"github.com/netsampler/goflow2/v3/pkg/reflow/source/capture"
 	"golang.org/x/sys/unix"
 )
@@ -54,7 +55,7 @@ func New(cfg config.SourceConfig) (*capture.Source, error) {
 	return capture.New(cfg, &driver{cfg: cfg, index: iface.Index})
 }
 
-func (d *driver) Run(ctx context.Context, emit func(capture.Frame) error) error {
+func (d *driver) Run(ctx context.Context, emit func(capture.Frame) error) (runErr error) {
 	d.mu.Lock()
 	closed := d.closed
 	d.mu.Unlock()
@@ -81,8 +82,16 @@ func (d *driver) Run(ctx context.Context, emit func(capture.Frame) error) error 
 	defer func() { _ = d.Close() }()
 	// Perf event record lengths are uint16. Reserve room for perf framing and
 	// our metadata even when the configured snapshot would exceed that bound.
-	snaplen := min(d.cfg.Capture.SnapLen, 65500)
-	program, err := ebpf.NewProgram(&ebpf.ProgramSpec{Name: "reflow_pass", Type: ebpf.XDP, License: "GPL", Instructions: instructions(events.FD(), snaplen)})
+	snaplen := min(d.cfg.Capture.SnapLen, 65480)
+	var sampler *capture.PerfSampler
+	if d.cfg.Capture.Sampling.Location == "kernel" {
+		sampler, err = capture.NewPerfSampler(d.cfg.Capture, "xdp")
+		if err != nil {
+			return err
+		}
+		defer func() { _ = sampler.Close() }()
+	}
+	program, err := ebpf.NewProgram(&ebpf.ProgramSpec{Name: "reflow_pass", Type: ebpf.XDP, License: "GPL", Instructions: instructions(events.FD(), snaplen, sampler)})
 	if err != nil {
 		return fmt.Errorf("load passive XDP program: %w", err)
 	}
@@ -105,6 +114,14 @@ func (d *driver) Run(ctx context.Context, emit func(capture.Frame) error) error 
 	boot := time.Now().UnixNano() - mono.Nano()
 	stop := context.AfterFunc(ctx, func() { _ = d.Close() })
 	defer stop()
+	if sampler != nil {
+		stopMonitor := sampler.Monitor(ctx, func() { _ = d.Close() })
+		defer func() {
+			if err := stopMonitor(); runErr == nil {
+				runErr = err
+			}
+		}()
+	}
 	var lost uint64
 	for ctx.Err() == nil {
 		record, err := reader.Read()
@@ -125,6 +142,13 @@ func (d *driver) Run(ctx context.Context, emit func(capture.Frame) error) error 
 		frame.Interface = d.cfg.Capture.Interface
 		frame.Direction = "ingress"
 		frame.Drops = lost
+		if sampler != nil {
+			// Kernel helper failures already include perf-buffer overflow;
+			// adding PERF_RECORD_LOST would count that loss twice.
+			frame.Drops = sampler.Drops()
+		} else {
+			frame.Sampling = nil
+		}
 		frame.Fields = map[string]any{"capture_backend_snaplen": snaplen}
 		if err = emit(frame); err != nil {
 			return err
@@ -133,9 +157,16 @@ func (d *driver) Run(ctx context.Context, emit func(capture.Frame) error) error 
 	return nil
 }
 
-func instructions(mapFD, snaplen int) asm.Instructions {
-	return asm.Instructions{
+func instructions(mapFD, snaplen int, sampler *capture.PerfSampler) asm.Instructions {
+	insns := asm.Instructions{
 		asm.Mov.Reg(asm.R6, asm.R1),
+	}
+	if sampler != nil {
+		insns = append(insns, sampler.SelectInstructions(-4)...)
+	} else {
+		insns = append(insns, asm.StoreImm(asm.R10, -4, 0, asm.Word))
+	}
+	insns = append(insns, asm.Instructions{
 		asm.LoadMem(asm.R7, asm.R6, 0, asm.Word), // data
 		asm.LoadMem(asm.R8, asm.R6, 4, asm.Word), // data_end
 		asm.Sub.Reg(asm.R8, asm.R7),
@@ -147,7 +178,6 @@ func instructions(mapFD, snaplen int) asm.Instructions {
 		asm.JLE.Imm(asm.R8, int32(snaplen), "length_ready"),
 		asm.Mov.Imm(asm.R8, int32(snaplen)),
 		asm.StoreMem(asm.R10, -8, asm.R8, asm.Word).WithSymbol("length_ready"),
-		asm.StoreImm(asm.R10, -4, 0, asm.Word),
 		asm.LSh.Imm(asm.R8, 32),
 		asm.LoadImm(asm.R3, 0xffffffff, asm.DWord),
 		asm.Or.Reg(asm.R3, asm.R8),
@@ -157,9 +187,13 @@ func instructions(mapFD, snaplen int) asm.Instructions {
 		asm.Add.Imm(asm.R4, -24),
 		asm.Mov.Imm(asm.R5, 24),
 		asm.FnPerfEventOutput.Call(),
-		asm.Mov.Imm(asm.R0, 2), // XDP_PASS on every path, including output loss
-		asm.Return(),
+	}...)
+	if sampler != nil {
+		insns = append(insns, sampler.OutputInstructions(2)...)
+	} else {
+		insns = append(insns, asm.Mov.Imm(asm.R0, 2), asm.Return())
 	}
+	return insns
 }
 
 func decodeRecord(data []byte, boot int64) (capture.Frame, error) {
@@ -170,7 +204,11 @@ func decodeRecord(data []byte, boot int64) (capture.Frame, error) {
 	if n > len(data)-24 {
 		return capture.Frame{}, fmt.Errorf("short XDP packet data")
 	}
-	return capture.Frame{Data: data[24 : 24+n], LinkType: 1, InterfaceIndex: int(binary.NativeEndian.Uint32(data[4:])), CaptureLength: n, WireLength: int(binary.NativeEndian.Uint32(data)), Timestamp: time.Unix(0, boot+int64(binary.NativeEndian.Uint64(data[8:]))).UTC()}, nil
+	frame := capture.Frame{Data: data[24 : 24+n], LinkType: 1, InterfaceIndex: int(binary.NativeEndian.Uint32(data[4:])), CaptureLength: n, WireLength: int(binary.NativeEndian.Uint32(data)), Timestamp: time.Unix(0, boot+int64(binary.NativeEndian.Uint64(data[8:]))).UTC()}
+	if rate := binary.NativeEndian.Uint32(data[20:]); rate > 0 {
+		frame.Sampling = &event.SamplingMetadata{Rate: rate}
+	}
+	return frame, nil
 }
 
 func (d *driver) Close() error {

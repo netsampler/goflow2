@@ -39,50 +39,15 @@ func (d *driver) Run(ctx context.Context, emit func(capture.Frame) error) error 
 	if ctx.Err() != nil || d.closed.Load() {
 		return nil
 	}
-	fd, err := unix.Socket(unix.AF_PACKET, unix.SOCK_RAW|unix.SOCK_NONBLOCK|unix.SOCK_CLOEXEC, 0)
+	if d.cfg.Capture.Sampling.Adaptive.Enabled {
+		return d.runAdaptive(ctx, emit)
+	}
+	session, err := openAFPacketRing(d.cfg.Capture, d.index)
 	if err != nil {
-		return fmt.Errorf("open AF_PACKET: %w", err)
+		return err
 	}
-	defer func() { _ = unix.Close(fd) }()
-	if err = unix.SetsockoptInt(fd, unix.SOL_PACKET, unix.PACKET_VERSION, unix.TPACKET_V3); err != nil {
-		return fmt.Errorf("select TPACKET_V3: %w", err)
-	}
-	if d.cfg.Capture.Promiscuous == nil || *d.cfg.Capture.Promiscuous {
-		if err = unix.SetsockoptPacketMreq(fd, unix.SOL_PACKET, unix.PACKET_ADD_MEMBERSHIP, &unix.PacketMreq{Ifindex: int32(d.index), Type: unix.PACKET_MR_PROMISC}); err != nil {
-			return fmt.Errorf("enable AF_PACKET promiscuous membership: %w", err)
-		}
-	}
-	filter := socketFilter(d.cfg.Capture)
-	if err = unix.SetsockoptSockFprog(fd, unix.SOL_SOCKET, unix.SO_ATTACH_FILTER, &unix.SockFprog{Len: uint16(len(filter)), Filter: &filter[0]}); err != nil {
-		return fmt.Errorf("set AF_PACKET capture filter: %w", err)
-	}
-	blockSize, count, timeout := d.cfg.Capture.AFPacket.BlockSize, d.cfg.Capture.AFPacket.NumBlocks, d.cfg.Capture.AFPacket.BlockTimeoutMS
-	if blockSize == 0 {
-		blockSize = 1 << 20
-	}
-	if count == 0 {
-		count = 8
-	}
-	if timeout == 0 {
-		timeout = 64
-	}
-	if blockSize < d.cfg.Capture.SnapLen+128 || blockSize%unix.Getpagesize() != 0 || blockSize%2048 != 0 || count < 1 || count > 1024 || timeout < 1 || uint64(blockSize)*uint64(count) > 512<<20 {
-		return fmt.Errorf("invalid AF_PACKET ring: blocks must fit snaplen, align to pages and 2048 bytes, and total at most 512 MiB")
-	}
-	req := unix.TpacketReq3{Block_size: uint32(blockSize), Block_nr: uint32(count), Frame_size: 2048, Frame_nr: uint32(blockSize / 2048 * count), Retire_blk_tov: uint32(timeout)}
-	if err = unix.SetsockoptTpacketReq3(fd, unix.SOL_PACKET, unix.PACKET_RX_RING, &req); err != nil {
-		return fmt.Errorf("create AF_PACKET ring: %w", err)
-	}
-	ring, err := unix.Mmap(fd, 0, blockSize*count, unix.PROT_READ|unix.PROT_WRITE, unix.MAP_SHARED)
-	if err != nil {
-		return fmt.Errorf("map AF_PACKET ring: %w", err)
-	}
-	defer func() { _ = unix.Munmap(ring) }()
-	// Start capture only after the filter and ring are ready, avoiding an
-	// initial queue of packets admitted without the configured sampler.
-	if err = unix.Bind(fd, &unix.SockaddrLinklayer{Protocol: hostToNetwork(3), Ifindex: d.index}); err != nil {
-		return fmt.Errorf("bind AF_PACKET: %w", err)
-	}
+	defer session.close()
+	fd, ring, blockSize, count := session.fd, session.ring, session.blockSize, session.count
 	var drops uint64
 	for blockIndex := 0; ctx.Err() == nil && !d.closed.Load(); {
 		block := ring[blockIndex*blockSize : (blockIndex+1)*blockSize]

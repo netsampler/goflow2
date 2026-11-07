@@ -16,13 +16,7 @@ func decodePacket(data, meta []byte) capture.Frame {
 	if len(meta) < 48 {
 		return f
 	}
-	direction := binary.LittleEndian.Uint16(meta[12:])
-	switch direction {
-	case 1, 3, 5:
-		f.Direction = "ingress"
-	case 2, 4, 6:
-		f.Direction = "egress"
-	}
+	f.Direction, _ = packetIdentity(meta)
 	switch binary.LittleEndian.Uint16(meta[14:]) {
 	case 1:
 		f.LinkType = 1
@@ -43,4 +37,18 @@ func decodePacket(data, meta []byte) capture.Frame {
 		"pktmon_drop_location": binary.LittleEndian.Uint32(meta[28:]),
 	}
 	return f
+}
+
+// packetIdentity reads eligibility metadata without allocating packet fields.
+func packetIdentity(meta []byte) (direction string, component uint32) {
+	if len(meta) < 48 {
+		return "", 0
+	}
+	switch binary.LittleEndian.Uint16(meta[12:]) {
+	case 1, 3, 5:
+		direction = "ingress"
+	case 2, 4, 6:
+		direction = "egress"
+	}
+	return direction, uint32(binary.LittleEndian.Uint16(meta[16:]))
 }

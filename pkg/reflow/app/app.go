@@ -35,6 +35,9 @@ type App struct {
 
 // New wires the current ReFlow runtime from source to sink.
 func New(cfg *config.Config) (*App, error) {
+	if err := cfg.ValidateAdaptivePipeline(); err != nil {
+		return nil, err
+	}
 	logger, err := logging.NewLogger(cfg.LogLevel, cfg.LogFormat)
 	if err != nil {
 		return nil, fmt.Errorf("init logger: %w", err)

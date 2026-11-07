@@ -76,7 +76,11 @@ func (d *captureDriver) Run(ctx context.Context, emit func(capture.Frame) error)
 			direction = "egress"
 		}
 		wireLength, _ := evt.Fields["wire_length"].(int)
-		return emit(capture.Frame{Data: data, Timestamp: evt.ReceivedAt, LinkType: 1, Interface: evt.Source.CaptureInterface, InterfaceIndex: evt.Source.CaptureInterfaceIndex, Direction: direction, PacketType: evt.Source.CapturePacketType, CaptureLength: len(data), WireLength: wireLength, Fields: evt.Fields, Internal: evt.Internal, Drops: d.source.captureDropCount()})
+		var sampling *event.SamplingMetadata
+		if d.source.cfg.Capture.Sampling.Location == "kernel" {
+			sampling = evt.Source.Sampling
+		}
+		return emit(capture.Frame{Data: data, Timestamp: evt.ReceivedAt, LinkType: 1, Interface: evt.Source.CaptureInterface, InterfaceIndex: evt.Source.CaptureInterfaceIndex, Direction: direction, PacketType: evt.Source.CapturePacketType, CaptureLength: len(data), WireLength: wireLength, Fields: evt.Fields, Internal: evt.Internal, Sampling: sampling, Drops: d.source.captureDropCount()})
 	})
 }
 func (d *captureDriver) Close() error {

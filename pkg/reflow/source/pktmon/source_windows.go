@@ -39,18 +39,12 @@ type streamData struct {
 	Data                                                                      unsafe.Pointer
 	Size, MetadataOffset, PacketOffset, PacketLength, MissedWrite, MissedRead uint32
 }
-type identity struct {
-	Name  string
-	Index int
-}
 type driver struct {
-	cfg                            config.SourceConfig
-	done                           chan struct{}
-	once                           sync.Once
-	queue                          chan capture.Frame
-	fatal                          chan error
-	ports                          map[uint32]identity
-	readLoss, writeLoss, queueLoss atomic.Uint64
+	cfg       config.SourceConfig
+	done      chan struct{}
+	once      sync.Once
+	callbacks *callbackQueue
+	fatal     chan error
 }
 
 var (
@@ -70,11 +64,8 @@ func New(cfg config.SourceConfig) (*capture.Source, error) {
 	if cfg.Capture.SnapLen > 9000 {
 		return nil, fmt.Errorf("pktmon snaplen must not exceed 9000 bytes")
 	}
-	n := cfg.Capture.Pktmon.QueueSize
-	if n <= 0 {
-		n = 1024
-	}
-	d := &driver{cfg: cfg, done: make(chan struct{}), queue: make(chan capture.Frame, n), fatal: make(chan error, 1), ports: make(map[uint32]identity)}
+	d := &driver{cfg: cfg, done: make(chan struct{}), fatal: make(chan error, 1)}
+	d.callbacks = newCallbackQueue(cfg.Capture, d.done)
 	return capture.New(cfg, d)
 }
 func (d *driver) Close() error { d.once.Do(func() { close(d.done) }); return nil }
@@ -95,36 +86,12 @@ func onPacket(context uintptr, packet *streamData) uintptr {
 		return 0
 	}
 	d := value.(*driver)
-	d.readLoss.Add(uint64(packet.MissedRead))
-	d.writeLoss.Add(uint64(packet.MissedWrite))
+	d.callbacks.recordMissed(packet.MissedRead, packet.MissedWrite)
 	if packet.Size > 16*1024*1024 || packet.Data == nil || packet.MetadataOffset > packet.Size || packet.PacketOffset > packet.Size || packet.PacketLength > packet.Size-packet.PacketOffset {
 		return 0
 	}
 	buf := unsafe.Slice((*byte)(packet.Data), int(packet.Size))
-	frame := decodePacket(append([]byte(nil), buf[packet.PacketOffset:packet.PacketOffset+packet.PacketLength]...), buf[packet.MetadataOffset:])
-	if component, ok := frame.Fields["pktmon_component_id"].(uint32); ok {
-		if port, exists := d.ports[component]; exists {
-			frame.Interface = port.Name
-			frame.InterfaceIndex = port.Index
-		}
-	}
-	if direction := d.cfg.Capture.Direction; direction != "both" && direction != "" && direction != frame.Direction {
-		return 0
-	}
-	frame.Drops = d.readLoss.Load() + d.writeLoss.Load() + d.queueLoss.Load()
-	if frame.Fields == nil {
-		frame.Fields = make(map[string]any)
-	}
-	frame.Fields["pktmon_missed_reads"] = d.readLoss.Load()
-	frame.Fields["pktmon_missed_writes"] = d.writeLoss.Load()
-	frame.Fields["capture_queue_drops"] = d.queueLoss.Load()
-	select {
-	case <-d.done:
-		return 0
-	case d.queue <- frame:
-	default:
-		d.queueLoss.Add(1)
-	}
+	d.callbacks.receive(buf[packet.PacketOffset:packet.PacketOffset+packet.PacketLength], buf[packet.MetadataOffset:])
 	return 0
 }
 
@@ -265,9 +232,9 @@ func (d *driver) Run(ctx context.Context, emit func(capture.Frame) error) error 
 	}
 	for _, spec := range hidden {
 		port := identify(spec, adapters)
-		d.ports[spec.ID] = port
+		d.callbacks.ports[spec.ID] = port
 		if spec.SecondaryID != 0 {
-			d.ports[spec.SecondaryID] = port
+			d.callbacks.ports[spec.SecondaryID] = port
 		}
 	}
 	runtime.KeepAlive(storage)
@@ -285,6 +252,8 @@ func (d *driver) Run(ctx context.Context, emit func(capture.Frame) error) error 
 		return err
 	}
 	defer func() { _, _, _ = api[names[4]].Call(session, 0) }()
+	stopMonitor := d.callbacks.startMonitor(ctx)
+	defer stopMonitor()
 	for {
 		select {
 		case <-ctx.Done():
@@ -293,7 +262,7 @@ func (d *driver) Run(ctx context.Context, emit func(capture.Frame) error) error 
 			return nil
 		case err := <-d.fatal:
 			return err
-		case frame := <-d.queue:
+		case frame := <-d.callbacks.queue:
 			if err := emit(frame); err != nil {
 				return err
 			}

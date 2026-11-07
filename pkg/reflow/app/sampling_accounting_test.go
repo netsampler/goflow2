@@ -13,11 +13,20 @@ import (
 )
 
 // Options may arrive before or after data at a different rate. Each data record
-// must remain independently weightable, including after aggregation and IPFIX.
-func TestSamplingRatesRemainSeparateThroughIPFIX(t *testing.T) {
+// must remain independently weightable after aggregation and templated export.
+func TestSamplingRatesRemainSeparateThroughTemplatedExports(t *testing.T) {
+	for _, network := range []string{"af_packet", "pktmon"} {
+		for _, format := range []string{"ipfix", "netflowv9"} {
+			t.Run(network+"/"+format, func(t *testing.T) { testSamplingRatesRemainSeparate(t, network, format) })
+		}
+	}
+}
+
+func testSamplingRatesRemainSeparate(t *testing.T, network, format string) {
+	t.Helper()
 	fs := flag.NewFlagSet("test", flag.ContinueOnError)
 	flags, _ := config.BindFlags(fs)
-	if err := fs.Parse([]string{"-input=af_packet:eth2:bytes", "-output=ipfix:udp:[::1]:4739", "-agg", "-genconf"}); err != nil {
+	if err := fs.Parse([]string{"-input=" + network + ":eth2:bytes", "-output=" + format + ":udp:[::1]:4739", "-agg", "-genconf"}); err != nil {
 		t.Fatal(err)
 	}
 	cfg, _, err := config.LoadFromFlags(flags)
@@ -111,7 +120,9 @@ func TestSamplingRatesRemainSeparateThroughIPFIX(t *testing.T) {
 		t.Fatal(err)
 	}
 	consume(payloads)
-	if len(rates) != 2 || rates[4] != 1 || rates[16] != 1 || rawBytes != 3000 || weightedBytes != 24000 || !lossSeen {
+	// Generated IPFIX source options carry the 64-bit capture health field.
+	// Both protocols must retain the divisor independently on each data record.
+	if len(rates) != 2 || rates[4] != 1 || rates[16] != 1 || rawBytes != 3000 || weightedBytes != 24000 || (format == "ipfix" && !lossSeen) {
 		t.Fatalf("rates=%v raw=%d weighted=%d capture_loss_seen=%v", rates, rawBytes, weightedBytes, lossSeen)
 	}
 }

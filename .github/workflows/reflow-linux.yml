@@ -39,6 +39,7 @@ jobs:
             -v "$PWD:/src:ro" -w /src \
             -e GOTOOLCHAIN=local -e CGO_ENABLED=1 \
             -e REFLOW_CAPTURE_INTEGRATION=1 -e REFLOW_XDP_INTEGRATION=1 \
+            -e REFLOW_EBPF_INTEGRATION=1 \
             -e REFLOW_NFLOG_INTEGRATION=1 \
             -e REFLOW_PSAMPLE_INTEGRATION=1 \
             golang:1.26.9-bookworm bash -euc '
@@ -49,7 +50,7 @@ jobs:
               nft add rule inet reflow_test output log group 42 snaplen 65535
               tc qdisc add dev lo clsact
               tc filter add dev lo egress matchall action sample rate 1 group 7 trunc 128
-              go test -race -v ./pkg/reflow/source/afpacket ./pkg/reflow/source/xdp ./pkg/reflow/source/nflog ./pkg/reflow/source/psample
+              go test -race -v ./pkg/reflow/source/capture ./pkg/reflow/source/afpacket ./pkg/reflow/source/xdp ./pkg/reflow/source/ebpf ./pkg/reflow/source/nflog ./pkg/reflow/source/psample
             '
       - uses: actions/upload-artifact@v6
         with:

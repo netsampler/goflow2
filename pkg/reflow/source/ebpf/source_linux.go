@@ -101,6 +101,7 @@ type bpfInsn struct {
 }
 
 type packetMetadata struct {
+	samplingRate    uint32
 	packetType      string
 	direction       string
 	inputIf         uint32
@@ -286,6 +287,9 @@ func (s *Source) run(ctx context.Context, emit func(*event.Event) error) error {
 	s.perfEvents = perfEvents
 	s.mu.Unlock()
 
+	if s.cfg.Capture.Sampling.Location == "kernel" {
+		return s.runKernelSampling(ctx, fd, eventMapFD, perfEvents, emit)
+	}
 	filter, err := attachSocketFilter(fd, s.cfg.SnapLen, eventMapFD)
 	if err != nil {
 		return fmt.Errorf("attach packet socket filter: %w", err)
@@ -336,6 +340,12 @@ func (s *Source) packetEvent(data []byte, meta packetMetadata) *event.Event {
 		},
 	}
 	applyPacketMetadataFields(evt.Fields, meta)
+	if meta.samplingRate > 0 {
+		evt.Source.Sampling.Rate = meta.samplingRate
+		evt.Source.Sampling.SamplePool = 0
+		evt.Source.Sampling.Drops = 0
+		evt.Fields["capture_backend_snaplen"] = min(s.cfg.SnapLen, 65464)
+	}
 	if meta.hasConntrack {
 		evt.Internal = make(map[string]any, 4)
 		addTupleFields(evt.Internal, "conntrack_reply", meta.conntrack.reply)
@@ -377,11 +387,28 @@ func (s *Source) pollPerfEvents(ctx context.Context, readers []*perfEventReader,
 }
 
 func (s *Source) emitPerfSample(sample []byte, emit func(*event.Event) error) error {
+	var rate uint32
+	if s.cfg.Capture.Sampling.Location == "kernel" {
+		if len(sample) < 4 {
+			return fmt.Errorf("short ebpf sampling header")
+		}
+		rate = binary.NativeEndian.Uint32(sample)
+		if rate == 0 {
+			return fmt.Errorf("ebpf kernel sample has no sampling divisor")
+		}
+		sample = sample[4:]
+	}
 	skb, packet, err := parsePerfPacketSample(sample)
 	if err != nil {
 		return err
 	}
+	if rate > 0 {
+		// Perf records may include alignment bytes after the packet. The
+		// sampler copied exactly min(skb.len, backend snaplen) bytes.
+		packet = packet[:min(len(packet), int(skb.Len), s.cfg.SnapLen, 65464)]
+	}
 	meta := s.packetMetadataFromSKB(skb)
+	meta.samplingRate = rate
 	if !allowDirection(s.cfg.EBPF.DirectionFilter(), meta.direction) {
 		return nil
 	}
@@ -1031,6 +1058,9 @@ type perfEventReader struct {
 func (s *Source) captureDropCount() uint64 {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.kernelSampler != nil {
+		return s.kernelSampler.Drops()
+	}
 	var lost uint64
 	for _, reader := range s.perfEvents {
 		lost += reader.lostSamples.Load()
