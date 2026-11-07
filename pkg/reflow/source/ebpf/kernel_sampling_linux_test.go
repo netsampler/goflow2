@@ -92,8 +92,11 @@ func testKernelSamplingLoopback(t *testing.T, adaptive bool, transport, location
 	defer func() { _ = writer.Close() }()
 	marker := []byte("reflow-sampled-skb-fixture")
 	done := make(chan error, 1)
+	runDone := make(chan struct{})
 	oldRecords := 0
+	transitioned := false
 	go func() {
+		defer close(runDone)
 		done <- src.Start(ctx, func(evt *event.Event) error {
 			packet, ok := evt.Payload.([]byte)
 			if !ok || !bytes.Contains(packet, marker) {
@@ -113,16 +116,26 @@ func testKernelSamplingLoopback(t *testing.T, adaptive bool, transport, location
 						// kernel counters drive a sampling map update.
 						time.Sleep(150 * time.Millisecond)
 					}
-					return nil
-				}
-				if oldRecords < 2 || evt.Source.Sampling.Rate < 2 || evt.Source.Sampling.CaptureDropsTotal == 0 {
+				} else if evt.Source.Sampling.Rate < 2 || evt.Source.Sampling.CaptureDropsTotal == 0 {
 					return fmt.Errorf("missing backlog-driven transition: old=%d metadata=%+v", oldRecords, evt.Source.Sampling)
+				} else {
+					transitioned = true
+				}
+				// Perf buffers are per CPU: an updated divisor on one CPU may
+				// arrive before old queued samples on another. Require both
+				// observations without assuming a global ordering between them.
+				if !transitioned || oldRecords < 2 {
+					return nil
 				}
 			} else if evt.Source.Sampling.Rate != 8 {
 				return fmt.Errorf("unexpected divisor: %+v", evt.Source.Sampling)
 			}
 			return io.EOF
 		})
+	}()
+	defer func() {
+		cancel()
+		<-runDone
 	}()
 	forwarded := make(chan bool, 1)
 	go func() {
@@ -144,7 +157,8 @@ func testKernelSamplingLoopback(t *testing.T, adaptive bool, transport, location
 			}
 			return
 		case <-ctx.Done():
-			t.Fatal("no sampled SKB packet received")
+			<-runDone
+			t.Fatalf("sampled SKB capture did not finish: old=%d transitioned=%t", oldRecords, transitioned)
 		case <-ticker.C:
 			count := 1
 			if adaptive {

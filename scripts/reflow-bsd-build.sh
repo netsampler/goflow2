@@ -21,7 +21,11 @@ fi
 export CGO_ENABLED
 go test -tags "$tags" ./pkg/reflow/...
 go vet -tags "$tags" ./pkg/reflow/... ./cmd/reflow/...
-gmake package-reflow-tar SHA256_CMD='sha256 -r'
+sha256_cmd='sha256 -r'
+if [ "$REFLOW_GOOS" = netbsd ]; then
+    sha256_cmd='sha256 -n'
+fi
+gmake package-reflow-tar SHA256_CMD="$sha256_cmd"
 output=$(gmake print-reflow-output)
 "$output" -version | tee "${output}.manifest.txt"
 grep -F "profile=$REFLOW_PROFILE" "${output}.manifest.txt"
