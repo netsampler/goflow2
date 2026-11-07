@@ -42,6 +42,14 @@ func New(cfg *config.Config) (*App, error) {
 	slog.SetDefault(logger)
 
 	sources := make([]source.Source, 0, len(cfg.Sources))
+	initialized := false
+	defer func() {
+		if !initialized {
+			for _, src := range sources {
+				_ = src.Close()
+			}
+		}
+	}()
 	sourceInitRefresh := make([]time.Duration, 0, len(cfg.Sources))
 	for i, srcCfg := range cfg.Sources {
 		src, err := source.New(srcCfg)
@@ -54,6 +62,27 @@ func New(cfg *config.Config) (*App, error) {
 	proc, err := processor.New(cfg.Processor)
 	if err != nil {
 		return nil, fmt.Errorf("init processor: %w", err)
+	}
+	if cfg.Processor.Builtin.Conntrack.Input != "" {
+		builtin, ok := proc.(*processor.Builtin)
+		if !ok {
+			return nil, fmt.Errorf("conntrack enrichment requires builtin processor")
+		}
+		var selected processor.ConntrackInput
+		for _, src := range sources {
+			if input, ok := src.(processor.ConntrackInput); ok && input.Name() == cfg.Processor.Builtin.Conntrack.Input {
+				if selected != nil {
+					return nil, fmt.Errorf("duplicate conntrack input %q", input.Name())
+				}
+				selected = input
+			}
+		}
+		if selected == nil {
+			return nil, fmt.Errorf("conntrack input %q does not exist", cfg.Processor.Builtin.Conntrack.Input)
+		}
+		if err := builtin.BindConntrackInput(selected); err != nil {
+			return nil, err
+		}
 	}
 	out, err := sink.New(cfg.Sink)
 	if err != nil {
@@ -87,6 +116,7 @@ func New(cfg *config.Config) (*App, error) {
 		return nil, fmt.Errorf("init decoder: %w", err)
 	}
 
+	initialized = true
 	return &App{
 		logger:            logger,
 		sources:           sources,

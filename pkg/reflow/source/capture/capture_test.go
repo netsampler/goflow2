@@ -32,7 +32,7 @@ func TestCaptureRefreshRetainsBackendDrops(t *testing.T) {
 		t.Skip("requires a loopback interface")
 	}
 	driver := &fixtureDriver{run: func(emit func(Frame) error) error {
-		for _, drops := range []uint64{0, 5, 9} {
+		for _, drops := range []uint64{0, 5, 1<<40 + 9} {
 			if err := emit(Frame{Data: []byte{0x45, 0, 0, 20}, LinkType: 101,
 				Interface: iface.Name, InterfaceIndex: iface.Index, Drops: drops}); err != nil {
 				return err
@@ -58,7 +58,7 @@ func TestCaptureRefreshRetainsBackendDrops(t *testing.T) {
 		}
 		for _, evt := range events {
 			init := evt.Payload.(event.SourceInit)
-			if init.Drops != 9 || evt.Source.Sampling.Drops != 9 || init.SamplePool != 3 || init.SamplingRate != 1 {
+			if init.CaptureDropsTotal != 1<<40+9 || evt.Source.Sampling.CaptureDropsTotal != 1<<40+9 || init.Drops != 0 || init.SamplePool != 3 || init.SamplingRate != 1 {
 				t.Fatalf("refresh lost capture counters: %+v, sampling %+v", init, evt.Source.Sampling)
 			}
 		}

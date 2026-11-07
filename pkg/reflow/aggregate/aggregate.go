@@ -968,6 +968,10 @@ func eventFieldValue(evt *event.Event, key string) (any, bool) {
 		if evt.Source.Sampling != nil {
 			return evt.Source.Sampling.SamplePool, true
 		}
+	case "capture_drops_total":
+		if evt.Source.Sampling != nil {
+			return evt.Source.Sampling.CaptureDropsTotal, true
+		}
 	case "drops":
 		if evt.SFlow != nil && evt.SFlow.Drops != 0 {
 			return evt.SFlow.Drops, true

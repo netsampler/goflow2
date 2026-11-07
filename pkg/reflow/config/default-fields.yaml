@@ -29,6 +29,7 @@ fields:
   agent_ip: 130:4:ip4 # exporterIPv4Address
   agent_ipv6: 131:16:ip6 # exporterIPv6Address
   drops: 133:8:u64:delta # droppedPacketDeltaCount
+  capture_drops_total: 433:8:u64:total # ignoredLayer2FrameTotalCount (capture delivery loss)
   source_id: 138:8:u64 # observationPointId
   sub_agent_id: 144:4:u32 # exportingProcessId
   template_id: 145:2:u16 # templateId

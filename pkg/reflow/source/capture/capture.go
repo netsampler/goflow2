@@ -49,6 +49,7 @@ type Source struct {
 	seen             uint64
 	drops            uint64
 	reportedDrops    uint64
+	lastSampling     *event.SamplingMetadata
 	closeOnce        sync.Once
 	closeErr         error
 }
@@ -120,7 +121,7 @@ func (s *Source) metadata(f Frame) event.SourceMetadata {
 		s.agentIPs[f.InterfaceIndex] = agentIP
 	}
 	rate := uint32(s.cfg.Capture.SampleEvery)
-	sampling := &event.SamplingMetadata{Rate: rate, SamplePool: uint32(s.seen), Drops: uint32(f.Drops)}
+	sampling := &event.SamplingMetadata{Rate: rate, SamplePool: uint32(s.seen), CaptureDropsTotal: f.Drops}
 	if s.cfg.Capture.Sampling.Location == "kernel" {
 		// The backend only delivers selected packets; the eligible packet pool is
 		// unknown rather than the number of samples received.
@@ -131,8 +132,10 @@ func (s *Source) metadata(f Frame) event.SourceMetadata {
 		// received samples; combine known sampling divisors for downstream exporters.
 		copySampling := *f.Sampling
 		sampling = &copySampling
+		sampling.CaptureDropsTotal = f.Drops
 		if s.cfg.Capture.Sampling.Location == "kernel" {
-			rate = 1 // The backend already applied this local divisor.
+			rate = 1           // The backend already applied this local divisor.
+			sampling.Drops = 0 // Capture loss has its own 64-bit total counter.
 		}
 		effective := uint64(copySampling.Rate) * uint64(rate)
 		if effective <= uint64(^uint32(0)) {
@@ -169,13 +172,14 @@ func (s *Source) initEvent(f Frame) *event.Event {
 	// Refreshes have no packet frame. Preserve the backend's cumulative loss
 	// instead of advertising a fresh zero, including between sampled packets.
 	f.Drops = s.drops
+	f.Sampling = s.lastSampling
 	meta := s.metadata(f)
 	fields := map[string]any{}
 	if f.InterfaceIndex > 0 {
 		fields["input_if"] = uint32(f.InterfaceIndex)
 		fields["output_if"] = uint32(f.InterfaceIndex)
 	}
-	return &event.Event{ReceivedAt: time.Now().UTC(), Kind: "control", Source: meta, Control: &event.ControlMetadata{Type: "source_init", Stream: "options_data"}, Payload: event.SourceInit{Stream: "options_data", AgentIP: meta.AgentIP, SourceID: meta.SourceID, SamplingRate: meta.Sampling.Rate, SamplePool: meta.Sampling.SamplePool, Drops: meta.Sampling.Drops, InputIf: uint32(f.InterfaceIndex), OutputIf: uint32(f.InterfaceIndex)}, Fields: fields}
+	return &event.Event{ReceivedAt: time.Now().UTC(), Kind: "control", Source: meta, Control: &event.ControlMetadata{Type: "source_init", Stream: "options_data"}, Payload: event.SourceInit{Stream: "options_data", AgentIP: meta.AgentIP, SourceID: meta.SourceID, SamplingRate: meta.Sampling.Rate, SamplePool: meta.Sampling.SamplePool, Drops: meta.Sampling.Drops, CaptureDropsTotal: meta.Sampling.CaptureDropsTotal, InputIf: uint32(f.InterfaceIndex), OutputIf: uint32(f.InterfaceIndex)}, Fields: fields}
 }
 
 func (s *Source) Start(ctx context.Context, emit func(*event.Event) error) error {
@@ -185,6 +189,10 @@ func (s *Source) Start(ctx context.Context, emit func(*event.Event) error) error
 	return s.driver.Run(ctx, func(f Frame) error {
 		s.mu.Lock()
 		defer s.mu.Unlock()
+		if s.cfg.Capture.Sampling.Location == "kernel" && f.Sampling != nil {
+			copySampling := *f.Sampling
+			s.lastSampling = &copySampling
+		}
 		if f.Drops > s.drops {
 			s.drops = f.Drops
 		}

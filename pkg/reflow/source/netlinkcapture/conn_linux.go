@@ -84,7 +84,7 @@ func (c *Conn) Read(ctx context.Context) ([]Message, error) {
 		if poll[0].Revents == 0 {
 			continue
 		}
-		if poll[0].Revents&(unix.POLLNVAL|unix.POLLHUP|unix.POLLERR) != 0 {
+		if poll[0].Revents&(unix.POLLNVAL|unix.POLLHUP) != 0 {
 			if c.FD() < 0 {
 				return nil, io.EOF
 			}

@@ -69,19 +69,20 @@ func (c TFlowConfig) IsZero() bool {
 }
 
 type SourceConfig struct {
-	Capture             CaptureConfig `yaml:"capture,omitempty"`
-	Network             string        `yaml:"network"`
-	Address             string        `yaml:"address"`
-	Interface           string        `yaml:"interface,omitempty"`
-	SnapLen             int           `yaml:"snaplen,omitempty"`
-	SampleEvery         int           `yaml:"sample_every,omitempty"`
-	SampleOffset        int           `yaml:"sample_offset,omitempty"`
-	InterfaceFilter     string        `yaml:"interface_filter,omitempty"`
-	SourceInitRefreshMS *int          `yaml:"source_init_refresh_ms,omitempty"`
-	SourceID            *uint32       `yaml:"source_id,omitempty"`
-	Type                string        `yaml:"type"`
-	JSON                JSONConfig    `yaml:"json"`
-	EBPF                EBPFConfig    `yaml:"ebpf,omitempty"`
+	Conntrack           ConntrackSourceConfig `yaml:"conntrack,omitempty"`
+	Capture             CaptureConfig         `yaml:"capture,omitempty"`
+	Network             string                `yaml:"network"`
+	Address             string                `yaml:"address"`
+	Interface           string                `yaml:"interface,omitempty"`
+	SnapLen             int                   `yaml:"snaplen,omitempty"`
+	SampleEvery         int                   `yaml:"sample_every,omitempty"`
+	SampleOffset        int                   `yaml:"sample_offset,omitempty"`
+	InterfaceFilter     string                `yaml:"interface_filter,omitempty"`
+	SourceInitRefreshMS *int                  `yaml:"source_init_refresh_ms,omitempty"`
+	SourceID            *uint32               `yaml:"source_id,omitempty"`
+	Type                string                `yaml:"type"`
+	JSON                JSONConfig            `yaml:"json"`
+	EBPF                EBPFConfig            `yaml:"ebpf,omitempty"`
 }
 
 type EBPFConfig struct {
@@ -187,14 +188,15 @@ func orderedEncoderType(encoderType string) bool {
 }
 
 type BuiltinProcessorConfig struct {
-	DropMessage          bool                    `yaml:"drop_message"`
-	DropPayload          bool                    `yaml:"drop_payload"`
-	DisablePacketMapping bool                    `yaml:"disable_packet_mapping"`
-	TruncatePacketBytes  int                     `yaml:"truncate_packet_bytes"`
-	PacketDecoder        PacketDecoderConfig     `yaml:"packet_decoder"`
-	TFlow                TFlowProcessorConfig    `yaml:"tflow"`
-	AggregationHelpers   AggregationHelperConfig `yaml:"aggregation_helpers"`
-	NAT                  NATProcessorConfig      `yaml:"nat"`
+	Conntrack            ConntrackProcessorConfig `yaml:"conntrack,omitempty"`
+	DropMessage          bool                     `yaml:"drop_message"`
+	DropPayload          bool                     `yaml:"drop_payload"`
+	DisablePacketMapping bool                     `yaml:"disable_packet_mapping"`
+	TruncatePacketBytes  int                      `yaml:"truncate_packet_bytes"`
+	PacketDecoder        PacketDecoderConfig      `yaml:"packet_decoder"`
+	TFlow                TFlowProcessorConfig     `yaml:"tflow"`
+	AggregationHelpers   AggregationHelperConfig  `yaml:"aggregation_helpers"`
+	NAT                  NATProcessorConfig       `yaml:"nat"`
 }
 
 type TFlowProcessorConfig struct {
@@ -985,6 +987,9 @@ func validateUDPPorts(name string, ports []uint32) error {
 
 // applySourceDefaults normalizes per-source defaults that depend on source.network.
 func applySourceDefaults(src *SourceConfig) error {
+	if src.Network == "conntrack" {
+		return NormalizeConntrackSource(src)
+	}
 	if IsCaptureNetwork(src.Network) {
 		if err := NormalizeCapture(src); err != nil {
 			return err

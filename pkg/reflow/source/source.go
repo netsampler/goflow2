@@ -8,6 +8,7 @@ import (
 	"github.com/netsampler/goflow2/v3/pkg/reflow/config"
 	"github.com/netsampler/goflow2/v3/pkg/reflow/source/afpacket"
 	"github.com/netsampler/goflow2/v3/pkg/reflow/source/bpf"
+	"github.com/netsampler/goflow2/v3/pkg/reflow/source/conntrack"
 	"github.com/netsampler/goflow2/v3/pkg/reflow/source/dpdk"
 	"github.com/netsampler/goflow2/v3/pkg/reflow/source/nflog"
 	"github.com/netsampler/goflow2/v3/pkg/reflow/source/pfring"
@@ -40,6 +41,8 @@ func New(cfg config.SourceConfig) (Source, error) {
 		}
 	}
 	switch cfg.Network {
+	case "conntrack":
+		return conntrack.New(cfg)
 	case "udp", "unixgram":
 		return socket.New(cfg)
 	case "af_packet":
