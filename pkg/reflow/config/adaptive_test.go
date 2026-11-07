@@ -70,6 +70,17 @@ encoder:
 	if !cfg.Sources[0].Capture.Sampling.Adaptive.Enabled || cfg.Sources[0].Capture.Sampling.Adaptive.IntervalMS != 1000 {
 		t.Fatalf("adaptive defaults missing: %+v", cfg.Sources[0].Capture.Sampling.Adaptive)
 	}
+	if cfg.Encoder.TemplatedFlow.SamplingMode != IPFIXSamplingSelector {
+		t.Fatalf("adaptive IPFIX sampling mode = %q", cfg.Encoder.TemplatedFlow.SamplingMode)
+	}
+	legacy := strings.Replace(string(raw), "templated_flow:\n", "templated_flow:\n    sampling_mode: legacy\n", 1)
+	cfg, err = LoadBytes("adaptive.yaml", []byte(legacy))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Encoder.TemplatedFlow.SamplingMode != IPFIXSamplingLegacy {
+		t.Fatalf("explicit IPFIX sampling mode = %q", cfg.Encoder.TemplatedFlow.SamplingMode)
+	}
 	mixed := strings.ReplaceAll(string(raw), "key:sampling_rate", "current:sampling_rate")
 	if _, err := LoadBytes("adaptive.yaml", []byte(mixed)); err == nil || !strings.Contains(err.Error(), "key:sampling_rate") {
 		t.Fatalf("config load accepted mixed-rate aggregation: %v", err)

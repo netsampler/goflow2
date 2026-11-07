@@ -2,6 +2,24 @@ package config
 
 import "fmt"
 
+const (
+	IPFIXSamplingSelector = "selector"
+	IPFIXSamplingLegacy   = "legacy"
+)
+
+// IPFIXSamplingMode defaults adaptive IPFIX export to selector Options.
+func (c *Config) IPFIXSamplingMode() string {
+	mode := c.Encoder.TemplatedFlow.SamplingMode
+	if mode == "" && c.Encoder.Type == "ipfix" {
+		for _, source := range c.Sources {
+			if source.Capture.Sampling.Adaptive.Enabled {
+				return IPFIXSamplingSelector
+			}
+		}
+	}
+	return mode
+}
+
 // AdaptiveSamplingConfig adjusts a driver sampling divisor in response to capture
 // delivery loss. It never changes the packets forwarded by the host.
 type AdaptiveSamplingConfig struct {
@@ -56,8 +74,23 @@ func normalizeAdaptiveSampling(c *AdaptiveSamplingConfig, location string, every
 // the per-record divisor required to interpret dynamically sampled counters.
 // Call after defaults and aggregator field normalization.
 func (c *Config) ValidateAdaptivePipeline() error {
+	switch c.Encoder.TemplatedFlow.SamplingMode {
+	case "":
+	case IPFIXSamplingSelector, IPFIXSamplingLegacy:
+		if c.Encoder.Type != "ipfix" {
+			return fmt.Errorf("encoder.templated_flow.sampling_mode requires IPFIX output")
+		}
+	default:
+		return fmt.Errorf("encoder.templated_flow.sampling_mode must be selector or legacy")
+	}
 	networks := make(map[string]bool)
-	for _, source := range c.Sources {
+	selectorMode := c.IPFIXSamplingMode() == IPFIXSamplingSelector
+	for i, source := range c.Sources {
+		if selectorMode && IsCaptureNetwork(source.Network) &&
+			max(source.Capture.SampleEvery, source.Capture.Sampling.Every) > 1 &&
+			!source.Capture.Sampling.SelectsInDriver() {
+			return fmt.Errorf("sources[%d]: systematic packet sampling requires IPFIX sampling_mode: legacy", i)
+		}
 		if source.Capture.Sampling.Adaptive.Enabled {
 			networks[source.Network] = true
 		}

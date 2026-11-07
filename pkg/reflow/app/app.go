@@ -93,6 +93,7 @@ func New(cfg *config.Config) (*App, error) {
 	}
 
 	encoderCfg := cfg.Encoder
+	encoderCfg.TemplatedFlow.SamplingMode = cfg.IPFIXSamplingMode()
 	processorWorkers := config.ResolveProcessorWorkers(cfg.Processor.Workers)
 	encoderWorkers := config.ResolveEncoderWorkers(cfg.Encoder.Workers, encoderCfg.Type)
 	// Ordered exporters own protocol sequence numbers and template refresh state.

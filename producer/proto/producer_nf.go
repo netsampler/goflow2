@@ -701,9 +701,7 @@ func SplitIPFIXSets(packetIPFIX netflow.IPFIXPacket) ([]netflow.DataFlowSet, []n
 	return dataFlowSet, templatesFlowSet, optionsTemplatesFlowSet, optionsDataFlowSet
 }
 
-// Convert a NetFlow datastructure to a FlowMessage protobuf
-// Does not put sampling rate
-// ProcessMessageIPFIXConfig processes an IPFIX packet using the config.
+// ProcessMessageIPFIXConfig converts IPFIX records and resolves their sampling rates.
 func ProcessMessageIPFIXConfig(packet *netflow.IPFIXPacket, ctx netflow.FlowContext, samplingRateStore samplingrate.Store, config ProtoProducerConfig) (flowMessageSet []producer.ProducerMessage, err error) {
 	dataFlowSet, _, _, optionDataFlowSet := SplitIPFIXSets(*packet)
 
@@ -735,14 +733,21 @@ func ProcessMessageIPFIXConfig(packet *netflow.IPFIXPacket, ctx netflow.FlowCont
 			}
 		}
 	}
-	for _, msg := range flowMessageSet {
-		fmsg, ok := msg.(*ProtoProducerMessage)
-		if !ok {
-			continue
+	selectors := netflow.IPFIXSelectorsFromOptions(optionDataFlowSet)
+	// SearchNetFlowDataSets produces one message per record in wire order.
+	index := 0
+	for _, set := range dataFlowSet {
+		for _, record := range set.Records {
+			fmsg := flowMessageSet[index].(*ProtoProducerMessage)
+			index++
+			rate := selectors.Rate(record.Values)
+			if rate == 0 {
+				rate = samplingRate
+			}
+			fmsg.SequenceNum = seqnum
+			fmsg.SamplingRate = uint64(rate)
+			fmsg.ObservationDomainId = obsDomainId
 		}
-		fmsg.SequenceNum = seqnum
-		fmsg.SamplingRate = uint64(samplingRate)
-		fmsg.ObservationDomainId = obsDomainId
 	}
 	return flowMessageSet, nil
 }

@@ -48,6 +48,7 @@ var (
 	outputHelperOptions = []string{
 		"protobuf:*[?export_all=<bool>]",
 		"sflow:*[?allow_truncate=<bool>&max_header_bytes=<bytes>]",
+		"ipfix:*[?sampling_mode=<selector|legacy>]",
 		"sflow|ipfix|netflowv9:*[?batch=<bool>&batch_max_records=<n>&batch_max_bytes=<bytes>&batch_flush_interval_ms=<ms>]",
 	}
 	inputHelperExamples = []string{
@@ -60,6 +61,7 @@ var (
 	outputHelperExamples = []string{
 		"json:stdout",
 		"ipfix:udp:127.0.0.1:4739",
+		"'ipfix:udp:127.0.0.1:4739?sampling_mode=legacy'",
 		"'ipfix:udp:collector.example.com:4739?resolve_interval_ms=0'",
 		"'protobuf:file:/tmp/reflow.pb?export_all=true'",
 		"pcap:stdout",
@@ -839,6 +841,11 @@ func applyOutputParams(spec, encoderType string, params url.Values, encoder *Enc
 		}
 		value := values[len(values)-1]
 		switch key {
+		case "sampling_mode":
+			if encoderType != "ipfix" {
+				return fmt.Errorf("invalid -output %q: sampling_mode requires IPFIX output", spec)
+			}
+			encoder.TemplatedFlow.SamplingMode = value
 		case "allow_truncate":
 			if encoderType != "sflow" {
 				return fmt.Errorf("invalid -output %q: output parameter %q is only supported for sflow", spec, key)

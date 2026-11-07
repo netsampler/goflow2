@@ -403,6 +403,7 @@ type TemplatedFlowConfig struct {
 	ObservationDomainID   uint32                  `yaml:"observation_domain_id"`
 	TemplateRefresh       int                     `yaml:"template_refresh_ms"`
 	OptionsRefresh        int                     `yaml:"options_refresh_ms"`
+	SamplingMode          string                  `yaml:"sampling_mode,omitempty"`
 	Data                  TemplatedFlowDataConfig `yaml:"data"`
 }
 
@@ -913,6 +914,7 @@ func (c *Config) setDefaults(configPath string) error {
 			return fmt.Errorf("sink.resolve_interval_ms is only supported when sink.type=udp")
 		}
 	}
+	c.Encoder.TemplatedFlow.SamplingMode = c.IPFIXSamplingMode()
 	return c.ValidateAdaptivePipeline()
 }
 

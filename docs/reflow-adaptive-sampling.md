@@ -107,6 +107,9 @@ cumulative delivery loss. No new switch or firewall configuration is performed.
 
 Flow counters remain raw selected observations. Preserve `sampling_rate` per
 record and calculate estimates as `sum(bytes * sampling_rate) / seconds`.
+IPFIX defaults to selector Options with `samplingProbability`. Set
+`encoder.templated_flow.sampling_mode: legacy` to export `samplingInterval`
+(IE 34). See [sampling accounting](reflow-sampling-accounting.md).
 Generated packet aggregation includes `key:sampling_rate`; hand-written
 stateful packet aggregation must also keep it as a key. Explicit IPFIX/NetFlow v9
 field selections must contain `sampling_rate`. Configurations that discard this

@@ -138,6 +138,9 @@ const (
 const tflowRecordTypeField = "tflow_record_type"
 
 func NewIPFIXEncoder(cfg config.EncoderConfig) *IPFIXEncoder {
+	if cfg.TemplatedFlow.SamplingMode == config.IPFIXSamplingSelector {
+		cfg.TemplatedFlow.Data.Catalog = ipfixSelectorCatalog(cfg.TemplatedFlow.Data.Catalog)
+	}
 	return &IPFIXEncoder{
 		cfg:            cfg,
 		dataSchemas:    make(map[string]templatedSchemaState),
@@ -161,10 +164,17 @@ func (e *IPFIXEncoder) Encode(evt *event.Event) ([][]byte, error) {
 		if err != nil {
 			return nil, err
 		}
+		if err := e.addSamplingOptions(packet); err != nil {
+			return nil, err
+		}
 		data, err := netflow.EncodeMessage(packet)
 		if err != nil {
 			return nil, fmt.Errorf("encode ipfix packet: %w", err)
 		}
+		if err := e.checkSamplingDatagramSize(data); err != nil {
+			return nil, err
+		}
+		e.advanceIPFIXSequence(packet)
 		return [][]byte{data}, nil
 	}
 	if err := e.appendEvent(evt); err != nil {
@@ -224,13 +234,24 @@ func (e *IPFIXEncoder) flushDataPackets(trigger string) ([][]byte, error) {
 			return payloads, err
 		}
 		data, err := netflow.EncodeMessage(packet)
+		if err == nil {
+			err = e.checkSamplingDatagramSize(data)
+		}
 		if err != nil {
 			e.events = pending
 			e.estimatedBytes = e.estimatedEventsRenderedSize(pending)
 			return payloads, fmt.Errorf("encode ipfix packet: %w", err)
 		}
-		acceptedBytes := renderedFlowSetsDataSize(packet.FlowSets)
+		flowSets := packet.FlowSets
+		// Selector Options are added during packetization and have no queued event.
+		if len(flowSets) >= 2 && e.cfg.TemplatedFlow.SamplingMode == config.IPFIXSamplingSelector {
+			if set, ok := flowSets[1].(netflow.OptionsDataFlowSet); ok && set.Id == ipfixSamplingTemplateID {
+				flowSets = flowSets[2:]
+			}
+		}
+		acceptedBytes := renderedFlowSetsDataSize(flowSets)
 		payloads = append(payloads, data)
+		e.advanceIPFIXSequence(packet)
 		pending = pending[accepted:]
 		e.events = pending
 		e.estimatedBytes -= acceptedBytes
@@ -382,6 +403,9 @@ func (e *IPFIXEncoder) buildBatchedPacket(events []*event.Event) (*netflow.IPFIX
 		optionsRecords:       optionsRecordsForBatchRecord(first),
 	}}
 	packet := e.ipfixBatchPacket(first, sets)
+	if err := e.addSamplingOptions(packet); err != nil {
+		return nil, 0, err
+	}
 	accepted := 1
 
 	for _, evt := range events[1:] {
@@ -396,22 +420,24 @@ func (e *IPFIXEncoder) buildBatchedPacket(events []*event.Event) (*netflow.IPFIX
 		if !ok {
 			break
 		}
-		packet = e.ipfixBatchPacket(first, nextSets)
+		candidate := e.ipfixBatchPacket(first, nextSets)
+		if err := e.addSamplingOptions(candidate); err != nil {
+			return nil, accepted, err
+		}
 		if e.cfg.MaxDatagramBytes > 0 {
-			data, err := netflow.EncodeMessage(packet)
+			data, err := netflow.EncodeMessage(candidate)
 			if err != nil {
 				return nil, accepted, fmt.Errorf("encode ipfix packet: %w", err)
 			}
 			if len(data) > e.cfg.MaxDatagramBytes {
-				packet = e.ipfixBatchPacket(first, sets)
 				break
 			}
 		}
 		sets = nextSets
+		packet = candidate
 		accepted++
 	}
 
-	e.advanceIPFIXSequence(packet)
 	return packet, accepted, nil
 }
 
@@ -1056,7 +1082,6 @@ func (e *IPFIXEncoder) buildPacket(evt *event.Event) (*netflow.IPFIXPacket, erro
 				},
 			},
 		}
-		e.advanceIPFIXSequence(packet)
 		return packet, nil
 	case *netflow.TemplateRecord:
 		record := *evt.Payload.(*netflow.TemplateRecord)
@@ -1072,7 +1097,6 @@ func (e *IPFIXEncoder) buildPacket(evt *event.Event) (*netflow.IPFIXPacket, erro
 				},
 			},
 		}
-		e.advanceIPFIXSequence(packet)
 		return packet, nil
 	case netflow.IPFIXOptionsTemplateRecord:
 		record := evt.Payload.(netflow.IPFIXOptionsTemplateRecord)
@@ -1088,7 +1112,6 @@ func (e *IPFIXEncoder) buildPacket(evt *event.Event) (*netflow.IPFIXPacket, erro
 				},
 			},
 		}
-		e.advanceIPFIXSequence(packet)
 		return packet, nil
 	case *netflow.IPFIXOptionsTemplateRecord:
 		record := *evt.Payload.(*netflow.IPFIXOptionsTemplateRecord)
@@ -1104,7 +1127,6 @@ func (e *IPFIXEncoder) buildPacket(evt *event.Event) (*netflow.IPFIXPacket, erro
 				},
 			},
 		}
-		e.advanceIPFIXSequence(packet)
 		return packet, nil
 	}
 
@@ -1128,7 +1150,6 @@ func (e *IPFIXEncoder) buildPacket(evt *event.Event) (*netflow.IPFIXPacket, erro
 				},
 			},
 		}
-		e.advanceIPFIXSequence(packet)
 		return packet, nil
 	}
 	if schema, ok := e.dataSchemas[stream]; ok {
@@ -1151,7 +1172,6 @@ func (e *IPFIXEncoder) buildPacket(evt *event.Event) (*netflow.IPFIXPacket, erro
 				},
 			},
 		}
-		e.advanceIPFIXSequence(packet)
 		return packet, nil
 	}
 
@@ -1175,7 +1195,6 @@ func (e *IPFIXEncoder) buildPacket(evt *event.Event) (*netflow.IPFIXPacket, erro
 			},
 		},
 	}
-	e.advanceIPFIXSequence(packet)
 	return packet, nil
 }
 
@@ -1359,8 +1378,14 @@ func (e *IPFIXEncoder) handleControl(evt *event.Event) ([][]byte, error) {
 	case "schema":
 		return e.registerSchema(evt)
 	case "source_init":
+		if e.cfg.TemplatedFlow.SamplingMode == config.IPFIXSamplingSelector {
+			return nil, nil
+		}
 		return e.registerSourceInit(evt)
 	case "source_init_batch":
+		if e.cfg.TemplatedFlow.SamplingMode == config.IPFIXSamplingSelector {
+			return nil, nil
+		}
 		return e.registerSourceInitBatch(evt)
 	default:
 		return nil, nil
@@ -1394,6 +1419,9 @@ func (e *IPFIXEncoder) registerSchema(evt *event.Event) ([][]byte, error) {
 		if err != nil {
 			return nil, err
 		}
+		if err := e.checkSamplingTemplateID(state.templateID); err != nil {
+			return nil, err
+		}
 		e.optionsSchemas[eventStream(evt, schema.Stream)] = state
 		payloads, err := e.encodeOptionsSchemaTemplate(state)
 		if err != nil {
@@ -1414,6 +1442,9 @@ func (e *IPFIXEncoder) registerSchema(evt *event.Event) ([][]byte, error) {
 		if err != nil {
 			return nil, err
 		}
+	}
+	if err := e.checkSamplingTemplateID(state.template.TemplateId); err != nil {
+		return nil, err
 	}
 	e.dataSchemas[eventStream(evt, schema.Stream)] = state
 	payloads, err := e.encodeSchemaTemplates(state)

@@ -1,10 +1,13 @@
 package app
 
 import (
+	"encoding/binary"
 	"flag"
+	"math"
 	"testing"
 	"time"
 
+	"github.com/netsampler/goflow2/v3/decoders/netflow"
 	"github.com/netsampler/goflow2/v3/pkg/reflow/aggregate"
 	"github.com/netsampler/goflow2/v3/pkg/reflow/config"
 	"github.com/netsampler/goflow2/v3/pkg/reflow/decode"
@@ -15,18 +18,28 @@ import (
 // Options may arrive before or after data at a different rate. Each data record
 // must remain independently weightable after aggregation and templated export.
 func TestSamplingRatesRemainSeparateThroughTemplatedExports(t *testing.T) {
+	cases := []struct {
+		name, format, params string
+	}{
+		{"ipfix-selector", "ipfix", "?sampling_mode=selector"},
+		{"ipfix-selector-batched", "ipfix", "?sampling_mode=selector&batch=true"},
+		{"ipfix-legacy", "ipfix", "?sampling_mode=legacy"},
+		{"netflowv9", "netflowv9", ""},
+	}
 	for _, network := range []string{"af_packet", "pktmon"} {
-		for _, format := range []string{"ipfix", "netflowv9"} {
-			t.Run(network+"/"+format, func(t *testing.T) { testSamplingRatesRemainSeparate(t, network, format) })
+		for _, tc := range cases {
+			t.Run(network+"/"+tc.name, func(t *testing.T) {
+				testSamplingRatesRemainSeparate(t, network, tc.format, tc.params)
+			})
 		}
 	}
 }
 
-func testSamplingRatesRemainSeparate(t *testing.T, network, format string) {
+func testSamplingRatesRemainSeparate(t *testing.T, network, format, params string) {
 	t.Helper()
 	fs := flag.NewFlagSet("test", flag.ContinueOnError)
 	flags, _ := config.BindFlags(fs)
-	if err := fs.Parse([]string{"-input=" + network + ":eth2:bytes", "-output=" + format + ":udp:[::1]:4739", "-agg", "-genconf"}); err != nil {
+	if err := fs.Parse([]string{"-input=" + network + ":eth2:bytes", "-output=" + format + ":udp:[::1]:4739" + params, "-agg", "-genconf"}); err != nil {
 		t.Fatal(err)
 	}
 	cfg, _, err := config.LoadFromFlags(flags)
@@ -41,6 +54,9 @@ func testSamplingRatesRemainSeparate(t *testing.T, network, format string) {
 	defer dec.Close()
 	var weightedBytes, rawBytes int64
 	rates := map[uint32]int{}
+	probabilities := map[float64]bool{}
+	selectorMode := cfg.Encoder.TemplatedFlow.SamplingMode == config.IPFIXSamplingSelector
+	samplingFieldSeen := false
 	const losses = uint64(1)<<40 + 123
 	lossSeen := false
 	consume := func(payloads [][]byte) {
@@ -51,6 +67,28 @@ func testSamplingRatesRemainSeparate(t *testing.T, network, format string) {
 				t.Fatal(err)
 			}
 			for _, row := range rows {
+				switch record := row.Payload.(type) {
+				case netflow.TemplateRecord:
+					for _, field := range record.Fields {
+						if selectorMode && field.Type == netflow.IPFIX_FIELD_samplingInterval {
+							t.Fatal("selector template included legacy IE 34")
+						}
+						if (selectorMode && field.Type == netflow.IPFIX_FIELD_selectorId) ||
+							(!selectorMode && field.Type == netflow.IPFIX_FIELD_samplingInterval) {
+							samplingFieldSeen = true
+						}
+					}
+				case netflow.OptionsDataRecord:
+					for _, field := range record.OptionsValues {
+						if selectorMode && field.Type == netflow.IPFIX_FIELD_samplingInterval {
+							t.Fatal("selector Options included legacy IE 34")
+						}
+						if field.Type == netflow.IPFIX_FIELD_samplingProbability {
+							probability := math.Float64frombits(binary.BigEndian.Uint64(field.Value.([]byte)))
+							probabilities[probability] = true
+						}
+					}
+				}
 				if value, ok := row.Fields["capture_drops_total"]; ok {
 					if value != losses {
 						t.Fatalf("capture loss = %#v, want %d", value, losses)
@@ -124,5 +162,11 @@ func testSamplingRatesRemainSeparate(t *testing.T, network, format string) {
 	// Both protocols must retain the divisor independently on each data record.
 	if len(rates) != 2 || rates[4] != 1 || rates[16] != 1 || rawBytes != 3000 || weightedBytes != 24000 || (format == "ipfix" && !lossSeen) {
 		t.Fatalf("rates=%v raw=%d weighted=%d capture_loss_seen=%v", rates, rawBytes, weightedBytes, lossSeen)
+	}
+	if format == "ipfix" && !samplingFieldSeen {
+		t.Fatal("IPFIX data template omitted the sampling field")
+	}
+	if selectorMode && (!probabilities[1.0/4] || !probabilities[1.0/16]) {
+		t.Fatalf("selector Options probabilities = %v", probabilities)
 	}
 }
