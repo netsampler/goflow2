@@ -53,8 +53,10 @@ protocol, and source ID:
 
 `-agg` sums packet and byte counts, flushes idle flows after 10 seconds, and emits
 snapshots every 60 seconds. EOF or Ctrl-C flushes remaining flows. PCAPNG input is
-also supported. Live capture uses `pcap_live:<interface>:bytes` with a libpcap/cgo
-build, or `ebpf:<interface>:bytes` on Linux.
+also supported. Live capture is selected through platform, libpcap, DPDK, or
+PF_RING build profiles. See the [release features and filename table](docs/reflow-capture.md#release-profiles-and-filenames)
+to choose a download, and the [capture guide](docs/reflow-capture.md) for
+configuration, firewall copies, and SONiC packet exports.
 
 Use `-list-options` for supported inputs, outputs, and aggregation settings. To
 customize a pipeline, add `-genconf > reflow.yaml` to a command, edit the generated

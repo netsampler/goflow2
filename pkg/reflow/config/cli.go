@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"github.com/netsampler/goflow2/v3/pkg/reflow/buildprofile"
 	"net/netip"
 	"net/url"
 	"strconv"
@@ -24,7 +25,7 @@ var (
 		"stream:<path-or-stdin>:pcap",
 		"stream:<path-or-stdin>:pcapng",
 		"stream:<path-or-stdin>:json",
-		"ebpf:<interface|any>:bytes[?snaplen=<bytes>&sample_every=<n>&sample_offset=<n>&source_init_refresh_ms=<ms>&interface_filter=<regex>&direction=ingress|egress|both&skb_metadata=<bool>&conntrack=<bool>]",
+		"ebpf:<interface|any>:bytes[?snaplen=<bytes>&sample_every=<n>&sample_offset=<n>&source_init_refresh_ms=<ms>&interface_filter=<regex>&direction=ingress|egress|both&skb_metadata=<bool>&conntrack=<bool>&transport=perf|ringbuf|auto&ring_size=<bytes>]",
 		"pcap_live:<interface|any>:bytes[?snaplen=<bytes>&sample_every=<n>&sample_offset=<n>&source_init_refresh_ms=<ms>&interface_filter=<regex>]",
 	}
 	outputEncoderOptions = []string{
@@ -107,6 +108,7 @@ var (
 		"agent_ip",
 		"agent_ipv6",
 		"source_id",
+		"sampling_rate",
 		"start_time_unix",
 		"end_time_unix",
 		"ether_type",
@@ -173,12 +175,24 @@ func (f *inputFlags) String() string {
 
 func HelperOptionsText() string {
 	var b strings.Builder
+	fmt.Fprintf(&b, "%s\n", buildprofile.Summary())
+	for _, input := range buildprofile.Inputs() {
+		fmt.Fprintf(&b, "  -input %s:<target>:bytes\n", input)
+	}
 	b.WriteString("Input helper specs (-input network:target:type):\n")
 	for _, option := range inputHelperOptions {
+		network, _, _ := strings.Cut(option, ":")
+		if IsCaptureNetwork(network) && !buildprofile.Supports(network) {
+			continue
+		}
 		fmt.Fprintf(&b, "  %s\n", option)
 	}
 	b.WriteString("\nInput examples:\n")
 	for _, example := range inputHelperExamples {
+		network, _, _ := strings.Cut(strings.Trim(example, "'"), ":")
+		if IsCaptureNetwork(network) && !buildprofile.Supports(network) {
+			continue
+		}
 		fmt.Fprintf(&b, "  -input %s\n", example)
 	}
 	b.WriteString("\nOutput helper specs (-output encoder:sink[:target]):\n")
@@ -485,12 +499,13 @@ func parseInputSpec(spec string) (SourceConfig, error) {
 		default:
 			return SourceConfig{}, fmt.Errorf("invalid -input %q: stream source type must be pcap, pcapng, or json", spec)
 		}
-	case "pcap_live", "ebpf":
+	case "pcap_live", "ebpf", "af_packet", "xdp", "bpf", "pktap", "pktmon", "nflog", "psample", "dpdk", "pfring", "pfring_zc":
 		if sourceType != "bytes" {
 			return SourceConfig{}, fmt.Errorf("invalid -input %q: %s source type must be bytes", spec, network)
 		}
-		source.Interface = target
-		source.Address = ""
+		if err := setCaptureTarget(&source, target); err != nil {
+			return SourceConfig{}, err
+		}
 	default:
 		return SourceConfig{}, fmt.Errorf("invalid -input %q: unsupported network %q", spec, network)
 	}
@@ -503,8 +518,8 @@ func parseInputSpec(spec string) (SourceConfig, error) {
 }
 
 func applyInputParams(source *SourceConfig, rawParams string) error {
-	if source.Network != "pcap_live" && source.Network != "ebpf" {
-		return fmt.Errorf("source parameters are only supported for pcap_live and ebpf inputs")
+	if !IsCaptureNetwork(source.Network) {
+		return fmt.Errorf("source parameters are only supported for capture inputs")
 	}
 	params, err := url.ParseQuery(rawParams)
 	if err != nil {
@@ -541,13 +556,26 @@ func applyInputParams(source *SourceConfig, rawParams string) error {
 			}
 			source.SourceInitRefreshMS = &parsed
 		case "interface_filter":
-			if source.Network != "pcap_live" && source.Network != "ebpf" {
+			if !IsCaptureNetwork(source.Network) {
 				return fmt.Errorf("source parameter %q is only supported for pcap_live and ebpf inputs", key)
 			}
 			if value == "" {
 				return fmt.Errorf("source parameter %q cannot be empty", key)
 			}
 			source.InterfaceFilter = value
+		case "transport", "ring_size":
+			if source.Network != "ebpf" {
+				return fmt.Errorf("source parameter %q is only supported for ebpf inputs", key)
+			}
+			if key == "transport" {
+				source.EBPF.Transport = value
+			} else {
+				parsed, err := parseNonNegativeInputParam(key, value)
+				if err != nil {
+					return err
+				}
+				source.EBPF.RingSize = parsed
+			}
 		case "skb_metadata":
 			if source.Network != "ebpf" {
 				return fmt.Errorf("source parameter %q is only supported for ebpf inputs", key)
@@ -574,15 +602,19 @@ func applyInputParams(source *SourceConfig, rawParams string) error {
 				return fmt.Errorf("source parameter %q cannot be empty", key)
 			}
 			source.EBPF.ConntrackPath = value
-		case "direction":
-			if source.Network != "ebpf" {
-				return fmt.Errorf("source parameter %q is only supported for ebpf inputs", key)
+		case "promiscuous":
+			parsed, err := strconv.ParseBool(value)
+			if err != nil {
+				return err
 			}
+			source.Capture.Promiscuous = &parsed
+		case "direction":
 			parsed, err := NormalizeEBPFDirection(value)
 			if err != nil {
 				return fmt.Errorf("source parameter %q: %w", key, err)
 			}
 			source.EBPF.Direction = parsed
+			source.Capture.Direction = parsed
 		default:
 			return fmt.Errorf("unsupported source parameter %q", key)
 		}
@@ -1004,6 +1036,7 @@ func defaultGeneratedAggregator() AggregatorConfig {
 			{Role: "current", Name: "agent_ip"},
 			{Role: "current", Name: "agent_ipv6"},
 			{Role: "key", Name: "source_id"},
+			{Role: "key", Name: "sampling_rate"},
 			{Role: "first", Name: "start_time_unix"},
 			{Role: "current", Name: "end_time_unix"},
 			{Role: "current", Name: "ether_type"},
@@ -1028,6 +1061,7 @@ func defaultSourceOptionsAggregator() AggregatorConfig {
 			{Role: "current", Name: "sampling_rate"},
 			{Role: "current", Name: "sample_pool"},
 			{Role: "current", Name: "drops"},
+			{Role: "current", Name: "capture_drops_total"},
 			{Role: "current", Name: "input_if"},
 			{Role: "current", Name: "output_if"},
 		},

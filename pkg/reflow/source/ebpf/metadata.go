@@ -12,6 +12,14 @@ import (
 // InitEvents emits a source_init control event so template-based encoders can
 // learn source-scoped metadata before the first captured packet arrives.
 func (s *Source) InitEvents() ([]*event.Event, error) {
+	if s.shared != nil {
+		events, err := s.shared.InitEvents()
+		if err != nil {
+			return nil, err
+		}
+		s.refreshSampling(events)
+		return events, nil
+	}
 	if !s.captureAny {
 		iface := net.Interface{
 			Index: s.captureInterfaceIndex,

@@ -35,7 +35,7 @@ func eventSamplingRate(evt *event.Event) uint32 {
 	if evt.Source.Sampling != nil && evt.Source.Sampling.Rate != 0 {
 		return evt.Source.Sampling.Rate
 	}
-	return 0
+	return uint32Field(evt.Fields, "sampling_rate")
 }
 
 func eventSourceID(evt *event.Event) uint32 {
@@ -139,6 +139,9 @@ func addEventMetadataFields(fields map[string]any, evt *event.Event, names map[s
 	add("sampling_rate", samplingRate, hasSamplingMetadata(evt))
 	add("sample_pool", samplePool, hasSamplePoolMetadata(evt))
 	add("drops", drops, hasDropsMetadata(evt))
+	if evt.Source.Sampling != nil {
+		add("capture_drops_total", evt.Source.Sampling.CaptureDropsTotal, true)
+	}
 }
 
 func agentIPByFamily(raw string) (string, string) {

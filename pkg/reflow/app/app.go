@@ -35,6 +35,9 @@ type App struct {
 
 // New wires the current ReFlow runtime from source to sink.
 func New(cfg *config.Config) (*App, error) {
+	if err := cfg.ValidateAdaptivePipeline(); err != nil {
+		return nil, err
+	}
 	logger, err := logging.NewLogger(cfg.LogLevel, cfg.LogFormat)
 	if err != nil {
 		return nil, fmt.Errorf("init logger: %w", err)
@@ -42,6 +45,14 @@ func New(cfg *config.Config) (*App, error) {
 	slog.SetDefault(logger)
 
 	sources := make([]source.Source, 0, len(cfg.Sources))
+	initialized := false
+	defer func() {
+		if !initialized {
+			for _, src := range sources {
+				_ = src.Close()
+			}
+		}
+	}()
 	sourceInitRefresh := make([]time.Duration, 0, len(cfg.Sources))
 	for i, srcCfg := range cfg.Sources {
 		src, err := source.New(srcCfg)
@@ -54,6 +65,27 @@ func New(cfg *config.Config) (*App, error) {
 	proc, err := processor.New(cfg.Processor)
 	if err != nil {
 		return nil, fmt.Errorf("init processor: %w", err)
+	}
+	if cfg.Processor.Builtin.Conntrack.Input != "" {
+		builtin, ok := proc.(*processor.Builtin)
+		if !ok {
+			return nil, fmt.Errorf("conntrack enrichment requires builtin processor")
+		}
+		var selected processor.ConntrackInput
+		for _, src := range sources {
+			if input, ok := src.(processor.ConntrackInput); ok && input.Name() == cfg.Processor.Builtin.Conntrack.Input {
+				if selected != nil {
+					return nil, fmt.Errorf("duplicate conntrack input %q", input.Name())
+				}
+				selected = input
+			}
+		}
+		if selected == nil {
+			return nil, fmt.Errorf("conntrack input %q does not exist", cfg.Processor.Builtin.Conntrack.Input)
+		}
+		if err := builtin.BindConntrackInput(selected); err != nil {
+			return nil, err
+		}
 	}
 	out, err := sink.New(cfg.Sink)
 	if err != nil {
@@ -87,6 +119,7 @@ func New(cfg *config.Config) (*App, error) {
 		return nil, fmt.Errorf("init decoder: %w", err)
 	}
 
+	initialized = true
 	return &App{
 		logger:            logger,
 		sources:           sources,
@@ -102,7 +135,12 @@ func New(cfg *config.Config) (*App, error) {
 }
 
 // Run owns the source, processor, aggregation, encoding, and sink goroutines.
-func (a *App) Run(ctx context.Context) error {
+func (a *App) Run(ctx context.Context) (runErr error) {
+	defer func() {
+		if err := source.Cleanup(); err != nil && runErr == nil {
+			runErr = fmt.Errorf("cleanup sources: %w", err)
+		}
+	}()
 	a.logger.Info("starting ReFlow")
 	defer func() {
 		if err := a.sink.Close(); err != nil {
@@ -141,9 +179,12 @@ func (a *App) Run(ctx context.Context) error {
 		encoders = append(encoders, enc)
 	}
 
-	decodeJobs := make(chan *event.Event, a.processorWorkers*2)
-	processJobs := make(chan *event.Event, a.processorWorkers*2)
-	encodeJobs := make(chan *event.Event, a.encoderWorkers*2)
+	// Small fixed batches reduce scheduler handoffs on low-core capture hosts.
+	// Capacity stays bounded independently of the amount of captured traffic.
+	processQueueSize := max(a.processorWorkers*2, 64)
+	decodeJobs := make(chan *event.Event, processQueueSize)
+	processJobs := make(chan *event.Event, processQueueSize)
+	encodeJobs := make(chan *event.Event, max(a.encoderWorkers*2, 64))
 
 	var decodeWG sync.WaitGroup
 	decodeWG.Add(1)
@@ -173,7 +214,7 @@ func (a *App) Run(ctx context.Context) error {
 		worker := aggregateWorker{
 			cfg:  aggCfg,
 			agg:  agg,
-			jobs: make(chan *event.Event, a.processorWorkers*2),
+			jobs: make(chan *event.Event, processQueueSize),
 		}
 		aggregateWorkers = append(aggregateWorkers, worker)
 		aggregateWG.Add(1)
@@ -232,7 +273,7 @@ func (a *App) Run(ctx context.Context) error {
 	routeSourceInitControls := aggregateWorkersRouteSourceInit(aggregateWorkers)
 	var aggregateRouteJobs chan *event.Event
 	if hasAggregators {
-		aggregateRouteJobs = make(chan *event.Event, a.processorWorkers*2)
+		aggregateRouteJobs = make(chan *event.Event, processQueueSize)
 	}
 
 	var processWG sync.WaitGroup
@@ -262,6 +303,7 @@ func (a *App) Run(ctx context.Context) error {
 		aggregateRouteWG.Add(1)
 		go func() {
 			defer aggregateRouteWG.Done()
+			matchedWorkers := make([]aggregateWorker, 0, len(aggregateWorkers))
 			for evt := range aggregateRouteJobs {
 				if evt == nil {
 					continue
@@ -270,7 +312,8 @@ func (a *App) Run(ctx context.Context) error {
 					encodeJobs <- evt
 					continue
 				}
-				matchedWorkers, missingKeyStream, missingKey := matchingAggregateWorkers(aggregateWorkers, evt)
+				var missingKeyStream, missingKey string
+				matchedWorkers, missingKeyStream, missingKey = matchingAggregateWorkersInto(matchedWorkers[:0], aggregateWorkers, evt)
 				for _, worker := range matchedWorkers {
 					// One event may intentionally feed multiple aggregators.
 					worker.jobs <- evt
@@ -448,7 +491,6 @@ func (a *App) Run(ctx context.Context) error {
 		}(i, src)
 	}
 
-	var runErr error
 waitSources:
 	for remaining := len(a.sources); remaining > 0; remaining-- {
 		select {
@@ -519,7 +561,10 @@ func aggregateWorkersRouteSourceInit(workers []aggregateWorker) bool {
 }
 
 func matchingAggregateWorkers(workers []aggregateWorker, evt *event.Event) ([]aggregateWorker, string, string) {
-	matched := make([]aggregateWorker, 0, len(workers))
+	return matchingAggregateWorkersInto(make([]aggregateWorker, 0, len(workers)), workers, evt)
+}
+
+func matchingAggregateWorkersInto(matched []aggregateWorker, workers []aggregateWorker, evt *event.Event) ([]aggregateWorker, string, string) {
 	missingKey := ""
 	missingKeyStream := ""
 	for _, worker := range workers {
