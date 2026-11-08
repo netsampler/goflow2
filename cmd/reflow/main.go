@@ -9,7 +9,9 @@ import (
 	"os"
 	"os/signal"
 	"runtime/pprof"
+	"sync/atomic"
 	"syscall"
+	"time"
 
 	"github.com/netsampler/goflow2/v3/pkg/reflow/app"
 	"github.com/netsampler/goflow2/v3/pkg/reflow/buildprofile"
@@ -28,6 +30,7 @@ var (
 func main() {
 	cfg, versionFlag := config.BindFlags(flag.CommandLine)
 	cpuProfile := flag.String("cpuprofile", "", "Write a CPU profile to this file; finalized on shutdown")
+	timingEvery := flag.Uint64("metrics-timing-every", 16, "With OTLP metrics, time about one in N calls and all flushes (0 disables timing)")
 	if err := flag.CommandLine.Parse(config.NormalizeAggregateArgs(os.Args[1:])); err != nil {
 		log.Fatal(err)
 	}
@@ -70,36 +73,59 @@ func main() {
 		return
 	}
 
-	// App.New wires the full runtime graph from the loaded config.
-	application, err := app.New(loadedCfg)
-	if err != nil {
-		log.Fatal(err)
-	}
-
 	// ReFlow exits cleanly on Ctrl-C or SIGTERM so downstream flush paths run.
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	var profile *os.File
-	if *cpuProfile != "" {
-		profile, err = os.OpenFile(*cpuProfile, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
+	if err := runApplication(ctx, loadedCfg, *cpuProfile, *timingEvery); err != nil {
+		slog.Error("application error", slog.String("error", err.Error()))
+		os.Exit(1)
+	}
+}
+
+func runApplication(ctx context.Context, cfg *config.Config, cpuProfile string, timingEvery uint64) (runErr error) {
+	provider, err := newMeterProvider(ctx)
+	if err != nil {
+		return fmt.Errorf("init metrics export: %w", err)
+	}
+	var application *app.App
+	if provider != nil {
+		defer func() {
+			shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+			defer cancel()
+			if err := provider.Shutdown(shutdownCtx); err != nil {
+				slog.Warn("metrics shutdown failed", "error", err)
+			}
+		}()
+		var observed atomic.Pointer[app.App]
+		if err := registerMetrics(provider, &observed, timingEvery > 0); err != nil {
+			return fmt.Errorf("register metrics: %w", err)
+		}
+		application, err = app.NewWithStats(cfg, app.StatsOptions{TimingEvery: timingEvery})
+		if err == nil {
+			observed.Store(application)
+		}
+	} else {
+		application, err = app.New(cfg)
+	}
+	if err != nil {
+		return err
+	}
+	if cpuProfile != "" {
+		profile, err := os.OpenFile(cpuProfile, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
 		if err != nil {
-			log.Fatal(err)
+			return err
 		}
 		if err := pprof.StartCPUProfile(profile); err != nil {
 			_ = profile.Close()
-			log.Fatal(err)
+			return err
 		}
+		defer func() {
+			pprof.StopCPUProfile()
+			if err := profile.Close(); err != nil && runErr == nil {
+				runErr = fmt.Errorf("close CPU profile: %w", err)
+			}
+		}()
 	}
-	runErr := application.Run(ctx)
-	if profile != nil {
-		pprof.StopCPUProfile()
-		if err := profile.Close(); err != nil && runErr == nil {
-			runErr = fmt.Errorf("close CPU profile: %w", err)
-		}
-	}
-	if runErr != nil {
-		slog.Error("application error", slog.String("error", runErr.Error()))
-		os.Exit(1)
-	}
+	return application.Run(ctx)
 }

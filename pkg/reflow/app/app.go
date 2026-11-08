@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"math"
 	"net/netip"
 	"strings"
 	"sync"
@@ -31,10 +32,20 @@ type App struct {
 	encoderCfg        config.EncoderConfig
 	encoderWorkers    int
 	sink              sink.Sink
+	stats             *pipelineStats
 }
 
 // New wires the current ReFlow runtime from source to sink.
 func New(cfg *config.Config) (*App, error) {
+	return newApp(cfg, nil)
+}
+
+// NewWithStats wires the runtime and enables collection for App.Stats.
+func NewWithStats(cfg *config.Config, options StatsOptions) (*App, error) {
+	return newApp(cfg, newPipelineStats(len(cfg.Sources), options))
+}
+
+func newApp(cfg *config.Config, stats *pipelineStats) (*App, error) {
 	if err := cfg.ValidateAdaptivePipeline(); err != nil {
 		return nil, err
 	}
@@ -132,11 +143,13 @@ func New(cfg *config.Config) (*App, error) {
 		encoderCfg:        encoderCfg,
 		encoderWorkers:    encoderWorkers,
 		sink:              out,
+		stats:             stats,
 	}, nil
 }
 
 // Run owns the source, processor, aggregation, encoding, and sink goroutines.
 func (a *App) Run(ctx context.Context) (runErr error) {
+	stats := a.stats
 	defer func() {
 		if err := source.Cleanup(); err != nil && runErr == nil {
 			runErr = fmt.Errorf("cleanup sources: %w", err)
@@ -145,6 +158,7 @@ func (a *App) Run(ctx context.Context) (runErr error) {
 	a.logger.Info("starting ReFlow")
 	defer func() {
 		if err := a.sink.Close(); err != nil {
+			stats.recordError("sink", "close")
 			a.logger.Error("sink close error", slog.String("error", err.Error()))
 		}
 	}()
@@ -165,6 +179,7 @@ func (a *App) Run(ctx context.Context) (runErr error) {
 		go func() {
 			defer decoderErrWG.Done()
 			for err := range errCh {
+				stats.recordError("decode", "cache")
 				a.logger.Error("decoder cache error", slog.String("error", err.Error()))
 			}
 		}()
@@ -175,6 +190,7 @@ func (a *App) Run(ctx context.Context) (runErr error) {
 	for i := range a.encoderWorkers {
 		enc, err := encode.New(a.encoderCfg)
 		if err != nil {
+			stats.recordError("encode", "init")
 			return fmt.Errorf("init encoder %d: %w", i, err)
 		}
 		encoders = append(encoders, enc)
@@ -186,18 +202,28 @@ func (a *App) Run(ctx context.Context) (runErr error) {
 	decodeJobs := make(chan *event.Event, processQueueSize)
 	processJobs := make(chan *event.Event, processQueueSize)
 	encodeJobs := make(chan *event.Event, max(a.encoderWorkers*2, 64))
+	stats.addQueue("decode", -1, decodeJobs)
+	stats.addQueue("process", -1, processJobs)
+	stats.addQueue("encode", -1, encodeJobs)
 
 	var decodeWG sync.WaitGroup
 	decodeWG.Add(1)
 	go func() {
 		defer decodeWG.Done()
+		timer := stats.timer("decode", "decode")
 		// Decode is centralized so protocol identification and shared state stay
 		// single-writer even when later stages fan out with workers.
 		for evt := range decodeJobs {
+			start := timer.start()
 			events, err := a.decoder.Decode(evt)
+			timer.observe(start)
 			if err != nil {
+				stats.recordError("decode", "decode")
 				a.logger.Error("decode error", slog.String("error", err.Error()))
 				continue
+			}
+			if stats != nil && len(events) > 0 {
+				stats.decodedEvents.Add(int64(len(events)))
 			}
 			for _, item := range events {
 				processJobs <- item
@@ -207,9 +233,10 @@ func (a *App) Run(ctx context.Context) (runErr error) {
 
 	var aggregateWG sync.WaitGroup
 	aggregateWorkers := make([]aggregateWorker, 0, len(a.aggregatorCfgs))
-	for _, aggCfg := range a.aggregatorCfgs {
+	for i, aggCfg := range a.aggregatorCfgs {
 		agg, err := aggregate.New(aggCfg)
 		if err != nil {
+			stats.recordError("aggregate", "init")
 			return fmt.Errorf("init aggregator %q: %w", aggCfg.Stream, err)
 		}
 		worker := aggregateWorker{
@@ -217,18 +244,28 @@ func (a *App) Run(ctx context.Context) (runErr error) {
 			agg:  agg,
 			jobs: make(chan *event.Event, processQueueSize),
 		}
+		stats.addQueue("aggregate", i, worker.jobs)
 		aggregateWorkers = append(aggregateWorkers, worker)
 		aggregateWG.Add(1)
 		go func(worker aggregateWorker) {
 			defer aggregateWG.Done()
+			processTimer := stats.timer("aggregate", "process")
+			flushTimer := stats.timer("aggregate", "flush")
 			var ticker *time.Ticker
 			if interval := worker.agg.Interval(); interval > 0 {
 				ticker = time.NewTicker(interval)
 				defer ticker.Stop()
 			}
 			sendToEncoder := func(events []*event.Event) {
+				var records int64
 				for _, evt := range events {
+					if stats != nil && evt != nil && evt.Kind != "control" {
+						records++
+					}
 					encodeJobs <- evt
+				}
+				if records > 0 {
+					stats.aggregateRecords.Add(records)
 				}
 			}
 			// flush is shared by timer-driven and shutdown-driven paths so
@@ -238,12 +275,15 @@ func (a *App) Run(ctx context.Context) (runErr error) {
 					events []*event.Event
 					err    error
 				)
+				start := flushTimer.start()
 				if closeStore {
 					events, err = worker.agg.Close()
 				} else {
 					events, err = worker.agg.Flush()
 				}
+				flushTimer.observe(start)
 				if err != nil {
+					stats.recordError("aggregate", "flush")
 					a.logger.Error("aggregate flush error", slog.String("stream", worker.cfg.Stream), slog.String("error", err.Error()))
 					return
 				}
@@ -260,8 +300,11 @@ func (a *App) Run(ctx context.Context) (runErr error) {
 						flush(true)
 						return
 					}
+					start := processTimer.start()
 					events, err := worker.agg.Process(evt)
+					processTimer.observe(start)
 					if err != nil {
+						stats.recordError("aggregate", "process")
 						a.logger.Error("aggregate error", slog.String("stream", worker.cfg.Stream), slog.String("error", err.Error()))
 						continue
 					}
@@ -275,6 +318,7 @@ func (a *App) Run(ctx context.Context) (runErr error) {
 	var aggregateRouteJobs chan *event.Event
 	if hasAggregators {
 		aggregateRouteJobs = make(chan *event.Event, processQueueSize)
+		stats.addQueue("aggregate.route", -1, aggregateRouteJobs)
 	}
 
 	var processWG sync.WaitGroup
@@ -282,9 +326,13 @@ func (a *App) Run(ctx context.Context) (runErr error) {
 		processWG.Add(1)
 		go func() {
 			defer processWG.Done()
+			timer := stats.timer("process", "process")
 			for evt := range processJobs {
+				start := timer.start()
 				events, err := a.processor.Process(evt)
+				timer.observe(start)
 				if err != nil {
+					stats.recordError("process", "process")
 					a.logger.Error("process error", slog.String("error", err.Error()))
 					continue
 				}
@@ -345,21 +393,39 @@ func (a *App) Run(ctx context.Context) (runErr error) {
 		encodeWG.Add(1)
 		go func(enc encode.Encoder) {
 			defer encodeWG.Done()
+			encodeTimer := stats.timer("encode", "encode")
+			flushTimer := stats.timer("encode", "flush")
+			sinkTimer := stats.timer("sink", "send")
 			var ticker *time.Ticker
 			if interval := encoderTickInterval(a.encoderCfg); interval > 0 {
 				ticker = time.NewTicker(interval)
 				defer ticker.Stop()
 			}
 			send := func(payloads [][]byte) {
+				var written, bytes int64
 				for _, payload := range payloads {
-					if err := a.sink.Send(payload); err != nil {
+					start := sinkTimer.start()
+					err := a.sink.Send(payload)
+					sinkTimer.observe(start)
+					if err != nil {
+						stats.recordError("sink", "send")
 						a.logger.Error("sink write error", slog.String("error", err.Error()))
+					} else if stats != nil {
+						written++
+						bytes += int64(len(payload))
 					}
+				}
+				if written > 0 {
+					stats.sinkPayloads.Add(written)
+					stats.sinkBytes.Add(bytes)
 				}
 			}
 			flush := func() {
+				start := flushTimer.start()
 				payloads, err := enc.Flush()
+				flushTimer.observe(start)
 				if err != nil {
+					stats.recordError("encode", "flush")
 					a.logger.Error("encode flush error", slog.String("error", err.Error()))
 				}
 				send(payloads)
@@ -373,8 +439,11 @@ func (a *App) Run(ctx context.Context) (runErr error) {
 						flush()
 						return
 					}
+					start := encodeTimer.start()
 					payloads, err := enc.Encode(evt)
+					encodeTimer.observe(start)
 					if err != nil {
+						stats.recordError("encode", "encode")
 						a.logger.Error("encode error", slog.String("error", err.Error()))
 					}
 					send(payloads)
@@ -400,6 +469,7 @@ func (a *App) Run(ctx context.Context) (runErr error) {
 	for _, worker := range aggregateWorkers {
 		initEvents, err := worker.agg.InitEvents()
 		if err != nil {
+			stats.recordError("aggregate", "init")
 			return fmt.Errorf("init aggregator events for %q: %w", worker.cfg.Stream, err)
 		}
 		for _, evt := range initEvents {
@@ -434,6 +504,7 @@ func (a *App) Run(ctx context.Context) (runErr error) {
 	for i, src := range a.sources {
 		initEvents, err := src.InitEvents()
 		if err != nil {
+			stats.recordError("source", "init")
 			return fmt.Errorf("init source %d events: %w", i, err)
 		}
 		sourceInitEvents = append(sourceInitEvents, initEvents...)
@@ -458,6 +529,7 @@ func (a *App) Run(ctx context.Context) (runErr error) {
 				case <-ticker.C:
 					events, err := src.InitEvents()
 					if err != nil {
+						stats.recordError("source", "refresh")
 						a.logger.Error("source init refresh error", slog.Int("source_index", i), slog.String("error", err.Error()))
 						continue
 					}
@@ -477,18 +549,41 @@ func (a *App) Run(ctx context.Context) (runErr error) {
 		sourceWG.Add(1)
 		go func(i int, src source.Source) {
 			defer sourceWG.Done()
+			var counters *sourceCounters
+			var reportDrops func()
+			if stats != nil {
+				counters = &stats.sources[i]
+				if capture, ok := src.(interface{ CaptureDrops() uint64 }); ok {
+					reportDrops = func() {
+						total := int64(min(capture.CaptureDrops(), math.MaxInt64))
+						if total > counters.captureDrops.Load() {
+							counters.captureDrops.Store(total)
+						}
+					}
+				}
+			}
 			err := src.Start(sourceCtx, func(evt *event.Event) error {
 				select {
 				case decodeJobs <- evt:
+					if counters != nil {
+						counters.events.Add(1)
+					}
+					if reportDrops != nil {
+						reportDrops()
+					}
 					return nil
 				case <-sourceCtx.Done():
 					return sourceCtx.Err()
 				}
 			})
-			sourceDone <- err
+			if reportDrops != nil {
+				reportDrops()
+			}
 			if err != nil && sourceCtx.Err() == nil {
+				stats.recordError("source", "run")
 				a.logger.Error("source error", slog.Int("source_index", i), slog.String("error", err.Error()))
 			}
+			sourceDone <- err
 		}(i, src)
 	}
 

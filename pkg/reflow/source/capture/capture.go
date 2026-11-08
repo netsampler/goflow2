@@ -10,6 +10,7 @@ import (
 	"regexp"
 	"sort"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/netsampler/goflow2/v3/pkg/reflow/config"
@@ -47,7 +48,7 @@ type Source struct {
 	interfaces       map[int]string
 	interfaceIndexes map[string]int
 	seen             uint64
-	drops            uint64
+	drops            atomic.Uint64
 	reportedDrops    uint64
 	lastSampling     *event.SamplingMetadata
 	closeOnce        sync.Once
@@ -68,11 +69,11 @@ func New(cfg config.SourceConfig, driver Driver) (*Source, error) {
 func (s *Source) InitEvents() ([]*event.Event, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.drops > s.reportedDrops {
+	if drops := s.CaptureDrops(); drops > s.reportedDrops {
 		slog.Warn("capture packets dropped", "network", s.cfg.Network,
-			"interface", s.cfg.Capture.Interface, "dropped", s.drops-s.reportedDrops,
-			"total_dropped", s.drops)
-		s.reportedDrops = s.drops
+			"interface", s.cfg.Capture.Interface, "dropped", drops-s.reportedDrops,
+			"total_dropped", drops)
+		s.reportedDrops = drops
 	}
 	name := s.cfg.Capture.Interface
 	if name == "" {
@@ -171,7 +172,7 @@ func interfaceIP(index int) string {
 func (s *Source) initEvent(f Frame) *event.Event {
 	// Refreshes have no packet frame. Preserve the backend's cumulative loss
 	// instead of advertising a fresh zero, including between sampled packets.
-	f.Drops = s.drops
+	f.Drops = s.CaptureDrops()
 	f.Sampling = s.lastSampling
 	meta := s.metadata(f)
 	fields := map[string]any{}
@@ -181,6 +182,9 @@ func (s *Source) initEvent(f Frame) *event.Event {
 	}
 	return &event.Event{ReceivedAt: time.Now().UTC(), Kind: "control", Source: meta, Control: &event.ControlMetadata{Type: "source_init", Stream: "options_data"}, Payload: event.SourceInit{Stream: "options_data", AgentIP: meta.AgentIP, SourceID: meta.SourceID, SamplingRate: meta.Sampling.Rate, SamplePool: meta.Sampling.SamplePool, Drops: meta.Sampling.Drops, CaptureDropsTotal: meta.Sampling.CaptureDropsTotal, InputIf: uint32(f.InterfaceIndex), OutputIf: uint32(f.InterfaceIndex)}, Fields: fields}
 }
+
+// CaptureDrops returns the latest cumulative loss reported by the capture driver.
+func (s *Source) CaptureDrops() uint64 { return s.drops.Load() }
 
 func (s *Source) Start(ctx context.Context, emit func(*event.Event) error) error {
 	defer func() { _ = s.Close() }()
@@ -193,8 +197,8 @@ func (s *Source) Start(ctx context.Context, emit func(*event.Event) error) error
 			copySampling := *f.Sampling
 			s.lastSampling = &copySampling
 		}
-		if f.Drops > s.drops {
-			s.drops = f.Drops
+		if f.Drops > s.CaptureDrops() {
+			s.drops.Store(f.Drops)
 		}
 		fieldsCopy := make(map[string]any, len(f.Fields)+6)
 		for k, v := range f.Fields {

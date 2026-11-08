@@ -42,8 +42,10 @@ func TestRunPreservesTruncatedWireCountersThroughIPFIX(t *testing.T) {
 	binary.BigEndian.PutUint16(header[56:58], 59037)
 	header[66], header[67] = 0x50, 0x18
 	stamp := time.Now().UTC()
-	src := &scriptedSource{run: func(_ context.Context, emit func(*event.Event) error) error {
-		for range packets {
+	var readStats func() Stats
+	var live Stats
+	src := &sourceWithDrops{drops: 7, scriptedSource: &scriptedSource{run: func(_ context.Context, emit func(*event.Event) error) error {
+		for i := range packets {
 			if err := emit(&event.Event{
 				ReceivedAt: stamp,
 				Source: event.SourceMetadata{Type: "bytes", Network: "af_packet",
@@ -55,13 +57,17 @@ func TestRunPreservesTruncatedWireCountersThroughIPFIX(t *testing.T) {
 			}); err != nil {
 				return err
 			}
+			if i == 0 {
+				live = readStats()
+			}
 		}
 		return nil
-	}}
+	}}}
 	out := &decodedCounterSink{decoder: decode.NewWithCatalog(cfg.TemplatedFields.Catalog)}
 	app := &App{logger: slog.New(slog.NewTextHandler(io.Discard, nil)), sources: []source.Source{src},
 		decoder: decode.New(), processor: processor.NewBuiltin(cfg.Processor), processorWorkers: 2,
-		aggregatorCfgs: cfg.Aggregators, encoderCfg: cfg.Encoder, encoderWorkers: 1, sink: out}
+		aggregatorCfgs: cfg.Aggregators, encoderCfg: cfg.Encoder, encoderWorkers: 1, sink: out, stats: newPipelineStats(1, StatsOptions{TimingEvery: 1})}
+	readStats = app.Stats
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	if err := app.Run(ctx); err != nil {
@@ -73,7 +79,24 @@ func TestRunPreservesTruncatedWireCountersThroughIPFIX(t *testing.T) {
 	if out.packets != packets || out.bytes != packets*wireLength {
 		t.Fatalf("IPFIX counted %d packets / %d bytes, want %d / %d", out.packets, out.bytes, packets, packets*wireLength)
 	}
+	if live.Sources[0].Events != 1 || len(live.Queues) != 4+len(cfg.Aggregators) {
+		t.Fatalf("live source stats=%+v, queues=%+v", live.Sources, live.Queues)
+	}
+	stats := app.Stats()
+	if stats.AggregateRecords != 1 || stats.Sources[0].CaptureDrops != 7 || stats.Sources[0].Events != packets {
+		t.Fatalf("aggregate records=%d, source stats=%+v", stats.AggregateRecords, stats.Sources)
+	}
+	if duration := stats.Durations[StageOperation{Stage: "process", Operation: "process"}]; duration.Count != packets || duration.Total <= 0 {
+		t.Fatalf("processor durations = %+v, want %d timed calls", duration, packets)
+	}
 }
+
+type sourceWithDrops struct {
+	*scriptedSource
+	drops uint64
+}
+
+func (s *sourceWithDrops) CaptureDrops() uint64 { return s.drops }
 
 type decodedCounterSink struct {
 	decoder decode.Decoder

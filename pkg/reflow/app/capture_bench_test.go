@@ -57,7 +57,8 @@ func BenchmarkCaptureAggregateIPFIX(b *testing.B) {
 				out := &decodedCounterSink{decoder: decode.NewWithCatalog(cfg.TemplatedFields.Catalog)}
 				app := &App{logger: slog.New(slog.NewTextHandler(io.Discard, nil)), sources: []source.Source{src},
 					decoder: decode.New(), processor: processor.NewBuiltin(cfg.Processor), processorWorkers: workers,
-					aggregatorCfgs: cfg.Aggregators, encoderCfg: cfg.Encoder, encoderWorkers: 1, sink: out}
+					aggregatorCfgs: cfg.Aggregators, encoderCfg: cfg.Encoder, encoderWorkers: 1, sink: out,
+					stats: benchmarkStats(b)}
 				b.ReportAllocs()
 				b.SetBytes(1514)
 				b.ResetTimer()

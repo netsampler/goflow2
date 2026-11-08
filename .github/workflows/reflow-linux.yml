@@ -46,10 +46,12 @@ jobs:
           REFLOW_SDK_CACHE_HIT: ${{ steps.sdk-cache.outputs.cache-hit }}
         run: |
           mkdir -p "$RUNNER_TEMP/reflow-sdk"
+          # The bind-mounted checkout is owned by the runner.
           docker run --rm --platform "$REFLOW_BUILD_PLATFORM" \
             -v "$PWD:/src" -w /src \
             -v "$RUNNER_TEMP/reflow-sdk:/opt/reflow-sdk" \
             -e GOARCH -e GOARM \
+            -e GIT_CONFIG_COUNT=1 -e GIT_CONFIG_KEY_0=safe.directory -e GIT_CONFIG_VALUE_0=/src \
             -e REFLOW_PROFILE="$REFLOW_PROFILE" \
             -e REFLOW_SDK_CACHE_HIT="$REFLOW_SDK_CACHE_HIT" \
             "$REFLOW_GO_IMAGE" bash scripts/reflow-build-linux.sh
