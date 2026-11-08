@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"flag"
 	"io"
 	"log/slog"
 	"sync/atomic"
@@ -15,6 +16,25 @@ import (
 	"github.com/netsampler/goflow2/v3/pkg/reflow/sink"
 	"github.com/netsampler/goflow2/v3/pkg/reflow/source"
 )
+
+var benchmarkMetricsMode = flag.String("reflow.metrics", "off", "Benchmark metrics mode: off, counters, sampled, or timing")
+
+func benchmarkStats(b *testing.B) *pipelineStats {
+	b.Helper()
+	var every uint64
+	switch *benchmarkMetricsMode {
+	case "off":
+		return nil
+	case "counters":
+	case "sampled":
+		every = 16
+	case "timing":
+		every = 1
+	default:
+		b.Fatalf("unknown benchmark metrics mode %q", *benchmarkMetricsMode)
+	}
+	return newPipelineStats(1, StatsOptions{TimingEvery: every})
+}
 
 func BenchmarkRunPipeline(b *testing.B) {
 	benchmarks := []struct {
@@ -52,6 +72,7 @@ func BenchmarkRunPipeline(b *testing.B) {
 				encoderCfg:       bm.encoderCfg,
 				encoderWorkers:   1,
 				sink:             out,
+				stats:            benchmarkStats(b),
 			}
 
 			b.ReportAllocs()

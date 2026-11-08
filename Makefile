@@ -109,7 +109,7 @@ build: prepare
 .PHONY: build-reflow
 # Build the reflow binary.
 build-reflow: prepare
-	GOOS=$(GOOS) GOARCH=$(GOARCH) GOARM=$(GOARM) CGO_ENABLED=$(REFLOW_CGO) go build $(if $(REFLOW_TAGS),-tags '$(REFLOW_TAGS)',) -ldflags $(LDFLAGS) -o $(REFLOW_OUTPUT) cmd/reflow/main.go
+	GOOS=$(GOOS) GOARCH=$(GOARCH) GOARM=$(GOARM) CGO_ENABLED=$(REFLOW_CGO) go build $(if $(REFLOW_TAGS),-tags '$(REFLOW_TAGS)',) -ldflags $(LDFLAGS) -o $(REFLOW_OUTPUT) ./cmd/reflow
 
 .PHONY: print-output
 print-output:

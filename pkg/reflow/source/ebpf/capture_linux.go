@@ -36,6 +36,10 @@ func New(cfg config.SourceConfig) (*Source, error) {
 func (s *Source) Start(ctx context.Context, emit func(*event.Event) error) error {
 	return s.shared.Start(ctx, emit)
 }
+
+// CaptureDrops returns the latest cumulative loss reported to the capture adapter.
+func (s *Source) CaptureDrops() uint64 { return s.shared.CaptureDrops() }
+
 func (s *Source) Close() error {
 	if s.shared != nil {
 		return s.shared.Close()

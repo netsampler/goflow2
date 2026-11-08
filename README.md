@@ -66,6 +66,35 @@ YAML, then run `./reflow -config reflow.yaml`. An
 [interface options example](cmd/reflow/reflow-json-interface-options-to-ipfix.yaml)
 shows custom aggregation fields and IPFIX options export.
 
+### ReFlow metrics
+
+Set `OTEL_METRICS_EXPORTER=otlp` to export ReFlow metrics over OTLP/HTTP.
+The base endpoint gets `/v1/metrics` appended. Use `OTEL_EXPORTER_OTLP_METRICS_ENDPOINT`
+to set the full metrics URL. `OTEL_SERVICE_NAME` defaults to `reflow`, and
+`OTEL_METRIC_EXPORT_INTERVAL` defaults to 60000 milliseconds. ReFlow attempts a
+final export after draining on EOF or shutdown.
+
+```bash
+OTEL_METRICS_EXPORTER=otlp OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318 \
+  ./reflow -input udp::4739:flow -output json:stdout
+```
+
+Counters cover events accepted from sources, decoded events, emitted aggregate
+records, stage errors, successful sink writes and their encoded payload bytes,
+and capture losses reported by sources. `reflow.queue.depth` and
+`reflow.queue.capacity` report the occupancy and size of each pipeline queue.
+
+`reflow.stage.duration.sum` and `reflow.stage.duration.observations` report
+elapsed seconds and timed calls by stage and operation. Divide the increase in
+elapsed seconds by the increase in observations over a window for the mean
+duration. The CLI times about one in 16 calls and every flush. Set
+`-metrics-timing-every=1` to time every call or `-metrics-timing-every=0` to
+disable timing. Pipeline event and byte counters are independent of timing.
+
+Go embedders can opt in with `app.NewWithStats(cfg, app.StatsOptions{TimingEvery: 1})`
+and read `application.Stats()` during or after a run. The app package exposes
+plain Go types. The CLI owns OTLP export.
+
 ## Origins
 
 This work is a fork of a previous [open-source GoFlow code](https://github.com/cloudflare/goflow) built and used at Cloudflare.
