@@ -73,7 +73,9 @@ jobs:
           )
           for profile in dpdk pcap; do
             profile_paths=("pkg/reflow/source/$profile/")
-            if [[ "$profile" == pcap ]]; then
+            if [[ "$profile" == dpdk ]]; then
+              profile_paths+=(scripts/reflow-build-dpdk-sdk.sh)
+            else
               profile_paths+=(.github/workflows/reflow-platforms.yml)
             fi
             changed=$(git diff --name-only --no-renames HEAD^1 HEAD -- "${shared_paths[@]}" "${profile_paths[@]}")

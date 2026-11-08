@@ -38,7 +38,7 @@ jobs:
         uses: actions/cache@v5
         with:
           path: ${{ runner.temp }}/reflow-sdk
-          key: reflow-sdk-v1-${{ inputs.arch }}-${{ inputs.profile }}-${{ steps.image.outputs.id }}-${{ hashFiles('scripts/reflow-build-linux.sh', '.github/workflows/reflow-linux.yml') }}
+          key: reflow-sdk-v2-${{ inputs.arch }}-${{ inputs.profile }}-${{ steps.image.outputs.id }}-${{ hashFiles('scripts/reflow-build-dpdk-sdk.sh') }}
       - name: Build and test target profile
         env:
           GOARCH: ${{ inputs.arch == 'armv7' && 'arm' || inputs.arch }}

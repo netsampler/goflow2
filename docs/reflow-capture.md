@@ -107,15 +107,14 @@ Use a C compiler and SDK for the **target** OS/architecture for library builds.
 The Makefile sets cgo and the profile tags. The underlying tags are
 `reflow_pcap` and `reflow_dpdk`. Select one tag per library build.
 Without a profile tag, `go build ./cmd/reflow` builds the platform profile.
-The pinned [Linux SDK build script](../scripts/reflow-build-linux.sh) disables
+The pinned [DPDK SDK build recipe](../scripts/reflow-build-dpdk-sdk.sh) disables
 DPDK's `net/pcap` driver to keep libpcap out of the DPDK profile. DPDK's ARMv7
 build requires NEON.
 
 Linux ARM64 CI builds and Docker packaging use native ARM64 runners. CI
 cross-compiles Linux ARMv7 platform and pcap builds on amd64 and uses QEMU to
 run the target tests on main and tags. CI caches the DPDK SDK by target
-architecture, build-image identity, and hashes of the SDK build script and
-workflow.
+architecture, build-image digest, and a hash of the DPDK SDK build recipe.
 Cache hits reuse the SDK while still running the Reflow tests, vet, packaging,
 and dependency checks.
 SDK versions or build-option changes invalidate the cache through the script hash.

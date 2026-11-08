@@ -67,13 +67,14 @@ jobs:
           if-no-files-found: error
 
   windows-build:
+    if: github.event_name != 'pull_request' || inputs.pcap_only
     name: Windows ${{ matrix.arch }} / ${{ matrix.profile }}
     runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
       matrix:
         arch: [amd64, arm64]
-        profile: ${{ fromJSON(inputs.pcap_only && '["pcap"]' || github.event_name != 'pull_request' && '["platform","pcap"]' || '["platform"]') }}
+        profile: ${{ fromJSON(inputs.pcap_only && '["pcap"]' || '["platform","pcap"]') }}
         include:
           - arch: amd64
             cc_target: x86_64
