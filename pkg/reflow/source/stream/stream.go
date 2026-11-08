@@ -17,6 +17,7 @@ import (
 
 	"github.com/netsampler/goflow2/v3/pkg/reflow/config"
 	"github.com/netsampler/goflow2/v3/pkg/reflow/event"
+	"github.com/netsampler/goflow2/v3/pkg/reflow/source/capture"
 )
 
 type packetReader interface {
@@ -156,16 +157,8 @@ func (s *Source) readPackets(ctx context.Context, emit func(*event.Event) error,
 			"pcap_link_type_name": linkType.String(),
 			"stream_type":         s.cfg.Type,
 		}
-		if protocol := sampledHeaderProtocol(linkType, data); protocol != 0 {
-			fields["header_protocol"] = protocol
-			fields["protocol"] = protocol
-			if linkType == layers.LinkTypeNull || linkType == layers.LinkTypeLoop {
-				// The loopback family header is capture framing, not an IP header.
-				// Keep capture/wire lengths while exposing the normalized IP bytes.
-				data = data[4:]
-				fields["pcap_cooked_header_length"] = 4
-			}
-		}
+		frame := capture.NormalizeFrame(capture.Frame{Data: data, LinkType: uint32(linkType), CaptureLength: ci.CaptureLength, WireLength: ci.Length, Fields: fields})
+		data, fields = frame.Data, frame.Fields
 
 		evt := &event.Event{
 			ReceivedAt: receivedAt,
@@ -269,38 +262,6 @@ func (s *Source) Close() error {
 		return s.closer.Close()
 	}
 	return nil
-}
-
-func sampledHeaderProtocol(linkType layers.LinkType, data []byte) uint32 {
-	switch linkType {
-	case layers.LinkTypeEthernet:
-		return 1
-	case layers.LinkTypeIPv4:
-		return 11
-	case layers.LinkTypeIPv6:
-		return 12
-	case layers.LinkTypeNull, layers.LinkTypeLoop:
-		var loopback layers.Loopback
-		if err := loopback.DecodeFromBytes(data, gopacket.NilDecodeFeedback); err == nil {
-			switch loopback.NextLayerType() {
-			case layers.LayerTypeIPv4:
-				return 11
-			case layers.LayerTypeIPv6:
-				return 12
-			}
-		}
-	case layers.LinkTypeRaw:
-		if len(data) == 0 {
-			return 0
-		}
-		switch data[0] >> 4 {
-		case 4:
-			return 11
-		case 6:
-			return 12
-		}
-	}
-	return 0
 }
 
 func streamInterfaceName(address string) string {

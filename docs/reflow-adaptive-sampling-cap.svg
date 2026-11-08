@@ -1,0 +1,72 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="780" height="391" viewBox="0 0 780 391" role="img" aria-labelledby="title description">
+  <title id="title">Capture delivery under two sampling caps</title>
+  <desc id="description">Illustrative expected counts for 256,000 incoming packets and 750 copies of delivery capacity per second. Both runs start at one in 64, with 750 delivered and 3,250 dropped. In the second interval, both sample one in 256, with 750 delivered and 250 dropped. In the third interval, the 256 cap keeps those counts. The 1,024 cap permits one in 1,024 sampling, with 250 delivered and zero dropped.</desc>
+  <style>
+    text { font: 15px system-ui, sans-serif; fill: #17283c; }
+    .title { font-size: 22px; font-weight: 650; }
+    .panel-title { font-size: 17px; font-weight: 650; }
+    .detail { font-size: 14px; fill: #41556d; }
+    .tick { font-size: 13px; fill: #41556d; }
+    .delivered { fill: #18778b; }
+    .dropped { fill: #bc691d; }
+    .grid { stroke: #dbe3ec; stroke-width: 1; }
+  </style>
+
+  <rect width="780" height="391" rx="16" fill="#f8fafc"/>
+  <text class="title" x="28" y="37">Capture under steady load</text>
+  <text class="detail" x="28" y="61">Illustrative · 256,000 packets/s arriving · 750 copies/s delivery capacity</text>
+  <rect class="delivered" x="28" y="75" width="13" height="13" rx="2"/>
+  <text class="detail" x="48" y="87">Delivered</text>
+  <rect class="dropped" x="133" y="75" width="13" height="13" rx="2"/>
+  <text class="detail" x="153" y="87">Dropped after selection</text>
+
+  <!-- Both panels use 320 pixels for 4,000 copies. Each bar spans one second. -->
+  <g transform="translate(28 0)">
+    <text class="panel-title" x="0" y="119">max_every = 256</text>
+    <path class="grid" d="M0 150v190m80-190v190m80-190v190m80-190v190m80-190v190"/>
+
+    <text x="0" y="145">Second 1 · 1 in 64</text>
+    <rect class="delivered" x="0" y="154" width="60" height="15"/>
+    <rect class="dropped" x="60" y="154" width="260" height="15"/>
+    <text class="detail" x="0" y="190">750 delivered · 3,250 dropped</text>
+
+    <text x="0" y="217">Second 2 · 1 in 256 · at cap</text>
+    <rect class="delivered" x="0" y="226" width="60" height="15"/>
+    <rect class="dropped" x="60" y="226" width="20" height="15"/>
+    <text class="detail" x="0" y="262">750 delivered · 250 dropped</text>
+
+    <text x="0" y="289">Second 3 · 1 in 256 · at cap</text>
+    <rect class="delivered" x="0" y="298" width="60" height="15"/>
+    <rect class="dropped" x="60" y="298" width="20" height="15"/>
+    <text class="detail" x="0" y="334">750 delivered · 250 dropped</text>
+
+    <text class="tick" x="0" y="356">0</text>
+    <text class="tick" x="160" y="356" text-anchor="middle">2,000</text>
+    <text class="tick" x="320" y="356" text-anchor="end">4,000</text>
+    <text class="detail" x="160" y="377" text-anchor="middle">Selected copies per second</text>
+  </g>
+
+  <g transform="translate(420 0)">
+    <text class="panel-title" x="0" y="119">max_every = 1,024</text>
+    <path class="grid" d="M0 150v190m80-190v190m80-190v190m80-190v190m80-190v190"/>
+
+    <text x="0" y="145">Second 1 · 1 in 64</text>
+    <rect class="delivered" x="0" y="154" width="60" height="15"/>
+    <rect class="dropped" x="60" y="154" width="260" height="15"/>
+    <text class="detail" x="0" y="190">750 delivered · 3,250 dropped</text>
+
+    <text x="0" y="217">Second 2 · 1 in 256</text>
+    <rect class="delivered" x="0" y="226" width="60" height="15"/>
+    <rect class="dropped" x="60" y="226" width="20" height="15"/>
+    <text class="detail" x="0" y="262">750 delivered · 250 dropped</text>
+
+    <text x="0" y="289">Second 3 · 1 in 1,024 · at cap</text>
+    <rect class="delivered" x="0" y="298" width="20" height="15"/>
+    <text class="detail" x="0" y="334">250 delivered · 0 dropped</text>
+
+    <text class="tick" x="0" y="356">0</text>
+    <text class="tick" x="160" y="356" text-anchor="middle">2,000</text>
+    <text class="tick" x="320" y="356" text-anchor="end">4,000</text>
+    <text class="detail" x="160" y="377" text-anchor="middle">Selected copies per second</text>
+  </g>
+</svg>

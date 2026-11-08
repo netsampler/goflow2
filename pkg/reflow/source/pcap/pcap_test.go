@@ -1,13 +1,12 @@
-//go:build !reflow_nopcap && cgo
+//go:build reflow_pcap && cgo && !reflow_dpdk && !reflow_pfring
 
 package pcap
 
 import (
 	"bytes"
+	"context"
 	"encoding/binary"
 	"encoding/hex"
-	"net"
-	"regexp"
 	"testing"
 
 	"github.com/google/gopacket/layers"
@@ -15,6 +14,7 @@ import (
 	"github.com/netsampler/goflow2/v3/pkg/reflow/config"
 	"github.com/netsampler/goflow2/v3/pkg/reflow/event"
 	"github.com/netsampler/goflow2/v3/pkg/reflow/processor"
+	"github.com/netsampler/goflow2/v3/pkg/reflow/source/capture"
 )
 
 func TestLoopbackCaptureDecodesIPTuple(t *testing.T) {
@@ -41,16 +41,18 @@ func TestLoopbackCaptureDecodesIPTuple(t *testing.T) {
 		{"loop freebsd ipv6", layers.LinkTypeLoop, 28, binary.BigEndian, ipv6, 12, "2001:db8::1", "2001:db8::2"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			src := &Source{linkType: uint32(tt.link)}
 			frame := make([]byte, 4+len(tt.ip))
 			tt.order.PutUint32(frame, tt.family)
 			copy(frame[4:], tt.ip)
-			payload, meta := src.translatePacket(frame)
+			normalized := capture.NormalizeFrame(capture.Frame{Data: frame, LinkType: uint32(tt.link)})
+			payload := normalized.Data
 			evt := &event.Event{
 				Source: event.SourceMetadata{Type: "bytes"}, Payload: payload,
 				Fields: map[string]any{"capture_length": len(frame), "wire_length": len(frame)},
 			}
-			src.applyPcapMetadata(evt.Fields, meta)
+			for key, value := range normalized.Fields {
+				evt.Fields[key] = value
+			}
 			proc, err := processor.New(config.ProcessorConfig{Type: "builtin"})
 			if err != nil {
 				t.Fatal(err)
@@ -72,7 +74,6 @@ func TestLoopbackCaptureDecodesIPTuple(t *testing.T) {
 }
 
 func TestTranslateLinuxSLLSynthesizesEthernetPacket(t *testing.T) {
-	src := &Source{linkType: uint32(layers.LinkTypeLinuxSLL)}
 	inner := []byte{0x45, 0, 0, 20}
 	packet := make([]byte, 16+len(inner))
 	binary.BigEndian.PutUint16(packet[0:2], 4)
@@ -80,15 +81,16 @@ func TestTranslateLinuxSLLSynthesizesEthernetPacket(t *testing.T) {
 	copy(packet[6:14], []byte{1, 2, 3, 4, 5, 6, 7, 8})
 	copy(packet[16:], inner)
 
-	payload, meta := src.translatePacket(packet)
-	if meta.headerLength != 16 {
-		t.Fatalf("expected SLL header length 16, got %d", meta.headerLength)
+	meta := capture.NormalizeFrame(capture.Frame{Data: packet, LinkType: 113})
+	payload := meta.Data
+	if meta.Fields["pcap_cooked_header_length"] != 16 {
+		t.Fatalf("expected SLL header length 16, got %d", meta.Fields["pcap_cooked_header_length"])
 	}
-	if meta.packetType != "outgoing" {
-		t.Fatalf("expected packet type outgoing, got %q", meta.packetType)
+	if meta.PacketType != "outgoing" {
+		t.Fatalf("expected packet type outgoing, got %q", meta.PacketType)
 	}
-	if meta.protocol != 0x0800 {
-		t.Fatalf("expected protocol 0x0800, got %#x", meta.protocol)
+	if meta.Fields["linux_sll_protocol"] != uint32(0x0800) {
+		t.Fatalf("expected protocol 0x0800, got %#x", meta.Fields["linux_sll_protocol"])
 	}
 	if len(payload) != 14+len(inner) {
 		t.Fatalf("expected synthesized ethernet length %d, got %d", 14+len(inner), len(payload))
@@ -102,12 +104,6 @@ func TestTranslateLinuxSLLSynthesizesEthernetPacket(t *testing.T) {
 }
 
 func TestTranslateLinuxSLL2ResolvesInterfaceMetadata(t *testing.T) {
-	src := &Source{
-		linkType: linkTypeLinuxSLL2,
-		interfaceNames: map[uint32]string{
-			77: "wan0",
-		},
-	}
 	inner := []byte{0x45, 0, 0, 20}
 	packet := make([]byte, 20+len(inner))
 	binary.BigEndian.PutUint16(packet[0:2], 0x0800)
@@ -116,14 +112,16 @@ func TestTranslateLinuxSLL2ResolvesInterfaceMetadata(t *testing.T) {
 	copy(packet[12:20], []byte{6, 5, 4, 3, 2, 1, 0, 0})
 	copy(packet[20:], inner)
 
-	payload, meta := src.translatePacket(packet)
-	if meta.headerLength != 20 {
-		t.Fatalf("expected SLL2 header length 20, got %d", meta.headerLength)
+	events := fixtureEvents(t, config.SourceConfig{Network: "pcap_live", Type: "bytes", Capture: config.CaptureConfig{Interface: "any"}}, capture.Frame{Data: packet, LinkType: 276, Interface: "wan0"})
+	meta := events[len(events)-1]
+	payload := meta.Payload.([]byte)
+	if meta.Fields["pcap_cooked_header_length"] != 20 {
+		t.Fatalf("expected SLL2 header length 20, got %d", meta.Fields["pcap_cooked_header_length"])
 	}
-	if meta.ifIndex != 77 || meta.inputIf != 77 || meta.inputName != "wan0" {
+	if meta.Source.CaptureInterfaceIndex != 77 || meta.Fields["input_if"] != uint32(77) || meta.Fields["input_interface"] != "wan0" {
 		t.Fatalf("expected input interface metadata for wan0/77, got %#v", meta)
 	}
-	if meta.outputIf != 0 || meta.outputName != "" {
+	if meta.Fields["output_if"] != nil || meta.Fields["output_interface"] != nil {
 		t.Fatalf("did not expect output interface metadata, got %#v", meta)
 	}
 	if got := binary.BigEndian.Uint16(payload[12:14]); got != 0x0800 {
@@ -131,54 +129,61 @@ func TestTranslateLinuxSLL2ResolvesInterfaceMetadata(t *testing.T) {
 	}
 }
 
-func TestDynamicSourceInitEventMarksFirstSeenInterface(t *testing.T) {
-	src := &Source{
-		cfg: config.SourceConfig{
-			Network:     "pcap_live",
-			Interface:   "any",
-			Type:        "bytes",
-			SampleEvery: 1,
-		},
-		agentIP:               "192.0.2.1",
-		captureAny:            true,
-		interfaceFilter:       regexp.MustCompile(`^wan`),
-		initializedInterfaces: make(map[uint32]struct{}),
-	}
+type fixtureDriver struct{ frames []capture.Frame }
 
-	evt := src.dynamicSourceInitEvent(cookedMetadata{ifIndex: 77, ifName: "wan0"}, 3)
-	if evt == nil {
-		t.Fatalf("expected source_init event")
+func (d *fixtureDriver) Run(_ context.Context, emit func(capture.Frame) error) error {
+	for _, frame := range d.frames {
+		if err := emit(frame); err != nil {
+			return err
+		}
 	}
+	return nil
+}
+func (*fixtureDriver) Close() error { return nil }
+
+func fixtureEvents(t *testing.T, cfg config.SourceConfig, frames ...capture.Frame) []*event.Event {
+	t.Helper()
+	src, err := capture.New(cfg, &fixtureDriver{frames: frames})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out []*event.Event
+	if err := src.Start(context.Background(), func(evt *event.Event) error { out = append(out, evt); return nil }); err != nil {
+		t.Fatal(err)
+	}
+	return out
+}
+
+func TestDynamicSourceInitEventMarksFirstSeenInterface(t *testing.T) {
+	cfg := config.SourceConfig{Network: "pcap_live", Type: "bytes", Capture: config.CaptureConfig{Interface: "any", InterfaceFilter: "^wan"}}
+	frames := []capture.Frame{
+		{Data: []byte{1}, LinkType: 1, Interface: "wan0", InterfaceIndex: 77, Drops: 3},
+		{Data: []byte{2}, LinkType: 1, Interface: "wan0", InterfaceIndex: 77, Drops: 3},
+	}
+	events := fixtureEvents(t, cfg, frames...)
+	if len(events) != 3 || events[0].Kind != "control" || events[1].Kind == "control" || events[2].Kind == "control" {
+		t.Fatalf("expected one initialization and two captures, got %v", events)
+	}
+	evt := events[0]
 	if evt.Source.CaptureInterface != "wan0" || evt.Source.CaptureInterfaceIndex != 77 {
 		t.Fatalf("unexpected source metadata: %#v", evt.Source)
 	}
 	if evt.Fields["input_if"] != uint32(77) || evt.Fields["output_if"] != uint32(77) {
 		t.Fatalf("unexpected source fields: %#v", evt.Fields)
 	}
-	if !src.interfaceInitialized(77) {
-		t.Fatalf("expected interface 77 to be marked initialized")
+	if evt.Source.Sampling.CaptureDropsTotal != 3 || evt.Source.Sampling.Drops != 0 {
+		t.Fatalf("lost capture drop count: %#v", evt.Source.Sampling)
 	}
 }
 
 func TestAnySourceInitEventUsesInterfaceIndexAsDefaultSourceID(t *testing.T) {
-	src := &Source{
-		cfg: config.SourceConfig{
-			Network:     "pcap_live",
-			Interface:   "any",
-			Type:        "bytes",
-			SampleEvery: 1,
-		},
-		captureAny: true,
-	}
-
-	evt := src.sourceInitEvent(net.Interface{Index: 77, Name: "wan0"}, "192.0.2.1", 0)
+	cfg := config.SourceConfig{Network: "pcap_live", Type: "bytes", Capture: config.CaptureConfig{Interface: "any"}}
+	events := fixtureEvents(t, cfg, capture.Frame{Data: []byte{1}, LinkType: 1, Interface: "wan0", InterfaceIndex: 77})
+	evt := events[0]
 	if evt.Source.SourceID != 77 || !evt.Source.SourceIDSet {
 		t.Fatalf("expected source_id from concrete interface index, got %#v", evt.Source)
 	}
-	payload, ok := evt.Payload.(event.SourceInit)
-	if !ok {
-		t.Fatalf("expected SourceInit payload, got %T", evt.Payload)
-	}
+	payload := evt.Payload.(event.SourceInit)
 	if payload.SourceID != 77 {
 		t.Fatalf("expected payload source_id=77, got %#v", payload)
 	}
@@ -186,23 +191,13 @@ func TestAnySourceInitEventUsesInterfaceIndexAsDefaultSourceID(t *testing.T) {
 
 func TestAnySourceInitEventKeepsExplicitSourceID(t *testing.T) {
 	sourceID := uint32(1234)
-	src := &Source{
-		cfg: config.SourceConfig{
-			Network:     "pcap_live",
-			Interface:   "any",
-			Type:        "bytes",
-			SampleEvery: 1,
-			SourceID:    &sourceID,
-		},
-		captureAny: true,
-	}
-
-	evt := src.sourceInitEvent(net.Interface{Index: 77, Name: "wan0"}, "192.0.2.1", 0)
+	cfg := config.SourceConfig{Network: "pcap_live", Type: "bytes", SourceID: &sourceID, Capture: config.CaptureConfig{Interface: "any"}}
+	events := fixtureEvents(t, cfg, capture.Frame{Data: []byte{1}, LinkType: 1, Interface: "wan0", InterfaceIndex: 77})
+	evt := events[0]
 	if evt.Source.SourceID != sourceID {
 		t.Fatalf("expected explicit source_id=%d, got %#v", sourceID, evt.Source)
 	}
-	payload := evt.Payload.(event.SourceInit)
-	if payload.SourceID != sourceID {
-		t.Fatalf("expected payload source_id=%d, got %#v", sourceID, payload)
+	if evt.Payload.(event.SourceInit).SourceID != sourceID {
+		t.Fatalf("expected explicit payload source_id=%d", sourceID)
 	}
 }

@@ -119,6 +119,7 @@ func (d *builtIn) decodeIPFIX(evt *event.Event, payload []byte) ([]*event.Event,
 	}
 	out = append(out, d.templateEventsFromIPFIX(evt, packet, templatesFlowSet, optionsTemplatesFlowSet)...)
 	out = append(out, d.optionsEventsFromIPFIX(evt, packet, optionsDataFlowSet)...)
+	selectors := netflow.IPFIXSelectorsFromOptions(optionsDataFlowSet)
 	for _, flowSet := range packet.FlowSets {
 		dataSet, ok := flowSet.(netflow.DataFlowSet)
 		if !ok {
@@ -131,8 +132,12 @@ func (d *builtIn) decodeIPFIX(evt *event.Event, payload []byte) ([]*event.Event,
 			fields["flow_version"] = packet.Version
 			fields["record_kind"] = "packet"
 			d.mapDataFields(fields, record.Values, 0, 0, false)
-			if fieldUint32(fields, "sampling_rate") == 0 && samplingRate != 0 {
-				fields["sampling_rate"] = samplingRate
+			if fieldUint32(fields, "sampling_rate") == 0 {
+				if rate := selectors.Rate(record.Values); rate != 0 {
+					fields["sampling_rate"] = rate
+				} else if samplingRate != 0 {
+					fields["sampling_rate"] = samplingRate
+				}
 			}
 			out = append(out, item)
 		}

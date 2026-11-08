@@ -1,0 +1,230 @@
+name: Reflow platform profiles
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  macos:
+    name: macOS ${{ matrix.arch }} / ${{ matrix.profile }}
+    strategy:
+      fail-fast: false
+      matrix:
+        profile: [platform, pcap]
+        include:
+          - arch: amd64
+            runner: macos-15-intel
+          - arch: arm64
+            runner: macos-15
+        arch: [amd64, arm64]
+    runs-on: ${{ matrix.runner }}
+    env:
+      GOOS: darwin
+      GOARCH: ${{ matrix.arch }}
+      REFLOW_PROFILE: ${{ matrix.profile }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - name: Test and package
+        shell: bash
+        run: |
+          set -euo pipefail
+          tags=''
+          export CGO_ENABLED=0
+          if [[ "$REFLOW_PROFILE" == pcap ]]; then
+            tags=reflow_pcap
+            export CGO_ENABLED=1
+          fi
+          go test -tags "$tags" ./pkg/reflow/...
+          go vet -tags "$tags" ./pkg/reflow/... ./cmd/reflow/...
+          make package-reflow-tar
+          output="$(make print-reflow-output)"
+          python3 scripts/reflow-verify-profile.py "$output" darwin "$GOARCH" "$REFLOW_PROFILE"
+          dependencies="${output}.dependencies.txt"
+          otool -L "$output" > "$dependencies"
+          if [[ "$REFLOW_PROFILE" == pcap ]]; then
+            grep -i libpcap "$dependencies"
+          elif grep -qi libpcap "$dependencies"; then
+            exit 1
+          fi
+      - uses: actions/upload-artifact@v6
+        with:
+          name: reflow-darwin-${{ matrix.arch }}-${{ matrix.profile }}
+          path: |
+            dist/*.tar.gz
+            dist/*.sha256
+            dist/*.dependencies.txt
+          if-no-files-found: error
+
+  windows-build:
+    name: Windows ${{ matrix.arch }} / ${{ matrix.profile }}
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [amd64, arm64]
+        profile: [platform, pcap]
+        include:
+          - arch: amd64
+            cc_target: x86_64
+            sdk_lib: x64
+          - arch: arm64
+            cc_target: aarch64
+            sdk_lib: ARM64
+    env:
+      GOOS: windows
+      GOARCH: ${{ matrix.arch }}
+      EXTENSION: .exe
+      REFLOW_PROFILE: ${{ matrix.profile }}
+      LLVM_MINGW_VERSION: '20241217'
+      NPCAP_SDK_VERSION: '1.17'
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - name: Install pinned Windows compiler and Npcap SDK
+        if: matrix.profile == 'pcap'
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive="llvm-mingw-${LLVM_MINGW_VERSION}-ucrt-ubuntu-20.04-x86_64"
+          curl -fsSL "https://github.com/mstorsjo/llvm-mingw/releases/download/${LLVM_MINGW_VERSION}/${archive}.tar.xz" -o /tmp/llvm-mingw.tar.xz
+          tar -xf /tmp/llvm-mingw.tar.xz -C /tmp
+          echo "/tmp/$archive/bin" >> "$GITHUB_PATH"
+          curl -fsSL "https://npcap.com/dist/npcap-sdk-${NPCAP_SDK_VERSION}.zip" -o /tmp/npcap-sdk.zip
+          unzip -q /tmp/npcap-sdk.zip -d /tmp/npcap-sdk
+          echo 'CC=${{ matrix.cc_target }}-w64-mingw32-clang' >> "$GITHUB_ENV"
+          echo 'CGO_CFLAGS=-I/tmp/npcap-sdk/Include' >> "$GITHUB_ENV"
+          echo 'CGO_LDFLAGS=-L/tmp/npcap-sdk/Lib/${{ matrix.sdk_lib }}' >> "$GITHUB_ENV"
+          echo 'CGO_ENABLED=1' >> "$GITHUB_ENV"
+      - name: Compile and package actual profile
+        shell: bash
+        run: |
+          set -euo pipefail
+          make package-reflow-zip
+          output="$(make print-reflow-output)"
+          if [[ "$REFLOW_PROFILE" == pcap ]]; then
+            # This verifies the real SDK binding is compiled and linked on
+            # ARM64 too; an unsupported stub cannot satisfy the import check.
+            llvm-readobj --coff-imports "$output" > "${output}.dependencies.txt"
+            grep -i wpcap.dll "${output}.dependencies.txt"
+            go test -c -tags reflow_pcap -o /tmp/pcap.test.exe ./pkg/reflow/source/pcap
+          else
+            go test -c -o /tmp/pktmon.test.exe ./pkg/reflow/source/pktmon
+          fi
+      - uses: actions/upload-artifact@v6
+        with:
+          name: reflow-windows-${{ matrix.arch }}-${{ matrix.profile }}
+          path: |
+            dist/*.zip
+            dist/*.sha256
+            dist/*.dependencies.txt
+          if-no-files-found: error
+
+  windows-platform-tests:
+    name: Windows native tests / ${{ matrix.arch }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: windows-2025
+          - arch: arm64
+            runner: windows-11-arm
+    runs-on: ${{ matrix.runner }}
+    env:
+      CGO_ENABLED: '0'
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - name: Run Windows packet and pipeline fixtures
+        shell: pwsh
+        run: |
+          go test ./pkg/reflow/...
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          go vet ./pkg/reflow/... ./cmd/reflow/...
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          go build -o reflow.exe ./cmd/reflow
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $version = & .\reflow.exe -version
+          if ($version -notmatch 'profile=platform' -or $version -notmatch 'capture=\[pktmon\]') { throw $version }
+
+  bsd:
+    name: ${{ matrix.os }} ${{ matrix.arch }} / ${{ matrix.profile }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [freebsd, openbsd, netbsd]
+        arch: [amd64, arm64]
+        profile: [platform, pcap]
+        include:
+          - arch: amd64
+            vm_arch: x86_64
+          - arch: arm64
+            vm_arch: aarch64
+    env:
+      REFLOW_GOOS: ${{ matrix.os }}
+      REFLOW_GOARCH: ${{ matrix.arch }}
+      REFLOW_PROFILE: ${{ matrix.profile }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Set artifact version
+        run: echo "REFLOW_VERSION=$(git describe --abbrev --long HEAD)" >> "$GITHUB_ENV"
+      - name: Build inside FreeBSD
+        if: matrix.os == 'freebsd'
+        uses: vmactions/freebsd-vm@v1
+        with:
+          release: '14.3'
+          arch: ${{ matrix.vm_arch }}
+          mem: 4096
+          cpu: 2
+          envs: REFLOW_GOOS REFLOW_GOARCH REFLOW_PROFILE REFLOW_VERSION
+          # Go's FreeBSD ARM64 external linker requires GNU ld.bfd for cgo.
+          prepare: pkg install -y curl gmake binutils
+          run: sh scripts/reflow-bsd-build.sh
+      - name: Build inside OpenBSD
+        if: matrix.os == 'openbsd'
+        uses: vmactions/openbsd-vm@v1
+        with:
+          release: '7.8'
+          arch: ${{ matrix.vm_arch }}
+          mem: 4096
+          cpu: 2
+          envs: REFLOW_GOOS REFLOW_GOARCH REFLOW_PROFILE REFLOW_VERSION
+          prepare: pkg_add curl gmake
+          run: sh scripts/reflow-bsd-build.sh
+      - name: Build inside NetBSD
+        if: matrix.os == 'netbsd'
+        uses: vmactions/netbsd-vm@v1
+        with:
+          release: '10.1'
+          arch: ${{ matrix.vm_arch }}
+          mem: 4096
+          cpu: 2
+          envs: REFLOW_GOOS REFLOW_GOARCH REFLOW_PROFILE REFLOW_VERSION
+          prepare: /usr/sbin/pkg_add -u curl gmake
+          run: sh scripts/reflow-bsd-build.sh
+      - uses: actions/upload-artifact@v6
+        with:
+          name: reflow-${{ matrix.os }}-${{ matrix.arch }}-${{ matrix.profile }}
+          path: |
+            dist/*.tar.gz
+            dist/*.sha256
+            dist/*.manifest.txt
+            dist/*.dependencies.txt
+          if-no-files-found: error

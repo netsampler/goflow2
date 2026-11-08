@@ -6,6 +6,7 @@ toolchain go1.26.9
 
 require (
 	github.com/IBM/sarama v1.61.1
+	github.com/cilium/ebpf v0.20.0
 	github.com/google/gopacket v1.1.19
 	github.com/libp2p/go-reuseport v0.4.0
 	github.com/oschwald/geoip2-golang v1.13.0

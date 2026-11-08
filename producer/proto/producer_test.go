@@ -1,6 +1,8 @@
 package protoproducer
 
 import (
+	"encoding/binary"
+	"math"
 	"testing"
 
 	"github.com/netsampler/goflow2/v3/decoders/netflow"
@@ -76,6 +78,31 @@ func TestProcessMessageNetFlow(t *testing.T) {
 	_ = testsr.Set(ctx, 10, 0, 1)
 	_, err = ProcessMessageIPFIXConfig(&pktipfix, ctx, testsr, nil)
 	assert.Nil(t, err)
+}
+
+func TestProcessMessageIPFIXUsesEachSelector(t *testing.T) {
+	var data netflow.DataFlowSet
+	var options netflow.OptionsDataFlowSet
+	for _, entry := range []struct {
+		id   byte
+		rate float64
+	}{{8, 256}, {7, 64}} {
+		selector := netflow.DataField{Type: netflow.IPFIX_FIELD_selectorId, Value: []byte{entry.id}}
+		data.Records = append(data.Records, netflow.DataRecord{Values: []netflow.DataField{selector}})
+		options.Records = append(options.Records, netflow.OptionsDataRecord{
+			ScopesValues: []netflow.DataField{selector},
+			OptionsValues: []netflow.DataField{
+				{Type: netflow.IPFIX_FIELD_selectorAlgorithm, Value: []byte{4}},
+				{Type: netflow.IPFIX_FIELD_samplingProbability, Value: binary.BigEndian.AppendUint64(nil, math.Float64bits(1/entry.rate))},
+			},
+		})
+	}
+	pkt := netflow.IPFIXPacket{FlowSets: []interface{}{options, data}}
+	msgs, err := ProcessMessageIPFIXConfig(&pkt, netflow.FlowContext{}, nil, nil)
+	if assert.NoError(t, err) && assert.Len(t, msgs, 2) {
+		assert.Equal(t, uint64(256), msgs[0].(*ProtoProducerMessage).SamplingRate)
+		assert.Equal(t, uint64(64), msgs[1].(*ProtoProducerMessage).SamplingRate)
+	}
 }
 
 func TestProcessMessageSFlow(t *testing.T) {
