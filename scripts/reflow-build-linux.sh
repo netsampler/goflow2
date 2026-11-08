@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Run in a target-architecture Debian Go image (native or QEMU). External SDKs
-# are built in the same architecture/libc environment as the executable.
+# Run in a Debian Go image. For ARMv7 pcap, use Bookworm's armhf libraries
+# with a native cross compiler. ARMv7 DPDK still builds in the armhf image.
 set -euo pipefail
 
 profile=${REFLOW_PROFILE:-platform}
@@ -14,6 +14,12 @@ sdk_cached=${REFLOW_SDK_CACHE_HIT:-false}
 sdk_work=$(mktemp -d)
 trap 'rm -rf "$sdk_work"' EXIT
 
+pcap_packages=(libpcap-dev)
+if [[ "$profile" == pcap && "$arch" == arm && $(dpkg --print-architecture) != armhf ]]; then
+  dpkg --add-architecture armhf
+  pcap_packages=(gcc-arm-linux-gnueabihf libc6-dev-armhf-cross libpcap0.8-dev:armhf)
+  export CC=arm-linux-gnueabihf-gcc
+fi
 apt-get update -qq
 apt-get install -y --no-install-recommends python3 file binutils pkg-config ca-certificates curl xz-utils
 
@@ -22,7 +28,7 @@ case "$profile" in
     export CGO_ENABLED=0
     ;;
   pcap)
-    apt-get install -y --no-install-recommends libpcap-dev
+    apt-get install -y --no-install-recommends "${pcap_packages[@]}"
     export CGO_ENABLED=1
     ;;
   dpdk)

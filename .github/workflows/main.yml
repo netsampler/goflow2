@@ -85,7 +85,7 @@ jobs:
     needs:
     - test
     - matrix
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.goos == 'linux' && matrix.goarch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
     strategy:
       fail-fast: false
       matrix:
@@ -144,10 +144,6 @@ jobs:
         fi
         echo "PREBUILT_BINARY=${BINARY_PATH}" >> "$GITHUB_ENV"
 
-    - name: Set up QEMU
-      if: matrix.package && env.DOCKER_PACKAGE == 'true'
-      uses: docker/setup-qemu-action@v4
-
     - name: Set up Docker Buildx
       if: matrix.package && env.DOCKER_PACKAGE == 'true'
       uses: docker/setup-buildx-action@v4
@@ -184,9 +180,9 @@ jobs:
         path: |
           ~/.gem
           ~/.local/share/gem
-        key: ${{ runner.os }}-gems-${{ hashFiles('**/Gemfile.lock') }}
+        key: ${{ runner.os }}-${{ runner.arch }}-gems-${{ hashFiles('**/Gemfile.lock') }}
         restore-keys: |
-          ${{ runner.os }}-gems-
+          ${{ runner.os }}-${{ runner.arch }}-gems-
 
     # - name: Cache apt lists and archives
     #   if: matrix.package

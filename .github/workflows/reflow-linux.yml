@@ -16,7 +16,8 @@ jobs:
     runs-on: ${{ inputs.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-24.04' }}
     env:
       REFLOW_GO_IMAGE: golang:1.26.9-bookworm
-      REFLOW_BUILD_PLATFORM: linux/${{ inputs.arch == 'armv7' && 'arm/v7' || inputs.arch }}
+      # ARMv7 platform and pcap compile natively on the amd64 host.
+      REFLOW_BUILD_PLATFORM: linux/${{ inputs.arch == 'armv7' && (inputs.profile == 'dpdk' && 'arm/v7' || 'amd64') || inputs.arch }}
     steps:
       - uses: actions/checkout@v6
         with:
