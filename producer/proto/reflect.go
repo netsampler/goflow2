@@ -133,7 +133,7 @@ func MapCustom(flowMessage *ProtoProducerMessage, v []byte, cfg MappableField) e
 	vfm := reflect.ValueOf(flowMessage)
 	vfm = reflect.Indirect(vfm)
 
-	fieldValue := vfm.FieldByName(cfg.GetDestination())
+	fieldValue := fieldByName(vfm, cfg.GetDestination())
 
 	if fieldValue.IsValid() {
 		typeDest := fieldValue.Type()

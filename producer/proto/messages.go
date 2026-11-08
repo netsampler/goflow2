@@ -90,7 +90,7 @@ func (m *ProtoProducerMessage) baseKey(h hash.Hash) {
 			fieldName = fieldNameMap
 		}
 
-		fieldValue := vfm.FieldByName(fieldName)
+		fieldValue := fieldByName(vfm, fieldName)
 		// if does not exist from structure,
 		// fetch from unknown (only numbered) fields
 		// that were parsed above
@@ -130,6 +130,28 @@ func (m *ProtoProducerMessage) FormatMessageReflectText(ext string) string {
 // FormatMessageReflectJSON renders a JSON-like representation using configured fields.
 func (m *ProtoProducerMessage) FormatMessageReflectJSON(ext string) string {
 	return fmt.Sprintf("{%s}", m.FormatMessageReflectCustom(ext, "\"", ",", ":", true))
+}
+
+// protoProducerMessageFields maps the name of every field of
+// ProtoProducerMessage, including the fields promoted from FlowMessage, to its
+// index. reflect.Value.FieldByName searches the embedded structs on every
+// call, and the formatters look up every configured field of every message.
+var protoProducerMessageFields = func() map[string][]int {
+	fields := make(map[string][]int)
+	for _, field := range reflect.VisibleFields(reflect.TypeOf((*ProtoProducerMessage)(nil)).Elem()) {
+		fields[field.Name] = field.Index
+	}
+	return fields
+}()
+
+// fieldByName returns the same field as vfm.FieldByName(name) for a
+// ProtoProducerMessage value, or the zero Value if there is no such field.
+func fieldByName(vfm reflect.Value, name string) reflect.Value {
+	index, ok := protoProducerMessageFields[name]
+	if !ok {
+		return reflect.Value{}
+	}
+	return vfm.FieldByIndex(index)
 }
 
 // ExtractTag retrieves a named struct tag or returns the original field name.
@@ -222,7 +244,7 @@ func (m *ProtoProducerMessage) FormatMessageReflectCustom(ext, quotes, sep, sign
 			renderer = NilRenderer
 		}
 
-		fieldValue := vfm.FieldByName(fieldName)
+		fieldValue := fieldByName(vfm, fieldName)
 		// if does not exist from structure,
 		// fetch from unknown (only numbered) fields
 		// that were parsed above
