@@ -60,7 +60,11 @@ fi
 "$output" -version | tee "${output}.manifest.txt"
 grep -F "profile=$REFLOW_PROFILE" "${output}.manifest.txt"
 grep -F "capture=[$expected]" "${output}.manifest.txt"
-ldd "$output" > "${output}.dependencies.txt" 2>&1 || true
+# NetBSD 10.1 ldd requires exactly two ELF load segments. Keep the cross-build's
+# readelf report after verifying that the binary runs in the guest.
+if [ "$REFLOW_GOOS" != netbsd ] || [ "${REFLOW_CROSS_PCAP:-false}" != true ]; then
+    ldd "$output" > "${output}.dependencies.txt" 2>&1 || true
+fi
 if [ "$REFLOW_PROFILE" = pcap ]; then
     grep -i libpcap "${output}.dependencies.txt"
 elif grep -qi libpcap "${output}.dependencies.txt"; then
