@@ -601,6 +601,7 @@ func ParseIPv4(flowMessage *ProtoProducerMessage, data []byte, pc ParseConfig) (
 	flowMessage.AddLayer("IPv4")
 
 	nextHeader := data[9]
+	fragOffset := binary.BigEndian.Uint16(data[6:8]) // also includes flag
 
 	if pc.BaseLayer() { // first time calling
 		flowMessage.SrcAddr = data[12:16]
@@ -613,7 +614,6 @@ func ParseIPv4(flowMessage *ProtoProducerMessage, data []byte, pc ParseConfig) (
 		flowMessage.IpTtl = uint32(ttl)
 
 		identification := binary.BigEndian.Uint16(data[4:6])
-		fragOffset := binary.BigEndian.Uint16(data[6:8]) // also includes flag
 
 		flowMessage.FragmentId = uint32(identification)
 		flowMessage.FragmentOffset = uint32(fragOffset) & 8191
@@ -624,6 +624,10 @@ func ParseIPv4(flowMessage *ProtoProducerMessage, data []byte, pc ParseConfig) (
 
 	if pc.Environment == nil {
 		return res, wrapParseErr("ParseIPv4", err)
+	}
+	if fragOffset&8191 != 0 {
+		// non-first fragment: the payload is a slice of the datagram, not the transport header
+		return res, nil
 	}
 	// get next parser
 	res.NextParser, err = pc.Environment.NextParserProto(nextHeader)
@@ -679,9 +683,9 @@ func ParseIPv6HeaderFragment(flowMessage *ProtoProducerMessage, data []byte, pc 
 	flowMessage.AddLayer("IPv6HeaderFragment")
 
 	nextHeader := data[0]
+	fragOffset := binary.BigEndian.Uint16(data[2:4]) // also includes flag
 
 	if pc.BaseLayer() { // first time calling
-		fragOffset := binary.BigEndian.Uint16(data[2:4]) // also includes flag
 		identification := binary.BigEndian.Uint32(data[4:8])
 
 		flowMessage.FragmentId = identification
@@ -690,6 +694,10 @@ func ParseIPv6HeaderFragment(flowMessage *ProtoProducerMessage, data []byte, pc 
 	}
 	if pc.Environment == nil {
 		return res, wrapParseErr("ParseIPv6HeaderFragment", err)
+	}
+	if fragOffset>>3 != 0 {
+		// non-first fragment: the payload is a slice of the datagram, not the transport header
+		return res, nil
 	}
 	// get next parser
 	res.NextParser, err = pc.Environment.NextParserProto(nextHeader)

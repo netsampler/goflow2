@@ -123,6 +123,99 @@ func TestProcessIPv6HeaderRouting(t *testing.T) {
 	t.Log(string(b))
 }
 
+func TestProcessPacketIPv4Fragments(t *testing.T) {
+	ethernet := "005300000001" + // src mac
+		"005300000002" + // dst mac
+		"0800" // etype
+	ipv4 := "450000f0" + // ipv4
+		"7e59" // id
+	ipv4Rest := "7911" + // ttl, proto
+		"aaaa" + // csum
+		"0a000001" + // src
+		"0a000002" // dst
+	udp := "c327" + "17c0" + "00dc" + "0000" // ports, length, csum
+	payload := "0102030405060708090a0b0c0d0e0f10"
+
+	testCases := []struct {
+		name       string
+		data       string
+		layers     []uint32
+		fragOffset uint32
+		srcPort    uint32
+		dstPort    uint32
+	}{
+		{"first", ethernet + ipv4 + "2000" + ipv4Rest + udp + payload, []uint32{0, 1, 4}, 0, 49959, 6080},
+		{"non-first", ethernet + ipv4 + "00ac" + ipv4Rest + payload, []uint32{0, 1}, 172, 0, 0},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			data, err := hex.DecodeString(tc.data)
+			require.NoError(t, err)
+
+			var flowMessage ProtoProducerMessage
+			require.NoError(t, ParsePacket(&flowMessage, data, nil, nil))
+
+			b, _ := json.Marshal(&flowMessage.FlowMessage)
+			t.Log(string(b))
+
+			require.Equal(t, len(tc.layers), len(flowMessage.LayerStack))
+			for i, layer := range tc.layers {
+				assert.Equal(t, layer, uint32(flowMessage.LayerStack[i]))
+			}
+			assert.Equal(t, uint32(17), flowMessage.Proto)
+			assert.Equal(t, tc.fragOffset, flowMessage.FragmentOffset)
+			assert.Equal(t, tc.srcPort, flowMessage.SrcPort)
+			assert.Equal(t, tc.dstPort, flowMessage.DstPort)
+		})
+	}
+}
+
+func TestProcessPacketIPv6Fragments(t *testing.T) {
+	ethernet := "005300000001" + // src mac
+		"005300000002" + // dst mac
+		"8100" + // etype
+		"006486dd" // 8021q
+	ipv6 := "6000000005b02c40" + // ipv6, next header fragment
+		"fd010000000000000000000000000001" + // src
+		"fd010000000000000000000000000002" // dst
+	fragmentID := "73a8af34"
+	udp := "c327" + "17c0" + "05a8" + "0000" // ports, length, csum
+	payload := "0102030405060708090a0b0c0d0e0f10"
+
+	testCases := []struct {
+		name       string
+		data       string
+		layers     []uint32
+		fragOffset uint32
+		srcPort    uint32
+		dstPort    uint32
+	}{
+		{"first", ethernet + ipv6 + "1100" + "0001" + fragmentID + udp + payload, []uint32{0, 6, 2, 11, 4}, 0, 49959, 6080},
+		{"non-first", ethernet + ipv6 + "1100" + "05a8" + fragmentID + payload, []uint32{0, 6, 2, 11}, 181, 0, 0},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			data, err := hex.DecodeString(tc.data)
+			require.NoError(t, err)
+
+			var flowMessage ProtoProducerMessage
+			require.NoError(t, ParsePacket(&flowMessage, data, nil, nil))
+
+			b, _ := json.Marshal(&flowMessage.FlowMessage)
+			t.Log(string(b))
+
+			require.Equal(t, len(tc.layers), len(flowMessage.LayerStack))
+			for i, layer := range tc.layers {
+				assert.Equal(t, layer, uint32(flowMessage.LayerStack[i]))
+			}
+			assert.Equal(t, uint32(0x73a8af34), flowMessage.FragmentId)
+			assert.Equal(t, tc.fragOffset, flowMessage.FragmentOffset)
+			assert.Equal(t, tc.srcPort, flowMessage.SrcPort)
+			assert.Equal(t, tc.dstPort, flowMessage.DstPort)
+		})
+	}
+}
+
 func TestProcessPacketTCPLayerSize(t *testing.T) {
 	dataStr := "005300000001" + // src mac
 		"005300000002" + // dst mac
