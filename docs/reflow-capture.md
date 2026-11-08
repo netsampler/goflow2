@@ -40,6 +40,21 @@ In a second terminal, run `ping 127.0.0.1`. You should see packet events as JSON
 in the first terminal. Press Ctrl+C to stop. To capture regular network
 traffic, replace the loopback device with your network adapter.
 
+### Capture from Docker
+
+On a Linux amd64 Docker host, use the `pcap` image to capture a host network
+interface. The image packages the Linux amd64 `pcap` release binary and its
+libpcap runtime. Append `-pcap` to a release tag to pin that release.
+
+```sh
+docker run --rm --network host --cap-drop ALL --cap-add NET_RAW \
+  ghcr.io/netsampler/reflow:pcap \
+  -input pcap_live:eth0:bytes -output json:stdout
+```
+
+Replace `eth0` with your capture interface. The same tags are available on
+Docker Hub as `netsampler/reflow`.
+
 ### Export live traffic as IPFIX
 
 Use `-agg` to combine captured packets into flows and send the resulting IPFIX
