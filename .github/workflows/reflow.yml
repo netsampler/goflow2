@@ -7,6 +7,9 @@ on:
   pull_request:
     branches: [main]
 
+concurrency:
+  group: reflow-${{ github.ref_type == 'tag' && github.ref || github.run_id }}
+
 permissions:
   contents: read
 
@@ -15,8 +18,30 @@ env:
   DOCKERHUB_REFLOW_IMAGE: docker.io/${{ github.repository_owner }}/reflow
 
 jobs:
-  linux-build:
+  linux-docker-build:
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [amd64, arm64]
     uses: ./.github/workflows/reflow-linux.yml
+    with:
+      arch: ${{ matrix.arch }}
+      profile: platform
+  linux-build:
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [amd64, arm64, armv7]
+        profile: [platform, pcap, dpdk]
+        exclude:
+          - arch: amd64
+            profile: platform
+          - arch: arm64
+            profile: platform
+    uses: ./.github/workflows/reflow-linux.yml
+    with:
+      arch: ${{ matrix.arch }}
+      profile: ${{ matrix.profile }}
   platform-build:
     uses: ./.github/workflows/reflow-platforms.yml
 
@@ -25,7 +50,7 @@ jobs:
       contents: read
       packages: write
     name: Package platform Docker image / ${{ matrix.arch }}
-    needs: linux-build
+    needs: linux-docker-build
     runs-on: ${{ matrix.runner }}
     strategy:
       matrix:
@@ -117,91 +142,129 @@ jobs:
           DOCKER_IMAGE="$image" DOCKER_MANIFEST_TAG=latest make docker-manifest
         done
 
+  collector-build:
+    if: github.ref_type == 'tag'
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/main.yml
+    secrets: inherit
+
+  collector-manifest:
+    needs: collector-build
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/goflow2-manifest.yml
+    secrets: inherit
+
+  release-draft:
+    name: Prepare GitHub release
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      release-id: ${{ steps.release.outputs.release-id }}
+      upload-url: ${{ steps.release.outputs.upload-url }}
+      draft: ${{ steps.release.outputs.draft }}
+    steps:
+    - name: Find or create draft
+      id: release
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const repo = context.repo;
+          const tag = process.env.GITHUB_REF_NAME;
+          let release;
+          try {
+            ({ data: release } = await github.rest.repos.getReleaseByTag({ ...repo, tag }));
+          } catch (error) {
+            if (error.status !== 404) throw error;
+          }
+
+          if (!release) {
+            // The tag endpoint only finds published releases. Reuse a draft on reruns.
+            const pages = github.paginate.iterator(github.rest.repos.listReleases, { ...repo, per_page: 100 });
+            for await (const { data } of pages) {
+              release = data.find(candidate => candidate.tag_name === tag);
+              if (release) break;
+            }
+          }
+
+          if (!release) {
+            ({ data: release } = await github.rest.repos.createRelease({
+              ...repo,
+              tag_name: tag,
+              name: `Release ${tag}`,
+              draft: true,
+              prerelease: false,
+            }));
+          }
+
+          core.setOutput('release-id', release.id);
+          core.setOutput('upload-url', release.upload_url);
+          core.setOutput('draft', release.draft);
+
+  upload-collector:
+    name: Upload GoFlow2 assets
+    needs: [release-draft, collector-build]
+    permissions:
+      contents: write
+    uses: ./.github/workflows/release-assets.yml
+    with:
+      artifact-pattern: dist-*
+      release-id: ${{ needs.release-draft.outputs.release-id }}
+      upload-url: ${{ needs.release-draft.outputs.upload-url }}
+
+  upload-linux-docker:
+    name: Upload ReFlow Linux Docker build assets
+    needs: [release-draft, linux-docker-build]
+    permissions:
+      contents: write
+    uses: ./.github/workflows/release-assets.yml
+    with:
+      artifact-pattern: 'reflow-linux-{amd64,arm64}-platform'
+      release-id: ${{ needs.release-draft.outputs.release-id }}
+      upload-url: ${{ needs.release-draft.outputs.upload-url }}
+
+  upload-linux:
+    name: Upload other ReFlow Linux assets
+    needs: [release-draft, linux-build]
+    permissions:
+      contents: write
+    uses: ./.github/workflows/release-assets.yml
+    with:
+      artifact-pattern: 'reflow-linux-{armv7-platform,*-{pcap,dpdk}}'
+      release-id: ${{ needs.release-draft.outputs.release-id }}
+      upload-url: ${{ needs.release-draft.outputs.upload-url }}
+
+  upload-platforms:
+    name: Upload ReFlow macOS, Windows, and BSD assets
+    needs: [release-draft, platform-build]
+    permissions:
+      contents: write
+    uses: ./.github/workflows/release-assets.yml
+    with:
+      artifact-pattern: 'reflow-{darwin,windows,freebsd,openbsd,netbsd}-*'
+      release-id: ${{ needs.release-draft.outputs.release-id }}
+      upload-url: ${{ needs.release-draft.outputs.upload-url }}
+
   release:
-    name: Publish ReFlow Release Assets
-    needs: [linux-build, platform-build]
-    if: startsWith(github.ref, 'refs/tags/')
+    name: Publish GitHub release
+    needs: [release-draft, upload-collector, upload-linux-docker, upload-linux, upload-platforms]
+    if: needs.release-draft.outputs.draft == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
-    - name: Download ReFlow artifacts
-      uses: actions/download-artifact@v8
+    - uses: actions/github-script@v7
+      env:
+        RELEASE_ID: ${{ needs.release-draft.outputs.release-id }}
       with:
-        path: dist
-        pattern: reflow-*
-        merge-multiple: true
-
-    - name: Create or find release
-      id: release
-      uses: actions/github-script@v7
-      with:
-        github-token: ${{ secrets.GITHUB_TOKEN }}
         script: |
-          const tag = process.env.GITHUB_REF_NAME;
-          async function getRelease() {
-            const { data } = await github.rest.repos.getReleaseByTag({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              tag,
-            });
-            return data;
-          }
-          try {
-            const release = await getRelease();
-            core.setOutput('upload_url', release.upload_url);
-            core.setOutput('release_id', release.id);
-          } catch (error) {
-            if (error.status !== 404) throw error;
-            try {
-              const { data } = await github.rest.repos.createRelease({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                tag_name: tag,
-                name: `Release ${tag}`,
-                draft: false,
-                prerelease: false,
-              });
-              core.setOutput('upload_url', data.upload_url);
-              core.setOutput('release_id', data.id);
-            } catch (createError) {
-              if (createError.status !== 422) throw createError;
-              const release = await getRelease();
-              core.setOutput('upload_url', release.upload_url);
-              core.setOutput('release_id', release.id);
-            }
-          }
-
-    - name: Upload release assets
-      uses: actions/github-script@v7
-      with:
-        github-token: ${{ secrets.GITHUB_TOKEN }}
-        script: |
-          const fs = require('fs').promises;
-          const path = require('path');
-          const uploadUrl = '${{ steps.release.outputs.upload_url }}';
-          const releaseId = Number('${{ steps.release.outputs.release_id }}');
-          const assets = await github.paginate(github.rest.repos.listReleaseAssets, {
-            owner: context.repo.owner,
-            repo: context.repo.repo,
-            release_id: releaseId,
-            per_page: 100,
+          await github.rest.repos.updateRelease({
+            ...context.repo,
+            release_id: Number(process.env.RELEASE_ID),
+            draft: false,
           });
-          const existing = new Map(assets.map((asset) => [asset.name, asset.id]));
-          for (const file of await fs.readdir('./dist')) {
-            const fullPath = path.join('./dist', file);
-            if (!(await fs.stat(fullPath)).isFile()) continue;
-            if (existing.has(file)) {
-              await github.rest.repos.deleteReleaseAsset({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                asset_id: existing.get(file),
-              });
-            }
-            console.log('uploading', file);
-            await github.rest.repos.uploadReleaseAsset({
-              url: uploadUrl,
-              name: file,
-              data: await fs.readFile(fullPath),
-            });
-          }

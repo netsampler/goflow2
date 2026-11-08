@@ -1,10 +1,9 @@
 name: Main
 
 on:
+  workflow_call:
   push:
     branches: [ main ]
-    tags:
-      - 'v*'
   pull_request:
     branches: [ main ]
 
@@ -205,9 +204,6 @@ jobs:
       if: matrix.package
       # fpm builds both rpm and deb artifacts from the Go binaries.
       run: |
-        # if [[ "${{ steps.cache-apt.outputs.cache-hit }}" != "true" ]]; then
-        #   sudo apt-get update
-        # fi
         sudo apt-get update
         sudo apt-get install -y rpm ruby ruby-dev
         gem install --user-install fpm
@@ -229,105 +225,10 @@ jobs:
         retention-days: 14
 
   manifest:
-    name: Docker Manifests
-    runs-on: ubuntu-latest
     needs: build
-    if: github.event_name != 'pull_request'
-    steps:
-    - name: Check out code into the Go module directory
-      uses: actions/checkout@v6
-      with:
-        fetch-depth: 0
-
-    - name: Set image names
-      run: |
-        owner="${GITHUB_REPOSITORY_OWNER,,}"
-        echo "GHCR_IMAGE=ghcr.io/$owner/goflow2" >> "$GITHUB_ENV"
-        echo "DOCKERHUB_IMAGE=docker.io/$owner/goflow2" >> "$GITHUB_ENV"
-
-    - name: Set up Docker Buildx
-      uses: docker/setup-buildx-action@v4
-
-    - name: Login to DockerHub
-      uses: docker/login-action@v4
-      with:
-        username: ${{ secrets.DOCKERHUB_USERNAME }}
-        password: ${{ secrets.DOCKERHUB_TOKEN }}
-
-    - name: Log in to GHCR
-      run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u $ --password-stdin
-
-    - name: Set VERSION for tag builds
-      if: startsWith(github.ref, 'refs/tags/')
-      run: echo "VERSION=$(git describe --tags --abbrev=0 HEAD)" >> $GITHUB_ENV
-
-    - name: Publish manifests (branch)
-      if: "!startsWith(github.ref, 'refs/tags/')"
-      shell: bash
-      # Publish branch-specific and latest tags to both registries.
-      run: |
-        images=("$DOCKERHUB_IMAGE" "$GHCR_IMAGE")
-        for image in "${images[@]}"; do
-          DOCKER_IMAGE="$image" make docker-manifest
-          DOCKER_IMAGE="$image" DOCKER_MANIFEST_TAG=latest make docker-manifest
-        done
-
-    - name: Publish manifests (tag)
-      if: startsWith(github.ref, 'refs/tags/')
-      shell: bash
-      # Tag releases get a versioned manifest plus latest.
-      run: |
-        images=("$DOCKERHUB_IMAGE" "$GHCR_IMAGE")
-        for image in "${images[@]}"; do
-          DOCKER_IMAGE="$image" DOCKER_MANIFEST_TAG="${VERSION}" make docker-manifest
-          DOCKER_IMAGE="$image" DOCKER_MANIFEST_TAG=latest make docker-manifest
-        done
-
-  release:
-    name: Release
-    needs: build
-    if: startsWith(github.ref, 'refs/tags/')
-    runs-on: ubuntu-latest
+    if: github.event_name != 'pull_request' && github.ref_type != 'tag'
     permissions:
-      contents: write
-    steps:
-    - name: Download Artifacts
-      uses: actions/download-artifact@v8
-      with:
-        path: dist
-        pattern: dist-*
-        merge-multiple: true
-
-    - name: Create Release
-      id: create_release
-      uses: actions/github-script@v7
-      with:
-        github-token: ${{ secrets.GITHUB_TOKEN }}
-        script: |
-          const tag = process.env.GITHUB_REF_NAME;
-          const { data } = await github.rest.repos.createRelease({
-            owner: context.repo.owner,
-            repo: context.repo.repo,
-            tag_name: tag,
-            name: `Release ${tag}`,
-            draft: false,
-            prerelease: false,
-          });
-          core.setOutput('upload_url', data.upload_url);
-
-    - name: Upload Release Asset
-      uses: actions/github-script@v7
-      with:
-        github-token: ${{ secrets.GITHUB_TOKEN }}
-        script: |
-          const fs = require('fs').promises;
-          const path = require('path');
-          const uploadUrl = '${{ steps.create_release.outputs.upload_url }}';
-          for (const file of await fs.readdir('./dist')) {
-            console.log('uploading', file);
-            await github.rest.repos.uploadReleaseAsset({
-              url: uploadUrl,
-              name: file,
-              data: await fs.readFile(path.join('dist', file)),
-            });
-          }
+      contents: read
+      packages: write
+    uses: ./.github/workflows/goflow2-manifest.yml
+    secrets: inherit
