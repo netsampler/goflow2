@@ -76,20 +76,107 @@ func (FlowMessageExt_FlowType) EnumDescriptor() ([]byte, []int) {
 	return file_cmd_enricher_pb_flowext_proto_rawDescGZIP(), []int{0, 0}
 }
 
+// Encapsulation
+type FlowMessageExt_LayerStack int32
+
+const (
+	FlowMessageExt_Ethernet           FlowMessageExt_LayerStack = 0
+	FlowMessageExt_IPv4               FlowMessageExt_LayerStack = 1
+	FlowMessageExt_IPv6               FlowMessageExt_LayerStack = 2
+	FlowMessageExt_TCP                FlowMessageExt_LayerStack = 3
+	FlowMessageExt_UDP                FlowMessageExt_LayerStack = 4
+	FlowMessageExt_MPLS               FlowMessageExt_LayerStack = 5
+	FlowMessageExt_Dot1Q              FlowMessageExt_LayerStack = 6
+	FlowMessageExt_ICMP               FlowMessageExt_LayerStack = 7
+	FlowMessageExt_ICMPv6             FlowMessageExt_LayerStack = 8
+	FlowMessageExt_GRE                FlowMessageExt_LayerStack = 9
+	FlowMessageExt_IPv6HeaderRouting  FlowMessageExt_LayerStack = 10
+	FlowMessageExt_IPv6HeaderFragment FlowMessageExt_LayerStack = 11
+	FlowMessageExt_Geneve             FlowMessageExt_LayerStack = 12
+	FlowMessageExt_Teredo             FlowMessageExt_LayerStack = 13
+	FlowMessageExt_Custom             FlowMessageExt_LayerStack = 99
+)
+
+// Enum value maps for FlowMessageExt_LayerStack.
+var (
+	FlowMessageExt_LayerStack_name = map[int32]string{
+		0:  "Ethernet",
+		1:  "IPv4",
+		2:  "IPv6",
+		3:  "TCP",
+		4:  "UDP",
+		5:  "MPLS",
+		6:  "Dot1Q",
+		7:  "ICMP",
+		8:  "ICMPv6",
+		9:  "GRE",
+		10: "IPv6HeaderRouting",
+		11: "IPv6HeaderFragment",
+		12: "Geneve",
+		13: "Teredo",
+		99: "Custom",
+	}
+	FlowMessageExt_LayerStack_value = map[string]int32{
+		"Ethernet":           0,
+		"IPv4":               1,
+		"IPv6":               2,
+		"TCP":                3,
+		"UDP":                4,
+		"MPLS":               5,
+		"Dot1Q":              6,
+		"ICMP":               7,
+		"ICMPv6":             8,
+		"GRE":                9,
+		"IPv6HeaderRouting":  10,
+		"IPv6HeaderFragment": 11,
+		"Geneve":             12,
+		"Teredo":             13,
+		"Custom":             99,
+	}
+)
+
+func (x FlowMessageExt_LayerStack) Enum() *FlowMessageExt_LayerStack {
+	p := new(FlowMessageExt_LayerStack)
+	*p = x
+	return p
+}
+
+func (x FlowMessageExt_LayerStack) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (FlowMessageExt_LayerStack) Descriptor() protoreflect.EnumDescriptor {
+	return file_cmd_enricher_pb_flowext_proto_enumTypes[1].Descriptor()
+}
+
+func (FlowMessageExt_LayerStack) Type() protoreflect.EnumType {
+	return &file_cmd_enricher_pb_flowext_proto_enumTypes[1]
+}
+
+func (x FlowMessageExt_LayerStack) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use FlowMessageExt_LayerStack.Descriptor instead.
+func (FlowMessageExt_LayerStack) EnumDescriptor() ([]byte, []int) {
+	return file_cmd_enricher_pb_flowext_proto_rawDescGZIP(), []int{0, 1}
+}
+
+// FlowMessageExt extends the goflow2 FlowMessage (pb/flow.proto) with
+// enrichment fields. The fields below 1000 must stay identical to
+// pb/flow.proto, as the enricher decodes the binary messages of goflow2
+// with this definition.
 type FlowMessageExt struct {
-	state         protoimpl.MessageState  `protogen:"open.v1"`
-	Type          FlowMessageExt_FlowType `protobuf:"varint,1,opt,name=type,proto3,enum=flowpb.FlowMessageExt_FlowType" json:"type,omitempty"`
-	TimeReceived  uint64                  `protobuf:"varint,2,opt,name=time_received,json=timeReceived,proto3" json:"time_received,omitempty"`
-	SequenceNum   uint32                  `protobuf:"varint,4,opt,name=sequence_num,json=sequenceNum,proto3" json:"sequence_num,omitempty"`
-	SamplingRate  uint64                  `protobuf:"varint,3,opt,name=sampling_rate,json=samplingRate,proto3" json:"sampling_rate,omitempty"`
-	FlowDirection uint32                  `protobuf:"varint,42,opt,name=flow_direction,json=flowDirection,proto3" json:"flow_direction,omitempty"`
+	state          protoimpl.MessageState  `protogen:"open.v1"`
+	Type           FlowMessageExt_FlowType `protobuf:"varint,1,opt,name=type,proto3,enum=flowpb.FlowMessageExt_FlowType" json:"type,omitempty"`
+	TimeReceivedNs uint64                  `protobuf:"varint,110,opt,name=time_received_ns,json=timeReceivedNs,proto3" json:"time_received_ns,omitempty"`
+	SequenceNum    uint32                  `protobuf:"varint,4,opt,name=sequence_num,json=sequenceNum,proto3" json:"sequence_num,omitempty"`
+	SamplingRate   uint64                  `protobuf:"varint,3,opt,name=sampling_rate,json=samplingRate,proto3" json:"sampling_rate,omitempty"`
 	// Sampler information
 	SamplerAddress []byte `protobuf:"bytes,11,opt,name=sampler_address,json=samplerAddress,proto3" json:"sampler_address,omitempty"`
 	// Found inside packet
-	TimeFlowStart   uint64 `protobuf:"varint,38,opt,name=time_flow_start,json=timeFlowStart,proto3" json:"time_flow_start,omitempty"`
-	TimeFlowEnd     uint64 `protobuf:"varint,5,opt,name=time_flow_end,json=timeFlowEnd,proto3" json:"time_flow_end,omitempty"`
-	TimeFlowStartMs uint64 `protobuf:"varint,63,opt,name=time_flow_start_ms,json=timeFlowStartMs,proto3" json:"time_flow_start_ms,omitempty"`
-	TimeFlowEndMs   uint64 `protobuf:"varint,64,opt,name=time_flow_end_ms,json=timeFlowEndMs,proto3" json:"time_flow_end_ms,omitempty"`
+	TimeFlowStartNs uint64 `protobuf:"varint,111,opt,name=time_flow_start_ns,json=timeFlowStartNs,proto3" json:"time_flow_start_ns,omitempty"`
+	TimeFlowEndNs   uint64 `protobuf:"varint,112,opt,name=time_flow_end_ns,json=timeFlowEndNs,proto3" json:"time_flow_end_ns,omitempty"`
 	// Size of the sampled packet
 	Bytes   uint64 `protobuf:"varint,9,opt,name=bytes,proto3" json:"bytes,omitempty"`
 	Packets uint64 `protobuf:"varint,10,opt,name=packets,proto3" json:"packets,omitempty"`
@@ -114,21 +201,18 @@ type FlowMessageExt struct {
 	DstVlan uint32 `protobuf:"varint,34,opt,name=dst_vlan,json=dstVlan,proto3" json:"dst_vlan,omitempty"`
 	// 802.1q VLAN in sampled packet
 	VlanId uint32 `protobuf:"varint,29,opt,name=vlan_id,json=vlanId,proto3" json:"vlan_id,omitempty"`
-	// VRF
-	IngressVrfId uint32 `protobuf:"varint,39,opt,name=ingress_vrf_id,json=ingressVrfId,proto3" json:"ingress_vrf_id,omitempty"`
-	EgressVrfId  uint32 `protobuf:"varint,40,opt,name=egress_vrf_id,json=egressVrfId,proto3" json:"egress_vrf_id,omitempty"`
 	// IP and TCP special flags
 	IpTos            uint32 `protobuf:"varint,23,opt,name=ip_tos,json=ipTos,proto3" json:"ip_tos,omitempty"`
 	ForwardingStatus uint32 `protobuf:"varint,24,opt,name=forwarding_status,json=forwardingStatus,proto3" json:"forwarding_status,omitempty"`
 	IpTtl            uint32 `protobuf:"varint,25,opt,name=ip_ttl,json=ipTtl,proto3" json:"ip_ttl,omitempty"`
+	IpFlags          uint32 `protobuf:"varint,38,opt,name=ip_flags,json=ipFlags,proto3" json:"ip_flags,omitempty"`
 	TcpFlags         uint32 `protobuf:"varint,26,opt,name=tcp_flags,json=tcpFlags,proto3" json:"tcp_flags,omitempty"`
 	IcmpType         uint32 `protobuf:"varint,31,opt,name=icmp_type,json=icmpType,proto3" json:"icmp_type,omitempty"`
 	IcmpCode         uint32 `protobuf:"varint,32,opt,name=icmp_code,json=icmpCode,proto3" json:"icmp_code,omitempty"`
 	Ipv6FlowLabel    uint32 `protobuf:"varint,37,opt,name=ipv6_flow_label,json=ipv6FlowLabel,proto3" json:"ipv6_flow_label,omitempty"`
 	// Fragments (IPv4/IPv6)
-	FragmentId      uint32 `protobuf:"varint,35,opt,name=fragment_id,json=fragmentId,proto3" json:"fragment_id,omitempty"`
-	FragmentOffset  uint32 `protobuf:"varint,36,opt,name=fragment_offset,json=fragmentOffset,proto3" json:"fragment_offset,omitempty"`
-	BiFlowDirection uint32 `protobuf:"varint,41,opt,name=bi_flow_direction,json=biFlowDirection,proto3" json:"bi_flow_direction,omitempty"`
+	FragmentId     uint32 `protobuf:"varint,35,opt,name=fragment_id,json=fragmentId,proto3" json:"fragment_id,omitempty"`
+	FragmentOffset uint32 `protobuf:"varint,36,opt,name=fragment_offset,json=fragmentOffset,proto3" json:"fragment_offset,omitempty"`
 	// Autonomous system information
 	SrcAs     uint32 `protobuf:"varint,14,opt,name=src_as,json=srcAs,proto3" json:"src_as,omitempty"`
 	DstAs     uint32 `protobuf:"varint,15,opt,name=dst_as,json=dstAs,proto3" json:"dst_as,omitempty"`
@@ -142,23 +226,20 @@ type FlowMessageExt struct {
 	BgpCommunities []uint32 `protobuf:"varint,101,rep,packed,name=bgp_communities,json=bgpCommunities,proto3" json:"bgp_communities,omitempty"`
 	AsPath         []uint32 `protobuf:"varint,102,rep,packed,name=as_path,json=asPath,proto3" json:"as_path,omitempty"`
 	// MPLS information
-	HasMpls             bool   `protobuf:"varint,53,opt,name=has_mpls,json=hasMpls,proto3" json:"has_mpls,omitempty"`
-	MplsCount           uint32 `protobuf:"varint,54,opt,name=mpls_count,json=mplsCount,proto3" json:"mpls_count,omitempty"`
-	Mpls_1Ttl           uint32 `protobuf:"varint,55,opt,name=mpls_1_ttl,json=mpls1Ttl,proto3" json:"mpls_1_ttl,omitempty"`                // First TTL
-	Mpls_1Label         uint32 `protobuf:"varint,56,opt,name=mpls_1_label,json=mpls1Label,proto3" json:"mpls_1_label,omitempty"`          // First Label
-	Mpls_2Ttl           uint32 `protobuf:"varint,57,opt,name=mpls_2_ttl,json=mpls2Ttl,proto3" json:"mpls_2_ttl,omitempty"`                // Second TTL
-	Mpls_2Label         uint32 `protobuf:"varint,58,opt,name=mpls_2_label,json=mpls2Label,proto3" json:"mpls_2_label,omitempty"`          // Second Label
-	Mpls_3Ttl           uint32 `protobuf:"varint,59,opt,name=mpls_3_ttl,json=mpls3Ttl,proto3" json:"mpls_3_ttl,omitempty"`                // Third TTL
-	Mpls_3Label         uint32 `protobuf:"varint,60,opt,name=mpls_3_label,json=mpls3Label,proto3" json:"mpls_3_label,omitempty"`          // Third Label
-	MplsLastTtl         uint32 `protobuf:"varint,61,opt,name=mpls_last_ttl,json=mplsLastTtl,proto3" json:"mpls_last_ttl,omitempty"`       // Last TTL
-	MplsLastLabel       uint32 `protobuf:"varint,62,opt,name=mpls_last_label,json=mplsLastLabel,proto3" json:"mpls_last_label,omitempty"` // Last Label
-	MplsLabelIp         []byte `protobuf:"bytes,65,opt,name=mpls_label_ip,json=mplsLabelIp,proto3" json:"mpls_label_ip,omitempty"`        // MPLS TOP Label IP
-	ObservationDomainId uint32 `protobuf:"varint,70,opt,name=observation_domain_id,json=observationDomainId,proto3" json:"observation_domain_id,omitempty"`
-	ObservationPointId  uint32 `protobuf:"varint,71,opt,name=observation_point_id,json=observationPointId,proto3" json:"observation_point_id,omitempty"`
-	SrcCountry          string `protobuf:"bytes,1000,opt,name=src_country,json=srcCountry,proto3" json:"src_country,omitempty"`
-	DstCountry          string `protobuf:"bytes,1001,opt,name=dst_country,json=dstCountry,proto3" json:"dst_country,omitempty"`
-	unknownFields       protoimpl.UnknownFields
-	sizeCache           protoimpl.SizeCache
+	MplsTtl                    []uint32                    `protobuf:"varint,80,rep,packed,name=mpls_ttl,json=mplsTtl,proto3" json:"mpls_ttl,omitempty"`
+	MplsLabel                  []uint32                    `protobuf:"varint,81,rep,packed,name=mpls_label,json=mplsLabel,proto3" json:"mpls_label,omitempty"`
+	MplsIp                     [][]byte                    `protobuf:"bytes,82,rep,name=mpls_ip,json=mplsIp,proto3" json:"mpls_ip,omitempty"`
+	ObservationDomainId        uint32                      `protobuf:"varint,70,opt,name=observation_domain_id,json=observationDomainId,proto3" json:"observation_domain_id,omitempty"`
+	ObservationPointId         uint32                      `protobuf:"varint,71,opt,name=observation_point_id,json=observationPointId,proto3" json:"observation_point_id,omitempty"`
+	LayerStack                 []FlowMessageExt_LayerStack `protobuf:"varint,103,rep,packed,name=layer_stack,json=layerStack,proto3,enum=flowpb.FlowMessageExt_LayerStack" json:"layer_stack,omitempty"`
+	LayerSize                  []uint32                    `protobuf:"varint,104,rep,packed,name=layer_size,json=layerSize,proto3" json:"layer_size,omitempty"`
+	Ipv6RoutingHeaderAddresses [][]byte                    `protobuf:"bytes,105,rep,name=ipv6_routing_header_addresses,json=ipv6RoutingHeaderAddresses,proto3" json:"ipv6_routing_header_addresses,omitempty"` // SRv6
+	Ipv6RoutingHeaderSegLeft   uint32                      `protobuf:"varint,106,opt,name=ipv6_routing_header_seg_left,json=ipv6RoutingHeaderSegLeft,proto3" json:"ipv6_routing_header_seg_left,omitempty"`    // SRv6
+	// Enrichment fields (not in pb/flow.proto)
+	SrcCountry    string `protobuf:"bytes,1000,opt,name=src_country,json=srcCountry,proto3" json:"src_country,omitempty"`
+	DstCountry    string `protobuf:"bytes,1001,opt,name=dst_country,json=dstCountry,proto3" json:"dst_country,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *FlowMessageExt) Reset() {
@@ -198,9 +279,9 @@ func (x *FlowMessageExt) GetType() FlowMessageExt_FlowType {
 	return FlowMessageExt_FLOWUNKNOWN
 }
 
-func (x *FlowMessageExt) GetTimeReceived() uint64 {
+func (x *FlowMessageExt) GetTimeReceivedNs() uint64 {
 	if x != nil {
-		return x.TimeReceived
+		return x.TimeReceivedNs
 	}
 	return 0
 }
@@ -219,13 +300,6 @@ func (x *FlowMessageExt) GetSamplingRate() uint64 {
 	return 0
 }
 
-func (x *FlowMessageExt) GetFlowDirection() uint32 {
-	if x != nil {
-		return x.FlowDirection
-	}
-	return 0
-}
-
 func (x *FlowMessageExt) GetSamplerAddress() []byte {
 	if x != nil {
 		return x.SamplerAddress
@@ -233,30 +307,16 @@ func (x *FlowMessageExt) GetSamplerAddress() []byte {
 	return nil
 }
 
-func (x *FlowMessageExt) GetTimeFlowStart() uint64 {
+func (x *FlowMessageExt) GetTimeFlowStartNs() uint64 {
 	if x != nil {
-		return x.TimeFlowStart
+		return x.TimeFlowStartNs
 	}
 	return 0
 }
 
-func (x *FlowMessageExt) GetTimeFlowEnd() uint64 {
+func (x *FlowMessageExt) GetTimeFlowEndNs() uint64 {
 	if x != nil {
-		return x.TimeFlowEnd
-	}
-	return 0
-}
-
-func (x *FlowMessageExt) GetTimeFlowStartMs() uint64 {
-	if x != nil {
-		return x.TimeFlowStartMs
-	}
-	return 0
-}
-
-func (x *FlowMessageExt) GetTimeFlowEndMs() uint64 {
-	if x != nil {
-		return x.TimeFlowEndMs
+		return x.TimeFlowEndNs
 	}
 	return 0
 }
@@ -366,20 +426,6 @@ func (x *FlowMessageExt) GetVlanId() uint32 {
 	return 0
 }
 
-func (x *FlowMessageExt) GetIngressVrfId() uint32 {
-	if x != nil {
-		return x.IngressVrfId
-	}
-	return 0
-}
-
-func (x *FlowMessageExt) GetEgressVrfId() uint32 {
-	if x != nil {
-		return x.EgressVrfId
-	}
-	return 0
-}
-
 func (x *FlowMessageExt) GetIpTos() uint32 {
 	if x != nil {
 		return x.IpTos
@@ -397,6 +443,13 @@ func (x *FlowMessageExt) GetForwardingStatus() uint32 {
 func (x *FlowMessageExt) GetIpTtl() uint32 {
 	if x != nil {
 		return x.IpTtl
+	}
+	return 0
+}
+
+func (x *FlowMessageExt) GetIpFlags() uint32 {
+	if x != nil {
+		return x.IpFlags
 	}
 	return 0
 }
@@ -439,13 +492,6 @@ func (x *FlowMessageExt) GetFragmentId() uint32 {
 func (x *FlowMessageExt) GetFragmentOffset() uint32 {
 	if x != nil {
 		return x.FragmentOffset
-	}
-	return 0
-}
-
-func (x *FlowMessageExt) GetBiFlowDirection() uint32 {
-	if x != nil {
-		return x.BiFlowDirection
 	}
 	return 0
 }
@@ -513,79 +559,23 @@ func (x *FlowMessageExt) GetAsPath() []uint32 {
 	return nil
 }
 
-func (x *FlowMessageExt) GetHasMpls() bool {
+func (x *FlowMessageExt) GetMplsTtl() []uint32 {
 	if x != nil {
-		return x.HasMpls
+		return x.MplsTtl
 	}
-	return false
+	return nil
 }
 
-func (x *FlowMessageExt) GetMplsCount() uint32 {
+func (x *FlowMessageExt) GetMplsLabel() []uint32 {
 	if x != nil {
-		return x.MplsCount
+		return x.MplsLabel
 	}
-	return 0
+	return nil
 }
 
-func (x *FlowMessageExt) GetMpls_1Ttl() uint32 {
+func (x *FlowMessageExt) GetMplsIp() [][]byte {
 	if x != nil {
-		return x.Mpls_1Ttl
-	}
-	return 0
-}
-
-func (x *FlowMessageExt) GetMpls_1Label() uint32 {
-	if x != nil {
-		return x.Mpls_1Label
-	}
-	return 0
-}
-
-func (x *FlowMessageExt) GetMpls_2Ttl() uint32 {
-	if x != nil {
-		return x.Mpls_2Ttl
-	}
-	return 0
-}
-
-func (x *FlowMessageExt) GetMpls_2Label() uint32 {
-	if x != nil {
-		return x.Mpls_2Label
-	}
-	return 0
-}
-
-func (x *FlowMessageExt) GetMpls_3Ttl() uint32 {
-	if x != nil {
-		return x.Mpls_3Ttl
-	}
-	return 0
-}
-
-func (x *FlowMessageExt) GetMpls_3Label() uint32 {
-	if x != nil {
-		return x.Mpls_3Label
-	}
-	return 0
-}
-
-func (x *FlowMessageExt) GetMplsLastTtl() uint32 {
-	if x != nil {
-		return x.MplsLastTtl
-	}
-	return 0
-}
-
-func (x *FlowMessageExt) GetMplsLastLabel() uint32 {
-	if x != nil {
-		return x.MplsLastLabel
-	}
-	return 0
-}
-
-func (x *FlowMessageExt) GetMplsLabelIp() []byte {
-	if x != nil {
-		return x.MplsLabelIp
+		return x.MplsIp
 	}
 	return nil
 }
@@ -600,6 +590,34 @@ func (x *FlowMessageExt) GetObservationDomainId() uint32 {
 func (x *FlowMessageExt) GetObservationPointId() uint32 {
 	if x != nil {
 		return x.ObservationPointId
+	}
+	return 0
+}
+
+func (x *FlowMessageExt) GetLayerStack() []FlowMessageExt_LayerStack {
+	if x != nil {
+		return x.LayerStack
+	}
+	return nil
+}
+
+func (x *FlowMessageExt) GetLayerSize() []uint32 {
+	if x != nil {
+		return x.LayerSize
+	}
+	return nil
+}
+
+func (x *FlowMessageExt) GetIpv6RoutingHeaderAddresses() [][]byte {
+	if x != nil {
+		return x.Ipv6RoutingHeaderAddresses
+	}
+	return nil
+}
+
+func (x *FlowMessageExt) GetIpv6RoutingHeaderSegLeft() uint32 {
+	if x != nil {
+		return x.Ipv6RoutingHeaderSegLeft
 	}
 	return 0
 }
@@ -622,18 +640,15 @@ var File_cmd_enricher_pb_flowext_proto protoreflect.FileDescriptor
 
 const file_cmd_enricher_pb_flowext_proto_rawDesc = "" +
 	"\n" +
-	"\x1dcmd/enricher/pb/flowext.proto\x12\x06flowpb\"\x9b\x10\n" +
+	"\x1dcmd/enricher/pb/flowext.proto\x12\x06flowpb\"\xeb\x0f\n" +
 	"\x0eFlowMessageExt\x123\n" +
-	"\x04type\x18\x01 \x01(\x0e2\x1f.flowpb.FlowMessageExt.FlowTypeR\x04type\x12#\n" +
-	"\rtime_received\x18\x02 \x01(\x04R\ftimeReceived\x12!\n" +
+	"\x04type\x18\x01 \x01(\x0e2\x1f.flowpb.FlowMessageExt.FlowTypeR\x04type\x12(\n" +
+	"\x10time_received_ns\x18n \x01(\x04R\x0etimeReceivedNs\x12!\n" +
 	"\fsequence_num\x18\x04 \x01(\rR\vsequenceNum\x12#\n" +
-	"\rsampling_rate\x18\x03 \x01(\x04R\fsamplingRate\x12%\n" +
-	"\x0eflow_direction\x18* \x01(\rR\rflowDirection\x12'\n" +
-	"\x0fsampler_address\x18\v \x01(\fR\x0esamplerAddress\x12&\n" +
-	"\x0ftime_flow_start\x18& \x01(\x04R\rtimeFlowStart\x12\"\n" +
-	"\rtime_flow_end\x18\x05 \x01(\x04R\vtimeFlowEnd\x12+\n" +
-	"\x12time_flow_start_ms\x18? \x01(\x04R\x0ftimeFlowStartMs\x12'\n" +
-	"\x10time_flow_end_ms\x18@ \x01(\x04R\rtimeFlowEndMs\x12\x14\n" +
+	"\rsampling_rate\x18\x03 \x01(\x04R\fsamplingRate\x12'\n" +
+	"\x0fsampler_address\x18\v \x01(\fR\x0esamplerAddress\x12+\n" +
+	"\x12time_flow_start_ns\x18o \x01(\x04R\x0ftimeFlowStartNs\x12'\n" +
+	"\x10time_flow_end_ns\x18p \x01(\x04R\rtimeFlowEndNs\x12\x14\n" +
 	"\x05bytes\x18\t \x01(\x04R\x05bytes\x12\x18\n" +
 	"\apackets\x18\n" +
 	" \x01(\x04R\apackets\x12\x19\n" +
@@ -649,20 +664,18 @@ const file_cmd_enricher_pb_flowext_proto_rawDesc = "" +
 	"\adst_mac\x18\x1c \x01(\x04R\x06dstMac\x12\x19\n" +
 	"\bsrc_vlan\x18! \x01(\rR\asrcVlan\x12\x19\n" +
 	"\bdst_vlan\x18\" \x01(\rR\adstVlan\x12\x17\n" +
-	"\avlan_id\x18\x1d \x01(\rR\x06vlanId\x12$\n" +
-	"\x0eingress_vrf_id\x18' \x01(\rR\fingressVrfId\x12\"\n" +
-	"\regress_vrf_id\x18( \x01(\rR\vegressVrfId\x12\x15\n" +
+	"\avlan_id\x18\x1d \x01(\rR\x06vlanId\x12\x15\n" +
 	"\x06ip_tos\x18\x17 \x01(\rR\x05ipTos\x12+\n" +
 	"\x11forwarding_status\x18\x18 \x01(\rR\x10forwardingStatus\x12\x15\n" +
-	"\x06ip_ttl\x18\x19 \x01(\rR\x05ipTtl\x12\x1b\n" +
+	"\x06ip_ttl\x18\x19 \x01(\rR\x05ipTtl\x12\x19\n" +
+	"\bip_flags\x18& \x01(\rR\aipFlags\x12\x1b\n" +
 	"\ttcp_flags\x18\x1a \x01(\rR\btcpFlags\x12\x1b\n" +
 	"\ticmp_type\x18\x1f \x01(\rR\bicmpType\x12\x1b\n" +
 	"\ticmp_code\x18  \x01(\rR\bicmpCode\x12&\n" +
 	"\x0fipv6_flow_label\x18% \x01(\rR\ripv6FlowLabel\x12\x1f\n" +
 	"\vfragment_id\x18# \x01(\rR\n" +
 	"fragmentId\x12'\n" +
-	"\x0ffragment_offset\x18$ \x01(\rR\x0efragmentOffset\x12*\n" +
-	"\x11bi_flow_direction\x18) \x01(\rR\x0fbiFlowDirection\x12\x15\n" +
+	"\x0ffragment_offset\x18$ \x01(\rR\x0efragmentOffset\x12\x15\n" +
 	"\x06src_as\x18\x0e \x01(\rR\x05srcAs\x12\x15\n" +
 	"\x06dst_as\x18\x0f \x01(\rR\x05dstAs\x12\x19\n" +
 	"\bnext_hop\x18\f \x01(\fR\anextHop\x12\x1e\n" +
@@ -673,26 +686,18 @@ const file_cmd_enricher_pb_flowext_proto_rawDesc = "" +
 	"bgpNextHop\x12'\n" +
 	"\x0fbgp_communities\x18e \x03(\rR\x0ebgpCommunities\x12\x17\n" +
 	"\aas_path\x18f \x03(\rR\x06asPath\x12\x19\n" +
-	"\bhas_mpls\x185 \x01(\bR\ahasMpls\x12\x1d\n" +
+	"\bmpls_ttl\x18P \x03(\rR\amplsTtl\x12\x1d\n" +
 	"\n" +
-	"mpls_count\x186 \x01(\rR\tmplsCount\x12\x1c\n" +
-	"\n" +
-	"mpls_1_ttl\x187 \x01(\rR\bmpls1Ttl\x12 \n" +
-	"\fmpls_1_label\x188 \x01(\rR\n" +
-	"mpls1Label\x12\x1c\n" +
-	"\n" +
-	"mpls_2_ttl\x189 \x01(\rR\bmpls2Ttl\x12 \n" +
-	"\fmpls_2_label\x18: \x01(\rR\n" +
-	"mpls2Label\x12\x1c\n" +
-	"\n" +
-	"mpls_3_ttl\x18; \x01(\rR\bmpls3Ttl\x12 \n" +
-	"\fmpls_3_label\x18< \x01(\rR\n" +
-	"mpls3Label\x12\"\n" +
-	"\rmpls_last_ttl\x18= \x01(\rR\vmplsLastTtl\x12&\n" +
-	"\x0fmpls_last_label\x18> \x01(\rR\rmplsLastLabel\x12\"\n" +
-	"\rmpls_label_ip\x18A \x01(\fR\vmplsLabelIp\x122\n" +
+	"mpls_label\x18Q \x03(\rR\tmplsLabel\x12\x17\n" +
+	"\ampls_ip\x18R \x03(\fR\x06mplsIp\x122\n" +
 	"\x15observation_domain_id\x18F \x01(\rR\x13observationDomainId\x120\n" +
-	"\x14observation_point_id\x18G \x01(\rR\x12observationPointId\x12 \n" +
+	"\x14observation_point_id\x18G \x01(\rR\x12observationPointId\x12B\n" +
+	"\vlayer_stack\x18g \x03(\x0e2!.flowpb.FlowMessageExt.LayerStackR\n" +
+	"layerStack\x12\x1d\n" +
+	"\n" +
+	"layer_size\x18h \x03(\rR\tlayerSize\x12A\n" +
+	"\x1dipv6_routing_header_addresses\x18i \x03(\fR\x1aipv6RoutingHeaderAddresses\x12>\n" +
+	"\x1cipv6_routing_header_seg_left\x18j \x01(\rR\x18ipv6RoutingHeaderSegLeft\x12 \n" +
 	"\vsrc_country\x18\xe8\a \x01(\tR\n" +
 	"srcCountry\x12 \n" +
 	"\vdst_country\x18\xe9\a \x01(\tR\n" +
@@ -704,7 +709,29 @@ const file_cmd_enricher_pb_flowext_proto_rawDesc = "" +
 	"NETFLOW_V5\x10\x02\x12\x0e\n" +
 	"\n" +
 	"NETFLOW_V9\x10\x03\x12\t\n" +
-	"\x05IPFIX\x10\x04B6Z4github.com/netsampler/goflow2/cmd/enricher/pb;flowpbb\x06proto3"
+	"\x05IPFIX\x10\x04\"\xc7\x01\n" +
+	"\n" +
+	"LayerStack\x12\f\n" +
+	"\bEthernet\x10\x00\x12\b\n" +
+	"\x04IPv4\x10\x01\x12\b\n" +
+	"\x04IPv6\x10\x02\x12\a\n" +
+	"\x03TCP\x10\x03\x12\a\n" +
+	"\x03UDP\x10\x04\x12\b\n" +
+	"\x04MPLS\x10\x05\x12\t\n" +
+	"\x05Dot1Q\x10\x06\x12\b\n" +
+	"\x04ICMP\x10\a\x12\n" +
+	"\n" +
+	"\x06ICMPv6\x10\b\x12\a\n" +
+	"\x03GRE\x10\t\x12\x15\n" +
+	"\x11IPv6HeaderRouting\x10\n" +
+	"\x12\x16\n" +
+	"\x12IPv6HeaderFragment\x10\v\x12\n" +
+	"\n" +
+	"\x06Geneve\x10\f\x12\n" +
+	"\n" +
+	"\x06Teredo\x10\r\x12\n" +
+	"\n" +
+	"\x06Custom\x10cB6Z4github.com/netsampler/goflow2/cmd/enricher/pb;flowpbb\x06proto3"
 
 var (
 	file_cmd_enricher_pb_flowext_proto_rawDescOnce sync.Once
@@ -718,19 +745,21 @@ func file_cmd_enricher_pb_flowext_proto_rawDescGZIP() []byte {
 	return file_cmd_enricher_pb_flowext_proto_rawDescData
 }
 
-var file_cmd_enricher_pb_flowext_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
+var file_cmd_enricher_pb_flowext_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
 var file_cmd_enricher_pb_flowext_proto_msgTypes = make([]protoimpl.MessageInfo, 1)
 var file_cmd_enricher_pb_flowext_proto_goTypes = []any{
-	(FlowMessageExt_FlowType)(0), // 0: flowpb.FlowMessageExt.FlowType
-	(*FlowMessageExt)(nil),       // 1: flowpb.FlowMessageExt
+	(FlowMessageExt_FlowType)(0),   // 0: flowpb.FlowMessageExt.FlowType
+	(FlowMessageExt_LayerStack)(0), // 1: flowpb.FlowMessageExt.LayerStack
+	(*FlowMessageExt)(nil),         // 2: flowpb.FlowMessageExt
 }
 var file_cmd_enricher_pb_flowext_proto_depIdxs = []int32{
 	0, // 0: flowpb.FlowMessageExt.type:type_name -> flowpb.FlowMessageExt.FlowType
-	1, // [1:1] is the sub-list for method output_type
-	1, // [1:1] is the sub-list for method input_type
-	1, // [1:1] is the sub-list for extension type_name
-	1, // [1:1] is the sub-list for extension extendee
-	0, // [0:1] is the sub-list for field type_name
+	1, // 1: flowpb.FlowMessageExt.layer_stack:type_name -> flowpb.FlowMessageExt.LayerStack
+	2, // [2:2] is the sub-list for method output_type
+	2, // [2:2] is the sub-list for method input_type
+	2, // [2:2] is the sub-list for extension type_name
+	2, // [2:2] is the sub-list for extension extendee
+	0, // [0:2] is the sub-list for field type_name
 }
 
 func init() { file_cmd_enricher_pb_flowext_proto_init() }
@@ -743,7 +772,7 @@ func file_cmd_enricher_pb_flowext_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_cmd_enricher_pb_flowext_proto_rawDesc), len(file_cmd_enricher_pb_flowext_proto_rawDesc)),
-			NumEnums:      1,
+			NumEnums:      2,
 			NumMessages:   1,
 			NumExtensions: 0,
 			NumServices:   0,

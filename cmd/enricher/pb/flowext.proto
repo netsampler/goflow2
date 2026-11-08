@@ -2,6 +2,10 @@ syntax = "proto3";
 package flowpb;
 option go_package = "github.com/netsampler/goflow2/cmd/enricher/pb;flowpb";
 
+// FlowMessageExt extends the goflow2 FlowMessage (pb/flow.proto) with
+// enrichment fields. The fields below 1000 must stay identical to
+// pb/flow.proto, as the enricher decodes the binary messages of goflow2
+// with this definition.
 message FlowMessageExt {
 
   enum FlowType {
@@ -13,20 +17,16 @@ message FlowMessageExt {
   }
   FlowType type = 1;
 
-  uint64 time_received = 2;
+  uint64 time_received_ns = 110;
   uint32 sequence_num = 4;
   uint64 sampling_rate = 3;
-
-  uint32 flow_direction = 42;
 
   // Sampler information
   bytes sampler_address = 11;
 
   // Found inside packet
-  uint64 time_flow_start = 38;
-  uint64 time_flow_end = 5;
-  uint64 time_flow_start_ms = 63;
-  uint64 time_flow_end_ms = 64;
+  uint64 time_flow_start_ns = 111;
+  uint64 time_flow_end_ns = 112;
 
   // Size of the sampled packet
   uint64 bytes = 9;
@@ -60,14 +60,11 @@ message FlowMessageExt {
   // 802.1q VLAN in sampled packet
   uint32 vlan_id = 29;
 
-  // VRF
-  uint32 ingress_vrf_id = 39;
-  uint32 egress_vrf_id = 40;
-
   // IP and TCP special flags
   uint32 ip_tos = 23;
   uint32 forwarding_status = 24;
   uint32 ip_ttl = 25;
+  uint32 ip_flags = 38;
   uint32 tcp_flags = 26;
   uint32 icmp_type = 31;
   uint32 icmp_code = 32;
@@ -75,7 +72,6 @@ message FlowMessageExt {
   // Fragments (IPv4/IPv6)
   uint32 fragment_id = 35;
   uint32 fragment_offset = 36;
-  uint32 bi_flow_direction = 41;
 
   // Autonomous system information
   uint32 src_as = 14;
@@ -94,21 +90,38 @@ message FlowMessageExt {
   repeated uint32 as_path = 102;
 
   // MPLS information
-  bool has_mpls = 53;
-  uint32 mpls_count = 54;
-  uint32 mpls_1_ttl = 55; // First TTL
-  uint32 mpls_1_label = 56; // First Label
-  uint32 mpls_2_ttl = 57; // Second TTL
-  uint32 mpls_2_label = 58; // Second Label
-  uint32 mpls_3_ttl = 59; // Third TTL
-  uint32 mpls_3_label = 60; // Third Label
-  uint32 mpls_last_ttl = 61; // Last TTL
-  uint32 mpls_last_label = 62; // Last Label
-  bytes mpls_label_ip = 65; // MPLS TOP Label IP 
+  repeated uint32 mpls_ttl = 80;
+  repeated uint32 mpls_label = 81;
+  repeated bytes mpls_ip = 82;
 
   uint32 observation_domain_id = 70;
   uint32 observation_point_id = 71;
 
+  // Encapsulation
+  enum LayerStack {
+    Ethernet = 0;
+    IPv4 = 1;
+    IPv6 = 2;
+    TCP = 3;
+    UDP = 4;
+    MPLS = 5;
+    Dot1Q = 6;
+    ICMP = 7;
+    ICMPv6 = 8;
+    GRE = 9;
+    IPv6HeaderRouting = 10;
+    IPv6HeaderFragment = 11;
+    Geneve = 12;
+    Teredo = 13;
+    Custom = 99;
+  }
+  repeated LayerStack layer_stack = 103;
+  repeated uint32 layer_size = 104;
+
+  repeated bytes ipv6_routing_header_addresses = 105; // SRv6
+  uint32 ipv6_routing_header_seg_left = 106; // SRv6
+
+  // Enrichment fields (not in pb/flow.proto)
   string src_country = 1000;
   string dst_country = 1001;
 
