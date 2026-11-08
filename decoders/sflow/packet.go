@@ -12,6 +12,8 @@ type Packet struct {
 	Uptime         uint32          `json:"uptime"`
 	SamplesCount   uint32          `json:"samples-count"`
 	Samples        []interface{}   `json:"samples"`
+	// Length is the size of the datagram in bytes, as decoded by DecodeMessageVersion.
+	Length uint32 `json:"length"`
 }
 
 // SampleHeader contains common sample header fields.

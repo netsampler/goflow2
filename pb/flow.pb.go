@@ -222,11 +222,30 @@ type FlowMessage struct {
 	BgpCommunities []uint32 `protobuf:"varint,101,rep,packed,name=bgp_communities,json=bgpCommunities,proto3" json:"bgp_communities,omitempty"`
 	AsPath         []uint32 `protobuf:"varint,102,rep,packed,name=as_path,json=asPath,proto3" json:"as_path,omitempty"`
 	// MPLS information
-	MplsTtl                    []uint32                 `protobuf:"varint,80,rep,packed,name=mpls_ttl,json=mplsTtl,proto3" json:"mpls_ttl,omitempty"`
-	MplsLabel                  []uint32                 `protobuf:"varint,81,rep,packed,name=mpls_label,json=mplsLabel,proto3" json:"mpls_label,omitempty"`
-	MplsIp                     [][]byte                 `protobuf:"bytes,82,rep,name=mpls_ip,json=mplsIp,proto3" json:"mpls_ip,omitempty"`
-	ObservationDomainId        uint32                   `protobuf:"varint,70,opt,name=observation_domain_id,json=observationDomainId,proto3" json:"observation_domain_id,omitempty"`
-	ObservationPointId         uint32                   `protobuf:"varint,71,opt,name=observation_point_id,json=observationPointId,proto3" json:"observation_point_id,omitempty"`
+	MplsTtl   []uint32 `protobuf:"varint,80,rep,packed,name=mpls_ttl,json=mplsTtl,proto3" json:"mpls_ttl,omitempty"`
+	MplsLabel []uint32 `protobuf:"varint,81,rep,packed,name=mpls_label,json=mplsLabel,proto3" json:"mpls_label,omitempty"`
+	MplsIp    [][]byte `protobuf:"bytes,82,rep,name=mpls_ip,json=mplsIp,proto3" json:"mpls_ip,omitempty"`
+	// NetFlow v9/IPFIX: observation domain and observation point.
+	// sFlow: the datagram's sub-agent id and the flow sample's source_id (type << 24 | index).
+	ObservationDomainId uint32 `protobuf:"varint,70,opt,name=observation_domain_id,json=observationDomainId,proto3" json:"observation_domain_id,omitempty"`
+	ObservationPointId  uint32 `protobuf:"varint,71,opt,name=observation_point_id,json=observationPointId,proto3" json:"observation_point_id,omitempty"`
+	// sFlow provenance of the flow sample (zero for other protocols).
+	// Agent uptime in milliseconds when the datagram was sent.
+	SamplerUptime uint32 `protobuf:"varint,113,opt,name=sampler_uptime,json=samplerUptime,proto3" json:"sampler_uptime,omitempty"`
+	// Flow sample sequence number (per sFlow instance of the data source).
+	SampleSequenceNum uint32 `protobuf:"varint,114,opt,name=sample_sequence_num,json=sampleSequenceNum,proto3" json:"sample_sequence_num,omitempty"`
+	// Packets that could have been sampled (skipped + sampled) since the data source started.
+	SamplePool uint32 `protobuf:"varint,115,opt,name=sample_pool,json=samplePool,proto3" json:"sample_pool,omitempty"`
+	// Packets selected for sampling but dropped for lack of resources (zero if not detected).
+	SampleDrops uint32 `protobuf:"varint,116,opt,name=sample_drops,json=sampleDrops,proto3" json:"sample_drops,omitempty"`
+	// Position of this flow sample among the datagram's flow samples, from 0.
+	SampleIndex uint32 `protobuf:"varint,117,opt,name=sample_index,json=sampleIndex,proto3" json:"sample_index,omitempty"`
+	// Number of flow samples in the datagram (counter samples excluded).
+	FlowSamplesCount uint32 `protobuf:"varint,118,opt,name=flow_samples_count,json=flowSamplesCount,proto3" json:"flow_samples_count,omitempty"`
+	// Size of the datagram in bytes.
+	DatagramLength uint32 `protobuf:"varint,119,opt,name=datagram_length,json=datagramLength,proto3" json:"datagram_length,omitempty"`
+	// Encoded length of the flow sample in bytes, from its header (format and length words excluded).
+	SampleLength               uint32                   `protobuf:"varint,120,opt,name=sample_length,json=sampleLength,proto3" json:"sample_length,omitempty"`
 	LayerStack                 []FlowMessage_LayerStack `protobuf:"varint,103,rep,packed,name=layer_stack,json=layerStack,proto3,enum=flowpb.FlowMessage_LayerStack" json:"layer_stack,omitempty"`
 	LayerSize                  []uint32                 `protobuf:"varint,104,rep,packed,name=layer_size,json=layerSize,proto3" json:"layer_size,omitempty"`
 	Ipv6RoutingHeaderAddresses [][]byte                 `protobuf:"bytes,105,rep,name=ipv6_routing_header_addresses,json=ipv6RoutingHeaderAddresses,proto3" json:"ipv6_routing_header_addresses,omitempty"` // SRv6
@@ -587,6 +606,62 @@ func (x *FlowMessage) GetObservationPointId() uint32 {
 	return 0
 }
 
+func (x *FlowMessage) GetSamplerUptime() uint32 {
+	if x != nil {
+		return x.SamplerUptime
+	}
+	return 0
+}
+
+func (x *FlowMessage) GetSampleSequenceNum() uint32 {
+	if x != nil {
+		return x.SampleSequenceNum
+	}
+	return 0
+}
+
+func (x *FlowMessage) GetSamplePool() uint32 {
+	if x != nil {
+		return x.SamplePool
+	}
+	return 0
+}
+
+func (x *FlowMessage) GetSampleDrops() uint32 {
+	if x != nil {
+		return x.SampleDrops
+	}
+	return 0
+}
+
+func (x *FlowMessage) GetSampleIndex() uint32 {
+	if x != nil {
+		return x.SampleIndex
+	}
+	return 0
+}
+
+func (x *FlowMessage) GetFlowSamplesCount() uint32 {
+	if x != nil {
+		return x.FlowSamplesCount
+	}
+	return 0
+}
+
+func (x *FlowMessage) GetDatagramLength() uint32 {
+	if x != nil {
+		return x.DatagramLength
+	}
+	return 0
+}
+
+func (x *FlowMessage) GetSampleLength() uint32 {
+	if x != nil {
+		return x.SampleLength
+	}
+	return 0
+}
+
 func (x *FlowMessage) GetLayerStack() []FlowMessage_LayerStack {
 	if x != nil {
 		return x.LayerStack
@@ -619,7 +694,7 @@ var File_pb_flow_proto protoreflect.FileDescriptor
 
 const file_pb_flow_proto_rawDesc = "" +
 	"\n" +
-	"\rpb/flow.proto\x12\x06flowpb\"\x9e\x0f\n" +
+	"\rpb/flow.proto\x12\x06flowpb\"\xd8\x11\n" +
 	"\vFlowMessage\x120\n" +
 	"\x04type\x18\x01 \x01(\x0e2\x1c.flowpb.FlowMessage.FlowTypeR\x04type\x12(\n" +
 	"\x10time_received_ns\x18n \x01(\x04R\x0etimeReceivedNs\x12!\n" +
@@ -670,7 +745,16 @@ const file_pb_flow_proto_rawDesc = "" +
 	"mpls_label\x18Q \x03(\rR\tmplsLabel\x12\x17\n" +
 	"\ampls_ip\x18R \x03(\fR\x06mplsIp\x122\n" +
 	"\x15observation_domain_id\x18F \x01(\rR\x13observationDomainId\x120\n" +
-	"\x14observation_point_id\x18G \x01(\rR\x12observationPointId\x12?\n" +
+	"\x14observation_point_id\x18G \x01(\rR\x12observationPointId\x12%\n" +
+	"\x0esampler_uptime\x18q \x01(\rR\rsamplerUptime\x12.\n" +
+	"\x13sample_sequence_num\x18r \x01(\rR\x11sampleSequenceNum\x12\x1f\n" +
+	"\vsample_pool\x18s \x01(\rR\n" +
+	"samplePool\x12!\n" +
+	"\fsample_drops\x18t \x01(\rR\vsampleDrops\x12!\n" +
+	"\fsample_index\x18u \x01(\rR\vsampleIndex\x12,\n" +
+	"\x12flow_samples_count\x18v \x01(\rR\x10flowSamplesCount\x12'\n" +
+	"\x0fdatagram_length\x18w \x01(\rR\x0edatagramLength\x12#\n" +
+	"\rsample_length\x18x \x01(\rR\fsampleLength\x12?\n" +
 	"\vlayer_stack\x18g \x03(\x0e2\x1e.flowpb.FlowMessage.LayerStackR\n" +
 	"layerStack\x12\x1d\n" +
 	"\n" +

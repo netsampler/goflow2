@@ -24,6 +24,13 @@ func TestSFlowDecode(t *testing.T) {
 	buf := bytes.NewBuffer(data)
 	var packet Packet
 	assert.NoError(t, DecodeMessageVersion(buf, &packet))
+	assert.Equal(t, uint32(len(data)), packet.Length)
+	if assert.Len(t, packet.Samples, 1) {
+		sample, ok := packet.Samples[0].(FlowSample)
+		if assert.True(t, ok) {
+			assert.Equal(t, uint32(0x88), sample.Header.Length)
+		}
+	}
 }
 
 func TestExpandedSFlowDecode(t *testing.T) {
