@@ -1,0 +1,40 @@
+{{- $root := . -}}
+{{- range $name, $config := dict "collector" (dict "suffix" "" "ingress" .Values.goflow2.ingress) "clickhouse" (dict "suffix" "-clickhouse" "ingress" .Values.clickhouse.ingress) }}
+{{- if $config.ingress.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "goflow2.fullname" $root }}{{ $config.suffix }}
+  labels:
+    {{- include "goflow2.labels" $root | nindent 4 }}
+    app.kubernetes.io/component: {{ $name }}
+  {{- with $config.ingress.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  {{- with $config.ingress.className }}
+  ingressClassName: {{ . | quote }}
+  {{- end }}
+  {{- with $config.ingress.tls }}
+  tls:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  rules:
+    {{- range $config.ingress.hosts }}
+    - host: {{ .host | quote }}
+      http:
+        paths:
+          {{- range .paths }}
+          - path: {{ .path | quote }}
+            pathType: {{ .pathType }}
+            backend:
+              service:
+                name: {{ include "goflow2.fullname" $root }}{{ $config.suffix }}
+                port:
+                  name: http
+          {{- end }}
+    {{- end }}
+{{- end }}
+{{- end }}

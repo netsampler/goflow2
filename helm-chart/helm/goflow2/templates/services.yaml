@@ -1,0 +1,47 @@
+{{- $root := . -}}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "goflow2.fullname" . }}-flows
+  labels:
+    {{- include "goflow2.labels" . | nindent 4 }}
+    app.kubernetes.io/component: collector
+  {{- with .Values.goflow2.flowService.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  type: {{ .Values.goflow2.flowService.type }}
+  sessionAffinity: {{ .Values.goflow2.flowService.sessionAffinity }}
+  {{- if eq .Values.goflow2.flowService.sessionAffinity "ClientIP" }}
+  sessionAffinityConfig:
+    clientIP:
+      timeoutSeconds: {{ .Values.goflow2.flowService.sessionAffinityTimeoutSeconds }}
+  {{- end }}
+  {{- if has .Values.goflow2.flowService.type (list "NodePort" "LoadBalancer") }}
+  externalTrafficPolicy: {{ .Values.goflow2.flowService.externalTrafficPolicy }}
+  {{- end }}
+  {{- if eq .Values.goflow2.flowService.type "LoadBalancer" }}
+  {{- with .Values.goflow2.flowService.loadBalancerIP }}
+  loadBalancerIP: {{ . | quote }}
+  {{- end }}
+  {{- with .Values.goflow2.flowService.loadBalancerSourceRanges }}
+  loadBalancerSourceRanges:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  {{- end }}
+  ports:
+    {{- range $name := list "sflow" "netflow" }}
+    {{- $port := index $root.Values.goflow2.flowService $name }}
+    - name: {{ $name }}
+      port: {{ $port.port }}
+      targetPort: {{ $name }}
+      protocol: UDP
+      {{- if and (has $root.Values.goflow2.flowService.type (list "NodePort" "LoadBalancer")) $port.nodePort }}
+      nodePort: {{ $port.nodePort }}
+      {{- end }}
+    {{- end }}
+  selector:
+    {{- include "goflow2.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: collector

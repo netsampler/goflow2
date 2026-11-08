@@ -1,0 +1,98 @@
+{{- if .Values.keeper.enabled }}
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "goflow2.fullname" . }}-keeper
+  labels:
+    {{- include "goflow2.labels" . | nindent 4 }}
+    app.kubernetes.io/component: keeper
+spec:
+  serviceName: {{ include "goflow2.fullname" . }}-keeper-headless
+  replicas: {{ .Values.keeper.replicaCount }}
+  podManagementPolicy: Parallel
+  selector:
+    matchLabels:
+      {{- include "goflow2.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: keeper
+  template:
+    metadata:
+      labels:
+        {{- include "goflow2.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: keeper
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/keeper-configmap.yaml") . | sha256sum }}
+        {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 120
+      securityContext:
+        fsGroup: 101
+      {{- include "goflow2.scheduling" (dict "root" . "component" "keeper") | nindent 6 }}
+      containers:
+        - name: keeper
+          image: "{{ .Values.clickhouse.image.repository }}:{{ .Values.clickhouse.image.tag }}"
+          imagePullPolicy: {{ .Values.clickhouse.image.pullPolicy }}
+          securityContext:
+            runAsUser: 101
+            runAsGroup: 101
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+          command: ["/bin/sh", "-ec"]
+          args:
+            - |
+              export KEEPER_ID="$(( ${POD_NAME##*-} + 1 ))"
+              exec clickhouse keeper --config-file=/etc/clickhouse-keeper/keeper.xml
+          env:
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+          ports:
+            - name: client
+              containerPort: 9181
+            - name: raft
+              containerPort: 9234
+          startupProbe:
+            tcpSocket:
+              port: client
+            periodSeconds: 5
+            failureThreshold: 60
+          readinessProbe:
+            exec:
+              command:
+                - /bin/sh
+                - -ec
+                - "printf stat | nc -w 2 127.0.0.1 9181 | grep -Eq 'Mode: (leader|follower)'"
+            timeoutSeconds: 5
+          livenessProbe:
+            tcpSocket:
+              port: client
+          resources:
+            {{- toYaml .Values.keeper.resources | nindent 12 }}
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/clickhouse
+            - name: config
+              mountPath: /etc/clickhouse-keeper
+              readOnly: true
+      volumes:
+        {{- if or (not .Values.keeper.persistence.enabled) .Values.keeper.persistence.existingClaim }}
+        - name: data
+          {{- if .Values.keeper.persistence.existingClaim }}
+          persistentVolumeClaim:
+            claimName: {{ .Values.keeper.persistence.existingClaim }}
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
+        {{- end }}
+        - name: config
+          configMap:
+            name: {{ include "goflow2.fullname" . }}-keeper
+      {{- if and .Values.keeper.persistence.enabled (not .Values.keeper.persistence.existingClaim) }}
+  {{- include "goflow2.volumeClaimTemplate" (dict "persistence" .Values.keeper.persistence) | nindent 2 }}
+      {{- end }}
+{{- end }}

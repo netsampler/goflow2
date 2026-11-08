@@ -1,0 +1,189 @@
+nameOverride: ""
+fullnameOverride: ""
+imagePullSecrets: []
+nodeSelector: {}
+tolerations: []
+affinity: {}
+podAnnotations: {}
+
+goflow2:
+  replicaCount: 1
+  antiAffinity: soft
+  image:
+    repository: netsampler/goflow2
+    # Matches compose.yml; pin a tested tag/digest for reproducible deployments.
+    tag: latest
+    pullPolicy: Always
+  extraArgs: []
+  # Kafka topic initialization before starting the collector.
+  initResources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: "1"
+      memory: 512Mi
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: "2"
+      memory: 512Mi
+  service:
+    port: 8080
+  # UDP is exposed separately from the HTTP metrics endpoint.
+  flowService:
+    type: ClusterIP
+    annotations: {}
+    externalTrafficPolicy: Local
+    sessionAffinity: ClientIP
+    sessionAffinityTimeoutSeconds: 10800
+    loadBalancerIP: ""
+    loadBalancerSourceRanges: []
+    sflow:
+      port: 6343
+      nodePort: null
+    netflow:
+      port: 2055
+      nodePort: null
+  ingress:
+    enabled: false
+    className: ""
+    annotations: {}
+    hosts:
+      - host: goflow2.example.com
+        paths:
+          - path: /
+            pathType: Prefix
+    tls: []
+
+kafka:
+  replicaCount: 1
+  antiAffinity: soft
+  image:
+    repository: apache/kafka
+    tag: "3.9.0"
+    pullPolicy: IfNotPresent
+  # Stable KRaft cluster ID; do not change when reusing this Kafka PVC.
+  clusterId: MkU3OEVBNTcwNTJENDM2Qk
+  topic: flows
+  partitions: 1
+  replicationFactor: 1
+  minInSyncReplicas: 1
+  heapOpts: "-Xms512m -Xmx512m"
+  retentionHours: 168
+  # Limit applies to each partition replica, not to the whole topic or PVC.
+  retentionBytes: 2147483648
+  segmentBytes: 134217728
+  segmentMs: 3600000
+  retentionCheckIntervalMs: 60000
+  resources:
+    requests:
+      cpu: 250m
+      memory: 768Mi
+    limits:
+      cpu: "2"
+      memory: 1536Mi
+  persistence:
+    enabled: true
+    existingClaim: ""
+    storageClassName: ""
+    accessModes: [ReadWriteOnce]
+    size: 20Gi
+    annotations: {}
+
+clickhouse:
+  replicaCount: 1
+  antiAffinity: soft
+  dashboardAggregates:
+    enabled: true
+    retentionDays: 7
+  # Numeric ClickHouse server settings; RAM ratio follows the container limit.
+  serverSettings:
+    max_server_memory_usage_to_ram_ratio: 0.8
+    mark_cache_size: 268435456
+    uncompressed_cache_size: 67108864
+  # Applied to the default profile used by the chart's ClickHouse account.
+  querySettings:
+    max_threads: 2
+    max_memory_usage: 1073741824
+    max_memory_usage_for_user: 2147483648
+    max_bytes_before_external_group_by: 268435456
+    max_bytes_before_external_sort: 134217728
+    # Use the absolute spill thresholds instead of an additional RAM ratio gate.
+    max_bytes_ratio_before_external_group_by: 0
+    max_bytes_ratio_before_external_sort: 0
+    max_temporary_data_on_disk_size_for_query: 4294967296
+    max_temporary_data_on_disk_size_for_user: 8589934592
+    log_queries: 1
+    log_queries_min_query_duration_ms: 1000
+  image:
+    repository: clickhouse/clickhouse-server
+    tag: "25.11-alpine"
+    pullPolicy: IfNotPresent
+  auth:
+    username: default
+    # Matches compose.yml. Use an existing Secret for your deployment.
+    password: flow
+    existingSecret: ""
+    passwordKey: password
+  resources:
+    requests:
+      cpu: 500m
+      memory: 2Gi
+    limits:
+      cpu: "2"
+      memory: 4Gi
+  persistence:
+    enabled: true
+    existingClaim: ""
+    storageClassName: ""
+    accessModes: [ReadWriteOnce]
+    size: 100Gi
+    annotations: {}
+  ingress:
+    enabled: false
+    className: ""
+    annotations: {}
+    hosts:
+      - host: goflow2-clickhouse.example.com
+        paths:
+          - path: /
+            pathType: Prefix
+    tls: []
+
+# Required when clickhouse.replicaCount > 1. Uses the same ClickHouse image.
+keeper:
+  enabled: false
+  replicaCount: 3
+  antiAffinity: soft
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: "1"
+      memory: 1Gi
+  persistence:
+    enabled: true
+    existingClaim: ""
+    storageClassName: ""
+    accessModes: [ReadWriteOnce]
+    size: 5Gi
+    annotations: {}
+
+podDisruptionBudget:
+  enabled: true
+
+# Existing cluster agents collect metrics and stdout/stderr logs.
+monitoring:
+  # Requires annotation discovery in the existing agent.
+  annotationsEnabled: true
+  # Alternative for VictoriaMetrics Operator; requires its CRD and matching
+  # serviceScrapeSelector / serviceScrapeNamespaceSelector on the existing agent.
+  vmServiceScrape:
+    enabled: false
+    additionalLabels: {}
+    interval: 15s
+    scrapeTimeout: 10s

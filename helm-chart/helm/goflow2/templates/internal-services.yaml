@@ -1,0 +1,66 @@
+{{- $root := . -}}
+{{- range $name, $config := dict "collector" (dict "suffix" "" "port" .Values.goflow2.service.port "target" "http") "kafka" (dict "suffix" "-kafka" "port" 9092 "target" "broker") "clickhouse" (dict "suffix" "-clickhouse" "port" 8123 "target" "http") }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "goflow2.fullname" $root }}{{ $config.suffix }}
+  labels:
+    {{- include "goflow2.labels" $root | nindent 4 }}
+    app.kubernetes.io/component: {{ $name }}
+  {{- if and $root.Values.monitoring.annotationsEnabled (ne $name "kafka") }}
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/path: /metrics
+    prometheus.io/port: {{ ternary 9363 $config.port (eq $name "clickhouse") | quote }}
+  {{- end }}
+spec:
+  type: ClusterIP
+  ports:
+    - name: {{ $config.target }}
+      port: {{ $config.port }}
+      targetPort: {{ $config.target }}
+      protocol: TCP
+    {{- if eq $name "clickhouse" }}
+    - name: native
+      port: 9000
+      targetPort: native
+      protocol: TCP
+    - name: metrics
+      port: 9363
+      targetPort: metrics
+      protocol: TCP
+    {{- end }}
+  selector:
+    {{- include "goflow2.selectorLabels" $root | nindent 4 }}
+    app.kubernetes.io/component: {{ $name }}
+{{- end }}
+{{- range $name, $port := dict "kafka" 9093 "clickhouse" 9000 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "goflow2.fullname" $root }}-{{ $name }}-headless
+  labels:
+    {{- include "goflow2.labels" $root | nindent 4 }}
+    app.kubernetes.io/component: {{ $name }}
+spec:
+  clusterIP: None
+  publishNotReadyAddresses: true
+  ports:
+    - name: {{ ternary "controller" "native" (eq $name "kafka") }}
+      port: {{ $port }}
+      targetPort: {{ ternary "controller" "native" (eq $name "kafka") }}
+    {{- if eq $name "kafka" }}
+    - name: broker
+      port: 9092
+      targetPort: broker
+    {{- else }}
+    - name: interserver
+      port: 9009
+      targetPort: interserver
+    {{- end }}
+  selector:
+    {{- include "goflow2.selectorLabels" $root | nindent 4 }}
+    app.kubernetes.io/component: {{ $name }}
+{{- end }}

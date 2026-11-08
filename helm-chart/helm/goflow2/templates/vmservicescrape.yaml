@@ -1,0 +1,28 @@
+{{- if .Values.monitoring.vmServiceScrape.enabled }}
+{{- $root := . }}
+{{- range $component, $port := dict "collector" "http" "clickhouse" "metrics" }}
+---
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMServiceScrape
+metadata:
+  name: {{ include "goflow2.fullname" $root }}-{{ $component }}
+  labels:
+    {{- include "goflow2.labels" $root | nindent 4 }}
+    {{- with $root.Values.monitoring.vmServiceScrape.additionalLabels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  namespaceSelector:
+    matchNames:
+      - {{ $root.Release.Namespace }}
+  selector:
+    matchLabels:
+      {{- include "goflow2.selectorLabels" $root | nindent 6 }}
+      app.kubernetes.io/component: {{ $component }}
+  endpoints:
+    - port: {{ $port }}
+      path: /metrics
+      interval: {{ $root.Values.monitoring.vmServiceScrape.interval }}
+      scrapeTimeout: {{ $root.Values.monitoring.vmServiceScrape.scrapeTimeout }}
+{{- end }}
+{{- end }}

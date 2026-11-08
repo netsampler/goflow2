@@ -1,0 +1,22 @@
+{{- if .Values.keeper.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "goflow2.fullname" . }}-keeper-headless
+  labels:
+    {{- include "goflow2.labels" . | nindent 4 }}
+    app.kubernetes.io/component: keeper
+spec:
+  clusterIP: None
+  publishNotReadyAddresses: true
+  ports:
+    - name: client
+      port: 9181
+      targetPort: client
+    - name: raft
+      port: 9234
+      targetPort: raft
+  selector:
+    {{- include "goflow2.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: keeper
+{{- end }}

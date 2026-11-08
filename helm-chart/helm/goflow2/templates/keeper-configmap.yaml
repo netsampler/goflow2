@@ -1,0 +1,38 @@
+{{- if .Values.keeper.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "goflow2.fullname" . }}-keeper
+  labels:
+    {{- include "goflow2.labels" . | nindent 4 }}
+data:
+  keeper.xml: |
+    <clickhouse>
+      <logger>
+        <level>information</level>
+        <console>true</console>
+      </logger>
+      <listen_host>0.0.0.0</listen_host>
+      <keeper_server>
+        <tcp_port>9181</tcp_port>
+        <server_id from_env="KEEPER_ID"/>
+        <log_storage_path>/var/lib/clickhouse/coordination/log</log_storage_path>
+        <snapshot_storage_path>/var/lib/clickhouse/coordination/snapshots</snapshot_storage_path>
+        <four_letter_word_white_list>ruok,stat,mntr</four_letter_word_white_list>
+        <coordination_settings>
+          <operation_timeout_ms>10000</operation_timeout_ms>
+          <session_timeout_ms>30000</session_timeout_ms>
+          <raft_logs_level>warning</raft_logs_level>
+        </coordination_settings>
+        <raft_configuration>
+          {{- range $i := until (int .Values.keeper.replicaCount) }}
+          <server>
+            <id>{{ add1 $i }}</id>
+            <hostname>{{ include "goflow2.fullname" $ }}-keeper-{{ $i }}.{{ include "goflow2.fullname" $ }}-keeper-headless</hostname>
+            <port>9234</port>
+          </server>
+          {{- end }}
+        </raft_configuration>
+      </keeper_server>
+    </clickhouse>
+{{- end }}

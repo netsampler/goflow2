@@ -1,0 +1,107 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "goflow2.fullname" . }}
+  labels:
+    {{- include "goflow2.labels" . | nindent 4 }}
+    app.kubernetes.io/component: collector
+spec:
+  replicas: {{ .Values.goflow2.replicaCount }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  selector:
+    matchLabels:
+      {{- include "goflow2.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: collector
+  template:
+    metadata:
+      labels:
+        {{- include "goflow2.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: collector
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 60
+      {{- include "goflow2.scheduling" (dict "root" . "component" "goflow2") | nindent 6 }}
+      initContainers:
+        - name: kafka-topic
+          image: "{{ .Values.kafka.image.repository }}:{{ .Values.kafka.image.tag }}"
+          imagePullPolicy: {{ .Values.kafka.image.pullPolicy }}
+          securityContext:
+            runAsUser: 1000
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+          command: ["/bin/bash", "-ec"]
+          args:
+            - |
+              until /opt/kafka/bin/kafka-topics.sh \
+                --bootstrap-server {{ include "goflow2.fullname" . }}-kafka:9092 \
+                --create --if-not-exists --topic {{ .Values.kafka.topic | quote }} \
+                --partitions {{ .Values.kafka.partitions }} \
+                --replication-factor {{ .Values.kafka.replicationFactor }} \
+                --config min.insync.replicas={{ .Values.kafka.minInSyncReplicas }}; do
+                sleep 5
+              done
+              until /opt/kafka/bin/kafka-configs.sh \
+                --bootstrap-server {{ include "goflow2.fullname" . }}-kafka:9092 \
+                --alter --entity-type topics --entity-name {{ .Values.kafka.topic | quote }} \
+                --add-config 'retention.ms={{ mul (int64 .Values.kafka.retentionHours) 3600000 }},retention.bytes={{ .Values.kafka.retentionBytes | int64 }},segment.bytes={{ .Values.kafka.segmentBytes | int64 }},segment.ms={{ .Values.kafka.segmentMs | int64 }}'; do
+                sleep 5
+              done
+          env:
+            - name: KAFKA_HEAP_OPTS
+              value: "-Xms128m -Xmx256m"
+          resources:
+            {{- toYaml .Values.goflow2.initResources | nindent 12 }}
+      containers:
+        - name: goflow2
+          image: "{{ .Values.goflow2.image.repository }}:{{ .Values.goflow2.image.tag }}"
+          imagePullPolicy: {{ .Values.goflow2.image.pullPolicy }}
+          securityContext:
+            runAsUser: 1000
+            runAsGroup: 1000
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+          args:
+            - -transport=kafka
+            - -transport.kafka.brokers={{ include "goflow2.fullname" . }}-kafka:9092
+            - -transport.kafka.topic={{ .Values.kafka.topic }}
+            - -format=bin
+            - -logfmt=json
+            - -addr=:8080
+            - -listen=sflow://:6343,netflow://:2055
+            {{- with .Values.goflow2.extraArgs }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          ports:
+            - name: http
+              containerPort: 8080
+            - name: sflow
+              containerPort: 6343
+              protocol: UDP
+            - name: netflow
+              containerPort: 2055
+              protocol: UDP
+          startupProbe:
+            tcpSocket:
+              port: http
+            periodSeconds: 5
+            failureThreshold: 30
+          readinessProbe:
+            tcpSocket:
+              port: http
+          livenessProbe:
+            tcpSocket:
+              port: http
+          resources:
+            {{- toYaml .Values.goflow2.resources | nindent 12 }}

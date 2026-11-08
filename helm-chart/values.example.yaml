@@ -1,0 +1,163 @@
+
+goflow2:
+  image:
+    repository: netsampler/goflow2
+    tag: latest
+    pullPolicy: Always
+  replicaCount: 2
+  antiAffinity: hard
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: "2"
+      memory: 1024Mi
+  initResources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: "1"
+      memory: 512Mi
+  flowService:
+    type: LoadBalancer
+    annotations:
+      kube-vip.io/loadbalancerIPs: "10.10.10.12"
+    # Cluster allows SNAT: NetFlow/IPFIX sampler_address may become a cluster IP.
+    # Use Local after kube-vip can advertise the VIP on a node with a collector.
+    externalTrafficPolicy: Local
+    sessionAffinity: ClientIP
+    sessionAffinityTimeoutSeconds: 10800
+    netflow:
+      port: 2055
+    sflow:
+      port: 6343
+  # Optional access to GoFlow2's HTTP endpoints (including /metrics).
+  ingress:
+    enabled: false
+    className: haproxy-internal #your ingress class name
+    annotations:
+      haproxy.org/forwarded-for: "true"
+    hosts:
+      - host: netflow.example.com
+        paths:
+          - path: /
+            pathType: Prefix
+    tls:
+      - secretName: wildcard-tls #your TLS secret name
+        hosts:
+          - netflow.example.com
+
+
+kafka:
+  image:
+    repository: apache/kafka
+    tag: "3.9.0"
+    pullPolicy: IfNotPresent
+  replicaCount: 3
+  antiAffinity: hard
+  # Must match meta.properties on the existing Kafka PVCs.
+  clusterId: "MkU3OEVBNTcwNTJENDM2Qk"
+  topic: flows
+  partitions: 6
+  replicationFactor: 3
+  minInSyncReplicas: 2
+  heapOpts: "-Xms512m -Xmx512m"
+  # Six partition replicas per broker: ~12 GiB of flow logs, plus segments/indexes.
+  retentionHours: 24
+  retentionBytes: 2147483648
+  segmentBytes: 134217728
+  segmentMs: 3600000
+  retentionCheckIntervalMs: 60000
+  resources:
+    requests:
+      cpu: 250m
+      memory: 768Mi
+    limits:
+      cpu: "2"
+      memory: 1536Mi
+  persistence:
+    enabled: true
+    existingClaim: ""
+    storageClassName: csi-cephfs  #your storage class name
+    accessModes: [ReadWriteOnce]
+    size: 40Gi
+    annotations: {}
+
+clickhouse:
+  # Keeper uses this image and tag as well.
+  image:
+    repository: clickhouse/clickhouse-server
+    tag: "25.11-alpine"
+    pullPolicy: IfNotPresent
+  replicaCount: 3
+  antiAffinity: hard
+  dashboardAggregates:
+    enabled: true
+    retentionDays: 7
+  serverSettings:
+    max_server_memory_usage_to_ram_ratio: 0.9
+    mark_cache_size: 536870912
+    uncompressed_cache_size: 134217728
+  querySettings:
+    max_threads: 8
+    max_memory_usage: 6442450944
+    max_memory_usage_for_user: 10737418240
+    max_bytes_before_external_group_by: 536870912
+    max_bytes_before_external_sort: 268435456
+    max_bytes_ratio_before_external_group_by: 0
+    max_bytes_ratio_before_external_sort: 0
+    max_temporary_data_on_disk_size_for_query: 8589934592
+    max_temporary_data_on_disk_size_for_user: 17179869184
+    log_queries: 1
+    log_queries_min_query_duration_ms: 1000
+  resources:
+    requests:
+      cpu: 500m
+      memory: 6Gi
+    limits:
+      cpu: "2"
+      memory: 16Gi
+  persistence:
+    storageClassName: csi-cephfs #your storage class name
+    accessModes: [ReadWriteOnce]
+    size: 100Gi
+  # Existing Grafana can use this HTTPS endpoint or the in-cluster Service.
+  ingress:
+    enabled: true
+    className: haproxy-internal #your ingress class name
+    annotations:
+      haproxy.org/forwarded-for: "true"
+    hosts:
+      - host: netflow-click.example.com
+        paths:
+          - path: /
+            pathType: Prefix
+    tls:
+      - secretName: wildcard-tls #your TLS secret name
+        hosts:
+          - netflow-click.example.com
+
+keeper:
+  enabled: true
+  replicaCount: 3
+  antiAffinity: hard
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: "1"
+      memory: 1Gi
+  persistence:
+    storageClassName: csi-cephfs #your storage class name
+    accessModes: [ReadWriteOnce]
+    size: 5Gi
+
+# Existing agents forward metrics to vmetrics-drsu-prod.atol.ru
+# and container logs to vlogs-drsu-prod.atol.ru. No new agents are deployed.
+monitoring:
+  annotationsEnabled: true
+  vmServiceScrape:
+    enabled: false

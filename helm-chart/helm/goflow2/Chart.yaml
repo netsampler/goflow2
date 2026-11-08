@@ -1,0 +1,8 @@
+apiVersion: v2
+name: goflow2
+description: GoFlow2 with Kafka and ClickHouse, using existing monitoring agents
+type: application
+version: 0.4.2
+appVersion: "latest"
+kubeVersion: ">=1.23.0-0"
+home: https://github.com/netsampler/goflow2
