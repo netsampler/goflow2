@@ -91,6 +91,9 @@ func (d *builtIn) eventFromSFlowSample(base *event.Event, packet *sflow.Packet, 
 	fields["input_if"] = sample.Input
 	fields["output_if"] = sample.Output
 	fields["packets"] = int64(1)
+	// the frame length of a sampled header is kept over the IP packet length
+	// of a sampled IPv4/IPv6 record, whatever the order of the records
+	var hasFrameLength bool
 
 	for _, record := range sample.Records {
 		if shouldPreserveSFlowFlowRecord(record) {
@@ -106,7 +109,10 @@ func (d *builtIn) eventFromSFlowSample(base *event.Event, packet *sflow.Packet, 
 			// Keep the raw sampled header as bytes so downstream packet handling can
 			// treat sFlow packet samples and source.type=bytes events consistently.
 			fields["header_data"] = append([]byte(nil), data.HeaderData...)
-			fields["bytes"] = int64(data.FrameLength)
+			if data.FrameLength > 0 {
+				fields["bytes"] = int64(data.FrameLength)
+				hasFrameLength = true
+			}
 		case sflow.SampledIPv4:
 			fields["src_addr"] = string(data.SrcIP)
 			fields["dst_addr"] = string(data.DstIP)
@@ -114,7 +120,9 @@ func (d *builtIn) eventFromSFlowSample(base *event.Event, packet *sflow.Packet, 
 			fields["dst_port"] = data.DstPort
 			fields["proto"] = data.Protocol
 			fields["proto_name"] = ipProtocolName(uint32(data.Protocol))
-			fields["bytes"] = int64(data.Length)
+			if !hasFrameLength {
+				fields["bytes"] = int64(data.Length)
+			}
 		case sflow.SampledIPv6:
 			fields["src_addr"] = string(data.SrcIP)
 			fields["dst_addr"] = string(data.DstIP)
@@ -122,7 +130,9 @@ func (d *builtIn) eventFromSFlowSample(base *event.Event, packet *sflow.Packet, 
 			fields["dst_port"] = data.DstPort
 			fields["proto"] = data.Protocol
 			fields["proto_name"] = ipProtocolName(uint32(data.Protocol))
-			fields["bytes"] = int64(data.Length)
+			if !hasFrameLength {
+				fields["bytes"] = int64(data.Length)
+			}
 		case sflow.ExtendedNAT:
 			applySFlowExtendedNATFields(fields, data)
 		case sflow.ExtendedMPLS:

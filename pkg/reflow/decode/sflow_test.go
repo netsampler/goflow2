@@ -276,7 +276,7 @@ func TestDecodeSFlowSampledHeaderBytesUseFrameLength(t *testing.T) {
 				},
 				SamplingRate:     100,
 				SamplePool:       1000,
-				FlowRecordsCount: 1,
+				FlowRecordsCount: 2,
 				Records: []sflow.FlowRecord{
 					{
 						Data: sflow.SampledHeader{
@@ -284,6 +284,16 @@ func TestDecodeSFlowSampledHeaderBytesUseFrameLength(t *testing.T) {
 							FrameLength:    74,
 							OriginalLength: 54,
 							HeaderData:     bytes.Repeat([]byte{0xaa}, 54),
+						},
+					},
+					{
+						Data: sflow.SampledIPv4{
+							SampledIPBase: sflow.SampledIPBase{
+								Length:   56,
+								Protocol: 17,
+								SrcIP:    utils.IPAddress{192, 0, 2, 1},
+								DstIP:    utils.IPAddress{192, 0, 2, 2},
+							},
 						},
 					},
 				},
