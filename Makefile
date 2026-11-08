@@ -12,7 +12,7 @@ REFLOW_BUILD_TAGS ?=
 
 NAME          ?= goflow2
 DOCKER_IMAGE  ?= netsampler/$(NAME)
-VERSION       ?= $(shell git describe --abbrev --long HEAD)
+VERSION       ?= $(or $(REFLOW_RELEASE_TAG),$(shell git describe --abbrev --long HEAD))
 ABBREV        ?= $(shell git rev-parse --short HEAD)
 COMMIT        ?= $(shell git rev-parse HEAD)
 TAG           ?= $(shell git describe --tags --abbrev=0 HEAD)

@@ -15,6 +15,7 @@ permissions:
   contents: read
 
 env:
+  REFLOW_RELEASE_TAG: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
   GHCR_REFLOW_IMAGE: ghcr.io/${{ github.repository_owner }}/reflow
   DOCKERHUB_REFLOW_IMAGE: docker.io/${{ github.repository_owner }}/reflow
 
@@ -256,10 +257,6 @@ jobs:
     - name: Log in to GHCR
       run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u $ --password-stdin
 
-    - name: Set VERSION for tag builds
-      if: startsWith(github.ref, 'refs/tags/')
-      run: echo "VERSION=$(git describe --tags --abbrev=0 HEAD)" >> "$GITHUB_ENV"
-
     - name: Publish manifests (branch)
       if: "!startsWith(github.ref, 'refs/tags/')"
       run: |
@@ -274,7 +271,7 @@ jobs:
       run: |
         images=("${{ env.DOCKERHUB_REFLOW_IMAGE }}" "${{ env.GHCR_REFLOW_IMAGE }}")
         for image in "${images[@]}"; do
-          DOCKER_IMAGE="$image" DOCKER_MANIFEST_TAG="${VERSION}" make docker-manifest
+          DOCKER_IMAGE="$image" DOCKER_MANIFEST_TAG="$REFLOW_RELEASE_TAG" make docker-manifest
           DOCKER_IMAGE="$image" DOCKER_MANIFEST_TAG=latest make docker-manifest
         done
 

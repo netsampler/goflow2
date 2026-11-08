@@ -10,6 +10,9 @@ on:
 permissions:
   contents: read
 
+env:
+  REFLOW_RELEASE_TAG: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
+
 jobs:
   macos:
     name: macOS ${{ matrix.arch }} / ${{ matrix.profile }}
@@ -194,7 +197,7 @@ jobs:
         with:
           fetch-depth: 0
       - name: Set artifact version
-        run: echo "REFLOW_VERSION=$(git describe --abbrev --long HEAD)" >> "$GITHUB_ENV"
+        run: echo "REFLOW_VERSION=${REFLOW_RELEASE_TAG:-$(git describe --abbrev --long HEAD)}" >> "$GITHUB_ENV"
       - uses: actions/setup-go@v6
         if: matrix.profile == 'platform' || env.REFLOW_CROSS_PCAP == 'true'
         with:
