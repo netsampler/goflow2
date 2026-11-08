@@ -55,6 +55,7 @@ type SourceInit struct {
 	SamplingRate        uint32 `json:"sampling_rate,omitempty"`
 	SamplePool          uint32 `json:"sample_pool,omitempty"`
 	Drops               uint32 `json:"drops,omitempty"`
+	CaptureDropsTotal   uint64 `json:"capture_drops_total,omitempty"`
 	InputIf             uint32 `json:"input_if,omitempty"`
 	OutputIf            uint32 `json:"output_if,omitempty"`
 }
@@ -83,6 +84,8 @@ type SamplingMetadata struct {
 	Rate       uint32 `json:"rate,omitempty"`
 	SamplePool uint32 `json:"sample_pool,omitempty"`
 	Drops      uint32 `json:"drops,omitempty"`
+	// CaptureDropsTotal counts capture delivery loss, independently of sFlow drops.
+	CaptureDropsTotal uint64 `json:"capture_drops_total,omitempty"`
 }
 
 type AggregationMetadata struct {

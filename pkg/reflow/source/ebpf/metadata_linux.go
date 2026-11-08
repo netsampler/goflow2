@@ -1,4 +1,4 @@
-//go:build linux && !reflow_noebpf
+//go:build linux && !reflow_pcap && !reflow_dpdk
 
 package ebpf
 
@@ -9,9 +9,12 @@ import (
 	"sync"
 
 	"github.com/netsampler/goflow2/v3/pkg/reflow/config"
+	"github.com/netsampler/goflow2/v3/pkg/reflow/event"
+	"github.com/netsampler/goflow2/v3/pkg/reflow/source/capture"
 )
 
 type Source struct {
+	shared                *capture.Source
 	cfg                   config.SourceConfig
 	agentIP               string
 	captureInterfaceIndex int
@@ -26,6 +29,8 @@ type Source struct {
 	eventMapFD            int
 	perfEvents            []*perfEventReader
 	conntrack             *conntrackTracker
+	kernelSampler         *capture.PerfSampler
+	backendSnaplen        int
 }
 
 func (s *Source) shouldEmitCurrentPacket() bool {
@@ -96,4 +101,26 @@ func firstSystemIP() string {
 		}
 	}
 	return "127.0.0.1"
+}
+
+// Refresh from the independent monitor even if no frame has reached the shared
+// adapter since a rate change or output failure.
+func (s *Source) refreshSampling(events []*event.Event) {
+	s.mu.Lock()
+	sampler := s.kernelSampler
+	s.mu.Unlock()
+	if sampler == nil {
+		return
+	}
+	for _, evt := range events {
+		evt.Source.Sampling.CaptureDropsTotal = max(evt.Source.Sampling.CaptureDropsTotal, sampler.Drops())
+		if s.cfg.Capture.Sampling.Location == "kernel" {
+			evt.Source.Sampling.Rate = sampler.Rate()
+		}
+		if payload, ok := evt.Payload.(event.SourceInit); ok {
+			payload.CaptureDropsTotal = evt.Source.Sampling.CaptureDropsTotal
+			payload.SamplingRate = evt.Source.Sampling.Rate
+			evt.Payload = payload
+		}
+	}
 }

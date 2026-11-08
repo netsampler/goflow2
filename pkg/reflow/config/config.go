@@ -69,21 +69,25 @@ func (c TFlowConfig) IsZero() bool {
 }
 
 type SourceConfig struct {
-	Network             string     `yaml:"network"`
-	Address             string     `yaml:"address"`
-	Interface           string     `yaml:"interface"`
-	SnapLen             int        `yaml:"snaplen"`
-	SampleEvery         int        `yaml:"sample_every"`
-	SampleOffset        int        `yaml:"sample_offset"`
-	InterfaceFilter     string     `yaml:"interface_filter,omitempty"`
-	SourceInitRefreshMS *int       `yaml:"source_init_refresh_ms,omitempty"`
-	SourceID            *uint32    `yaml:"source_id,omitempty"`
-	Type                string     `yaml:"type"`
-	JSON                JSONConfig `yaml:"json"`
-	EBPF                EBPFConfig `yaml:"ebpf,omitempty"`
+	Conntrack           ConntrackSourceConfig `yaml:"conntrack,omitempty"`
+	Capture             CaptureConfig         `yaml:"capture,omitempty"`
+	Network             string                `yaml:"network"`
+	Address             string                `yaml:"address"`
+	Interface           string                `yaml:"interface,omitempty"`
+	SnapLen             int                   `yaml:"snaplen,omitempty"`
+	SampleEvery         int                   `yaml:"sample_every,omitempty"`
+	SampleOffset        int                   `yaml:"sample_offset,omitempty"`
+	InterfaceFilter     string                `yaml:"interface_filter,omitempty"`
+	SourceInitRefreshMS *int                  `yaml:"source_init_refresh_ms,omitempty"`
+	SourceID            *uint32               `yaml:"source_id,omitempty"`
+	Type                string                `yaml:"type"`
+	JSON                JSONConfig            `yaml:"json"`
+	EBPF                EBPFConfig            `yaml:"ebpf,omitempty"`
 }
 
 type EBPFConfig struct {
+	Transport     string `yaml:"transport,omitempty"`
+	RingSize      int    `yaml:"ring_size,omitempty"`
 	SKBMetadata   *bool  `yaml:"skb_metadata,omitempty"`
 	Conntrack     *bool  `yaml:"conntrack,omitempty"`
 	ConntrackPath string `yaml:"conntrack_path,omitempty"`
@@ -91,7 +95,7 @@ type EBPFConfig struct {
 }
 
 func (c EBPFConfig) IsZero() bool {
-	return c.SKBMetadata == nil && c.Conntrack == nil && c.ConntrackPath == "" && c.Direction == ""
+	return c.Transport == "" && c.RingSize == 0 && c.SKBMetadata == nil && c.Conntrack == nil && c.ConntrackPath == "" && c.Direction == ""
 }
 
 func (c EBPFConfig) SKBMetadataEnabled() bool {
@@ -186,14 +190,15 @@ func orderedEncoderType(encoderType string) bool {
 }
 
 type BuiltinProcessorConfig struct {
-	DropMessage          bool                    `yaml:"drop_message"`
-	DropPayload          bool                    `yaml:"drop_payload"`
-	DisablePacketMapping bool                    `yaml:"disable_packet_mapping"`
-	TruncatePacketBytes  int                     `yaml:"truncate_packet_bytes"`
-	PacketDecoder        PacketDecoderConfig     `yaml:"packet_decoder"`
-	TFlow                TFlowProcessorConfig    `yaml:"tflow"`
-	AggregationHelpers   AggregationHelperConfig `yaml:"aggregation_helpers"`
-	NAT                  NATProcessorConfig      `yaml:"nat"`
+	Conntrack            ConntrackProcessorConfig `yaml:"conntrack,omitempty"`
+	DropMessage          bool                     `yaml:"drop_message"`
+	DropPayload          bool                     `yaml:"drop_payload"`
+	DisablePacketMapping bool                     `yaml:"disable_packet_mapping"`
+	TruncatePacketBytes  int                      `yaml:"truncate_packet_bytes"`
+	PacketDecoder        PacketDecoderConfig      `yaml:"packet_decoder"`
+	TFlow                TFlowProcessorConfig     `yaml:"tflow"`
+	AggregationHelpers   AggregationHelperConfig  `yaml:"aggregation_helpers"`
+	NAT                  NATProcessorConfig       `yaml:"nat"`
 }
 
 type TFlowProcessorConfig struct {
@@ -398,6 +403,7 @@ type TemplatedFlowConfig struct {
 	ObservationDomainID   uint32                  `yaml:"observation_domain_id"`
 	TemplateRefresh       int                     `yaml:"template_refresh_ms"`
 	OptionsRefresh        int                     `yaml:"options_refresh_ms"`
+	SamplingMode          string                  `yaml:"sampling_mode,omitempty"`
 	Data                  TemplatedFlowDataConfig `yaml:"data"`
 }
 
@@ -661,6 +667,7 @@ type SinkConfig struct {
 func BindFlags(fs *flag.FlagSet) (*FlagConfig, *bool) {
 	cfg := &FlagConfig{}
 	version := fs.Bool("v", false, "Print version")
+	fs.BoolVar(version, "version", false, "Print version and capture build profile")
 	fs.StringVar(&cfg.ConfigPath, "config", "", "Path to ReFlow YAML config")
 	fs.StringVar(&cfg.LogLevel, "loglevel", "info", "Log level")
 	fs.StringVar(&cfg.LogFormat, "logfmt", "text", "Log format (text or json)")
@@ -907,7 +914,8 @@ func (c *Config) setDefaults(configPath string) error {
 			return fmt.Errorf("sink.resolve_interval_ms is only supported when sink.type=udp")
 		}
 	}
-	return nil
+	c.Encoder.TemplatedFlow.SamplingMode = c.IPFIXSamplingMode()
+	return c.ValidateAdaptivePipeline()
 }
 
 func (c *Config) applyCacheDefaults(configPath string) error {
@@ -943,6 +951,9 @@ func assignDefaultSourceIDs(sources []SourceConfig) {
 }
 
 func sourceUsesConfiguredObservationPoint(src SourceConfig) bool {
+	if IsCaptureNetwork(src.Network) {
+		return true
+	}
 	switch src.Network {
 	case "pcap_live", "ebpf":
 		return true
@@ -980,6 +991,14 @@ func validateUDPPorts(name string, ports []uint32) error {
 
 // applySourceDefaults normalizes per-source defaults that depend on source.network.
 func applySourceDefaults(src *SourceConfig) error {
+	if src.Network == "conntrack" {
+		return NormalizeConntrackSource(src)
+	}
+	if IsCaptureNetwork(src.Network) {
+		if err := NormalizeCapture(src); err != nil {
+			return err
+		}
+	}
 	if src.SourceInitRefreshMS == nil {
 		v := 30000
 		src.SourceInitRefreshMS = &v
@@ -1003,7 +1022,7 @@ func applySourceDefaults(src *SourceConfig) error {
 		}
 		return nil
 	}
-	if src.Network != "pcap_live" && src.Network != "ebpf" && src.Address == "" {
+	if !IsCaptureNetwork(src.Network) && src.Address == "" {
 		src.Address = ":18080"
 	}
 	if src.Network == "pcap_live" || src.Network == "ebpf" {

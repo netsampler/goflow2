@@ -1,4 +1,4 @@
-//go:build linux && !reflow_noebpf
+//go:build linux && !reflow_pcap && !reflow_dpdk
 
 package ebpf
 
@@ -7,6 +7,7 @@ import (
 	"net/netip"
 	"regexp"
 	"testing"
+	"unsafe"
 
 	"golang.org/x/sys/unix"
 
@@ -104,6 +105,46 @@ func TestParsePerfPacketSampleCombinesMetadataAndPacket(t *testing.T) {
 	gotPacket[0] = 0
 	if packet[0] == 0 {
 		t.Fatalf("expected parsed packet to be copied away from the sample buffer")
+	}
+}
+
+func TestPerfCaptureRetainsLengthAndLossWithoutOptionalMetadata(t *testing.T) {
+	// A real perf ring record sequence: nine lost deliveries, followed by a
+	// truncated capture whose full wire length remains known from __sk_buff.
+	data := make([]byte, 8192)
+	page := (*unix.PerfEventMmapPage)(unsafe.Pointer(&data[0]))
+	page.Data_offset, page.Data_size, page.Data_head = 4096, 4096, 88
+	ring := data[4096:]
+	binary.LittleEndian.PutUint32(ring, perfRecordLost)
+	binary.LittleEndian.PutUint16(ring[6:], 24)
+	binary.LittleEndian.PutUint64(ring[16:], 9)
+	binary.LittleEndian.PutUint32(ring[24:], perfRecordSample)
+	binary.LittleEndian.PutUint16(ring[30:], 64)
+	binary.LittleEndian.PutUint32(ring[32:], uint32(testSKBMetadataSize()+4))
+	sample := ring[36:]
+	binary.LittleEndian.PutUint32(sample, 1514)
+	binary.LittleEndian.PutUint32(sample[8:], 42)
+	binary.LittleEndian.PutUint32(sample[24:], 7)
+	copy(sample[testSKBMetadataSize():], []byte{0xde, 0xad, 0xbe, 0xef})
+	reader := &perfEventReader{pageSize: 4096, data: data}
+	optional := false
+	source := &Source{cfg: config.SourceConfig{Network: "ebpf", Interface: "capture0", Type: "bytes", SampleEvery: 1, EBPF: config.EBPFConfig{SKBMetadata: &optional}}, captureInterfaceIndex: 7, interfaceNames: map[uint32]string{7: "capture0"}, perfEvents: []*perfEventReader{reader}}
+	var events []*event.Event
+	err := reader.readSamples(func(sample []byte) error {
+		return source.emitPerfSample(sample, func(evt *event.Event) error { events = append(events, evt); return nil })
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != 1 {
+		t.Fatalf("expected one packet, got %d", len(events))
+	}
+	evt := events[0]
+	if evt.Fields["capture_length"] != 4 || evt.Fields["wire_length"] != 1514 || evt.Source.Sampling.Drops != 9 || source.captureDropCount() != 9 {
+		t.Fatalf("capture framing lost: fields=%v sampling=%+v", evt.Fields, evt.Source.Sampling)
+	}
+	if _, exists := evt.Fields["skb_mark"]; exists {
+		t.Fatal("optional SKB metadata was exposed")
 	}
 }
 

@@ -1,4 +1,4 @@
-//go:build linux && !reflow_noebpf
+//go:build linux && !reflow_pcap && !reflow_dpdk
 
 package ebpf
 

@@ -16,6 +16,7 @@ import (
 	"github.com/netsampler/goflow2/v3/pkg/reflow/config"
 	"github.com/netsampler/goflow2/v3/pkg/reflow/event"
 	"github.com/netsampler/goflow2/v3/pkg/reflow/packet"
+	"github.com/netsampler/goflow2/v3/pkg/reflow/source/conntrack"
 )
 
 // Processor converts source-specific payloads into ReFlow's in-memory event shape.
@@ -34,8 +35,10 @@ func New(cfg config.ProcessorConfig) (Processor, error) {
 }
 
 type Builtin struct {
-	cfg    config.BuiltinProcessorConfig
-	decode packet.DecodeOptions
+	conntrack     *conntrack.Cache
+	conntrackZone uint16
+	cfg           config.BuiltinProcessorConfig
+	decode        packet.DecodeOptions
 }
 
 // NewBuiltin constructs the default in-code processor used when WASM is disabled.
@@ -388,7 +391,11 @@ func (p *Builtin) applyDerivedFieldMappings(evt *event.Event) {
 		return
 	}
 	deriveFlowDirectionFromCapture(evt.Fields)
-	deriveNATFieldsFromConntrack(evt.Fields, evt.Internal, p.cfg.NAT)
+	if p.conntrack != nil {
+		p.enrichConntrack(evt)
+	} else {
+		deriveNATFieldsFromConntrack(evt.Fields, evt.Internal, p.cfg.NAT)
+	}
 }
 
 func deriveFlowDirectionFromCapture(fields map[string]any) {

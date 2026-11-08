@@ -1,4 +1,4 @@
-//go:build !linux || reflow_noebpf
+//go:build !linux || reflow_pcap || reflow_dpdk
 
 package ebpf
 
@@ -13,14 +13,14 @@ import (
 
 func New(cfg config.SourceConfig) (*Source, error) {
 	if runtime.GOOS == "linux" {
-		return nil, fmt.Errorf("source.network=%s is disabled in this build; rebuild without -tags reflow_noebpf", cfg.Network)
+		return nil, fmt.Errorf("source.network=%s is unavailable in this capture profile; use REFLOW_PROFILE=platform", cfg.Network)
 	}
 	return nil, fmt.Errorf("source.network=%s requires linux, got %s", cfg.Network, runtime.GOOS)
 }
 
 func (s *Source) Start(context.Context, func(*event.Event) error) error {
 	if runtime.GOOS == "linux" {
-		return fmt.Errorf("source.network=ebpf is disabled in this build; rebuild without -tags reflow_noebpf")
+		return fmt.Errorf("source.network=ebpf is unavailable in this capture profile; use REFLOW_PROFILE=platform")
 	}
 	return fmt.Errorf("source.network=ebpf requires linux, got %s", runtime.GOOS)
 }
