@@ -16,13 +16,14 @@ jobs:
     runs-on: ${{ inputs.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-24.04' }}
     env:
       REFLOW_GO_IMAGE: golang:1.26.9-bookworm
-      REFLOW_BUILD_PLATFORM: linux/${{ inputs.arch == 'armv7' && 'arm/v7' || inputs.arch }}
+      # ARMv7 platform and pcap compile natively on the amd64 host.
+      REFLOW_BUILD_PLATFORM: linux/${{ inputs.arch == 'armv7' && 'amd64' || inputs.arch }}
     steps:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
       - uses: docker/setup-qemu-action@v4
-        if: inputs.arch == 'armv7'
+        if: inputs.arch == 'armv7' && github.event_name != 'pull_request'
         with:
           platforms: arm
       - name: Pull target build image
@@ -37,12 +38,13 @@ jobs:
         uses: actions/cache@v5
         with:
           path: ${{ runner.temp }}/reflow-sdk
-          key: reflow-sdk-v1-${{ inputs.arch }}-${{ inputs.profile }}-${{ steps.image.outputs.id }}-${{ hashFiles('scripts/reflow-build-linux.sh', '.github/workflows/reflow-linux.yml') }}
+          key: reflow-sdk-v2-${{ inputs.arch }}-${{ inputs.profile }}-${{ steps.image.outputs.id }}-${{ hashFiles('scripts/reflow-build-dpdk-sdk.sh') }}
       - name: Build and test target profile
         env:
           GOARCH: ${{ inputs.arch == 'armv7' && 'arm' || inputs.arch }}
           GOARM: ${{ inputs.arch == 'armv7' && '7' || '' }}
           REFLOW_PROFILE: ${{ inputs.profile }}
+          REFLOW_BUILD_ONLY: ${{ inputs.arch == 'armv7' && github.event_name == 'pull_request' }}
           REFLOW_SDK_CACHE_HIT: ${{ steps.sdk-cache.outputs.cache-hit }}
         run: |
           mkdir -p "$RUNNER_TEMP/reflow-sdk"
@@ -50,7 +52,7 @@ jobs:
           docker run --rm --platform "$REFLOW_BUILD_PLATFORM" \
             -v "$PWD:/src" -w /src \
             -v "$RUNNER_TEMP/reflow-sdk:/opt/reflow-sdk" \
-            -e GOARCH -e GOARM \
+            -e GOARCH -e GOARM -e REFLOW_BUILD_ONLY \
             -e GIT_CONFIG_COUNT=1 -e GIT_CONFIG_KEY_0=safe.directory -e GIT_CONFIG_VALUE_0=/src \
             -e REFLOW_PROFILE="$REFLOW_PROFILE" \
             -e REFLOW_SDK_CACHE_HIT="$REFLOW_SDK_CACHE_HIT" \

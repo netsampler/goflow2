@@ -40,6 +40,21 @@ In a second terminal, run `ping 127.0.0.1`. You should see packet events as JSON
 in the first terminal. Press Ctrl+C to stop. To capture regular network
 traffic, replace the loopback device with your network adapter.
 
+### Capture from Docker
+
+On a Linux amd64 Docker host, use the `pcap` image to capture a host network
+interface. The image packages the Linux amd64 `pcap` release binary and its
+libpcap runtime. Append `-pcap` to a release tag to pin that release.
+
+```sh
+docker run --rm --network host --cap-drop ALL --cap-add NET_RAW \
+  ghcr.io/netsampler/reflow:pcap \
+  -input pcap_live:eth0:bytes -output json:stdout
+```
+
+Replace `eth0` with your capture interface. The same tags are available on
+Docker Hub as `netsampler/reflow`.
+
 ### Export live traffic as IPFIX
 
 Use `-agg` to combine captured packets into flows and send the resulting IPFIX
@@ -63,7 +78,7 @@ support follows the operating system.
 | --- | --- | --- | --- | --- | --- |
 | Linux | `amd64`, `arm64`, `armv7` | `platform` | `af_packet` mmap capture, `ebpf` SKB/conntrack metadata, passive `xdp`, firewall copies via `nflog`, ASIC samples via `psample` | `reflow-<version>-linux-<arch>-platform.tar.gz` | Applicable kernel capabilities and capture permissions; no capture SDK |
 | Linux | `amd64`, `arm64`, `armv7` | `pcap` | `pcap_live` | `reflow-<version>-linux-<arch>-pcap.tar.gz` | libpcap and capture permissions |
-| Linux | `amd64`, `arm64`, `armv7` | `dpdk` | `dpdk` RX queues | `reflow-<version>-linux-<arch>-dpdk.tar.gz` | DPDK runtime and configured ports/memory; ARMv7 requires NEON |
+| Linux | `amd64`, `arm64` | `dpdk` | `dpdk` RX queues | `reflow-<version>-linux-<arch>-dpdk.tar.gz` | DPDK runtime and configured ports/memory |
 | macOS | `amd64`, `arm64` | `platform` | Native `bpf` and `pktap` metadata capture | `reflow-<version>-darwin-<arch>-platform.tar.gz` | BPF access; root privileges for pktap interface creation; no capture SDK |
 | macOS | `amd64`, `arm64` | `pcap` | `pcap_live` | `reflow-<version>-darwin-<arch>-pcap.tar.gz` | System libpcap and capture permissions |
 | Windows | `amd64`, `arm64` | `platform` | Native `pktmon` streaming | `reflow-<version>-windows-<arch>-platform.zip` | Modern Packet Monitor streaming API and administrator rights; no Npcap dependency |
@@ -107,13 +122,14 @@ Use a C compiler and SDK for the **target** OS/architecture for library builds.
 The Makefile sets cgo and the profile tags. The underlying tags are
 `reflow_pcap` and `reflow_dpdk`. Select one tag per library build.
 Without a profile tag, `go build ./cmd/reflow` builds the platform profile.
-The pinned [Linux SDK build script](../scripts/reflow-build-linux.sh) disables
+The pinned [DPDK SDK build recipe](../scripts/reflow-build-dpdk-sdk.sh) disables
 DPDK's `net/pcap` driver to keep libpcap out of the DPDK profile. DPDK's ARMv7
 build requires NEON.
 
-Linux ARM64 CI builds and Docker packaging use native ARM64 runners. ARMv7
-builds use QEMU. CI caches the DPDK SDK by target architecture, build-image
-identity, and hashes of the SDK build script and workflow.
+Linux ARM64 CI builds and Docker packaging use native ARM64 runners. CI
+cross-compiles Linux ARMv7 platform and pcap builds on amd64 and uses QEMU to
+run the target tests on main and tags. CI caches the DPDK SDK by target
+architecture, build-image digest, and a hash of the DPDK SDK build recipe.
 Cache hits reuse the SDK while still running the Reflow tests, vet, packaging,
 and dependency checks.
 SDK versions or build-option changes invalidate the cache through the script hash.

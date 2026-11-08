@@ -8,7 +8,8 @@ on:
     branches: [main]
 
 concurrency:
-  group: reflow-${{ github.ref_type == 'tag' && github.ref || github.run_id }}
+  group: reflow-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || (github.ref_type == 'tag' && github.ref || github.run_id) }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
@@ -27,25 +28,106 @@ jobs:
     with:
       arch: ${{ matrix.arch }}
       profile: platform
+  linux-pcap-build:
+    uses: ./.github/workflows/reflow-linux.yml
+    with:
+      arch: amd64
+      profile: pcap
   linux-build:
     strategy:
       fail-fast: false
       matrix:
         arch: [amd64, arm64, armv7]
-        profile: [platform, pcap, dpdk]
+        profile: ${{ fromJSON(github.event_name == 'pull_request' && '["platform","pcap"]' || '["platform","pcap","dpdk"]') }}
         exclude:
           - arch: amd64
             profile: platform
+          - arch: amd64
+            profile: pcap
           - arch: arm64
             profile: platform
+          - arch: armv7
+            profile: dpdk
+          - arch: arm64
+            profile: ${{ github.event_name == 'pull_request' && 'pcap' || '' }}
+          - arch: armv7
+            profile: ${{ github.event_name == 'pull_request' && 'pcap' || '' }}
     uses: ./.github/workflows/reflow-linux.yml
     with:
       arch: ${{ matrix.arch }}
       profile: ${{ matrix.profile }}
+  profile-changes:
+    name: Check capture profile paths
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    outputs:
+      dpdk: ${{ steps.changes.outputs.dpdk }}
+      pcap: ${{ steps.changes.outputs.pcap }}
+      pcap_image: ${{ steps.changes.outputs.pcap_image }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 2
+          persist-credentials: false
+      - name: Check paths in the PR merge diff
+        id: changes
+        run: |
+          check_paths() {
+            local check="$1" changed
+            shift
+            changed=$(git diff --name-only --no-renames HEAD^1 HEAD -- "$@")
+            if [[ -n "$changed" ]]; then
+              echo "$check=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "$check=false" >> "$GITHUB_OUTPUT"
+            fi
+          }
+          shared_paths=(
+            .github/workflows/reflow.yml .github/workflows/reflow-linux.yml
+            Makefile go.mod go.sum
+            scripts/reflow-build-linux.sh scripts/reflow-verify-profile.py
+            cmd/reflow/ pkg/reflow/app/ pkg/reflow/buildprofile/ pkg/reflow/config/
+            pkg/reflow/source/capture/ ':(glob)pkg/reflow/source/*.go'
+          )
+          for profile in dpdk pcap; do
+            profile_paths=("pkg/reflow/source/$profile/")
+            if [[ "$profile" == dpdk ]]; then
+              profile_paths+=(scripts/reflow-build-dpdk-sdk.sh)
+            else
+              profile_paths+=(.github/workflows/reflow-platforms.yml)
+            fi
+            check_paths "$profile" "${shared_paths[@]}" "${profile_paths[@]}"
+          done
+          check_paths pcap_image Dockerfile.reflow Dockerfile.reflow.dockerignore .dockerignore Makefile .github/workflows/reflow.yml
+  linux-dpdk-pr:
+    needs: profile-changes
+    if: needs.profile-changes.outputs.dpdk == 'true'
+    uses: ./.github/workflows/reflow-linux.yml
+    with:
+      arch: amd64
+      profile: dpdk
+  linux-pcap-pr:
+    needs: profile-changes
+    if: needs.profile-changes.outputs.pcap == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [arm64, armv7]
+    uses: ./.github/workflows/reflow-linux.yml
+    with:
+      arch: ${{ matrix.arch }}
+      profile: pcap
   platform-build:
     uses: ./.github/workflows/reflow-platforms.yml
+  platform-pcap-pr:
+    needs: profile-changes
+    if: needs.profile-changes.outputs.pcap == 'true'
+    uses: ./.github/workflows/reflow-platforms.yml
+    with:
+      pcap_only: true
 
   docker:
+    if: github.event_name != 'pull_request'
     permissions:
       contents: read
       packages: write
@@ -75,24 +157,78 @@ jobs:
           tar -xf dist/reflow-*-linux-${{ matrix.arch }}-platform.tar.gz -C dist/docker --strip-components=1
       - uses: docker/setup-buildx-action@v4
       - uses: docker/login-action@v4
-        if: github.event_name != 'pull_request'
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
       - name: Log in to GHCR
-        if: github.event_name != 'pull_request'
         run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u $ --password-stdin
       - name: Build image
         env:
           REFLOW_ARCH: ${{ matrix.arch }}
           REFLOW_DOCKER_PLATFORM: ${{ matrix.platform }}
         run: |
-          if [[ "${{ github.event_name }}" == pull_request ]]; then push=--load; else push=--push; fi
           owner="${GITHUB_REPOSITORY_OWNER,,}"
           DOCKER_SUFFIX="-$REFLOW_ARCH" \
           DOCKER_IMAGE_PREFIXES="docker.io/$owner/reflow ghcr.io/$owner/reflow" \
-          DOCKER_CMD="buildx build $push --platform $REFLOW_DOCKER_PLATFORM -f Dockerfile.reflow --build-arg PREBUILT_BINARY=dist/docker/reflow" \
+          DOCKER_CMD="buildx build --push --platform $REFLOW_DOCKER_PLATFORM -f Dockerfile.reflow --build-arg PREBUILT_BINARY=dist/docker/reflow" \
           NAME=reflow DESCRIPTION="ReFlow: encode and decode flow and packet streams" make docker
+
+  docker-pcap:
+    name: Package pcap Docker image / amd64
+    needs: [linux-pcap-build, profile-changes]
+    if: ${{ !cancelled() && needs.linux-pcap-build.result == 'success' && (github.event_name != 'pull_request' || needs.profile-changes.outputs.pcap_image == 'true') }}
+    permissions:
+      contents: read
+      packages: write
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: actions/download-artifact@v8
+        with:
+          name: reflow-linux-amd64-pcap
+          path: dist
+      - name: Extract pcap binary
+        run: |
+          mkdir -p dist/docker
+          tar -xf dist/reflow-*-linux-amd64-pcap.tar.gz -C dist/docker --strip-components=1
+      - uses: docker/setup-buildx-action@v4
+      - name: Build and verify pcap image
+        run: |
+          DOCKER_TAGS=reflow-pcap:ci \
+          DOCKER_CMD="buildx build --load --platform linux/amd64 -f Dockerfile.reflow --build-arg REFLOW_PROFILE=pcap --build-arg PREBUILT_BINARY=dist/docker/reflow" \
+          NAME=reflow DESCRIPTION="ReFlow: live capture with libpcap" make docker
+          version=$(docker run --rm reflow-pcap:ci -version)
+          printf '%s\n' "$version"
+          grep -F 'profile=pcap target=linux/amd64 capture=[pcap_live]' <<< "$version"
+          grep -F 'libpcap version' <<< "$version"
+      - uses: docker/login-action@v4
+        if: github.event_name != 'pull_request'
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - uses: docker/login-action@v4
+        if: github.event_name != 'pull_request'
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Publish pcap tags
+        if: github.event_name != 'pull_request'
+        run: |
+          owner="${GITHUB_REPOSITORY_OWNER,,}"
+          tags=("$(git rev-parse --short HEAD)-pcap")
+          if [[ "$GITHUB_REF_TYPE" == tag ]]; then
+            tags+=("$GITHUB_REF_NAME-pcap")
+          fi
+          tags+=(pcap)
+          for image in "docker.io/$owner/reflow" "ghcr.io/$owner/reflow"; do
+            for tag in "${tags[@]}"; do
+              docker tag reflow-pcap:ci "$image:$tag"
+              docker push "$image:$tag"
+            done
+          done
 
   manifest:
     permissions:
@@ -230,7 +366,7 @@ jobs:
 
   upload-linux:
     name: Upload other ReFlow Linux assets
-    needs: [release-draft, linux-build]
+    needs: [release-draft, linux-build, linux-pcap-build]
     permissions:
       contents: write
     uses: ./.github/workflows/release-assets.yml

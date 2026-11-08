@@ -2,6 +2,10 @@ name: Reflow platform profiles
 
 on:
   workflow_call:
+    inputs:
+      pcap_only:
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -12,7 +16,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        profile: [platform, pcap]
+        profile: ${{ fromJSON(inputs.pcap_only && '["pcap"]' || github.event_name != 'pull_request' && '["platform","pcap"]' || '["platform"]') }}
         include:
           - arch: amd64
             runner: macos-15-intel
@@ -63,13 +67,14 @@ jobs:
           if-no-files-found: error
 
   windows-build:
+    if: github.event_name != 'pull_request' || inputs.pcap_only
     name: Windows ${{ matrix.arch }} / ${{ matrix.profile }}
     runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
       matrix:
         arch: [amd64, arm64]
-        profile: [platform, pcap]
+        profile: ${{ fromJSON(inputs.pcap_only && '["pcap"]' || '["platform","pcap"]') }}
         include:
           - arch: amd64
             cc_target: x86_64
@@ -131,6 +136,7 @@ jobs:
           if-no-files-found: error
 
   windows-platform-tests:
+    if: ${{ !inputs.pcap_only }}
     name: Windows native tests / ${{ matrix.arch }}
     strategy:
       fail-fast: false
@@ -161,6 +167,7 @@ jobs:
           if ($version -notmatch 'profile=platform' -or $version -notmatch 'capture=\[pktmon\]') { throw $version }
 
   bsd:
+    if: ${{ !inputs.pcap_only }}
     name: ${{ matrix.os }} ${{ matrix.arch }} / ${{ matrix.profile }}
     runs-on: ubuntu-24.04
     timeout-minutes: 120
@@ -169,7 +176,7 @@ jobs:
       matrix:
         os: [freebsd, openbsd, netbsd]
         arch: [amd64, arm64]
-        profile: [platform, pcap]
+        profile: ${{ fromJSON(github.event_name == 'pull_request' && '["platform"]' || '["platform","pcap"]') }}
         include:
           - arch: amd64
             vm_arch: x86_64
@@ -179,45 +186,68 @@ jobs:
       REFLOW_GOOS: ${{ matrix.os }}
       REFLOW_GOARCH: ${{ matrix.arch }}
       REFLOW_PROFILE: ${{ matrix.profile }}
+      REFLOW_BUILD_ONLY: ${{ github.event_name == 'pull_request' }}
+      # Keep tagged release builds in the target guest. Clang cannot cross-build OpenBSD ARM64 pcap.
+      REFLOW_CROSS_PCAP: ${{ github.event_name == 'push' && github.ref_type == 'branch' && matrix.profile == 'pcap' && (matrix.os != 'openbsd' || matrix.arch != 'arm64') }}
     steps:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
       - name: Set artifact version
         run: echo "REFLOW_VERSION=$(git describe --abbrev --long HEAD)" >> "$GITHUB_ENV"
-      - name: Build inside FreeBSD
-        if: matrix.os == 'freebsd'
+      - uses: actions/setup-go@v6
+        if: matrix.profile == 'platform' || env.REFLOW_CROSS_PCAP == 'true'
+        with:
+          go-version-file: go.mod
+      - name: Cross-compile platform profile
+        if: matrix.profile == 'platform'
+        run: sh scripts/reflow-bsd-build.sh cross-build
+      - uses: actions/cache@v5
+        if: env.REFLOW_CROSS_PCAP == 'true'
+        with:
+          path: ${{ runner.temp }}/reflow-bsd-sysroot
+          key: reflow-bsd-sysroot-${{ matrix.os }}-${{ matrix.arch }}-${{ hashFiles('scripts/reflow-bsd-pcap-cross.sh') }}
+      - name: Cross-compile pcap profile
+        if: env.REFLOW_CROSS_PCAP == 'true'
+        env:
+          REFLOW_BSD_SYSROOT: ${{ runner.temp }}/reflow-bsd-sysroot
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends clang-19 lld-19 xz-utils
+          bash scripts/reflow-bsd-pcap-cross.sh
+      - name: Validate profile inside FreeBSD
+        if: matrix.os == 'freebsd' && github.event_name != 'pull_request'
         uses: vmactions/freebsd-vm@v1
         with:
           release: '14.3'
           arch: ${{ matrix.vm_arch }}
           mem: 4096
           cpu: 2
-          envs: REFLOW_GOOS REFLOW_GOARCH REFLOW_PROFILE REFLOW_VERSION
+          envs: REFLOW_GOOS REFLOW_GOARCH REFLOW_PROFILE REFLOW_VERSION REFLOW_CROSS_PCAP
           # Go's FreeBSD ARM64 external linker requires GNU ld.bfd for cgo.
-          prepare: pkg install -y curl gmake binutils
+          prepare: ${{ matrix.profile == 'pcap' && 'pkg install -y curl gmake binutils' || '' }}
           run: sh scripts/reflow-bsd-build.sh
-      - name: Build inside OpenBSD
-        if: matrix.os == 'openbsd'
+      - name: Validate profile inside OpenBSD
+        if: matrix.os == 'openbsd' && github.event_name != 'pull_request'
         uses: vmactions/openbsd-vm@v1
         with:
           release: '7.8'
           arch: ${{ matrix.vm_arch }}
           mem: 4096
           cpu: 2
-          envs: REFLOW_GOOS REFLOW_GOARCH REFLOW_PROFILE REFLOW_VERSION
-          prepare: pkg_add curl gmake
+          envs: REFLOW_GOOS REFLOW_GOARCH REFLOW_PROFILE REFLOW_VERSION REFLOW_CROSS_PCAP
+          prepare: ${{ matrix.profile == 'pcap' && 'pkg_add curl gmake' || '' }}
           run: sh scripts/reflow-bsd-build.sh
-      - name: Build inside NetBSD
-        if: matrix.os == 'netbsd'
+      - name: Validate profile inside NetBSD
+        if: matrix.os == 'netbsd' && github.event_name != 'pull_request'
         uses: vmactions/netbsd-vm@v1
         with:
           release: '10.1'
           arch: ${{ matrix.vm_arch }}
           mem: 4096
           cpu: 2
-          envs: REFLOW_GOOS REFLOW_GOARCH REFLOW_PROFILE REFLOW_VERSION
-          prepare: /usr/sbin/pkg_add -u curl gmake
+          envs: REFLOW_GOOS REFLOW_GOARCH REFLOW_PROFILE REFLOW_VERSION REFLOW_CROSS_PCAP
+          prepare: ${{ matrix.profile == 'pcap' && '/usr/sbin/pkg_add -u curl gmake' || '' }}
           run: sh scripts/reflow-bsd-build.sh
       - uses: actions/upload-artifact@v6
         with:

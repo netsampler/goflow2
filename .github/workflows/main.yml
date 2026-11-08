@@ -7,6 +7,10 @@ on:
   pull_request:
     branches: [ main ]
 
+concurrency:
+  group: collector-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   test:
     name: Test
@@ -85,7 +89,7 @@ jobs:
     needs:
     - test
     - matrix
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.goos == 'linux' && matrix.goarch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
     strategy:
       fail-fast: false
       matrix:
@@ -144,10 +148,6 @@ jobs:
         fi
         echo "PREBUILT_BINARY=${BINARY_PATH}" >> "$GITHUB_ENV"
 
-    - name: Set up QEMU
-      if: matrix.package && env.DOCKER_PACKAGE == 'true'
-      uses: docker/setup-qemu-action@v4
-
     - name: Set up Docker Buildx
       if: matrix.package && env.DOCKER_PACKAGE == 'true'
       uses: docker/setup-buildx-action@v4
@@ -178,15 +178,15 @@ jobs:
         make docker
           
     - name: Cache user gems
-      if: matrix.package
+      if: matrix.package && github.event_name != 'pull_request'
       uses: actions/cache@v5
       with:
         path: |
           ~/.gem
           ~/.local/share/gem
-        key: ${{ runner.os }}-gems-${{ hashFiles('**/Gemfile.lock') }}
+        key: ${{ runner.os }}-${{ runner.arch }}-gems-${{ hashFiles('**/Gemfile.lock') }}
         restore-keys: |
-          ${{ runner.os }}-gems-
+          ${{ runner.os }}-${{ runner.arch }}-gems-
 
     # - name: Cache apt lists and archives
     #   if: matrix.package
@@ -201,7 +201,7 @@ jobs:
     #       ${{ runner.os }}-apt-
 
     - name: Install fpm
-      if: matrix.package
+      if: matrix.package && github.event_name != 'pull_request'
       # fpm builds both rpm and deb artifacts from the Go binaries.
       run: |
         sudo apt-get update
@@ -210,7 +210,7 @@ jobs:
         echo "$(ruby -e 'print Gem.user_dir')/bin" >> $GITHUB_PATH
         
     - name: Package
-      if: matrix.package
+      if: matrix.package && github.event_name != 'pull_request'
       env:
         GOOS: ${{ matrix.goos }}
         GOARCH: ${{ matrix.goarch }}
