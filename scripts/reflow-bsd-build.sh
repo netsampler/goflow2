@@ -37,13 +37,17 @@ if [ "$REFLOW_PROFILE" = pcap ]; then
     export PATH="/tmp/reflow-toolchain/go/bin:/usr/local/bin:/usr/pkg/bin:$PATH"
     export CGO_ENABLED=1
     go test -tags reflow_pcap ./pkg/reflow/...
-    go vet -tags reflow_pcap ./pkg/reflow/... ./cmd/reflow/...
-    sha256_cmd='sha256 -r'
-    if [ "$REFLOW_GOOS" = netbsd ]; then
-        sha256_cmd='sha256 -n'
+    if [ "${REFLOW_CROSS_PCAP:-false}" = true ]; then
+        output=$(cat dist/bsd-pcap-output)
+    else
+        go vet -tags reflow_pcap ./pkg/reflow/... ./cmd/reflow/...
+        sha256_cmd='sha256 -r'
+        if [ "$REFLOW_GOOS" = netbsd ]; then
+            sha256_cmd='sha256 -n'
+        fi
+        gmake package-reflow-tar SHA256_CMD="$sha256_cmd"
+        output=$(gmake print-reflow-output)
     fi
-    gmake package-reflow-tar SHA256_CMD="$sha256_cmd"
-    output=$(gmake print-reflow-output)
     expected=pcap_live
 else
     while IFS= read -r package; do

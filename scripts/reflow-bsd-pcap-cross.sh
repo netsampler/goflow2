@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Cross-build PR artifacts against the same BSD releases used by native CI.
+# Cross-build main-branch artifacts against the BSD releases used by native CI.
 set -euo pipefail
 
 export GOOS="$REFLOW_GOOS" GOARCH="$REFLOW_GOARCH" CGO_ENABLED=1 GOTOOLCHAIN=local
@@ -88,3 +88,4 @@ binary=$(make --no-print-directory print-reflow-output)
 readelf -l "$binary" | grep -F "Requesting program interpreter: $interpreter"
 readelf -d "$binary" > "$binary.dependencies.txt"
 grep -F 'Shared library: [libpcap.so.' "$binary.dependencies.txt"
+printf '%s\n' "$binary" > dist/bsd-pcap-output

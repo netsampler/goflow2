@@ -7,6 +7,10 @@ on:
   pull_request:
     branches: [ main ]
 
+concurrency:
+  group: collector-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   test:
     name: Test
@@ -174,7 +178,7 @@ jobs:
         make docker
           
     - name: Cache user gems
-      if: matrix.package
+      if: matrix.package && github.event_name != 'pull_request'
       uses: actions/cache@v5
       with:
         path: |
@@ -197,7 +201,7 @@ jobs:
     #       ${{ runner.os }}-apt-
 
     - name: Install fpm
-      if: matrix.package
+      if: matrix.package && github.event_name != 'pull_request'
       # fpm builds both rpm and deb artifacts from the Go binaries.
       run: |
         sudo apt-get update
@@ -206,7 +210,7 @@ jobs:
         echo "$(ruby -e 'print Gem.user_dir')/bin" >> $GITHUB_PATH
         
     - name: Package
-      if: matrix.package
+      if: matrix.package && github.event_name != 'pull_request'
       env:
         GOOS: ${{ matrix.goos }}
         GOARCH: ${{ matrix.goarch }}
