@@ -123,6 +123,42 @@ func TestProcessIPv6HeaderRouting(t *testing.T) {
 	t.Log(string(b))
 }
 
+func TestProcessPacketIPv4Options(t *testing.T) {
+	dataStr := "005300000001" + // src mac
+		"005300000002" + // dst mac
+		"0800" + // etype
+
+		"46000038" + // ipv4, ihl 6
+		"abab" + // id
+		"0000ff06" + // flag, ttl, proto
+		"aaaa" + // csum
+		"0a000001" + // src
+		"0a000002" + // dst
+		"01010101" + // options: NOP NOP NOP NOP
+
+		// tcp
+		"c350" + "01bb" + // ports
+		"00000001" + "00000002" + // seq, ack
+		"5018" + // data offset 5, flags PSH|ACK
+		"ffff" + "0000" + "0000" + // window, csum, urgent
+
+		"deadbeef" // payload
+
+	data, err := hex.DecodeString(dataStr)
+	require.NoError(t, err)
+
+	var flowMessage ProtoProducerMessage
+	require.NoError(t, ParsePacket(&flowMessage, data, nil, nil))
+
+	b, _ := json.Marshal(&flowMessage.FlowMessage)
+	t.Log(string(b))
+
+	assert.Equal(t, []uint32{14, 24, 20}, flowMessage.LayerSize)
+	assert.Equal(t, uint32(50000), flowMessage.SrcPort)
+	assert.Equal(t, uint32(443), flowMessage.DstPort)
+	assert.Equal(t, uint32(0x18), flowMessage.TcpFlags)
+}
+
 func TestProcessPacketTCPLayerSize(t *testing.T) {
 	dataStr := "005300000001" + // src mac
 		"005300000002" + // dst mac
