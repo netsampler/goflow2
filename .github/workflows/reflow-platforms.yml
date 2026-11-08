@@ -169,7 +169,9 @@ jobs:
       matrix:
         os: [freebsd, openbsd, netbsd]
         arch: [amd64, arm64]
-        profile: ${{ fromJSON(github.event_name == 'pull_request' && '["platform"]' || '["platform","pcap"]') }}
+        profile: [platform, pcap]
+        # Upstream Clang crashes compiling the OpenBSD ARM64 cgo binding.
+        exclude: ${{ fromJSON(github.event_name == 'pull_request' && '[{"os":"openbsd","arch":"arm64","profile":"pcap"}]' || '[]') }}
         include:
           - arch: amd64
             vm_arch: x86_64
@@ -187,12 +189,25 @@ jobs:
       - name: Set artifact version
         run: echo "REFLOW_VERSION=$(git describe --abbrev --long HEAD)" >> "$GITHUB_ENV"
       - uses: actions/setup-go@v6
-        if: matrix.profile == 'platform'
+        if: matrix.profile == 'platform' || github.event_name == 'pull_request'
         with:
           go-version-file: go.mod
       - name: Cross-compile platform profile
         if: matrix.profile == 'platform'
         run: sh scripts/reflow-bsd-build.sh cross-build
+      - uses: actions/cache@v5
+        if: matrix.profile == 'pcap' && github.event_name == 'pull_request'
+        with:
+          path: ${{ runner.temp }}/reflow-bsd-sysroot
+          key: reflow-bsd-sysroot-${{ matrix.os }}-${{ matrix.arch }}-${{ hashFiles('scripts/reflow-bsd-pcap-cross.sh') }}
+      - name: Cross-compile pcap profile
+        if: matrix.profile == 'pcap' && github.event_name == 'pull_request'
+        env:
+          REFLOW_BSD_SYSROOT: ${{ runner.temp }}/reflow-bsd-sysroot
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends clang-19 lld-19 xz-utils
+          bash scripts/reflow-bsd-pcap-cross.sh
       - name: Validate profile inside FreeBSD
         if: matrix.os == 'freebsd' && github.event_name != 'pull_request'
         uses: vmactions/freebsd-vm@v1
