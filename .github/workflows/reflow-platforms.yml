@@ -185,7 +185,14 @@ jobs:
           fetch-depth: 0
       - name: Set artifact version
         run: echo "REFLOW_VERSION=$(git describe --abbrev --long HEAD)" >> "$GITHUB_ENV"
-      - name: Build inside FreeBSD
+      - uses: actions/setup-go@v6
+        if: matrix.profile == 'platform'
+        with:
+          go-version-file: go.mod
+      - name: Cross-compile platform binary and tests
+        if: matrix.profile == 'platform'
+        run: sh scripts/reflow-bsd-build.sh cross-build
+      - name: Validate profile inside FreeBSD
         if: matrix.os == 'freebsd'
         uses: vmactions/freebsd-vm@v1
         with:
@@ -195,9 +202,9 @@ jobs:
           cpu: 2
           envs: REFLOW_GOOS REFLOW_GOARCH REFLOW_PROFILE REFLOW_VERSION
           # Go's FreeBSD ARM64 external linker requires GNU ld.bfd for cgo.
-          prepare: pkg install -y curl gmake binutils
+          prepare: ${{ matrix.profile == 'pcap' && 'pkg install -y curl gmake binutils' || '' }}
           run: sh scripts/reflow-bsd-build.sh
-      - name: Build inside OpenBSD
+      - name: Validate profile inside OpenBSD
         if: matrix.os == 'openbsd'
         uses: vmactions/openbsd-vm@v1
         with:
@@ -206,9 +213,9 @@ jobs:
           mem: 4096
           cpu: 2
           envs: REFLOW_GOOS REFLOW_GOARCH REFLOW_PROFILE REFLOW_VERSION
-          prepare: pkg_add curl gmake
+          prepare: ${{ matrix.profile == 'pcap' && 'pkg_add curl gmake' || '' }}
           run: sh scripts/reflow-bsd-build.sh
-      - name: Build inside NetBSD
+      - name: Validate profile inside NetBSD
         if: matrix.os == 'netbsd'
         uses: vmactions/netbsd-vm@v1
         with:
@@ -217,7 +224,7 @@ jobs:
           mem: 4096
           cpu: 2
           envs: REFLOW_GOOS REFLOW_GOARCH REFLOW_PROFILE REFLOW_VERSION
-          prepare: /usr/sbin/pkg_add -u curl gmake
+          prepare: ${{ matrix.profile == 'pcap' && '/usr/sbin/pkg_add -u curl gmake' || '' }}
           run: sh scripts/reflow-bsd-build.sh
       - uses: actions/upload-artifact@v6
         with:
