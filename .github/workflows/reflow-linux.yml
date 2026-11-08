@@ -2,68 +2,59 @@ name: Reflow Linux profiles
 
 on:
   workflow_call:
+    inputs:
+      arch:
+        required: true
+        type: string
+      profile:
+        required: true
+        type: string
 
 jobs:
   linux:
-    name: Linux ${{ matrix.arch }} / ${{ matrix.profile }}
-    runs-on: ${{ matrix.runner }}
+    name: Linux ${{ inputs.arch }} / ${{ inputs.profile }}
+    runs-on: ${{ inputs.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-24.04' }}
     env:
       REFLOW_GO_IMAGE: golang:1.26.9-bookworm
-    strategy:
-      fail-fast: false
-      matrix:
-        arch: [amd64, arm64, armv7]
-        profile: [platform, pcap, dpdk, pfring]
-        include:
-          - arch: amd64
-            runner: ubuntu-24.04
-            platform: linux/amd64
-            goarch: amd64
-          - arch: arm64
-            runner: ubuntu-24.04-arm
-            platform: linux/arm64
-            goarch: arm64
-          - arch: armv7
-            runner: ubuntu-24.04
-            platform: linux/arm/v7
-            goarch: arm
-            goarm: '7'
+      REFLOW_BUILD_PLATFORM: linux/${{ inputs.arch == 'armv7' && 'arm/v7' || inputs.arch }}
     steps:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
       - uses: docker/setup-qemu-action@v4
-        if: matrix.arch == 'armv7'
+        if: inputs.arch == 'armv7'
         with:
           platforms: arm
       - name: Pull target build image
         id: image
         run: |
-          docker pull --platform '${{ matrix.platform }}' "$REFLOW_GO_IMAGE"
+          docker pull --platform "$REFLOW_BUILD_PLATFORM" "$REFLOW_GO_IMAGE"
           image_digest=$(docker image inspect --format '{{index .RepoDigests 0}}' "$REFLOW_GO_IMAGE")
           echo "id=${image_digest##*@sha256:}" >> "$GITHUB_OUTPUT"
       - name: Cache capture SDK
         id: sdk-cache
-        if: matrix.profile == 'dpdk' || matrix.profile == 'pfring'
+        if: inputs.profile == 'dpdk' || inputs.profile == 'pfring'
         uses: actions/cache@v5
         with:
           path: ${{ runner.temp }}/reflow-sdk
-          key: reflow-sdk-v1-${{ matrix.arch }}-${{ matrix.profile }}-${{ steps.image.outputs.id }}-${{ hashFiles('scripts/reflow-build-linux.sh', '.github/workflows/reflow-linux.yml') }}
+          key: reflow-sdk-v1-${{ inputs.arch }}-${{ inputs.profile }}-${{ steps.image.outputs.id }}-${{ hashFiles('scripts/reflow-build-linux.sh', '.github/workflows/reflow-linux.yml') }}
       - name: Build and test target profile
         env:
-          REFLOW_PROFILE: ${{ matrix.profile }}
+          GOARCH: ${{ inputs.arch == 'armv7' && 'arm' || inputs.arch }}
+          GOARM: ${{ inputs.arch == 'armv7' && '7' || '' }}
+          REFLOW_PROFILE: ${{ inputs.profile }}
           REFLOW_SDK_CACHE_HIT: ${{ steps.sdk-cache.outputs.cache-hit }}
         run: |
           mkdir -p "$RUNNER_TEMP/reflow-sdk"
-          docker run --rm --platform '${{ matrix.platform }}' \
+          docker run --rm --platform "$REFLOW_BUILD_PLATFORM" \
             -v "$PWD:/src" -w /src \
             -v "$RUNNER_TEMP/reflow-sdk:/opt/reflow-sdk" \
-            -e GOARCH='${{ matrix.goarch }}' -e GOARM='${{ matrix.goarm }}' \
+            -e GOARCH -e GOARM \
             -e REFLOW_PROFILE="$REFLOW_PROFILE" \
             -e REFLOW_SDK_CACHE_HIT="$REFLOW_SDK_CACHE_HIT" \
             "$REFLOW_GO_IMAGE" bash scripts/reflow-build-linux.sh
       - name: Privileged platform integration with race detection
-        if: matrix.arch == 'amd64' && matrix.profile == 'platform'
+        if: inputs.arch == 'amd64' && inputs.profile == 'platform'
         run: |
           docker run --rm --cap-add NET_RAW --cap-add NET_ADMIN \
             --cap-add BPF --cap-add PERFMON --security-opt seccomp=unconfined \
@@ -85,7 +76,7 @@ jobs:
             '
       - uses: actions/upload-artifact@v6
         with:
-          name: reflow-linux-${{ matrix.arch }}-${{ matrix.profile }}
+          name: reflow-linux-${{ inputs.arch }}-${{ inputs.profile }}
           path: |
             dist/*.tar.gz
             dist/*.tar.gz.sha256
