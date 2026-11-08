@@ -33,7 +33,7 @@ jobs:
       fail-fast: false
       matrix:
         arch: [amd64, arm64, armv7]
-        profile: [platform, pcap, dpdk]
+        profile: ${{ fromJSON(github.event_name == 'pull_request' && '["platform","pcap"]' || '["platform","pcap","dpdk"]') }}
         exclude:
           - arch: amd64
             profile: platform
@@ -41,12 +41,42 @@ jobs:
             profile: platform
           - arch: armv7
             profile: dpdk
-          - arch: arm64
-            profile: ${{ github.event_name == 'pull_request' && 'dpdk' || '' }}
     uses: ./.github/workflows/reflow-linux.yml
     with:
       arch: ${{ matrix.arch }}
       profile: ${{ matrix.profile }}
+  dpdk-changes:
+    name: Check DPDK paths
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    outputs:
+      dpdk: ${{ steps.changes.outputs.dpdk }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 2
+          persist-credentials: false
+      - name: Check paths in the PR merge diff
+        id: changes
+        run: |
+          changed=$(git diff --name-only --no-renames HEAD^1 HEAD -- \
+            .github/workflows/reflow.yml .github/workflows/reflow-linux.yml \
+            Makefile go.mod go.sum \
+            scripts/reflow-build-linux.sh scripts/reflow-verify-profile.py \
+            cmd/reflow/ pkg/reflow/app/ pkg/reflow/buildprofile/ pkg/reflow/config/ \
+            pkg/reflow/source/capture/ pkg/reflow/source/dpdk/ ':(glob)pkg/reflow/source/*.go')
+          if [[ -n "$changed" ]]; then
+            echo "dpdk=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "dpdk=false" >> "$GITHUB_OUTPUT"
+          fi
+  linux-dpdk-pr:
+    needs: dpdk-changes
+    if: needs.dpdk-changes.outputs.dpdk == 'true'
+    uses: ./.github/workflows/reflow-linux.yml
+    with:
+      arch: amd64
+      profile: dpdk
   platform-build:
     uses: ./.github/workflows/reflow-platforms.yml
 
