@@ -4,11 +4,16 @@ set -eu
 
 export GOOS="$REFLOW_GOOS" GOARCH="$REFLOW_GOARCH" GOTOOLCHAIN=local
 export VERSION="$REFLOW_VERSION" REFLOW_PROFILE
+build_only=${REFLOW_BUILD_ONLY:-false}
 test_dir=dist/bsd-tests
 root=$(pwd -P)
 
 if [ "${1:-}" = cross-build ]; then
     export CGO_ENABLED=0
+    go vet ./pkg/reflow/... ./cmd/reflow/...
+    make package-reflow-tar
+    [ "$build_only" != true ] || exit 0
+
     mkdir -p "$test_dir"
     go test -c -o "$test_dir/" ./pkg/reflow/...
     packages=$(go list -f '{{if or .TestGoFiles .XTestGoFiles}}{{.Dir}}{{end}}' ./pkg/reflow/...)
@@ -19,8 +24,6 @@ if [ "${1:-}" = cross-build ]; then
     done > "$test_dir/packages" <<EOF
 $packages
 EOF
-    go vet ./pkg/reflow/... ./cmd/reflow/...
-    make package-reflow-tar
     make --no-print-directory print-reflow-output > "$test_dir/output"
     exit 0
 fi
@@ -33,7 +36,9 @@ if [ "$REFLOW_PROFILE" = pcap ]; then
     tar -xzf /tmp/reflow-go.tar.gz -C /tmp/reflow-toolchain
     export PATH="/tmp/reflow-toolchain/go/bin:/usr/local/bin:/usr/pkg/bin:$PATH"
     export CGO_ENABLED=1
-    go test -tags reflow_pcap ./pkg/reflow/...
+    if [ "$build_only" != true ]; then
+        go test -tags reflow_pcap ./pkg/reflow/...
+    fi
     go vet -tags reflow_pcap ./pkg/reflow/... ./cmd/reflow/...
     sha256_cmd='sha256 -r'
     if [ "$REFLOW_GOOS" = netbsd ]; then

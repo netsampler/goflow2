@@ -179,6 +179,7 @@ jobs:
       REFLOW_GOOS: ${{ matrix.os }}
       REFLOW_GOARCH: ${{ matrix.arch }}
       REFLOW_PROFILE: ${{ matrix.profile }}
+      REFLOW_BUILD_ONLY: ${{ github.event_name == 'pull_request' }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -189,41 +190,41 @@ jobs:
         if: matrix.profile == 'platform'
         with:
           go-version-file: go.mod
-      - name: Cross-compile platform binary and tests
+      - name: Cross-compile platform profile
         if: matrix.profile == 'platform'
         run: sh scripts/reflow-bsd-build.sh cross-build
       - name: Validate profile inside FreeBSD
-        if: matrix.os == 'freebsd'
+        if: matrix.os == 'freebsd' && (matrix.profile == 'pcap' || github.event_name != 'pull_request')
         uses: vmactions/freebsd-vm@v1
         with:
           release: '14.3'
           arch: ${{ matrix.vm_arch }}
           mem: 4096
           cpu: 2
-          envs: REFLOW_GOOS REFLOW_GOARCH REFLOW_PROFILE REFLOW_VERSION
+          envs: REFLOW_GOOS REFLOW_GOARCH REFLOW_PROFILE REFLOW_VERSION REFLOW_BUILD_ONLY
           # Go's FreeBSD ARM64 external linker requires GNU ld.bfd for cgo.
           prepare: ${{ matrix.profile == 'pcap' && 'pkg install -y curl gmake binutils' || '' }}
           run: sh scripts/reflow-bsd-build.sh
       - name: Validate profile inside OpenBSD
-        if: matrix.os == 'openbsd'
+        if: matrix.os == 'openbsd' && (matrix.profile == 'pcap' || github.event_name != 'pull_request')
         uses: vmactions/openbsd-vm@v1
         with:
           release: '7.8'
           arch: ${{ matrix.vm_arch }}
           mem: 4096
           cpu: 2
-          envs: REFLOW_GOOS REFLOW_GOARCH REFLOW_PROFILE REFLOW_VERSION
+          envs: REFLOW_GOOS REFLOW_GOARCH REFLOW_PROFILE REFLOW_VERSION REFLOW_BUILD_ONLY
           prepare: ${{ matrix.profile == 'pcap' && 'pkg_add curl gmake' || '' }}
           run: sh scripts/reflow-bsd-build.sh
       - name: Validate profile inside NetBSD
-        if: matrix.os == 'netbsd'
+        if: matrix.os == 'netbsd' && (matrix.profile == 'pcap' || github.event_name != 'pull_request')
         uses: vmactions/netbsd-vm@v1
         with:
           release: '10.1'
           arch: ${{ matrix.vm_arch }}
           mem: 4096
           cpu: 2
-          envs: REFLOW_GOOS REFLOW_GOARCH REFLOW_PROFILE REFLOW_VERSION
+          envs: REFLOW_GOOS REFLOW_GOARCH REFLOW_PROFILE REFLOW_VERSION REFLOW_BUILD_ONLY
           prepare: ${{ matrix.profile == 'pcap' && '/usr/sbin/pkg_add -u curl gmake' || '' }}
           run: sh scripts/reflow-bsd-build.sh
       - uses: actions/upload-artifact@v6

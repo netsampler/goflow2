@@ -23,7 +23,7 @@ jobs:
         with:
           fetch-depth: 0
       - uses: docker/setup-qemu-action@v4
-        if: inputs.arch == 'armv7'
+        if: inputs.arch == 'armv7' && (inputs.profile == 'dpdk' || github.event_name != 'pull_request')
         with:
           platforms: arm
       - name: Pull target build image
@@ -44,6 +44,7 @@ jobs:
           GOARCH: ${{ inputs.arch == 'armv7' && 'arm' || inputs.arch }}
           GOARM: ${{ inputs.arch == 'armv7' && '7' || '' }}
           REFLOW_PROFILE: ${{ inputs.profile }}
+          REFLOW_BUILD_ONLY: ${{ inputs.arch == 'armv7' && github.event_name == 'pull_request' }}
           REFLOW_SDK_CACHE_HIT: ${{ steps.sdk-cache.outputs.cache-hit }}
         run: |
           mkdir -p "$RUNNER_TEMP/reflow-sdk"
@@ -51,7 +52,7 @@ jobs:
           docker run --rm --platform "$REFLOW_BUILD_PLATFORM" \
             -v "$PWD:/src" -w /src \
             -v "$RUNNER_TEMP/reflow-sdk:/opt/reflow-sdk" \
-            -e GOARCH -e GOARM \
+            -e GOARCH -e GOARM -e REFLOW_BUILD_ONLY \
             -e GIT_CONFIG_COUNT=1 -e GIT_CONFIG_KEY_0=safe.directory -e GIT_CONFIG_VALUE_0=/src \
             -e REFLOW_PROFILE="$REFLOW_PROFILE" \
             -e REFLOW_SDK_CACHE_HIT="$REFLOW_SDK_CACHE_HIT" \

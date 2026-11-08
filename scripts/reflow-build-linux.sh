@@ -4,6 +4,7 @@
 set -euo pipefail
 
 profile=${REFLOW_PROFILE:-platform}
+build_only=${REFLOW_BUILD_ONLY:-false}
 arch=${GOARCH:-$(go env GOARCH)}
 case "$profile" in platform|pcap|dpdk) ;; *) echo "unknown Reflow profile: $profile" >&2; exit 1 ;; esac
 case "$arch" in amd64|arm64) ;; arm) export GOARM=7 ;; *) echo "unsupported Linux architecture: $arch" >&2; exit 1 ;; esac
@@ -64,11 +65,15 @@ esac
 export LD_LIBRARY_PATH="$sdk_prefix/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 tags=()
 if [[ "$profile" != platform ]]; then tags=(-tags "reflow_$profile"); fi
-go test "${tags[@]}" ./pkg/reflow/... ./cmd/reflow/...
+if [[ "$build_only" != true ]]; then
+  go test "${tags[@]}" ./pkg/reflow/... ./cmd/reflow/...
+fi
 go vet "${tags[@]}" ./pkg/reflow/... ./cmd/reflow/...
 make REFLOW_PROFILE="$profile" package-reflow-tar
 binary=$(make --no-print-directory REFLOW_PROFILE="$profile" print-reflow-output)
-python3 scripts/reflow-verify-profile.py "$binary" linux "$arch" "$profile"
+if [[ "$build_only" != true || "$profile" == dpdk ]]; then
+  python3 scripts/reflow-verify-profile.py "$binary" linux "$arch" "$profile"
+fi
 
 # Record the loader dependencies and enforce that profiles do not acquire an
 # unrelated packet-capture library through their SDKs.
