@@ -512,7 +512,8 @@ func Parse8021Q(flowMessage *ProtoProducerMessage, data []byte, pc ParseConfig) 
 	eType := data[2:4]
 
 	if pc.BaseLayer() { // first time calling
-		flowMessage.VlanId = uint32(binary.BigEndian.Uint16(data[0:2]))
+		// TCI: PCP (3 bits), DEI (1 bit), VID (12 bits)
+		flowMessage.VlanId = uint32(binary.BigEndian.Uint16(data[0:2]) & 0x0fff)
 		flowMessage.Etype = uint32(binary.BigEndian.Uint16(eType))
 	}
 
