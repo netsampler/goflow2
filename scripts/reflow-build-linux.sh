@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Run in a Debian Go image. For ARMv7 pcap, use Bookworm's armhf libraries
-# with a native cross compiler. ARMv7 DPDK still builds in the armhf image.
+# with a native cross compiler.
 set -euo pipefail
 
 profile=${REFLOW_PROFILE:-platform}

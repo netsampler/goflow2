@@ -13,18 +13,17 @@ on:
 jobs:
   linux:
     name: Linux ${{ inputs.arch }} / ${{ inputs.profile }}
-    if: github.event_name != 'pull_request' || inputs.arch != 'armv7' || inputs.profile != 'dpdk'
     runs-on: ${{ inputs.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-24.04' }}
     env:
       REFLOW_GO_IMAGE: golang:1.26.9-bookworm
       # ARMv7 platform and pcap compile natively on the amd64 host.
-      REFLOW_BUILD_PLATFORM: linux/${{ inputs.arch == 'armv7' && (inputs.profile == 'dpdk' && 'arm/v7' || 'amd64') || inputs.arch }}
+      REFLOW_BUILD_PLATFORM: linux/${{ inputs.arch == 'armv7' && 'amd64' || inputs.arch }}
     steps:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
       - uses: docker/setup-qemu-action@v4
-        if: inputs.arch == 'armv7' && (inputs.profile == 'dpdk' || github.event_name != 'pull_request')
+        if: inputs.arch == 'armv7' && github.event_name != 'pull_request'
         with:
           platforms: arm
       - name: Pull target build image

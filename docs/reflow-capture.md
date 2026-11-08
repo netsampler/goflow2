@@ -63,7 +63,7 @@ support follows the operating system.
 | --- | --- | --- | --- | --- | --- |
 | Linux | `amd64`, `arm64`, `armv7` | `platform` | `af_packet` mmap capture, `ebpf` SKB/conntrack metadata, passive `xdp`, firewall copies via `nflog`, ASIC samples via `psample` | `reflow-<version>-linux-<arch>-platform.tar.gz` | Applicable kernel capabilities and capture permissions; no capture SDK |
 | Linux | `amd64`, `arm64`, `armv7` | `pcap` | `pcap_live` | `reflow-<version>-linux-<arch>-pcap.tar.gz` | libpcap and capture permissions |
-| Linux | `amd64`, `arm64`, `armv7` | `dpdk` | `dpdk` RX queues | `reflow-<version>-linux-<arch>-dpdk.tar.gz` | DPDK runtime and configured ports/memory; ARMv7 requires NEON |
+| Linux | `amd64`, `arm64` | `dpdk` | `dpdk` RX queues | `reflow-<version>-linux-<arch>-dpdk.tar.gz` | DPDK runtime and configured ports/memory |
 | macOS | `amd64`, `arm64` | `platform` | Native `bpf` and `pktap` metadata capture | `reflow-<version>-darwin-<arch>-platform.tar.gz` | BPF access; root privileges for pktap interface creation; no capture SDK |
 | macOS | `amd64`, `arm64` | `pcap` | `pcap_live` | `reflow-<version>-darwin-<arch>-pcap.tar.gz` | System libpcap and capture permissions |
 | Windows | `amd64`, `arm64` | `platform` | Native `pktmon` streaming | `reflow-<version>-windows-<arch>-platform.zip` | Modern Packet Monitor streaming API and administrator rights; no Npcap dependency |
@@ -111,9 +111,11 @@ The pinned [Linux SDK build script](../scripts/reflow-build-linux.sh) disables
 DPDK's `net/pcap` driver to keep libpcap out of the DPDK profile. DPDK's ARMv7
 build requires NEON.
 
-Linux ARM64 CI builds and Docker packaging use native ARM64 runners. ARMv7
-builds use QEMU. CI caches the DPDK SDK by target architecture, build-image
-identity, and hashes of the SDK build script and workflow.
+Linux ARM64 CI builds and Docker packaging use native ARM64 runners. CI
+cross-compiles Linux ARMv7 platform and pcap builds on amd64 and uses QEMU to
+run the target tests on main and tags. CI caches the DPDK SDK by target
+architecture, build-image identity, and hashes of the SDK build script and
+workflow.
 Cache hits reuse the SDK while still running the Reflow tests, vet, packaging,
 and dependency checks.
 SDK versions or build-option changes invalidate the cache through the script hash.

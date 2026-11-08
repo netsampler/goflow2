@@ -38,6 +38,8 @@ jobs:
             profile: platform
           - arch: arm64
             profile: platform
+          - arch: armv7
+            profile: dpdk
     uses: ./.github/workflows/reflow-linux.yml
     with:
       arch: ${{ matrix.arch }}
