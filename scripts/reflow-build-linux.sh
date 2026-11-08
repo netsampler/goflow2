@@ -71,7 +71,7 @@ fi
 go vet "${tags[@]}" ./pkg/reflow/... ./cmd/reflow/...
 make REFLOW_PROFILE="$profile" package-reflow-tar
 binary=$(make --no-print-directory REFLOW_PROFILE="$profile" print-reflow-output)
-if [[ "$build_only" != true || "$profile" == dpdk ]]; then
+if [[ "$build_only" != true ]]; then
   python3 scripts/reflow-verify-profile.py "$binary" linux "$arch" "$profile"
 fi
 

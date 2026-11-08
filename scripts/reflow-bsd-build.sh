@@ -36,9 +36,7 @@ if [ "$REFLOW_PROFILE" = pcap ]; then
     tar -xzf /tmp/reflow-go.tar.gz -C /tmp/reflow-toolchain
     export PATH="/tmp/reflow-toolchain/go/bin:/usr/local/bin:/usr/pkg/bin:$PATH"
     export CGO_ENABLED=1
-    if [ "$build_only" != true ]; then
-        go test -tags reflow_pcap ./pkg/reflow/...
-    fi
+    go test -tags reflow_pcap ./pkg/reflow/...
     go vet -tags reflow_pcap ./pkg/reflow/... ./cmd/reflow/...
     sha256_cmd='sha256 -r'
     if [ "$REFLOW_GOOS" = netbsd ]; then
