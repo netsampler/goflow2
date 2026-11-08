@@ -41,16 +41,21 @@ jobs:
             profile: platform
           - arch: armv7
             profile: dpdk
+          - arch: arm64
+            profile: ${{ github.event_name == 'pull_request' && 'pcap' || '' }}
+          - arch: armv7
+            profile: ${{ github.event_name == 'pull_request' && 'pcap' || '' }}
     uses: ./.github/workflows/reflow-linux.yml
     with:
       arch: ${{ matrix.arch }}
       profile: ${{ matrix.profile }}
-  dpdk-changes:
-    name: Check DPDK paths
+  profile-changes:
+    name: Check capture profile paths
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-24.04
     outputs:
       dpdk: ${{ steps.changes.outputs.dpdk }}
+      pcap: ${{ steps.changes.outputs.pcap }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -59,26 +64,51 @@ jobs:
       - name: Check paths in the PR merge diff
         id: changes
         run: |
-          changed=$(git diff --name-only --no-renames HEAD^1 HEAD -- \
-            .github/workflows/reflow.yml .github/workflows/reflow-linux.yml \
-            Makefile go.mod go.sum \
-            scripts/reflow-build-linux.sh scripts/reflow-verify-profile.py \
-            cmd/reflow/ pkg/reflow/app/ pkg/reflow/buildprofile/ pkg/reflow/config/ \
-            pkg/reflow/source/capture/ pkg/reflow/source/dpdk/ ':(glob)pkg/reflow/source/*.go')
-          if [[ -n "$changed" ]]; then
-            echo "dpdk=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "dpdk=false" >> "$GITHUB_OUTPUT"
-          fi
+          shared_paths=(
+            .github/workflows/reflow.yml .github/workflows/reflow-linux.yml
+            Makefile go.mod go.sum
+            scripts/reflow-build-linux.sh scripts/reflow-verify-profile.py
+            cmd/reflow/ pkg/reflow/app/ pkg/reflow/buildprofile/ pkg/reflow/config/
+            pkg/reflow/source/capture/ ':(glob)pkg/reflow/source/*.go'
+          )
+          for profile in dpdk pcap; do
+            profile_paths=("pkg/reflow/source/$profile/")
+            if [[ "$profile" == pcap ]]; then
+              profile_paths+=(.github/workflows/reflow-platforms.yml)
+            fi
+            changed=$(git diff --name-only --no-renames HEAD^1 HEAD -- "${shared_paths[@]}" "${profile_paths[@]}")
+            if [[ -n "$changed" ]]; then
+              echo "$profile=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "$profile=false" >> "$GITHUB_OUTPUT"
+            fi
+          done
   linux-dpdk-pr:
-    needs: dpdk-changes
-    if: needs.dpdk-changes.outputs.dpdk == 'true'
+    needs: profile-changes
+    if: needs.profile-changes.outputs.dpdk == 'true'
     uses: ./.github/workflows/reflow-linux.yml
     with:
       arch: amd64
       profile: dpdk
+  linux-pcap-pr:
+    needs: profile-changes
+    if: needs.profile-changes.outputs.pcap == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [arm64, armv7]
+    uses: ./.github/workflows/reflow-linux.yml
+    with:
+      arch: ${{ matrix.arch }}
+      profile: pcap
   platform-build:
     uses: ./.github/workflows/reflow-platforms.yml
+  platform-pcap-pr:
+    needs: profile-changes
+    if: needs.profile-changes.outputs.pcap == 'true'
+    uses: ./.github/workflows/reflow-platforms.yml
+    with:
+      pcap_only: true
 
   docker:
     if: github.event_name != 'pull_request'

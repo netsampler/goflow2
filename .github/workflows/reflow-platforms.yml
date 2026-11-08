@@ -2,6 +2,10 @@ name: Reflow platform profiles
 
 on:
   workflow_call:
+    inputs:
+      pcap_only:
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -12,7 +16,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        profile: [platform, pcap]
+        profile: ${{ fromJSON(inputs.pcap_only && '["pcap"]' || github.event_name != 'pull_request' && '["platform","pcap"]' || '["platform"]') }}
         include:
           - arch: amd64
             runner: macos-15-intel
@@ -69,7 +73,7 @@ jobs:
       fail-fast: false
       matrix:
         arch: [amd64, arm64]
-        profile: [platform, pcap]
+        profile: ${{ fromJSON(inputs.pcap_only && '["pcap"]' || github.event_name != 'pull_request' && '["platform","pcap"]' || '["platform"]') }}
         include:
           - arch: amd64
             cc_target: x86_64
@@ -131,6 +135,7 @@ jobs:
           if-no-files-found: error
 
   windows-platform-tests:
+    if: ${{ !inputs.pcap_only }}
     name: Windows native tests / ${{ matrix.arch }}
     strategy:
       fail-fast: false
@@ -161,6 +166,7 @@ jobs:
           if ($version -notmatch 'profile=platform' -or $version -notmatch 'capture=\[pktmon\]') { throw $version }
 
   bsd:
+    if: ${{ !inputs.pcap_only }}
     name: ${{ matrix.os }} ${{ matrix.arch }} / ${{ matrix.profile }}
     runs-on: ubuntu-24.04
     timeout-minutes: 120
