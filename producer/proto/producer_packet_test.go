@@ -123,6 +123,47 @@ func TestProcessIPv6HeaderRouting(t *testing.T) {
 	t.Log(string(b))
 }
 
+func TestProcessPacketQinQ(t *testing.T) {
+	dataStr := "005300000001" + // src mac
+		"005300000002" + // dst mac
+		"88a8" + // etype 802.1ad
+		"00648100" + // s-tag vlan 100, etype 802.1q
+		"00c80800" + // c-tag vlan 200, etype ipv4
+
+		"45000028" + // ipv4
+		"abab" + // id
+		"0000ff06" + // flag, ttl, proto
+		"aaaa" + // csum
+		"0a000001" + // src
+		"0a000002" + // dst
+
+		// tcp
+		"c350" + "01bb" + // ports
+		"00000001" + "00000002" + // seq, ack
+		"5018" + // data offset 5, flags PSH|ACK
+		"ffff" + "0000" + "0000" // window, csum, urgent
+
+	data, err := hex.DecodeString(dataStr)
+	require.NoError(t, err)
+
+	var flowMessage ProtoProducerMessage
+	require.NoError(t, ParsePacket(&flowMessage, data, nil, nil))
+
+	b, _ := json.Marshal(&flowMessage.FlowMessage)
+	t.Log(string(b))
+
+	layers := []uint32{0, 6, 6, 1, 3}
+	require.Equal(t, len(layers), len(flowMessage.LayerStack))
+	for i, layer := range layers {
+		assert.Equal(t, layer, uint32(flowMessage.LayerStack[i]))
+	}
+	assert.Equal(t, []uint32{14, 4, 4, 20, 20}, flowMessage.LayerSize)
+	assert.Equal(t, uint32(200), flowMessage.VlanId)
+	assert.Equal(t, uint32(0x0800), flowMessage.Etype)
+	assert.Equal(t, uint32(50000), flowMessage.SrcPort)
+	assert.Equal(t, uint32(443), flowMessage.DstPort)
+}
+
 func TestProcessPacketTCPLayerSize(t *testing.T) {
 	dataStr := "005300000001" + // src mac
 		"005300000002" + // dst mac
