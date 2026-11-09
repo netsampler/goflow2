@@ -179,7 +179,7 @@ func (s *Store[K, V]) Add(key K, delta V, opts ...EntryOption) error {
 	eopts := applyEntryOptions(opts) // capture per-call TTL options
 
 	s.mu.Lock()
-	events := make([]hookEvent[K, V], 0, 1)
+	var events []hookEvent[K, V] // allocated lazily by record* only when a hook is set
 	defer func() {
 		s.mu.Unlock()
 		s.fireHooks(events)
@@ -233,7 +233,7 @@ func (s *Store[K, V]) Set(key K, val V, opts ...EntryOption) (bool, error) {
 	eopts := applyEntryOptions(opts) // capture per-call TTL options
 
 	s.mu.Lock()
-	events := make([]hookEvent[K, V], 0, 1)
+	var events []hookEvent[K, V] // allocated lazily by record* only when a hook is set
 	defer func() {
 		s.mu.Unlock()
 		s.fireHooks(events)
@@ -299,11 +299,32 @@ func (s *Store[K, V]) GetQuiet(key K, dest *V) bool {
 	return s.get(key, dest, false)
 }
 
+// GetValue returns a plain copy of the value if present and not expired.
+// Unlike Get it bypasses the Copyable/Settable interfaces, so it is meant for
+// value types that are safe to copy by assignment (scalars, pointers,
+// interfaces). It fires hooks and refreshes TTL like Get.
+func (s *Store[K, V]) GetValue(key K) (value V, ok bool) {
+	now := s.now()
+
+	s.mu.Lock()
+	var events []hookEvent[K, V] // allocated lazily by record* only when a hook is set
+	defer func() {
+		s.mu.Unlock()
+		s.fireHooks(events)
+	}()
+
+	ent, ok := s.lookupLocked(key, now, true, &events)
+	if !ok {
+		return value, false
+	}
+	return ent.value, true
+}
+
 func (s *Store[K, V]) get(key K, dest *V, withHooks bool) bool {
 	now := s.now()
 
 	s.mu.Lock()
-	events := make([]hookEvent[K, V], 0, 1)
+	var events []hookEvent[K, V] // allocated lazily by record* only when a hook is set
 	defer func() {
 		s.mu.Unlock()
 		if withHooks {
@@ -311,33 +332,43 @@ func (s *Store[K, V]) get(key K, dest *V, withHooks bool) bool {
 		}
 	}()
 
-	ent, ok := s.entries[key]
+	ent, ok := s.lookupLocked(key, now, withHooks, &events)
 	if !ok {
 		return false
+	}
+	return s.copyValueLocked(dest, ent)
+}
+
+// lookupLocked finds a live entry, handling expiry, TTL refresh on read and
+// the get hook. It must be called with s.mu held.
+func (s *Store[K, V]) lookupLocked(key K, now time.Time, withHooks bool, events *[]hookEvent[K, V]) (*entry[K, V], bool) {
+	ent, ok := s.entries[key]
+	if !ok {
+		return nil, false
 	}
 	if s.expiredLocked(ent, now) {
 		// Allow expire hook to refresh; otherwise drop the entry.
 		if s.maybeExtendLocked(ent, now) {
-			return s.copyValueLocked(dest, ent)
+			return ent, true
 		}
-		s.recordDelete(&events, ent, DeleteReasonExpired)
+		s.recordDelete(events, ent, DeleteReasonExpired)
 		s.deleteLocked(ent)
 		s.notifyChangeLocked()
-		return false
+		return nil, false
 	}
 	if withHooks && s.refreshTTLOnRead && s.defaultTTL > 0 {
 		ent.expiresAt = now.Add(s.defaultTTL)
 	}
 	if withHooks {
-		s.recordGet(&events, ent)
+		s.recordGet(events, ent)
 	}
-	return s.copyValueLocked(dest, ent)
+	return ent, true
 }
 
 // Delete removes a key from the store.
 func (s *Store[K, V]) Delete(key K) bool {
 	s.mu.Lock()
-	events := make([]hookEvent[K, V], 0, 1)
+	var events []hookEvent[K, V] // allocated lazily by record* only when a hook is set
 	defer func() {
 		s.mu.Unlock()
 		s.fireHooks(events)
@@ -366,7 +397,7 @@ func (s *Store[K, V]) Range(fn func(key K, val V) bool) {
 	now := s.now()
 
 	s.mu.Lock()
-	events := make([]hookEvent[K, V], 0, 1)
+	var events []hookEvent[K, V]       // allocated lazily by record* only when a hook is set
 	s.expireBeforeLocked(now, &events) // prune stale entries before iterating
 	items := make([]struct {
 		key K
@@ -395,7 +426,7 @@ func (s *Store[K, V]) Range(fn func(key K, val V) bool) {
 func (s *Store[K, V]) ExpireStale() int {
 	now := s.now()
 	s.mu.Lock()
-	events := make([]hookEvent[K, V], 0, 1)
+	var events []hookEvent[K, V] // allocated lazily by record* only when a hook is set
 	removed := s.expireBeforeLocked(now, &events)
 	s.mu.Unlock()
 	s.fireHooks(events)

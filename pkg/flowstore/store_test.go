@@ -96,6 +96,26 @@ func TestStoreAddSetGet(t *testing.T) {
 	}
 }
 
+func TestStoreGetValue(t *testing.T) {
+	var gets []string
+	store := NewStore[string, int64](
+		WithHooks[string, int64](Hooks[string, int64]{
+			OnGet: func(key string, _ int64) { gets = append(gets, key) },
+		}),
+	)
+
+	if _, err := store.Set("k1", 42); err != nil {
+		t.Fatalf("set: %v", err)
+	}
+
+	if v, ok := store.GetValue("k1"); !ok || v != 42 {
+		t.Fatalf("expected 42, got %d (ok=%v)", v, ok)
+	}
+	if len(gets) != 1 || gets[0] != "k1" {
+		t.Fatalf("expected one OnGet event for k1, got %v", gets)
+	}
+}
+
 func TestStoreFIFOEviction(t *testing.T) {
 	store := NewStore[int, testValue](WithMaxSize[int, testValue](2))
 
