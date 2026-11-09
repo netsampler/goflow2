@@ -85,17 +85,16 @@ func (d *FileDriver) Send(key, data []byte) error {
 	d.lock.RLock()
 	w := d.w
 	d.lock.RUnlock()
+	if d.lineSeparator != "" {
+		buf := make([]byte, 0, len(data)+len(d.lineSeparator))
+		buf = append(buf, data...)
+		buf = append(buf, d.lineSeparator...)
+		data = buf
+	}
 	if len(data) > 0 {
 		if _, err := w.Write(data); err != nil {
 			return fmt.Errorf("write message: %w", err)
 		}
-	}
-	if d.lineSeparator == "" {
-		return nil
-	}
-	_, err := w.Write([]byte(d.lineSeparator))
-	if err != nil {
-		return fmt.Errorf("write separator: %w", err)
 	}
 	return nil
 }
