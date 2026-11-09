@@ -23,6 +23,8 @@ func TestProcessEthernet(t *testing.T) {
 	t.Log(string(b))
 
 	assert.Equal(t, uint32(0x86dd), flowMessage.Etype)
+	assert.Equal(t, uint64(0x005300000001), flowMessage.DstMac)
+	assert.Equal(t, uint64(0x005300000002), flowMessage.SrcMac)
 }
 
 func TestProcessDot1Q(t *testing.T) {

@@ -46,6 +46,15 @@ func (m *ProtoProducerMessage) MapCustom(key string, v []byte, cfg MappableField
 	return MapCustom(m, v, cfg)
 }
 
+// reserveLayers gives an empty layer stack room for a typical packet, so that
+// parsing does not grow LayerStack and LayerSize one layer at a time.
+func (m *ProtoProducerMessage) reserveLayers() {
+	if m.LayerStack == nil && m.LayerSize == nil {
+		m.LayerStack = make([]flowmessage.FlowMessage_LayerStack, 0, 8)
+		m.LayerSize = make([]uint32, 0, 8)
+	}
+}
+
 // AddLayer appends a layer name to the layer stack.
 func (m *ProtoProducerMessage) AddLayer(name string) (ok bool) {
 	value, ok := flowmessage.FlowMessage_LayerStack_value[name]

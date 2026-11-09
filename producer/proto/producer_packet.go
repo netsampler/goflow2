@@ -408,6 +408,8 @@ func ParsePacket(flowMessage ProtoProducerMessageIf, data []byte, config PacketL
 	var nextParser ParserInfo
 	var parseConfig ParseConfig
 
+	flowMessage.GetFlowMessage().reserveLayers()
+
 	if pe != nil {
 		parseConfig.Environment = pe
 	} else {
@@ -478,8 +480,8 @@ func ParseEthernet(flowMessage *ProtoProducerMessage, data []byte, pc ParseConfi
 
 	flowMessage.AddLayer("Ethernet")
 
-	dstMac := binary.BigEndian.Uint64(append([]byte{0, 0}, data[0:6]...))
-	srcMac := binary.BigEndian.Uint64(append([]byte{0, 0}, data[6:12]...))
+	dstMac := uint64(binary.BigEndian.Uint16(data[0:2]))<<32 | uint64(binary.BigEndian.Uint32(data[2:6]))
+	srcMac := uint64(binary.BigEndian.Uint16(data[6:8]))<<32 | uint64(binary.BigEndian.Uint32(data[8:12]))
 
 	eType := data[12:14]
 
@@ -525,6 +527,13 @@ func Parse8021Q(flowMessage *ProtoProducerMessage, data []byte, pc ParseConfig) 
 	return res, wrapParseErr("Parse8021Q", err)
 }
 
+// EtherTypes guessed after the bottom of an MPLS label stack. They are only
+// read, so they can be shared instead of allocated for every packet.
+var (
+	mplsEtypeIPv4 = []byte{0x08, 0x00}
+	mplsEtypeIPv6 = []byte{0x86, 0xdd}
+)
+
 // ParseMPLS parses an MPLS label stack.
 func ParseMPLS(flowMessage *ProtoProducerMessage, data []byte, pc ParseConfig) (res ParseResult, err error) {
 	if len(data) < 4 {
@@ -543,7 +552,7 @@ func ParseMPLS(flowMessage *ProtoProducerMessage, data []byte, pc ParseConfig) (
 			// stop iterating mpls, not enough payload left
 			break
 		}
-		label := binary.BigEndian.Uint32(append([]byte{0}, data[offset:offset+3]...)) >> 4
+		label := binary.BigEndian.Uint32(data[offset:offset+4]) >> 12 // 20-bit label
 		//exp := data[offset+2] > 1
 		bottom := data[offset+2] & 1
 		ttl := data[offset+3]
@@ -555,9 +564,9 @@ func ParseMPLS(flowMessage *ProtoProducerMessage, data []byte, pc ParseConfig) (
 				// peak at next byte
 				switch data[offset] >> 4 {
 				case 4:
-					eType = []byte{0x8, 0x0}
+					eType = mplsEtypeIPv4
 				case 6:
-					eType = []byte{0x86, 0xdd}
+					eType = mplsEtypeIPv6
 				}
 			}
 
