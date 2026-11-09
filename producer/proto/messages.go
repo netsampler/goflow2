@@ -1,7 +1,6 @@
 package protoproducer
 
 import (
-	"bytes"
 	"fmt"
 	"hash"
 	"hash/fnv"
@@ -9,7 +8,6 @@ import (
 	"strings"
 	"sync"
 
-	"google.golang.org/protobuf/encoding/protodelim"
 	"google.golang.org/protobuf/encoding/protowire"
 	"google.golang.org/protobuf/proto"
 
@@ -54,21 +52,25 @@ func (m *ProtoProducerMessage) AddLayer(name string) (ok bool) {
 }
 
 // MarshalBinary encodes the message, optionally skipping the delimiter.
+// The output is the same as proto.Marshal, or protodelim.MarshalTo with the
+// delimiter, but the message size is computed once and the result is written
+// into a single allocation.
 func (m *ProtoProducerMessage) MarshalBinary() ([]byte, error) {
-	buf := bytes.NewBuffer([]byte{})
+	size := proto.Size(m)
 	if m.skipDelimiter {
-		b, err := proto.Marshal(m)
+		b, err := proto.MarshalOptions{UseCachedSize: true}.MarshalAppend(make([]byte, 0, size), m)
 		if err != nil {
 			return nil, fmt.Errorf("marshal protobuf: %w", err)
 		}
 		return b, nil
-	} else {
-		_, err := protodelim.MarshalTo(buf, m)
-		if err != nil {
-			return nil, fmt.Errorf("marshal protobuf delim: %w", err)
-		}
-		return buf.Bytes(), nil
 	}
+	b := make([]byte, 0, protowire.SizeVarint(uint64(size))+size)
+	b = protowire.AppendVarint(b, uint64(size))
+	b, err := proto.MarshalOptions{UseCachedSize: true}.MarshalAppend(b, m)
+	if err != nil {
+		return nil, fmt.Errorf("marshal protobuf delim: %w", err)
+	}
+	return b, nil
 }
 
 // MarshalText renders the message using the reflective text formatter.
