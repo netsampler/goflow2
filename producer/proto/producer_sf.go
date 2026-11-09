@@ -62,11 +62,17 @@ func SearchSFlowSampleConfig(flowMessage *ProtoProducerMessage, flowSample inter
 	}
 
 	var ipNh, ipSrc, ipDst []byte
+	// the frame length of a sampled header is kept over the IP packet length
+	// of a sampled IPv4/IPv6 record, whatever the order of the records
+	var hasFrameLength bool
 	flowMessage.Packets = 1
 	for _, record := range records {
 		switch recordData := record.Data.(type) {
 		case sflow.SampledHeader:
-			flowMessage.Bytes = uint64(recordData.FrameLength)
+			if recordData.FrameLength > 0 {
+				flowMessage.Bytes = uint64(recordData.FrameLength)
+				hasFrameLength = true
+			}
 			if err := ParseSampledHeaderConfig(flowMessage, &recordData, config); err != nil { // todo: make function configurable
 				return fmt.Errorf("sflow sampled header: %w", err)
 			}
@@ -75,7 +81,9 @@ func SearchSFlowSampleConfig(flowMessage *ProtoProducerMessage, flowSample inter
 			ipDst = recordData.DstIP
 			flowMessage.SrcAddr = ipSrc
 			flowMessage.DstAddr = ipDst
-			flowMessage.Bytes = uint64(recordData.Length)
+			if !hasFrameLength {
+				flowMessage.Bytes = uint64(recordData.Length)
+			}
 			flowMessage.Proto = recordData.Protocol
 			flowMessage.SrcPort = recordData.SrcPort
 			flowMessage.DstPort = recordData.DstPort
@@ -86,7 +94,9 @@ func SearchSFlowSampleConfig(flowMessage *ProtoProducerMessage, flowSample inter
 			ipDst = recordData.DstIP
 			flowMessage.SrcAddr = ipSrc
 			flowMessage.DstAddr = ipDst
-			flowMessage.Bytes = uint64(recordData.Length)
+			if !hasFrameLength {
+				flowMessage.Bytes = uint64(recordData.Length)
+			}
 			flowMessage.Proto = recordData.Protocol
 			flowMessage.SrcPort = recordData.SrcPort
 			flowMessage.DstPort = recordData.DstPort

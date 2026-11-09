@@ -150,6 +150,33 @@ func TestProcessMessageSFlow(t *testing.T) {
 	}
 }
 
+func TestProcessMessageSFlowBytesUseFrameLength(t *testing.T) {
+	header := sflow.SampledHeader{FrameLength: 200, Protocol: 1}
+	ipv4 := sflow.SampledIPv4{
+		SampledIPBase: sflow.SampledIPBase{Length: 182, Protocol: 17},
+	}
+	for name, records := range map[string][]sflow.FlowRecord{
+		"header then ipv4": {{Data: header}, {Data: ipv4}},
+		"ipv4 then header": {{Data: ipv4}, {Data: header}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			pkt := sflow.Packet{
+				Version: 5,
+				Samples: []interface{}{
+					sflow.FlowSample{SamplingRate: 1, Records: records},
+				},
+			}
+			msgs, err := ProcessMessageSFlowConfig(&pkt, nil)
+			if assert.Nil(t, err) && assert.Len(t, msgs, 1) {
+				msg, ok := msgs[0].(*ProtoProducerMessage)
+				if assert.True(t, ok) {
+					assert.Equal(t, uint64(200), msg.Bytes)
+				}
+			}
+		})
+	}
+}
+
 func TestExpandedSFlowDecode(t *testing.T) {
 	flowMessages, err := ProcessMessageSFlowConfig(getSflowPacket(), nil)
 	flowMessageIf := flowMessages[0]
