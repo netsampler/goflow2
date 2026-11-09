@@ -1836,7 +1836,7 @@ func TestIPFIXEncoderEmitsTemplateAndDataRecord(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected second flow set to be DataFlowSet, got %T", decoded.FlowSets[1])
 	}
-	if got := dataSet.Records[0].Values[0].Value.([]byte); !bytes.Equal(got, []byte{192, 0, 2, 10}) {
+	if got := dataSet.Records[0].Values[0].Value; !bytes.Equal(got, []byte{192, 0, 2, 10}) {
 		t.Fatalf("expected src_addr bytes 192.0.2.10, got %v", got)
 	}
 }
@@ -2155,7 +2155,7 @@ func TestIPFIXEncoderPayloadBatchFlowSetLengthsAreConsistent(t *testing.T) {
 		t.Fatalf("expected two records in one data set, got %d", len(firstSet.Records))
 	}
 	values := firstSet.Records[0].Values
-	if got := values[len(values)-1].Value.([]byte); !bytes.Equal(got, firstHeader) {
+	if got := values[len(values)-1].Value; !bytes.Equal(got, firstHeader) {
 		t.Fatalf("expected decoded broadcast header_data length %d, got %d", len(firstHeader), len(got))
 	}
 }
@@ -2198,10 +2198,10 @@ func TestIPFIXEncoderFallbackUsesConfiguredSelectWidth(t *testing.T) {
 	if len(values) != 9 {
 		t.Fatalf("expected configured 9-value dual-stack data record, got %d", len(values))
 	}
-	if got := values[7].Value.([]byte); !bytes.Equal(got, make([]byte, 8)) {
+	if got := values[7].Value; !bytes.Equal(got, make([]byte, 8)) {
 		t.Fatalf("expected missing bytes field to default to zero, got %v", got)
 	}
-	if got := values[8].Value.([]byte); !bytes.Equal(got, make([]byte, 8)) {
+	if got := values[8].Value; !bytes.Equal(got, make([]byte, 8)) {
 		t.Fatalf("expected missing packets field to default to zero, got %v", got)
 	}
 }
@@ -2244,7 +2244,7 @@ func TestIPFIXEncoderFallbackUsesConfiguredFieldMatch(t *testing.T) {
 	if len(values) != 1 {
 		t.Fatalf("expected one matched value, got %#v", values)
 	}
-	if got := values[0].Value.([]byte); !bytes.Equal(got, encodeU64(99)) {
+	if got := values[0].Value; !bytes.Equal(got, encodeU64(99)) {
 		t.Fatalf("expected source_id value remapped from tid=99, got %v", got)
 	}
 }
@@ -2313,7 +2313,7 @@ func TestIPFIXEncoderSchemaUsesConfiguredFieldMatch(t *testing.T) {
 	if len(values) != 1 {
 		t.Fatalf("expected one matched value, got %#v", values)
 	}
-	if got := values[0].Value.([]byte); !bytes.Equal(got, encodeU64(99)) {
+	if got := values[0].Value; !bytes.Equal(got, encodeU64(99)) {
 		t.Fatalf("expected source_id value remapped from tid=99, got %v", got)
 	}
 }
@@ -2563,7 +2563,7 @@ func TestTemplatedEncoderContinuesBatchAfterInvalidEvent(t *testing.T) {
 					for _, record := range data.Records {
 						for _, field := range record.Values {
 							if field.Type == 7 {
-								ports = append(ports, binary.BigEndian.Uint16(field.Value.([]byte)))
+								ports = append(ports, binary.BigEndian.Uint16(field.Value))
 							}
 						}
 					}
@@ -2663,7 +2663,7 @@ func TestIPFIXDataRecordUsesSourceIDAsObservationPointID(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected data flow set, got %T", decoded.FlowSets[1])
 	}
-	if got := dataSet.Records[0].Values[0].Value.([]byte); !bytes.Equal(got, encodeU64(0)) {
+	if got := dataSet.Records[0].Values[0].Value; !bytes.Equal(got, encodeU64(0)) {
 		t.Fatalf("expected observation point value 0, got %v", got)
 	}
 }
@@ -2729,11 +2729,11 @@ func TestIPFIXSourceOptionsUseObservationPointScope(t *testing.T) {
 	if scope.Type != netflow.IPFIX_FIELD_observationPointId {
 		t.Fatalf("expected observationPointId scope, got %d", scope.Type)
 	}
-	if got := scope.Value.([]byte); !bytes.Equal(got, encodeU64(42)) {
+	if got := scope.Value; !bytes.Equal(got, encodeU64(42)) {
 		t.Fatalf("expected options observation point scope 42, got %v", got)
 	}
 	option := optionsData.Records[0].OptionsValues[0]
-	if got := option.Value.([]byte); !bytes.Equal(got, encodeU32(250)) {
+	if got := option.Value; !bytes.Equal(got, encodeU32(250)) {
 		t.Fatalf("expected source metadata sampling rate 250, got %v", got)
 	}
 
@@ -2828,10 +2828,10 @@ func TestIPFIXAggregationSchemaOptionsDataUsesKeysAsScopes(t *testing.T) {
 		t.Fatalf("expected options data flow set, got %T", dataDecoded.FlowSets[0])
 	}
 	values := optionsData.Records[0]
-	if !bytes.Equal(values.ScopesValues[0].Value.([]byte), encodeU32(777)) || !bytes.Equal(values.ScopesValues[1].Value.([]byte), encodeU32(2)) {
+	if !bytes.Equal(values.ScopesValues[0].Value, encodeU32(777)) || !bytes.Equal(values.ScopesValues[1].Value, encodeU32(2)) {
 		t.Fatalf("unexpected options scope values: %#v", values.ScopesValues)
 	}
-	if !bytes.Equal(values.OptionsValues[0].Value.([]byte), []byte("eth0")) {
+	if !bytes.Equal(values.OptionsValues[0].Value, []byte("eth0")) {
 		t.Fatalf("expected interface name option eth0, got %#v", values.OptionsValues[0].Value)
 	}
 }
@@ -2904,14 +2904,14 @@ func TestIPFIXInterfaceOptionsExampleRoundTrip(t *testing.T) {
 				}
 			case netflow.OptionsDataFlowSet:
 				for _, record := range set.Records {
-					if domain := binary.BigEndian.Uint32(record.ScopesValues[0].Value.([]byte)); domain != 777 {
+					if domain := binary.BigEndian.Uint32(record.ScopesValues[0].Value); domain != 777 {
 						t.Fatalf("observation domain = %d, want 777", domain)
 					}
-					index := binary.BigEndian.Uint32(record.ScopesValues[1].Value.([]byte))
+					index := binary.BigEndian.Uint32(record.ScopesValues[1].Value)
 					if _, exists := got[index]; exists {
 						t.Fatalf("duplicate interface %d", index)
 					}
-					got[index] = string(record.OptionsValues[0].Value.([]byte))
+					got[index] = string(record.OptionsValues[0].Value)
 				}
 			}
 		}
@@ -2975,7 +2975,7 @@ func TestIPFIXSourceOptionsRefreshMergesObservationPointRecords(t *testing.T) {
 		t.Fatalf("expected two merged options data records, got %d", len(optionsData.Records))
 	}
 	for i, wantSourceID := range []uint64{42, 43} {
-		if got := optionsData.Records[i].ScopesValues[0].Value.([]byte); !bytes.Equal(got, encodeU64(wantSourceID)) {
+		if got := optionsData.Records[i].ScopesValues[0].Value; !bytes.Equal(got, encodeU64(wantSourceID)) {
 			t.Fatalf("expected options record %d observation point %d, got %v", i, wantSourceID, got)
 		}
 	}
@@ -3040,7 +3040,7 @@ func TestIPFIXSourceInitBatchSendsOneTemplateAndMultipleDataRecords(t *testing.T
 		t.Fatalf("expected two options data records, got %d", len(optionsData.Records))
 	}
 	for i, wantSourceID := range []uint64{0, 1} {
-		if got := optionsData.Records[i].ScopesValues[0].Value.([]byte); !bytes.Equal(got, encodeU64(wantSourceID)) {
+		if got := optionsData.Records[i].ScopesValues[0].Value; !bytes.Equal(got, encodeU64(wantSourceID)) {
 			t.Fatalf("expected options data record %d observation point %d, got %v", i, wantSourceID, got)
 		}
 	}
@@ -3426,8 +3426,8 @@ func TestNFv9EncoderBatchedSwitchedTimesUseSharedPacketBase(t *testing.T) {
 		{start: 1_699_999_999_900, end: 1_700_000_000_200},
 	} {
 		values := dataSet.Records[i].Values
-		startRaw := values[len(values)-2].Value.([]byte)
-		endRaw := values[len(values)-1].Value.([]byte)
+		startRaw := values[len(values)-2].Value
+		endRaw := values[len(values)-1].Value
 		if got := decodeV9Time(binary.BigEndian.Uint32(startRaw)); got != want.start {
 			t.Fatalf("record %d start time got %d, want %d", i, got, want.start)
 		}
@@ -3475,14 +3475,8 @@ func TestNFv9EncoderUsesSwitchedTimeFields(t *testing.T) {
 	values := dataSet.Records[0].Values
 	startValue := values[len(values)-2]
 	endValue := values[len(values)-1]
-	startRaw, ok := startValue.Value.([]byte)
-	if !ok {
-		t.Fatalf("expected FIRST_SWITCHED value bytes, got %T", startValue.Value)
-	}
-	endRaw, ok := endValue.Value.([]byte)
-	if !ok {
-		t.Fatalf("expected LAST_SWITCHED value bytes, got %T", endValue.Value)
-	}
+	startRaw := startValue.Value
+	endRaw := endValue.Value
 	if got := binary.BigEndian.Uint32(startRaw); got != 0 {
 		t.Fatalf("expected FIRST_SWITCHED value 0, got %d", got)
 	}
@@ -3611,10 +3605,7 @@ func TestTemplatedEncoderEncodesMacAddressFields(t *testing.T) {
 	if template.Fields[0].Type != netflow.IPFIX_FIELD_sourceMacAddress || template.Fields[0].Length != 6 {
 		t.Fatalf("expected sourceMacAddress/6 template field, got %#v", template.Fields[0])
 	}
-	got, ok := record.Values[0].Value.([]byte)
-	if !ok {
-		t.Fatalf("expected encoded MAC bytes, got %T", record.Values[0].Value)
-	}
+	got := record.Values[0].Value
 	want := []byte{0x66, 0x77, 0x88, 0x99, 0xaa, 0xbb}
 	if !bytes.Equal(got, want) {
 		t.Fatalf("expected MAC %x, got %x", want, got)
@@ -3929,10 +3920,10 @@ func TestNFv9AggregationSchemaOptionsDataUsesScopeIDs(t *testing.T) {
 		t.Fatalf("expected options data flow set, got %T", dataDecoded.FlowSets[0])
 	}
 	values := optionsData.Records[0]
-	if !bytes.Equal(values.ScopesValues[0].Value.([]byte), encodeU32(777)) || !bytes.Equal(values.ScopesValues[1].Value.([]byte), encodeU32(2)) {
+	if !bytes.Equal(values.ScopesValues[0].Value, encodeU32(777)) || !bytes.Equal(values.ScopesValues[1].Value, encodeU32(2)) {
 		t.Fatalf("unexpected options scope values: %#v", values.ScopesValues)
 	}
-	if !bytes.Equal(values.OptionsValues[0].Value.([]byte), []byte("eth0")) {
+	if !bytes.Equal(values.OptionsValues[0].Value, []byte("eth0")) {
 		t.Fatalf("expected interface name option eth0, got %#v", values.OptionsValues[0].Value)
 	}
 }
@@ -4097,10 +4088,10 @@ func TestIPFIXSchemaDrivenVariableLengthDataIsLengthPrefixed(t *testing.T) {
 	if len(values) != 2 {
 		t.Fatalf("expected two values, got %d", len(values))
 	}
-	if got := values[0].Value.([]byte); !bytes.Equal(got, headerData) {
+	if got := values[0].Value; !bytes.Equal(got, headerData) {
 		t.Fatalf("expected decoded header_data length %d, got %d", len(headerData), len(got))
 	}
-	if got := values[1].Value.([]byte); !bytes.Equal(got, []byte{0, 0, 0, 0, 0, 0, 0x01, 0x2c}) {
+	if got := values[1].Value; !bytes.Equal(got, []byte{0, 0, 0, 0, 0, 0, 0x01, 0x2c}) {
 		t.Fatalf("expected decoded bytes value 300, got %v", got)
 	}
 }
@@ -4265,10 +4256,10 @@ func TestIPFIXSchemaFieldFamiliesDriveWireDefinitions(t *testing.T) {
 	if err != nil {
 		t.Fatalf("buildTemplatedValuesFromSchemaFields returned error: %v", err)
 	}
-	if got := record.Values[0].Value.([]byte); !bytes.Equal(got, netip.MustParseAddr("::ffff:192.0.2.10").AsSlice()) {
+	if got := record.Values[0].Value; !bytes.Equal(got, netip.MustParseAddr("::ffff:192.0.2.10").AsSlice()) {
 		t.Fatalf("expected src_addr to be IPv4-mapped IPv6, got %x", got)
 	}
-	if got := record.Values[1].Value.([]byte); !bytes.Equal(got, netip.MustParseAddr("::ffff:198.51.100.20").AsSlice()) {
+	if got := record.Values[1].Value; !bytes.Equal(got, netip.MustParseAddr("::ffff:198.51.100.20").AsSlice()) {
 		t.Fatalf("expected nat_src_addr to be IPv4-mapped IPv6, got %x", got)
 	}
 }
@@ -4357,7 +4348,7 @@ func TestIPFIXDefaultMPLSStackSectionUsesThreeByteField(t *testing.T) {
 	if template.Fields[0].Type != 70 || template.Fields[0].Length != 3 {
 		t.Fatalf("expected template field IE 70 length 3, got %#v", template.Fields[0])
 	}
-	if got, ok := record.Values[0].Value.([]byte); !ok || !bytes.Equal(got, []byte{0x00, 0x01, 0x31}) {
+	if got := record.Values[0].Value; !bytes.Equal(got, []byte{0x00, 0x01, 0x31}) {
 		t.Fatalf("expected three MPLS stack-section bytes, got %#v", got)
 	}
 }
@@ -4437,10 +4428,10 @@ func TestIPFIXEncoderUsesDualStackInformationElementsForUnmodifiedAddresses(t *t
 	}
 	dataSet := decoded.FlowSets[1].(netflow.DataFlowSet)
 	values := dataSet.Records[0].Values
-	if got := values[0].Value.([]byte); !bytes.Equal(got, make([]byte, 4)) {
+	if got := values[0].Value; !bytes.Equal(got, make([]byte, 4)) {
 		t.Fatalf("expected IPv4 source slot to be zero-filled, got %x", got)
 	}
-	if got := values[1].Value.([]byte); !bytes.Equal(got, netip.MustParseAddr("2001:db8::10").AsSlice()) {
+	if got := values[1].Value; !bytes.Equal(got, netip.MustParseAddr("2001:db8::10").AsSlice()) {
 		t.Fatalf("expected IPv6 source slot to contain address, got %x", got)
 	}
 }
@@ -4666,7 +4657,7 @@ func assertFlowDirectionTemplateAndValue(t *testing.T, flowSets []interface{}, f
 	if len(dataSet.Records) < 1 || len(dataSet.Records[0].Values) != 1 {
 		t.Fatalf("expected first flow direction value, got %#v", dataSet.Records)
 	}
-	if got := dataSet.Records[0].Values[0].Value.([]byte); !bytes.Equal(got, []byte{1}) {
+	if got := dataSet.Records[0].Values[0].Value; !bytes.Equal(got, []byte{1}) {
 		t.Fatalf("expected flow direction value 1, got %v", got)
 	}
 }

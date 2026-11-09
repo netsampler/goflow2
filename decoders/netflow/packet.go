@@ -104,9 +104,8 @@ type DataField struct {
 	Length      uint16 `json:"length,omitempty"`
 	Pen         uint32 `json:"pen"`
 
-	// The value (in bytes) of the field.
-	Value interface{} `json:"value"`
-	//Value []byte
+	// The value (in bytes) of the field, a sub-slice of the decoded payload.
+	Value []byte `json:"value"`
 }
 
 // String renders a human-readable representation of a raw flow set.
