@@ -247,3 +247,52 @@ func TestSFlowDecodeDropExtendedFunction(t *testing.T) {
 	assert.Len(t, sample.Records, 1)
 	assert.Equal(t, ExtendedFunction{Symbol: "foobar"}, sample.Records[0].Data)
 }
+
+func TestSFlowDecodedAddressesAliasPayload(t *testing.T) {
+	packet := Packet{
+		Version:      5,
+		IPVersion:    1,
+		AgentIP:      []byte{10, 0, 0, 1},
+		SamplesCount: 1,
+		Samples: []interface{}{
+			FlowSample{
+				Header:           SampleHeader{Format: SAMPLE_FORMAT_FLOW, SampleSequenceNumber: 1},
+				FlowRecordsCount: 2,
+				Records: []FlowRecord{
+					{Data: SampledIPv4{SampledIPBase: SampledIPBase{SrcIP: []byte{192, 0, 2, 1}, DstIP: []byte{192, 0, 2, 2}}}},
+					{Data: ExtendedRouter{NextHop: []byte{203, 0, 113, 9}}},
+				},
+			},
+		},
+	}
+	encoded, err := EncodeMessage(&packet)
+	assert.NoError(t, err)
+
+	var decoded Packet
+	assert.NoError(t, DecodeMessageVersion(bytes.NewBuffer(encoded), &decoded))
+	sample := decoded.Samples[0].(FlowSample)
+	ip := sample.Records[0].Data.(SampledIPv4)
+	router := sample.Records[1].Data.(ExtendedRouter)
+
+	assert.Equal(t, []byte{10, 0, 0, 1}, []byte(decoded.AgentIP))
+	assert.Equal(t, []byte{192, 0, 2, 1}, []byte(ip.SrcIP))
+	assert.Equal(t, []byte{203, 0, 113, 9}, []byte(router.NextHop))
+	// Appending to a decoded address cannot write into the datagram.
+	assert.Equal(t, 4, cap(ip.SrcIP))
+
+	// Addresses are views over the datagram, like HeaderData.
+	for i := range encoded {
+		encoded[i] = 0xff
+	}
+	assert.Equal(t, []byte{0xff, 0xff, 0xff, 0xff}, []byte(ip.SrcIP))
+	assert.Equal(t, []byte{0xff, 0xff, 0xff, 0xff}, []byte(decoded.AgentIP))
+}
+
+func TestSFlowDecodeIPAdvancesBuffer(t *testing.T) {
+	buf := bytes.NewBuffer([]byte{0, 0, 0, 1, 10, 0, 0, 1, 0, 0, 0, 42})
+	version, ip, err := DecodeIP(buf)
+	assert.NoError(t, err)
+	assert.Equal(t, uint32(1), version)
+	assert.Equal(t, []byte{10, 0, 0, 1}, ip)
+	assert.Equal(t, []byte{0, 0, 0, 42}, buf.Bytes())
+}
