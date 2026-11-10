@@ -277,13 +277,23 @@ func ConvertNetFlowDataSet(flowMessage *ProtoProducerMessage, version uint16, ba
 			if err := DecodeUNumber(v, &(flowMessage.Packets)); err != nil {
 				return wrapFieldErr(err)
 			}
+		// ng_netflow (FreeBSD/OPNsense) lists OUT_BYTES/OUT_PKTS after IN_BYTES/IN_PKTS
+		// and always sends them as 0: a zero OUT counter must not erase a real IN one.
 		case netflow.NFV9_FIELD_OUT_BYTES:
-			if err := DecodeUNumber(v, &(flowMessage.Bytes)); err != nil {
+			var out uint64
+			if err := DecodeUNumber(v, &out); err != nil {
 				return wrapFieldErr(err)
 			}
+			if out != 0 || flowMessage.Bytes == 0 {
+				flowMessage.Bytes = out
+			}
 		case netflow.NFV9_FIELD_OUT_PKTS:
-			if err := DecodeUNumber(v, &(flowMessage.Packets)); err != nil {
+			var out uint64
+			if err := DecodeUNumber(v, &out); err != nil {
 				return wrapFieldErr(err)
+			}
+			if out != 0 || flowMessage.Packets == 0 {
+				flowMessage.Packets = out
 			}
 
 		// L4
