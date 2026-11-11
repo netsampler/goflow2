@@ -1,5 +1,5 @@
 ARG BIN_SOURCE="builder"
-FROM golang:1.26.9-alpine AS builder
+FROM golang:1.26.9-alpine3.24 AS builder
 ARG LDFLAGS=""
 
 RUN apk --update --no-cache add git build-base gcc
@@ -15,7 +15,7 @@ COPY ${PREBUILT_BINARY} /build/goflow2
 
 FROM ${BIN_SOURCE} AS binstage
 
-FROM alpine:latest
+FROM alpine:3.24.4
 ARG src_dir
 ARG VERSION=""
 ARG CREATED=""
