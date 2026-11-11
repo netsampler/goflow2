@@ -134,6 +134,12 @@ just send the output into a file.
 $ ./goflow2 -transport.file /var/logs/goflow2.log
 ```
 
+To rotate the file, rename it and send `SIGHUP`: GoFlow2 opens a new file at the
+configured path and closes the renamed one. Every message is written whole to
+one of the two files; no message is lost or split during the reopen. This works
+with logrotate's default `create` mode and a `postrotate` script that sends
+`SIGHUP` to GoFlow2.
+
 To enable Kafka and send protobuf, use the following arguments:
 
 ```bash
