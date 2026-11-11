@@ -1,7 +1,7 @@
 ARG REFLOW_PROFILE=platform
 FROM scratch AS runtime-platform
 
-FROM debian:bookworm-slim AS runtime-pcap
+FROM debian:bookworm-20261104-slim AS runtime-pcap
 RUN apt-get update \
     && apt-get install -y --no-install-recommends libpcap0.8 \
     && rm -rf /var/lib/apt/lists/*
