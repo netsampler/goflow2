@@ -4,6 +4,7 @@ package file
 import (
 	"flag"
 	"io"
+	"log/slog"
 	"os"
 	"os/signal"
 	"sync"
@@ -18,7 +19,7 @@ type FileDriver struct {
 	lineSeparator   string
 	w               io.Writer
 	file            *os.File
-	lock            *sync.RWMutex
+	lock            *sync.Mutex
 	q               chan bool
 }
 
@@ -38,6 +39,18 @@ func (d *FileDriver) openFile() error {
 	d.file = file
 	d.w = d.file
 	return err
+}
+
+// reopen opens a new file at the configured path, then closes the previous
+// one. When the open fails, the previous file stays in use.
+func (d *FileDriver) reopen() error {
+	d.lock.Lock()
+	defer d.lock.Unlock()
+	old := d.file
+	if err := d.openFile(); err != nil {
+		return err
+	}
+	return old.Close()
 }
 
 // Init initializes the output destination and reload handling.
@@ -62,17 +75,9 @@ func (d *FileDriver) Init() error {
 			for {
 				select {
 				case <-c:
-					d.lock.Lock()
-					if err := d.file.Close(); err != nil {
-						d.lock.Unlock()
-						return
+					if err := d.reopen(); err != nil {
+						slog.Error("error reopening file", slog.String("error", err.Error()))
 					}
-					err := d.openFile()
-					d.lock.Unlock()
-					if err != nil {
-						return
-					}
-					// if there is an error, keeps using the old file
 				case <-d.q:
 					return
 				}
@@ -82,11 +87,13 @@ func (d *FileDriver) Init() error {
 	return nil
 }
 
-// Send writes a formatted message and separator to the destination.
+// Send writes a formatted message and separator to the destination. The lock
+// covers both writes, so a message is never split by a concurrent Send or by a
+// reopen on SIGHUP.
 func (d *FileDriver) Send(key, data []byte) error {
-	d.lock.RLock()
+	d.lock.Lock()
+	defer d.lock.Unlock()
 	w := d.w
-	d.lock.RUnlock()
 	if len(data) > 0 {
 		if _, err := w.Write(data); err != nil {
 			return err
@@ -116,7 +123,7 @@ func (d *FileDriver) Close() error {
 
 func init() {
 	d := &FileDriver{
-		lock: &sync.RWMutex{},
+		lock: &sync.Mutex{},
 	}
 	transport.RegisterTransportDriver("file", d)
 }
