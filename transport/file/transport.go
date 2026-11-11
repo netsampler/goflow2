@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"github.com/netsampler/goflow2/transport"
+	log "github.com/sirupsen/logrus"
 	"io"
 	"os"
 	"os/signal"
@@ -17,7 +18,7 @@ type FileDriver struct {
 	lineSeparator   string
 	w               io.Writer
 	file            *os.File
-	lock            *sync.RWMutex
+	lock            *sync.Mutex
 	q               chan bool
 }
 
@@ -36,6 +37,18 @@ func (d *FileDriver) openFile() error {
 	d.file = file
 	d.w = d.file
 	return err
+}
+
+// reopen opens a new file at the configured path, then closes the previous
+// one. When the open fails, the previous file stays in use.
+func (d *FileDriver) reopen() error {
+	d.lock.Lock()
+	defer d.lock.Unlock()
+	old := d.file
+	if err := d.openFile(); err != nil {
+		return err
+	}
+	return old.Close()
 }
 
 func (d *FileDriver) Init(context.Context) error {
@@ -59,11 +72,9 @@ func (d *FileDriver) Init(context.Context) error {
 			for {
 				select {
 				case <-c:
-					d.lock.Lock()
-					d.file.Close()
-					d.openFile()
-					d.lock.Unlock()
-					// if there is an error, keeps using the old file
+					if err := d.reopen(); err != nil {
+						log.Errorf("error reopening file: %v", err)
+					}
 				case <-d.q:
 					return
 				}
@@ -74,11 +85,12 @@ func (d *FileDriver) Init(context.Context) error {
 	return nil
 }
 
+// Send writes a message and separator. The lock covers the write, so a
+// message is never split by a concurrent Send or by a reopen on SIGHUP.
 func (d *FileDriver) Send(key, data []byte) error {
-	d.lock.RLock()
-	w := d.w
-	d.lock.RUnlock()
-	_, err := fmt.Fprint(w, string(data)+d.lineSeparator)
+	d.lock.Lock()
+	defer d.lock.Unlock()
+	_, err := fmt.Fprint(d.w, string(data)+d.lineSeparator)
 	return err
 }
 
@@ -95,7 +107,7 @@ func (d *FileDriver) Close(context.Context) error {
 
 func init() {
 	d := &FileDriver{
-		lock: &sync.RWMutex{},
+		lock: &sync.Mutex{},
 	}
 	transport.RegisterTransportDriver("file", d)
 }
